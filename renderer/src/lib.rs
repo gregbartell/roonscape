@@ -2,6 +2,7 @@ mod contract;
 mod diagnostics;
 mod display_configuration;
 mod ipc;
+mod keyboard;
 mod metadata;
 mod palette;
 mod presentation;
@@ -23,6 +24,7 @@ pub use ipc::{
     ConnectionState, SnapshotEvent, SnapshotReader, SnapshotSocketError, SnapshotSubscription,
     read_snapshot_from_socket,
 };
+pub use keyboard::{RendererKey, should_close_renderer};
 pub use metadata::{MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout};
 pub use palette::{PaletteError, PresentationPalette, Rgb};
 pub use presentation::{

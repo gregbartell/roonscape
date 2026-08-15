@@ -13,8 +13,9 @@ use gtk::glib;
 use gtk::prelude::*;
 use roonscape_renderer::{
     ConnectionState, Diagnostics, DiagnosticsConfiguration, InactivityConfiguration, Presentation,
-    PresentationState, PresentationTime, PresentationUpdate, SnapshotEvent, SnapshotSubscription,
-    current_process_memory_bytes, display_configuration_file_path, load_inactivity_configuration,
+    PresentationState, PresentationTime, PresentationUpdate, RendererKey, SnapshotEvent,
+    SnapshotSubscription, current_process_memory_bytes, display_configuration_file_path,
+    load_inactivity_configuration, should_close_renderer,
 };
 
 use view::{PresentationView, RenderedDiagnostics, diagnostics_view, install_style_providers};
@@ -127,6 +128,23 @@ fn build_window(
         rendered
     });
     window.set_child(Some(&display));
+
+    let key_controller = gtk::EventControllerKey::new();
+    let controlled_window = window.clone();
+    key_controller.connect_key_pressed(move |_, key, _, _| {
+        let key = if key == gtk::gdk::Key::Escape {
+            RendererKey::Escape
+        } else {
+            RendererKey::Other
+        };
+        if should_close_renderer(key) {
+            controlled_window.close();
+            glib::Propagation::Stop
+        } else {
+            glib::Propagation::Proceed
+        }
+    });
+    window.add_controller(key_controller);
 
     let runtime = PresentationRuntime {
         presentation,
