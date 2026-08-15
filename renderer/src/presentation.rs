@@ -69,6 +69,14 @@ impl PresentationTime {
 }
 
 impl PresentationState {
+    pub fn disconnected() -> Self {
+        Self {
+            snapshot: disconnected_snapshot(0),
+            progress_anchored_at: Duration::ZERO,
+            source_sample_age: Duration::ZERO,
+        }
+    }
+
     pub fn new(
         snapshot: PresentationSnapshot,
         anchored_at: PresentationTime,
@@ -98,11 +106,29 @@ impl PresentationState {
         Ok(())
     }
 
+    pub fn disconnect(&mut self) {
+        self.snapshot = disconnected_snapshot(self.snapshot.revision);
+        self.source_sample_age = Duration::ZERO;
+    }
+
     pub fn presentation_at(&self, now: Duration) -> Result<Presentation, PresentationError> {
         let elapsed = self
             .source_sample_age
             .saturating_add(now.saturating_sub(self.progress_anchored_at));
         presentation_from_snapshot_after(&self.snapshot, elapsed)
+    }
+}
+
+fn disconnected_snapshot(revision: u64) -> PresentationSnapshot {
+    PresentationSnapshot {
+        schema_version: 1,
+        revision,
+        availability: Availability::Disconnected,
+        playback: None,
+        display_zone: None,
+        now_playing: None,
+        progress: None,
+        artwork: None,
     }
 }
 

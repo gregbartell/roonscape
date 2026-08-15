@@ -10,21 +10,21 @@ playback and progress truthful.
 
 **Status:** ready-for-agent
 
-- [ ] Either process can start first or restart independently, and the renderer
+- [x] Either process can start first or restart independently, and the renderer
       reconnects indefinitely without terminating its own session.
-- [ ] Every renderer connection receives the latest complete snapshot
+- [x] Every renderer connection receives the latest complete snapshot
       immediately; disconnected periods never leave stale Now Playing content
       presented as current.
-- [ ] Message size, frame count, and pending output are bounded; a stalled
+- [x] Message size, frame count, and pending output are bounded; a stalled
       renderer can be disconnected instead of causing event-history growth.
-- [ ] Artwork and transition cleanup remain bounded across disconnects,
+- [x] Artwork and transition cleanup remain bounded across disconnects,
       reconnects, and rapid presentation changes.
-- [ ] An overlay enabled through RoonScape Host configuration reports memory,
+- [x] An overlay enabled through RoonScape Host configuration reports memory,
       frame timing, artwork dimensions, connection state, and state revision and is
       disabled by default.
-- [ ] An IPC smoke check restarts each process once and confirms reconnection,
+- [x] An IPC smoke check restarts each process once and confirms reconnection,
       current-state replay, and truthful availability.
-- [ ] Automated checks cover malformed or oversized frames, stalled clients,
+- [x] Automated checks cover malformed or oversized frames, stalled clients,
       process order, and reconnect behavior without asserting private helpers.
 
 ## Comments
@@ -59,15 +59,15 @@ normal viewer-facing display.
 
 **Acceptance criteria:**
 
-- [ ] Both processes tolerate either startup order and ordinary independent
+- [x] Both processes tolerate either startup order and ordinary independent
       restarts without terminating the other's session.
-- [ ] Every renderer connection receives current state immediately and no
+- [x] Every renderer connection receives current state immediately and no
       disconnected interval shows stale Now Playing as current.
-- [ ] Message, frame, pending output, artwork, and transition state remain
+- [x] Message, frame, pending output, artwork, and transition state remain
       bounded under malformed, oversized, stalled, and rapid-change cases.
-- [ ] The optional overlay reports the required diagnostics and is absent by
+- [x] The optional overlay reports the required diagnostics and is absent by
       default.
-- [ ] Automated tests and a local IPC smoke check cover process order,
+- [x] Automated tests and a local IPC smoke check cover process order,
       reconnects, restarts, framing failures, and stalled clients.
 
 **Out of scope:**

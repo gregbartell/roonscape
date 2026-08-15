@@ -6,19 +6,20 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::rc::Rc;
-use std::sync::mpsc::{Receiver, TryRecvError, sync_channel};
-use std::thread;
+use std::sync::mpsc::TryRecvError;
 use std::time::{Duration, Instant, SystemTime};
 
 use gtk::glib;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    Presentation, PresentationSnapshot, PresentationState, PresentationTime, SnapshotReader,
+    ConnectionState, Diagnostics, DiagnosticsConfiguration, Presentation, PresentationState,
+    PresentationTime, SnapshotEvent, SnapshotSubscription, current_process_memory_bytes,
 };
 
-use view::{install_style_provider, presentation_view};
+use view::{diagnostics_view, install_style_provider, presentation_view};
 
 const APPLICATION_ID: &str = "io.roonscape.Renderer";
+const SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(250);
 
 fn main() -> ExitCode {
     match run() {
@@ -34,14 +35,15 @@ fn run() -> Result<(), Box<dyn Error>> {
     let socket_path = env::var_os("ROONSCAPE_SOCKET")
         .map(PathBuf::from)
         .ok_or("ROONSCAPE_SOCKET must name the private Unix socket")?;
-    let mut snapshot_reader = SnapshotReader::connect(&socket_path)?;
-    let snapshot = snapshot_reader.read_snapshot()?;
     let progress_clock = Instant::now();
-    let presentation = Rc::new(RefCell::new(PresentationState::new(
-        snapshot,
-        PresentationTime::new(progress_clock.elapsed(), SystemTime::now()),
-    )?));
-    let updates = Rc::new(start_snapshot_reader(snapshot_reader));
+    let presentation = Rc::new(RefCell::new(PresentationState::disconnected()));
+    let diagnostics = DiagnosticsConfiguration::from_environment()?
+        .enabled()
+        .then(|| Rc::new(RefCell::new(Diagnostics::default())));
+    let updates = Rc::new(SnapshotSubscription::start(
+        socket_path,
+        SNAPSHOT_RETRY_DELAY,
+    ));
     let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .ok_or("renderer manifest should be inside the repository")?
@@ -56,6 +58,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             application,
             presentation.clone(),
             updates.clone(),
+            diagnostics.clone(),
             &repository_root,
             progress_clock,
         );
@@ -68,7 +71,8 @@ fn run() -> Result<(), Box<dyn Error>> {
 fn build_window(
     application: &gtk::Application,
     presentation: Rc<RefCell<PresentationState>>,
-    updates: Rc<Receiver<PresentationSnapshot>>,
+    updates: Rc<SnapshotSubscription>,
+    diagnostics: Option<Rc<RefCell<Diagnostics>>>,
     repository_root: &Path,
     progress_clock: Instant,
 ) {
@@ -91,30 +95,60 @@ fn build_window(
         repository_root,
         &style_provider,
     )));
-    window.set_child(Some(&rendered_presentation.borrow().root));
+    let display = gtk::Overlay::new();
+    display.set_child(Some(&rendered_presentation.borrow().root));
+    let rendered_diagnostics = diagnostics.as_ref().map(|diagnostics| {
+        let rendered = diagnostics_view(
+            &diagnostics
+                .borrow()
+                .overlay_text(current_process_memory_bytes()),
+        );
+        display.add_overlay(rendered.widget());
+        rendered
+    });
+    window.set_child(Some(&display));
 
-    let updating_window = window.clone();
+    let updating_display = display.clone();
     let repository_root = repository_root.to_path_buf();
     let updating_style_provider = style_provider.clone();
+    let updating_diagnostics = diagnostics.clone();
     glib::timeout_add_local(Duration::from_millis(50), move || {
-        let mut latest_snapshot = None;
-        loop {
-            match updates.try_recv() {
-                Ok(snapshot) => latest_snapshot = Some(snapshot),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => return glib::ControlFlow::Break,
-            }
-        }
-
         let now = progress_clock.elapsed();
         let mut presentation_changed = false;
-        if let Some(snapshot) = latest_snapshot {
-            match presentation
-                .borrow_mut()
-                .update(snapshot, PresentationTime::new(now, SystemTime::now()))
-            {
-                Ok(()) => presentation_changed = true,
-                Err(error) => eprintln!("RoonScape renderer: {error}"),
+        loop {
+            match updates.try_recv() {
+                Ok(SnapshotEvent::Snapshot(snapshot)) => {
+                    if let Some(diagnostics) = updating_diagnostics.as_ref() {
+                        diagnostics
+                            .borrow_mut()
+                            .observe_snapshot(&snapshot, &repository_root);
+                    }
+                    match presentation
+                        .borrow_mut()
+                        .update(snapshot, PresentationTime::new(now, SystemTime::now()))
+                    {
+                        Ok(()) => presentation_changed = true,
+                        Err(error) => eprintln!("RoonScape renderer: {error}"),
+                    }
+                }
+                Ok(SnapshotEvent::ConnectionChanged(ConnectionState::Disconnected)) => {
+                    if let Some(diagnostics) = updating_diagnostics.as_ref() {
+                        diagnostics
+                            .borrow_mut()
+                            .observe_connection(ConnectionState::Disconnected);
+                    }
+                    presentation.borrow_mut().disconnect();
+                    presentation_changed = true;
+                }
+                Ok(SnapshotEvent::ConnectionChanged(ConnectionState::Connected)) => {
+                    if let Some(diagnostics) = updating_diagnostics.as_ref() {
+                        diagnostics
+                            .borrow_mut()
+                            .observe_connection(ConnectionState::Connected);
+                    }
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => break,
             }
         }
 
@@ -125,7 +159,7 @@ fn build_window(
                     &repository_root,
                     &updating_style_provider,
                 );
-                updating_window.set_child(Some(&next_view.root));
+                updating_display.set_child(Some(&next_view.root));
                 *rendered_presentation.borrow_mut() = next_view;
             }
             Ok(Presentation::NowPlaying(current_presentation)) => {
@@ -143,6 +177,26 @@ fn build_window(
         glib::ControlFlow::Continue
     });
 
+    if let (Some(diagnostics), Some(rendered_diagnostics)) = (diagnostics, rendered_diagnostics) {
+        let frame_diagnostics = diagnostics.clone();
+        window.add_tick_callback(move |_, frame_clock| {
+            if let Ok(frame_time) = u64::try_from(frame_clock.frame_time()) {
+                frame_diagnostics
+                    .borrow_mut()
+                    .observe_frame(Duration::from_micros(frame_time));
+            }
+            glib::ControlFlow::Continue
+        });
+        glib::timeout_add_local(Duration::from_millis(500), move || {
+            rendered_diagnostics.update(
+                &diagnostics
+                    .borrow()
+                    .overlay_text(current_process_memory_bytes()),
+            );
+            glib::ControlFlow::Continue
+        });
+    }
+
     if env::var_os("ROONSCAPE_WINDOWED").is_none() {
         window.fullscreen();
     }
@@ -158,24 +212,4 @@ fn build_window(
     }
 
     window.present();
-}
-
-fn start_snapshot_reader(mut reader: SnapshotReader) -> Receiver<PresentationSnapshot> {
-    let (sender, receiver) = sync_channel(1);
-    thread::spawn(move || {
-        loop {
-            match reader.read_snapshot() {
-                Ok(snapshot) => {
-                    if sender.send(snapshot).is_err() {
-                        break;
-                    }
-                }
-                Err(error) => {
-                    eprintln!("RoonScape renderer: {error}");
-                    break;
-                }
-            }
-        }
-    });
-    receiver
 }

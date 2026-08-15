@@ -4,7 +4,8 @@ RoonScape is an unattended, read-only presentation of current Roon playback.
 
 > **Status:** The shared contract and fixtures, live Roon availability,
 > deterministic Display Output selection, live Now Playing metadata and
-> artwork, and truthful playback progress are available.
+> artwork, truthful playback progress, independent IPC recovery, and optional
+> local diagnostics are available.
 
 RoonScape observes one configured physical Display Output, follows the Display
 Zone that currently contains it, and presents current artwork, metadata,
@@ -54,6 +55,17 @@ with:
 npm run check
 ```
 
+Run the headless local IPC restart exercise on its own with:
+
+```sh
+npm run smoke:ipc
+```
+
+It starts the native IPC client before the bridge, kills and restarts the
+bridge, then restarts the client while the bridge remains live. The check
+confirms current-state replay and a truthful Disconnected presentation between
+connections.
+
 ## Live Roon setup
 
 The bridge registers as `io.roonscape.bridge` and uses Roon's normal extension
@@ -89,9 +101,15 @@ npm run start:bridge
 ```
 
 Start the renderer with the same `ROONSCAPE_SOCKET` value in the graphical
-session. The bridge follows the selected physical Display Output when Roon
-groups, ungroups, or renames its Display Zone. If the configuration is absent
-or invalid, or Roon removes the selected output, the viewer reports that the
+session. Either process may start first: the renderer keeps its graphical
+session open, presents Disconnected without stale Now Playing content, and
+retries the local socket until the bridge is available. A replacement bridge
+reclaims a stale socket left by an abruptly terminated predecessor, and every
+renderer connection receives its current complete snapshot immediately.
+
+The bridge follows the selected physical Display Output when Roon groups,
+ungroups, or renames its Display Zone. If the configuration is absent or
+invalid, or Roon removes the selected output, the viewer reports that the
 Display Output is unavailable instead of following another zone.
 
 Current artwork is requested from Roon as a bounded JPEG derivative and staged
@@ -108,3 +126,13 @@ independent from Display Configuration. The live bridge observes Roon's Image
 and Transport services and provides extension Status; it does not load Browse,
 call a Roon Control method, expose a command endpoint, provide a browser UI, or
 open a network listener.
+
+## Optional diagnostics
+
+Diagnostics are absent by default. Set `ROONSCAPE_DIAGNOSTICS=1` (or `true`) in
+the renderer's host environment to add a compact local overlay reporting its
+resident memory, frame timing, artwork dimensions, bridge connection state,
+and latest received state revision. Set it to `0` or `false`, or leave it
+unset, for the normal viewer-facing presentation. The overlay observes the
+same bounded snapshot pipeline and does not modify presentation state or add a
+network endpoint.

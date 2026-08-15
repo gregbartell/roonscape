@@ -177,3 +177,14 @@ progressbar progress {
   color: @secondary_text;
   font-size: 28px;
 }
+
+.diagnostics {
+  margin: 24px;
+  padding: 14px 18px;
+  border: 1px solid alpha(@secondary_text, 0.32);
+  border-radius: 4px;
+  color: @primary_text;
+  background-color: alpha(@background, 0.88);
+  font-family: "Noto Sans Mono", "DejaVu Sans Mono", monospace;
+  font-size: 15px;
+}

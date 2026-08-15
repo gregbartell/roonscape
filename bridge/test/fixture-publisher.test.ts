@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { createConnection } from "node:net";
@@ -110,6 +111,15 @@ test(
         publisher.publish(withTitle(snapshot, "x".repeat(60 * 1024), revision));
       }
 
+      const freshClient = createConnection(socketPath);
+      const freshLines = createInterface({ input: freshClient });
+      const [freshLine] = (await once(freshLines, "line")) as [string];
+      assert.equal(
+        (JSON.parse(freshLine) as PresentationSnapshot).revision,
+        finalRevision,
+      );
+      freshClient.destroy();
+
       client.resume();
       const observedRevisions: number[] = [];
       while (observedRevisions.at(-1) !== finalRevision) {
@@ -189,6 +199,69 @@ test("refuses a shared runtime directory without changing its permissions", asyn
     );
   } finally {
     await rm(taskDirectory, { recursive: true });
+  }
+});
+
+test("reclaims a stale socket left by an abruptly terminated publisher", async () => {
+  const scratchRoot = "/tmp/codex/roonscape";
+  await mkdir(scratchRoot, { recursive: true });
+  const runtimeDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+  const snapshot = await loadSnapshot("fixtures/playing.json");
+  const stalePublisher = spawn(
+    process.execPath,
+    [
+      "--eval",
+      "const net = require('node:net'); net.createServer().listen(process.argv[1], () => process.stdout.write('ready\\n'));",
+      socketPath,
+    ],
+    { stdio: ["ignore", "pipe", "inherit"] },
+  );
+  let publisher;
+
+  try {
+    assert.ok(stalePublisher.stdout);
+    await once(createInterface({ input: stalePublisher.stdout }), "line");
+    const closed = once(stalePublisher, "close");
+    stalePublisher.kill("SIGKILL");
+    await closed;
+
+    publisher = await startFixturePublisher(snapshot, socketPath);
+    const client = createConnection(socketPath);
+    const lines = createInterface({ input: client });
+    const [line] = (await once(lines, "line")) as [string];
+
+    assert.deepEqual(JSON.parse(line), snapshot);
+    client.destroy();
+  } finally {
+    stalePublisher.kill("SIGKILL");
+    await publisher?.close();
+    await rm(runtimeDirectory, { recursive: true });
+  }
+});
+
+test("does not replace an active publisher socket", async () => {
+  const scratchRoot = "/tmp/codex/roonscape";
+  await mkdir(scratchRoot, { recursive: true });
+  const runtimeDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+  const snapshot = await loadSnapshot("fixtures/playing.json");
+  const publisher = await startFixturePublisher(snapshot, socketPath);
+
+  try {
+    await assert.rejects(
+      startFixturePublisher(snapshot, socketPath),
+      /EADDRINUSE/,
+    );
+    const client = createConnection(socketPath);
+    const lines = createInterface({ input: client });
+    const [line] = (await once(lines, "line")) as [string];
+
+    assert.deepEqual(JSON.parse(line), snapshot);
+    client.destroy();
+  } finally {
+    await publisher.close();
+    await rm(runtimeDirectory, { recursive: true });
   }
 });
 

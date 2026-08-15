@@ -16,6 +16,17 @@ pub(crate) struct RenderedPresentation {
 }
 
 #[derive(Clone)]
+pub(crate) struct RenderedDiagnostics {
+    label: gtk::Label,
+}
+
+impl RenderedDiagnostics {
+    pub(crate) fn update(&self, text: &str) {
+        self.label.set_text(text);
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct RenderedProgress {
     bar: gtk::ProgressBar,
     elapsed: gtk::Label,
@@ -49,6 +60,22 @@ pub(crate) fn presentation_view(
             root: unavailable(presentation).upcast(),
             progress: None,
         },
+    }
+}
+
+pub(crate) fn diagnostics_view(text: &str) -> RenderedDiagnostics {
+    let label = gtk::Label::new(Some(text));
+    label.add_css_class("diagnostics");
+    label.set_halign(gtk::Align::End);
+    label.set_valign(gtk::Align::Start);
+    label.set_xalign(0.0);
+    label.set_selectable(false);
+    RenderedDiagnostics { label }
+}
+
+impl RenderedDiagnostics {
+    pub(crate) fn widget(&self) -> &gtk::Widget {
+        self.label.upcast_ref()
     }
 }
 
