@@ -216,7 +216,15 @@ export function startRoonBridge({
             ...(event.zones_added ?? []),
             ...(event.zones_changed ?? []),
           ]) {
-            zones.set(zone.zone_id, { zone, sampledAt });
+            const retainedZone = zones.get(zone.zone_id);
+            zones.set(zone.zone_id, {
+              zone,
+              sampledAt:
+                retainedZone !== undefined &&
+                sameZonePresentationSource(retainedZone.zone, zone)
+                  ? retainedZone.sampledAt
+                  : sampledAt,
+            });
           }
           for (const seekChange of event.zones_seek_changed ?? []) {
             const retainedZone = zones.get(seekChange.zone_id);
@@ -293,6 +301,7 @@ class ArtworkPresentationCoordinator {
   readonly #publishState: PublishState;
   readonly #currentRevision: () => number;
   readonly #currentSnapshot: () => PresentationSnapshot;
+  #artworkIdentity: string | null | undefined;
   #request = 0;
 
   constructor({
@@ -309,6 +318,7 @@ class ArtworkPresentationCoordinator {
 
   cancelAndClear(): Promise<void> {
     this.#request += 1;
+    this.#artworkIdentity = undefined;
     return this.#artworkFiles.clear();
   }
 
@@ -330,17 +340,22 @@ class ArtworkPresentationCoordinator {
       return;
     }
 
-    if (!stateChanged && !refreshArtwork) {
+    const imageKey = zone.now_playing?.image_key;
+    const artworkIdentity = imageKey ?? null;
+    const artworkIdentityChanged =
+      refreshArtwork && this.#artworkIdentity !== artworkIdentity;
+
+    if (!stateChanged && !artworkIdentityChanged) {
       return;
     }
 
-    if (!refreshArtwork) {
+    if (!artworkIdentityChanged) {
       this.#publishState({ ...state, artwork: currentSnapshot.artwork });
       return;
     }
 
+    this.#artworkIdentity = artworkIdentity;
     const request = ++this.#request;
-    const imageKey = zone.now_playing?.image_key;
     const retainArtworkWhileLoading =
       zone.state === "loading" && imageKey !== undefined;
     if (stateChanged) {
@@ -517,6 +532,16 @@ function samePresentationExceptArtwork(
     ...state,
     artwork: snapshot.artwork,
   });
+}
+
+function sameZonePresentationSource(left: RoonZone, right: RoonZone): boolean {
+  const comparisonSample = "";
+  return (
+    JSON.stringify(
+      availableState({ zone: left, sampledAt: comparisonSample }),
+    ) ===
+    JSON.stringify(availableState({ zone: right, sampledAt: comparisonSample }))
+  );
 }
 
 function hasAuthorization(state: unknown): boolean {
