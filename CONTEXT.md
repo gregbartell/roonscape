@@ -22,19 +22,14 @@ A choice that changes what or how RoonScape presents without changing
 Roon state.
 _Avoid_: Roon Control
 
-**Display Output**:
-The single physical Roon output configured on the RoonScape Host whose playback
-RoonScape presents, including while the output joins or leaves a group.
-_Avoid_: Selected zone, active zone, fallback zone
-
-**Display Zone**:
-The current Roon zone containing the Display Output. It can change when the
-Display Output is grouped or ungrouped. RoonScape presents its name to the
-viewer under the label **Zone**.
-_Avoid_: Configured zone, fixed zone
+**Idle**:
+The viewer-facing state used when an available Tracked Output has no current
+playback. It corresponds to Roon's stopped playback state and contains no Now
+Playing content.
+_Avoid_: Stopped in viewer-facing copy
 
 **Now Playing**:
-The Roon-provided content currently associated with the Display Zone.
+The Roon-provided content currently associated with the Tracked Zone.
 _Avoid_: Now-playing presentation, current content
 
 **Roon Control**:
@@ -55,3 +50,16 @@ _Avoid_: Dedicated host
 Roon's first Now Playing display line, presented as the track title even though
 the API does not independently guarantee that semantic.
 _Avoid_: Primary text, line 1
+
+**Tracked Output**:
+The single physical Roon audio output configured on the RoonScape Host whose
+playback RoonScape presents, including while the output joins or leaves a
+group. It is not the host's video output; RoonScape presents its name under the
+viewer-facing label **Output**.
+_Avoid_: Display Output, selected zone, active zone, fallback zone
+
+**Tracked Zone**:
+The current Roon zone containing the Tracked Output. It can change when the
+Tracked Output is grouped or ungrouped. RoonScape presents its name under the
+viewer-facing label **Zone**.
+_Avoid_: Display Zone, configured zone, fixed zone
