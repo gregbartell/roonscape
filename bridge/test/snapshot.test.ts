@@ -29,6 +29,37 @@ test("loads the shared Playing fixture as a complete snapshot", async () => {
   });
 });
 
+test("loads every shared unavailable fixture without stale Now Playing", async () => {
+  const fixtures = [
+    ["pairing-required.json", "pairingRequired"],
+    ["disconnected.json", "disconnected"],
+    ["output-unavailable.json", "outputUnavailable"],
+  ] as const;
+
+  for (const [fixture, availability] of fixtures) {
+    const snapshot = await loadSnapshot(`fixtures/${fixture}`);
+
+    assert.deepEqual(
+      {
+        availability: snapshot.availability,
+        playback: snapshot.playback,
+        displayZone: snapshot.displayZone,
+        nowPlaying: snapshot.nowPlaying,
+        progress: snapshot.progress,
+        artwork: snapshot.artwork,
+      },
+      {
+        availability,
+        playback: null,
+        displayZone: null,
+        nowPlaying: null,
+        progress: null,
+        artwork: null,
+      },
+    );
+  }
+});
+
 test("rejects the shared invalid fixture", async () => {
   await assert.rejects(
     loadSnapshot("fixtures/invalid.json"),

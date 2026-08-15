@@ -3,6 +3,8 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::rc::Rc;
+use std::sync::mpsc::{Receiver, TryRecvError, sync_channel};
+use std::thread;
 use std::time::Duration;
 
 use gtk::gdk;
@@ -10,7 +12,8 @@ use gtk::glib;
 use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    Presentation, PresentationProgress, presentation_from_snapshot, read_snapshot_from_socket,
+    NowPlayingPresentation, Presentation, PresentationProgress, PresentationSnapshot,
+    SnapshotReader, UnavailablePresentation, presentation_from_snapshot,
 };
 
 const APPLICATION_ID: &str = "io.roonscape.Renderer";
@@ -30,8 +33,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     let socket_path = env::var_os("ROONSCAPE_SOCKET")
         .map(PathBuf::from)
         .ok_or("ROONSCAPE_SOCKET must name the private Unix socket")?;
-    let snapshot = read_snapshot_from_socket(&socket_path)?;
+    let mut snapshot_reader = SnapshotReader::connect(&socket_path)?;
+    let snapshot = snapshot_reader.read_snapshot()?;
     let presentation = Rc::new(presentation_from_snapshot(&snapshot)?);
+    let updates = Rc::new(start_snapshot_reader(snapshot_reader));
     let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .ok_or("renderer manifest should be inside the repository")?
@@ -42,7 +47,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         .build();
 
     application.connect_activate(move |application| {
-        build_window(application, presentation.clone(), &repository_root);
+        build_window(
+            application,
+            presentation.clone(),
+            updates.clone(),
+            &repository_root,
+        );
     });
     application.run();
 
@@ -52,6 +62,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 fn build_window(
     application: &gtk::Application,
     presentation: Rc<Presentation>,
+    updates: Rc<Receiver<PresentationSnapshot>>,
     repository_root: &Path,
 ) {
     install_styles();
@@ -62,7 +73,30 @@ fn build_window(
         .default_height(900)
         .title("RoonScape")
         .build();
-    window.set_child(Some(&gallery_split(&presentation, repository_root)));
+    window.set_child(Some(&presentation_view(&presentation, repository_root)));
+
+    let updating_window = window.clone();
+    let repository_root = repository_root.to_path_buf();
+    glib::timeout_add_local(Duration::from_millis(50), move || {
+        let mut latest_snapshot = None;
+        loop {
+            match updates.try_recv() {
+                Ok(snapshot) => latest_snapshot = Some(snapshot),
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => return glib::ControlFlow::Break,
+            }
+        }
+
+        if let Some(snapshot) = latest_snapshot {
+            match presentation_from_snapshot(&snapshot) {
+                Ok(presentation) => updating_window
+                    .set_child(Some(&presentation_view(&presentation, &repository_root))),
+                Err(error) => eprintln!("RoonScape renderer: {error}"),
+            }
+        }
+
+        glib::ControlFlow::Continue
+    });
 
     if env::var_os("ROONSCAPE_WINDOWED").is_none() {
         window.fullscreen();
@@ -81,7 +115,34 @@ fn build_window(
     window.present();
 }
 
-fn gallery_split(presentation: &Presentation, repository_root: &Path) -> gtk::Box {
+fn start_snapshot_reader(mut reader: SnapshotReader) -> Receiver<PresentationSnapshot> {
+    let (sender, receiver) = sync_channel(1);
+    thread::spawn(move || {
+        loop {
+            match reader.read_snapshot() {
+                Ok(snapshot) => {
+                    if sender.send(snapshot).is_err() {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    eprintln!("RoonScape renderer: {error}");
+                    break;
+                }
+            }
+        }
+    });
+    receiver
+}
+
+fn presentation_view(presentation: &Presentation, repository_root: &Path) -> gtk::Box {
+    match presentation {
+        Presentation::NowPlaying(presentation) => gallery_split(presentation, repository_root),
+        Presentation::Unavailable(presentation) => unavailable(presentation),
+    }
+}
+
+fn gallery_split(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk::Box {
     let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     root.add_css_class("gallery-split");
 
@@ -92,21 +153,14 @@ fn gallery_split(presentation: &Presentation, repository_root: &Path) -> gtk::Bo
     artwork_column.append(&artwork(presentation, repository_root));
 
     let metadata_column = metadata(presentation);
-    metadata_column.set_width_request(672);
-    let responsive_metadata = metadata_column.clone();
-    root.connect_notify_local(Some("width"), move |root, _| {
-        let width = root.width();
-        if width > 0 {
-            responsive_metadata.set_width_request(width * 42 / 100);
-        }
-    });
+    set_responsive_column_width(&root, &metadata_column);
 
     root.append(&artwork_column);
     root.append(&metadata_column);
     root
 }
 
-fn artwork(presentation: &Presentation, repository_root: &Path) -> gtk::AspectFrame {
+fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk::AspectFrame {
     let picture = match presentation.artwork_path.as_deref() {
         Some(path) => gtk::Picture::for_filename(repository_root.join(path)),
         None => gtk::Picture::new(),
@@ -124,7 +178,7 @@ fn artwork(presentation: &Presentation, repository_root: &Path) -> gtk::AspectFr
     frame
 }
 
-fn metadata(presentation: &Presentation) -> gtk::Box {
+fn metadata(presentation: &NowPlayingPresentation) -> gtk::Box {
     let column = gtk::Box::new(gtk::Orientation::Vertical, 0);
     column.add_css_class("metadata-column");
     column.set_hexpand(true);
@@ -161,6 +215,61 @@ fn metadata(presentation: &Presentation) -> gtk::Box {
     column.append(&copy);
     column.append(&display_zone(&presentation.display_zone));
     column
+}
+
+fn unavailable(presentation: &UnavailablePresentation) -> gtk::Box {
+    let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    root.add_css_class("unavailable");
+
+    let quiet_field = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    quiet_field.add_css_class("unavailable-field");
+    quiet_field.set_hexpand(true);
+    quiet_field.set_vexpand(true);
+    root.append(&quiet_field);
+
+    let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    copy.add_css_class("unavailable-copy");
+    copy.set_hexpand(false);
+    copy.set_vexpand(true);
+
+    let state = metadata_label(presentation.state_label, "unavailable-state");
+    copy.append(&state);
+
+    let message = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    message.add_css_class("unavailable-message");
+    message.set_valign(gtk::Align::Center);
+    message.set_vexpand(true);
+
+    let heading = metadata_label(presentation.heading, "unavailable-heading");
+    heading.set_lines(3);
+    heading.set_max_width_chars(12);
+    heading.set_wrap(true);
+    heading.set_wrap_mode(pango::WrapMode::WordChar);
+    message.append(&heading);
+
+    let explanation = metadata_label(presentation.explanation, "unavailable-explanation");
+    explanation.set_max_width_chars(26);
+    explanation.set_wrap(true);
+    explanation.set_wrap_mode(pango::WrapMode::WordChar);
+    message.append(&explanation);
+
+    copy.append(&message);
+
+    set_responsive_column_width(&root, &copy);
+
+    root.append(&copy);
+    root
+}
+
+fn set_responsive_column_width(root: &gtk::Box, column: &gtk::Box) {
+    column.set_width_request(672);
+    let responsive_column = column.clone();
+    root.connect_notify_local(Some("width"), move |root, _| {
+        let width = root.width();
+        if width > 0 {
+            responsive_column.set_width_request(width * 42 / 100);
+        }
+    });
 }
 
 fn playback_state(state: &str) -> gtk::Box {

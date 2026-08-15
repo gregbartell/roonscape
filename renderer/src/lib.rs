@@ -6,7 +6,8 @@ pub use contract::{
     ArtworkReference, Availability, DisplayZone, NowPlaying, Playback, PresentationSnapshot,
     Progress, SnapshotError, parse_snapshot,
 };
-pub use ipc::{SnapshotSocketError, read_snapshot_from_socket};
+pub use ipc::{SnapshotReader, SnapshotSocketError, read_snapshot_from_socket};
 pub use presentation::{
-    Presentation, PresentationError, PresentationProgress, presentation_from_snapshot,
+    NowPlayingPresentation, Presentation, PresentationError, PresentationProgress,
+    UnavailablePresentation, presentation_from_snapshot,
 };

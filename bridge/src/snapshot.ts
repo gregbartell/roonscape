@@ -62,6 +62,12 @@ export async function loadSnapshot(
 ): Promise<PresentationSnapshot> {
   const contents = await readFile(repositoryPath(relativePath), "utf8");
   const candidate: unknown = JSON.parse(contents);
+  return validateSnapshot(candidate);
+}
+
+export async function validateSnapshot(
+  candidate: unknown,
+): Promise<PresentationSnapshot> {
   const validate = await validator();
 
   if (!validate(candidate)) {

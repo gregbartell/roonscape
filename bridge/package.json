@@ -6,10 +6,14 @@
   "main": "dist/src/index.js",
   "scripts": {
     "build": "tsc --project tsconfig.json",
+    "start": "npm run build && node dist/src/index.js",
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "dependencies": {
     "ajv": "8.20.0",
-    "ajv-formats": "3.0.1"
+    "ajv-formats": "3.0.1",
+    "node-roon-api": "https://github.com/RoonLabs/node-roon-api/archive/055dae6c2ac45b6c738aa3b9e5ac1fd722ed60e8.tar.gz",
+    "node-roon-api-image": "https://github.com/RoonLabs/node-roon-api-image/archive/a5f0efaf2dfb5457e91abe326c3a40d865131d32.tar.gz",
+    "node-roon-api-status": "https://github.com/RoonLabs/node-roon-api-status/archive/504c918d6da267e03fbb4337befa71ca3d3c7526.tar.gz"
   }
 }

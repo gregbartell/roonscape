@@ -14,6 +14,7 @@
     "format": "prettier --write bridge/src bridge/test renderer/src/style.css scripts eslint.config.js package.json bridge/package.json bridge/tsconfig.json schema fixtures .github && cargo fmt --all",
     "format:check": "prettier --check bridge/src bridge/test renderer/src/style.css scripts eslint.config.js package.json bridge/package.json bridge/tsconfig.json schema fixtures .github && cargo fmt --all -- --check",
     "lint": "eslint bridge/src bridge/test scripts eslint.config.js && cargo clippy --workspace --all-targets -- -D warnings",
+    "start:bridge": "npm run start --workspace @roonscape/bridge",
     "test": "npm run test:bridge && cargo test --workspace",
     "test:bridge": "npm run test --workspace @roonscape/bridge",
     "typecheck": "npm run build && cargo check --workspace --all-targets"

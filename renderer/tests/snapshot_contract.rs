@@ -63,3 +63,24 @@ fn rejects_the_shared_invalid_fixture() {
 
     assert!(error.to_string().contains("violates the schema"));
 }
+
+#[test]
+fn parses_every_shared_unavailable_fixture_without_stale_content() {
+    let fixtures = [
+        ("pairing-required.json", Availability::PairingRequired),
+        ("disconnected.json", Availability::Disconnected),
+        ("output-unavailable.json", Availability::OutputUnavailable),
+    ];
+
+    for (fixture_name, availability) in fixtures {
+        let fixture = support::fixture(fixture_name);
+        let snapshot = parse_snapshot(&fixture).expect("unavailable fixture should be valid");
+
+        assert_eq!(snapshot.availability, availability);
+        assert_eq!(snapshot.playback, None);
+        assert_eq!(snapshot.display_zone, None);
+        assert_eq!(snapshot.now_playing, None);
+        assert_eq!(snapshot.progress, None);
+        assert_eq!(snapshot.artwork, None);
+    }
+}

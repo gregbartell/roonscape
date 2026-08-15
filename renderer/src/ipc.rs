@@ -8,6 +8,10 @@ use crate::contract::{PresentationSnapshot, SnapshotError, parse_snapshot};
 
 const MAX_SNAPSHOT_BYTES: u64 = 64 * 1024;
 
+pub struct SnapshotReader {
+    reader: BufReader<UnixStream>,
+}
+
 #[derive(Debug)]
 pub enum SnapshotSocketError {
     Io(io::Error),
@@ -44,10 +48,28 @@ impl Error for SnapshotSocketError {
 pub fn read_snapshot_from_socket(
     socket_path: &Path,
 ) -> Result<PresentationSnapshot, SnapshotSocketError> {
-    let connection = UnixStream::connect(socket_path).map_err(SnapshotSocketError::Io)?;
-    let mut reader = BufReader::new(connection).take(MAX_SNAPSHOT_BYTES + 1);
+    SnapshotReader::connect(socket_path)?.read_snapshot()
+}
+
+impl SnapshotReader {
+    pub fn connect(socket_path: &Path) -> Result<Self, SnapshotSocketError> {
+        let connection = UnixStream::connect(socket_path).map_err(SnapshotSocketError::Io)?;
+        Ok(Self {
+            reader: BufReader::new(connection),
+        })
+    }
+
+    pub fn read_snapshot(&mut self) -> Result<PresentationSnapshot, SnapshotSocketError> {
+        read_snapshot(&mut self.reader)
+    }
+}
+
+fn read_snapshot(
+    reader: &mut BufReader<UnixStream>,
+) -> Result<PresentationSnapshot, SnapshotSocketError> {
+    let mut limited_reader = reader.take(MAX_SNAPSHOT_BYTES + 1);
     let mut message = String::new();
-    let bytes_read = reader
+    let bytes_read = limited_reader
         .read_line(&mut message)
         .map_err(SnapshotSocketError::Io)?;
 

@@ -2,9 +2,9 @@
 
 RoonScape is an unattended, read-only presentation of current Roon playback.
 
-> **Status:** The shared contract and Playing fixture workflow are available;
-> live Roon integration and the remaining presentation states are still under
-> development.
+> **Status:** The shared contract, Playing fixture workflow, and live Roon
+> connection availability are available. Display Output selection and live Now
+> Playing remain under development.
 
 RoonScape observes one configured physical Roon output, follows the Roon zone
 that currently contains it, and presents current artwork, metadata, playback
@@ -53,3 +53,29 @@ with:
 ```sh
 npm run check
 ```
+
+## Live Roon availability
+
+The bridge registers as `io.roonscape.bridge` and uses Roon's normal extension
+authorization flow. Start it with a private runtime directory and local socket:
+
+```sh
+mkdir -p "$XDG_RUNTIME_DIR/roonscape"
+chmod 700 "$XDG_RUNTIME_DIR/roonscape"
+export ROONSCAPE_SOCKET="$XDG_RUNTIME_DIR/roonscape/roonscape.sock"
+npm run start:bridge
+```
+
+Start the renderer with the same `ROONSCAPE_SOCKET` value in the graphical
+session. A fresh installation explains that pairing is required; enable
+RoonScape under **Settings → Extensions** in a Roon client. Until ticket 3 adds
+Display Configuration, an authorized connection truthfully reports that the
+Display Output is unavailable.
+
+Roon authorization is stored separately at
+`$XDG_STATE_HOME/roonscape/authorization.json`, falling back to
+`~/.local/state/roonscape/authorization.json`. Set
+`ROONSCAPE_AUTHORIZATION_FILE` to choose another dedicated file. The live bridge
+loads only Roon's read-only Image service and its provided Status service; it
+does not load Browse or Transport, expose a command endpoint, or open a network
+listener.
