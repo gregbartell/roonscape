@@ -8,23 +8,23 @@ rejected rather than migrated.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Display Configuration requires `trackedOutputId`, increments the
+- [x] Display Configuration requires `trackedOutputId`, increments the
       relevant contract version, and rejects `displayOutputId` and unexpected
       legacy fields.
-- [ ] Available presentation snapshots require authoritative Tracked Output
+- [x] Available presentation snapshots require authoritative Tracked Output
       and Tracked Zone names, while pairing-required, disconnected, and
       output-unavailable snapshots carry neither identity.
-- [ ] The bridge follows the configured Tracked Output through grouping and
+- [x] The bridge follows the configured Tracked Output through grouping and
       ungrouping, retains its identity, and publishes the current containing
       Tracked Zone without following unrelated active zones.
-- [ ] Configuration discovery, commands, status text, diagnostics, and errors
+- [x] Configuration discovery, commands, status text, diagnostics, and errors
       use Tracked Output and Tracked Zone terminology consistently without
       introducing Roon Control.
-- [ ] The renderer consumes the new contract and presents the authoritative
+- [x] The renderer consumes the new contract and presents the authoritative
       names under the concise labels Output and Zone.
-- [ ] TypeScript, Rust, schema, fixture, and integration checks cover the new
+- [x] TypeScript, Rust, schema, fixture, and integration checks cover the new
       vocabulary, grouping changes, removal of the selected output, and
       explicit rejection of the removed fields.
 
@@ -64,15 +64,15 @@ Output and Zone. Removed fields are rejected as a deliberate breaking change.
 
 **Acceptance criteria:**
 
-- [ ] The TypeScript and Rust contract implementations accept only the new
+- [x] The TypeScript and Rust contract implementations accept only the new
       schema and configuration vocabulary.
-- [ ] Grouping, ungrouping, renaming, and output removal preserve the existing
+- [x] Grouping, ungrouping, renaming, and output removal preserve the existing
       deterministic tracking behavior under the new terms.
-- [ ] Available snapshots require both identity names and pairing-required,
+- [x] Available snapshots require both identity names and pairing-required,
       disconnected, and output-unavailable snapshots require neither.
-- [ ] Viewer and operational copy use Tracked Output/Tracked Zone accurately,
+- [x] Viewer and operational copy use Tracked Output/Tracked Zone accurately,
       while the renderer labels their values Output and Zone.
-- [ ] Repository checks cover both successful use of the new contract and
+- [x] Repository checks cover both successful use of the new contract and
       explicit rejection of the removed fields.
 
 **Out of scope:**
@@ -80,3 +80,15 @@ Output and Zone. Removed fields are rejected as a deliberate breaking change.
 - Migrating or accepting the removed pre-release configuration and snapshot
   fields.
 - Changing Roon playback, grouping, volume, or any other Roon Control state.
+
+### Implementation Result — 2026-08-15
+
+Implemented in `f5559a0`. Display Configuration and presentation snapshot
+schema version 2 now use only the Tracked Output and Tracked Zone vocabulary;
+the bridge retains the configured physical output across grouping changes and
+publishes both authoritative names; and the renderer presents them as Output
+and Zone.
+
+The standards and specification reviews reported no findings. `npm run check`
+passed with formatting, type checking, linting, the complete TypeScript and
+Rust test suites, and the two-startup-order IPC restart smoke check.
