@@ -50,7 +50,7 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
             "output-unavailable.json",
             "Output unavailable",
             "Display Output unavailable",
-            "No Display Output is configured on this RoonScape Host.",
+            "Configure a Display Output on this RoonScape Host, or check that the selected output is available in Roon.",
         ),
     ];
 

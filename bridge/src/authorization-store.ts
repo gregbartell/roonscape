@@ -9,7 +9,7 @@ import {
 import { homedir } from "node:os";
 import path from "node:path";
 
-import type { AuthorizationStore } from "./roon-availability.js";
+import type { AuthorizationStore } from "./roon-bridge.js";
 
 export class FileAuthorizationStore implements AuthorizationStore {
   readonly #authorizationFile: string;

@@ -2,11 +2,12 @@ import {
   FileAuthorizationStore,
   authorizationFilePath,
 } from "./authorization-store.js";
-import { startSnapshotPublisher } from "./fixture-publisher.js";
 import {
-  initialAvailabilitySnapshot,
-  startRoonAvailabilityBridge,
-} from "./roon-availability.js";
+  FileDisplayConfigurationStore,
+  displayConfigurationFilePath,
+} from "./display-configuration.js";
+import { startSnapshotPublisher } from "./fixture-publisher.js";
+import { initialAvailabilitySnapshot, startRoonBridge } from "./roon-bridge.js";
 import { createSupportedRoonServices } from "./roon-services.js";
 
 const socketPath = process.env.ROONSCAPE_SOCKET;
@@ -16,12 +17,16 @@ if (socketPath === undefined || socketPath.length === 0) {
 }
 
 const authorizationStore = new FileAuthorizationStore(authorizationFilePath());
+const displayConfigurationStore = new FileDisplayConfigurationStore(
+  displayConfigurationFilePath(),
+);
 const publisher = await startSnapshotPublisher(
   initialAvailabilitySnapshot(authorizationStore),
   socketPath,
 );
-const bridge = startRoonAvailabilityBridge({
+const bridge = startRoonBridge({
   authorizationStore,
+  displayConfigurationStore,
   createRoonServices: createSupportedRoonServices,
   publish: (snapshot) => publisher.publish(snapshot),
 });

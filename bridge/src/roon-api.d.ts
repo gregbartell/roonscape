@@ -1,10 +1,10 @@
 declare module "node-roon-api" {
   class RoonApi {
-    constructor(options: import("./roon-availability.js").RoonExtensionOptions);
+    constructor(options: import("./roon-bridge.js").RoonExtensionOptions);
 
     init_services(services: {
-      required_services: import("./roon-availability.js").RoonServiceDescriptor[];
-      provided_services: import("./roon-availability.js").RoonServiceDescriptor[];
+      required_services: import("./roon-bridge.js").RoonServiceDescriptor[];
+      provided_services: import("./roon-bridge.js").RoonServiceDescriptor[];
     }): void;
     start_discovery(): void;
     stop_discovery(): void;
@@ -33,4 +33,12 @@ declare module "node-roon-api-status" {
   }
 
   export default RoonApiStatus;
+}
+
+declare module "node-roon-api-transport" {
+  class RoonApiTransport {
+    static services: Array<{ name: string }>;
+  }
+
+  export default RoonApiTransport;
 }

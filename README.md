@@ -2,14 +2,14 @@
 
 RoonScape is an unattended, read-only presentation of current Roon playback.
 
-> **Status:** The shared contract, Playing fixture workflow, and live Roon
-> connection availability are available. Display Output selection and live Now
-> Playing remain under development.
+> **Status:** The shared contract, Playing fixture workflow, live Roon
+> availability, and deterministic Display Output selection are available. Live
+> Now Playing remains under development.
 
-RoonScape observes one configured physical Roon output, follows the Roon zone
-that currently contains it, and presents current artwork, metadata, playback
-state, and progress on an attached display. It deliberately provides no Roon
-Control, browser interface, or network command surface.
+RoonScape observes one configured physical Display Output, follows the Display
+Zone that currently contains it, and presents current artwork, metadata,
+playback state, and progress on an attached display. It deliberately provides
+no Roon Control, browser interface, or network command surface.
 
 The planned runtime has two independently supervised processes: a small
 TypeScript/Node.js bridge using Roon's supported JavaScript extension API and a
@@ -54,10 +54,32 @@ with:
 npm run check
 ```
 
-## Live Roon availability
+## Live Roon setup
 
 The bridge registers as `io.roonscape.bridge` and uses Roon's normal extension
-authorization flow. Start it with a private runtime directory and local socket:
+authorization flow. Discover the physical outputs visible to Roon from the
+RoonScape Host:
+
+```sh
+npm run configure -- list
+```
+
+On a fresh installation, enable RoonScape under **Settings → Extensions** in a
+Roon client while the command waits for Roon. The list includes the internal
+output ID needed by the host workflow, the Display Output name, and its current
+Display Zone. Save one selection without changing Roon playback:
+
+```sh
+npm run configure -- select 'display-output-id-from-the-list'
+```
+
+Display Configuration is stored at
+`$XDG_CONFIG_HOME/roonscape/display.json`, falling back to
+`~/.config/roonscape/display.json`. Set `ROONSCAPE_DISPLAY_CONFIG` to choose
+another dedicated file. Start or restart the bridge after changing the
+selection.
+
+Start the bridge with a private runtime directory and local socket:
 
 ```sh
 mkdir -p "$XDG_RUNTIME_DIR/roonscape"
@@ -67,15 +89,16 @@ npm run start:bridge
 ```
 
 Start the renderer with the same `ROONSCAPE_SOCKET` value in the graphical
-session. A fresh installation explains that pairing is required; enable
-RoonScape under **Settings → Extensions** in a Roon client. Until ticket 3 adds
-Display Configuration, an authorized connection truthfully reports that the
-Display Output is unavailable.
+session. The bridge follows the selected physical Display Output when Roon
+groups, ungroups, or renames its Display Zone. If the configuration is absent
+or invalid, or Roon removes the selected output, the viewer reports that the
+Display Output is unavailable instead of following another zone.
 
 Roon authorization is stored separately at
 `$XDG_STATE_HOME/roonscape/authorization.json`, falling back to
 `~/.local/state/roonscape/authorization.json`. Set
-`ROONSCAPE_AUTHORIZATION_FILE` to choose another dedicated file. The live bridge
-loads only Roon's read-only Image service and its provided Status service; it
-does not load Browse or Transport, expose a command endpoint, or open a network
-listener.
+`ROONSCAPE_AUTHORIZATION_FILE` to choose another dedicated file. This state is
+independent from Display Configuration. The live bridge observes Roon's Image
+and Transport services and provides extension Status; it does not load Browse,
+call a Roon Control method, expose a command endpoint, provide a browser UI, or
+open a network listener.

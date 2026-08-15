@@ -10,18 +10,18 @@ unrelated zone becomes active.
 
 **Status:** ready-for-agent
 
-- [ ] A practical RoonScape Host workflow lists discoverable outputs and saves
+- [x] A practical RoonScape Host workflow lists discoverable outputs and saves
       one Display Output without requiring an onscreen or network settings
       interface.
-- [ ] Display Configuration is stored separately from Roon authorization state
+- [x] Display Configuration is stored separately from Roon authorization state
       and can be changed without changing Roon playback.
-- [ ] Initial zone state, grouping, ungrouping, and zone renaming all resolve
+- [x] Initial zone state, grouping, ungrouping, and zone renaming all resolve
       the configured Display Output to its current Display Zone.
-- [ ] Removal or invalid configuration produces output unavailable and clears
+- [x] Removal or invalid configuration produces output unavailable and clears
       stale Now Playing content rather than selecting a fallback output.
-- [ ] The viewer presents the Display Zone name under the label **Zone** and
+- [x] The viewer presents the Display Zone name under the label **Zone** and
       never exposes the internal Display Output identity.
-- [ ] Source-event tests cover full zone state, grouping, ungrouping, renaming,
+- [x] Source-event tests cover full zone state, grouping, ungrouping, renaming,
       removal, and unrelated active-zone changes.
 
 ## Comments
@@ -55,14 +55,14 @@ a fallback.
 
 **Acceptance criteria:**
 
-- [ ] A practical host command discovers outputs and saves one Display Output.
-- [ ] Grouping, ungrouping, renaming, and initial state resolve its current
+- [x] A practical host command discovers outputs and saves one Display Output.
+- [x] Grouping, ungrouping, renaming, and initial state resolve its current
       Display Zone consistently.
-- [ ] Removal or invalid configuration produces output unavailable and clears
+- [x] Removal or invalid configuration produces output unavailable and clears
       stale Now Playing instead of selecting another output.
-- [ ] The screen labels the Display Zone as **Zone** and never exposes Display
+- [x] The screen labels the Display Zone as **Zone** and never exposes Display
       Output identity.
-- [ ] Source-event tests cover the resolution cases and unrelated active-zone
+- [x] Source-event tests cover the resolution cases and unrelated active-zone
       changes.
 
 **Out of scope:**

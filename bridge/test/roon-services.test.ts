@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { RoonExtensionOptions } from "../src/roon-availability.js";
+import type { RoonExtensionOptions } from "../src/roon-bridge.js";
 import { createSupportedRoonServices } from "../src/roon-services.js";
 
-test("loads only Roon's read-only Image and extension Status services", () => {
+test("loads only Roon services required to observe and report presentation state", () => {
   const noOperation = (): void => undefined;
   const options: RoonExtensionOptions = {
     extension_id: "io.roonscape.test",
@@ -30,7 +30,7 @@ test("loads only Roon's read-only Image and extension Status services", () => {
       provided: services.status.services.map(({ name }) => name),
     },
     {
-      required: ["com.roonlabs.image:1"],
+      required: ["com.roonlabs.image:1", "com.roonlabs.transport:2"],
       provided: ["com.roonlabs.status:1"],
     },
   );

@@ -10,6 +10,7 @@
   "scripts": {
     "build": "npm run build --workspace @roonscape/bridge",
     "check": "npm run format:check && npm run typecheck && npm run lint && npm test",
+    "configure": "npm run build --workspace @roonscape/bridge && node bridge/dist/src/configure.js",
     "fixture": "npm run build && node scripts/run-fixture.mjs",
     "format": "prettier --write bridge/src bridge/test renderer/src/style.css scripts eslint.config.js package.json bridge/package.json bridge/tsconfig.json schema fixtures .github && cargo fmt --all",
     "format:check": "prettier --check bridge/src bridge/test renderer/src/style.css scripts eslint.config.js package.json bridge/package.json bridge/tsconfig.json schema fixtures .github && cargo fmt --all -- --check",

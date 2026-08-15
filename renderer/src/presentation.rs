@@ -99,7 +99,7 @@ fn unavailable_presentation(availability: Availability) -> UnavailablePresentati
         Availability::OutputUnavailable => UnavailablePresentation {
             state_label: "Output unavailable",
             heading: "Display Output unavailable",
-            explanation: "No Display Output is configured on this RoonScape Host.",
+            explanation: "Configure a Display Output on this RoonScape Host, or check that the selected output is available in Roon.",
         },
         Availability::Available => unreachable!("available snapshots use Now Playing"),
     }
