@@ -13,10 +13,11 @@ use std::time::{Duration, Instant, SystemTime};
 use gtk::glib;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    Presentation, PresentationSnapshot, PresentationState, PresentationTime, SnapshotReader,
+    Presentation, PresentationSnapshot, PresentationState, PresentationTime, PresentationUpdate,
+    SnapshotReader,
 };
 
-use view::{install_style_provider, presentation_view};
+use view::{PresentationView, install_style_providers};
 
 const APPLICATION_ID: &str = "io.roonscape.Renderer";
 
@@ -72,7 +73,7 @@ fn build_window(
     repository_root: &Path,
     progress_clock: Instant,
 ) {
-    let style_provider = install_style_provider();
+    let palette_provider = install_style_providers();
 
     let window = gtk::ApplicationWindow::builder()
         .application(application)
@@ -86,16 +87,15 @@ fn build_window(
         .borrow()
         .presentation_at(progress_clock.elapsed())
         .expect("the initial presentation was validated before GTK started");
-    let rendered_presentation = Rc::new(RefCell::new(presentation_view(
+    let presentation_view = Rc::new(RefCell::new(PresentationView::new(
+        presentation.borrow().revision(),
         &initial_presentation,
         repository_root,
-        &style_provider,
+        palette_provider,
     )));
-    window.set_child(Some(&rendered_presentation.borrow().root));
+    window.set_child(Some(&presentation_view.borrow().root()));
 
-    let updating_window = window.clone();
     let repository_root = repository_root.to_path_buf();
-    let updating_style_provider = style_provider.clone();
     glib::timeout_add_local(Duration::from_millis(50), move || {
         let mut latest_snapshot = None;
         loop {
@@ -107,38 +107,37 @@ fn build_window(
         }
 
         let now = progress_clock.elapsed();
-        let mut presentation_changed = false;
+        let mut presentation_update = None;
         if let Some(snapshot) = latest_snapshot {
             match presentation
                 .borrow_mut()
                 .update(snapshot, PresentationTime::new(now, SystemTime::now()))
             {
-                Ok(()) => presentation_changed = true,
+                Ok(update) => presentation_update = Some(update),
                 Err(error) => eprintln!("RoonScape renderer: {error}"),
             }
         }
 
         match presentation.borrow().presentation_at(now) {
-            Ok(current_presentation) if presentation_changed => {
-                let next_view = presentation_view(
+            Ok(current_presentation)
+                if presentation_update == Some(PresentationUpdate::TransitionRequired) =>
+            {
+                presentation_view.borrow_mut().replace(
+                    presentation.borrow().revision(),
                     &current_presentation,
                     &repository_root,
-                    &updating_style_provider,
+                    now,
                 );
-                updating_window.set_child(Some(&next_view.root));
-                *rendered_presentation.borrow_mut() = next_view;
             }
             Ok(Presentation::NowPlaying(current_presentation)) => {
-                if let (Some(progress), Some(progress_view)) = (
-                    current_presentation.progress.as_ref(),
-                    rendered_presentation.borrow().progress.as_ref(),
-                ) {
-                    progress_view.update(progress);
+                if let Some(progress) = current_presentation.progress.as_ref() {
+                    presentation_view.borrow().update_progress(progress);
                 }
             }
             Ok(Presentation::Unavailable(_)) => {}
             Err(error) => eprintln!("RoonScape renderer: {error}"),
         }
+        presentation_view.borrow_mut().finish_transition(now);
 
         glib::ControlFlow::Continue
     });

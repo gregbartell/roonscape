@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Synthetic revised artwork fixture</title>
+  <rect width="512" height="512" fill="#123e4f" />
+  <circle cx="362" cy="148" r="118" fill="#f0b35a" />
+  <path d="M0 390 172 220l104 103 72-74 164 164v99H0Z" fill="#8b3158" />
+</svg>

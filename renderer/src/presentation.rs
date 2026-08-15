@@ -42,6 +42,12 @@ pub struct PresentationProgress {
 #[derive(Debug, PartialEq, Eq)]
 pub struct PresentationError(&'static str);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresentationUpdate {
+    ProgressOnly,
+    TransitionRequired,
+}
+
 pub struct PresentationState {
     snapshot: PresentationSnapshot,
     progress_anchored_at: Duration,
@@ -86,8 +92,13 @@ impl PresentationState {
         &mut self,
         snapshot: PresentationSnapshot,
         anchored_at: PresentationTime,
-    ) -> Result<(), PresentationError> {
+    ) -> Result<PresentationUpdate, PresentationError> {
         presentation_from_snapshot(&snapshot)?;
+        let update = if transition_content_changed(&self.snapshot, &snapshot) {
+            PresentationUpdate::TransitionRequired
+        } else {
+            PresentationUpdate::ProgressOnly
+        };
         let has_new_source_sample = self.snapshot.playback != snapshot.playback
             || self.snapshot.progress != snapshot.progress;
         if has_new_source_sample {
@@ -95,7 +106,7 @@ impl PresentationState {
             self.progress_anchored_at = anchored_at.monotonic;
         }
         self.snapshot = snapshot;
-        Ok(())
+        Ok(update)
     }
 
     pub fn presentation_at(&self, now: Duration) -> Result<Presentation, PresentationError> {
@@ -104,6 +115,22 @@ impl PresentationState {
             .saturating_add(now.saturating_sub(self.progress_anchored_at));
         presentation_from_snapshot_after(&self.snapshot, elapsed)
     }
+
+    pub fn revision(&self) -> u64 {
+        self.snapshot.revision
+    }
+}
+
+fn transition_content_changed(
+    previous: &PresentationSnapshot,
+    next: &PresentationSnapshot,
+) -> bool {
+    previous.availability != next.availability
+        || previous.playback != next.playback
+        || previous.display_zone != next.display_zone
+        || previous.now_playing != next.now_playing
+        || previous.progress.is_some() != next.progress.is_some()
+        || previous.artwork != next.artwork
 }
 
 fn source_sample_age(

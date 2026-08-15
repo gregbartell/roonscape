@@ -10,20 +10,20 @@ playback and progress truthful.
 
 **Status:** ready-for-agent
 
-- [ ] Missing Artist or Album values remain absent without invented labels,
+- [x] Missing Artist or Album values remain absent without invented labels,
       placeholders, or broken spacing.
-- [ ] Long metadata wraps and reduces within firm line and minimum-size bounds,
+- [x] Long metadata wraps and reduces within firm line and minimum-size bounds,
       then ellipsizes only extreme cases; no perpetual marquee is introduced.
-- [ ] Title and Album use an editorial serif treatment while Artist, Zone,
+- [x] Title and Album use an editorial serif treatment while Artist, Zone,
       state, and timing use a clean sans-serif treatment with usable fallback
       glyph coverage.
-- [ ] Artwork, Title, Artist, Album, and the full derived palette crossfade
+- [x] Artwork, Title, Artist, Album, and the full derived palette crossfade
       together when presentation revision changes.
-- [ ] Transition state retains at most current artwork and one outgoing artwork
+- [x] Transition state retains at most current artwork and one outgoing artwork
       and uses a small derivative for palette analysis.
-- [ ] Apart from progress and later OLED protection, the completed presentation
+- [x] Apart from progress and later OLED protection, the completed presentation
       contains no perpetual ambient animation.
-- [ ] Fixture-driven checks cover missing lines, very long metadata, rapid
+- [x] Fixture-driven checks cover missing lines, very long metadata, rapid
       revision changes, and bounded transition cleanup.
 
 ## Comments
@@ -56,17 +56,17 @@ artwork, text, and the full palette as one presentation.
 
 **Acceptance criteria:**
 
-- [ ] Missing Artist or Album produces neither invented text nor broken
+- [x] Missing Artist or Album produces neither invented text nor broken
       spacing.
-- [ ] Long values wrap and reduce within firm bounds; only extreme content
+- [x] Long values wrap and reduce within firm bounds; only extreme content
       ellipsizes, and nothing uses a perpetual marquee.
-- [ ] Title and Album retain an editorial serif treatment while Artist, Zone,
+- [x] Title and Album retain an editorial serif treatment while Artist, Zone,
       state, and timing use a clean sans-serif treatment with usable glyph
       fallbacks.
-- [ ] Artwork, metadata, and palette crossfade together on revision changes.
-- [ ] Rapid changes keep transition resources bounded and leave no ambient
+- [x] Artwork, metadata, and palette crossfade together on revision changes.
+- [x] Rapid changes keep transition resources bounded and leave no ambient
       animation after the transition completes.
-- [ ] Fixture tests cover missing lines, extreme metadata, rapid revisions,
+- [x] Fixture tests cover missing lines, extreme metadata, rapid revisions,
       and cleanup.
 
 **Out of scope:**

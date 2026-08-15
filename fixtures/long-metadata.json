@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "revision": 17,
+  "availability": "available",
+  "playback": "playing",
+  "displayZone": {
+    "name": "Gallery"
+  },
+  "nowPlaying": {
+    "title": "An Imaginary Catalogue of Constellations Observed Through the Longest Night of the Turning Year",
+    "artist": "The Society of Patient Astronomers and the Metropolitan Chamber Orchestra of the Northern Coast",
+    "album": "Collected Nocturnes for Temporary Cities, Fading Radio Signals, and the Memory of Unmapped Roads"
+  },
+  "progress": null,
+  "artwork": null
+}

@@ -69,7 +69,51 @@ fn parses_missing_artwork_and_artwork_revision_fixtures() {
             .artwork
             .as_ref()
             .map(|artwork| (artwork.revision, artwork.path.as_str())),
-        Some((9, "fixtures/artwork/playing.svg"))
+        Some((9, "fixtures/artwork/revised.svg"))
+    );
+}
+
+#[test]
+fn parses_missing_long_and_extreme_metadata_fixtures() {
+    let missing = parse_snapshot(&support::fixture("missing-metadata.json"))
+        .expect("missing metadata fixture should be valid");
+    let missing_artist = parse_snapshot(&support::fixture("missing-artist.json"))
+        .expect("missing Artist fixture should be valid");
+    let missing_album = parse_snapshot(&support::fixture("missing-album.json"))
+        .expect("missing Album fixture should be valid");
+    let long = parse_snapshot(&support::fixture("long-metadata.json"))
+        .expect("long metadata fixture should be valid");
+    let extreme = parse_snapshot(&support::fixture("extreme-metadata.json"))
+        .expect("extreme metadata fixture should be valid");
+
+    let missing = missing
+        .now_playing
+        .expect("missing metadata fixture should contain Now Playing");
+    assert_eq!(missing.title.as_deref(), Some("An Ending (Ascent)"));
+    assert_eq!(missing.artist, None);
+    assert_eq!(missing.album, None);
+    assert_eq!(
+        missing_artist
+            .now_playing
+            .and_then(|now_playing| now_playing.artist),
+        None
+    );
+    assert_eq!(
+        missing_album
+            .now_playing
+            .and_then(|now_playing| now_playing.album),
+        None
+    );
+    assert!(
+        long.now_playing
+            .and_then(|now_playing| now_playing.title)
+            .is_some_and(|title| title.len() > 80)
+    );
+    assert!(
+        extreme
+            .now_playing
+            .and_then(|now_playing| now_playing.title)
+            .is_some_and(|title| title.len() > 250)
     );
 }
 

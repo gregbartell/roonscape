@@ -3,8 +3,8 @@ mod support;
 use std::time::{Duration, UNIX_EPOCH};
 
 use roonscape_renderer::{
-    Playback, Presentation, PresentationState, PresentationTime, parse_snapshot,
-    presentation_from_snapshot,
+    Playback, Presentation, PresentationState, PresentationTime, PresentationUpdate,
+    parse_snapshot, presentation_from_snapshot,
 };
 
 const PLAYING_SAMPLED_AT: u64 = 1_786_821_600;
@@ -335,4 +335,57 @@ fn hides_progress_for_indeterminate_now_playing() {
 
     assert_eq!(presentation.title.as_deref(), Some("Radio Paradise"));
     assert_eq!(presentation.progress, None);
+}
+
+#[test]
+fn distinguishes_progress_samples_from_visual_revision_changes() {
+    let initial =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("Playing snapshot should anchor a presentation");
+    let mut progress_sample =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    progress_sample.revision = 8;
+    progress_sample
+        .progress
+        .as_mut()
+        .expect("Playing fixture should include progress")
+        .position_seconds = 83.0;
+
+    let progress_update = state
+        .update(
+            progress_sample,
+            presentation_time(1, PLAYING_SAMPLED_AT + 1),
+        )
+        .expect("progress sample should update the presentation");
+    assert_eq!(progress_update, PresentationUpdate::ProgressOnly);
+
+    let mut indeterminate =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    indeterminate.revision = 9;
+    indeterminate.progress = None;
+    let progress_disappeared = state
+        .update(indeterminate, presentation_time(2, PLAYING_SAMPLED_AT + 2))
+        .expect("indeterminate timing should update the presentation");
+    assert_eq!(progress_disappeared, PresentationUpdate::TransitionRequired);
+
+    let mut determinate_again =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    determinate_again.revision = 10;
+    let progress_appeared = state
+        .update(
+            determinate_again,
+            presentation_time(3, PLAYING_SAMPLED_AT + 3),
+        )
+        .expect("determinate timing should update the presentation");
+    assert_eq!(progress_appeared, PresentationUpdate::TransitionRequired);
+
+    let mut revised = parse_snapshot(&support::fixture("artwork-revision-changed.json"))
+        .expect("artwork revision fixture should be valid");
+    revised.revision = 11;
+    let visual_update = state
+        .update(revised, presentation_time(4, PLAYING_SAMPLED_AT + 4))
+        .expect("visual revision should update the presentation");
+    assert_eq!(visual_update, PresentationUpdate::TransitionRequired);
+    assert_eq!(state.revision(), 11);
 }
