@@ -32,6 +32,11 @@ _Avoid_: Stopped in viewer-facing copy
 The Roon-provided content currently associated with the Tracked Zone.
 _Avoid_: Now-playing presentation, current content
 
+**Roon Authorization**:
+Roon's persisted approval for RoonScape to connect as an extension. It is
+independent of Display Configuration.
+_Avoid_: Pairing state, extension credentials
+
 **Roon Control**:
 An action that changes Roon playback, volume, or playback settings. Roon
 Control is outside this product's scope.
