@@ -9,5 +9,5 @@ pub use contract::{
 pub use ipc::{SnapshotReader, SnapshotSocketError, read_snapshot_from_socket};
 pub use presentation::{
     NowPlayingPresentation, Presentation, PresentationError, PresentationProgress,
-    UnavailablePresentation, presentation_from_snapshot,
+    PresentationState, PresentationTime, UnavailablePresentation, presentation_from_snapshot,
 };

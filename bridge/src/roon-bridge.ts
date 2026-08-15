@@ -22,11 +22,17 @@ export interface RoonOutput {
   display_name: string;
 }
 
+export interface RoonNowPlaying {
+  seek_position?: number;
+  length?: number;
+}
+
 export interface RoonZone {
   zone_id: string;
   display_name: string;
   state: NonNullable<PresentationSnapshot["playback"]>;
   outputs: RoonOutput[];
+  now_playing?: RoonNowPlaying;
 }
 
 export type RoonZoneSubscriptionResponse =
@@ -36,6 +42,7 @@ export interface RoonZoneEvent {
   zones?: RoonZone[];
   zones_added?: RoonZone[];
   zones_changed?: RoonZone[];
+  zones_seek_changed?: Array<{ zone_id: string; seek_position: number }>;
   zones_removed?: string[];
 }
 
@@ -100,6 +107,12 @@ interface StartRoonBridgeOptions {
   displayConfigurationStore: DisplayConfigurationStore;
   createRoonServices: CreateRoonServices;
   publish(snapshot: PresentationSnapshot): void;
+  now?: () => Date;
+}
+
+interface RetainedZone {
+  zone: RoonZone;
+  sampledAt: string;
 }
 
 export function startRoonBridge({
@@ -107,6 +120,7 @@ export function startRoonBridge({
   displayConfigurationStore,
   createRoonServices,
   publish,
+  now = () => new Date(),
 }: StartRoonBridgeOptions): RoonBridge {
   let revision = 0;
   const initialAvailability: Unavailable = hasAuthorization(
@@ -144,16 +158,17 @@ export function startRoonBridge({
         return;
       }
 
-      const zones = new Map<string, RoonZone>();
+      const zones = new Map<string, RetainedZone>();
       core.services.RoonApiTransport.subscribe_zones((response, event) => {
         if (activeCore !== core) {
           return;
         }
 
+        const sampledAt = now().toISOString();
         if (response === "Subscribed") {
           zones.clear();
           for (const zone of event.zones ?? []) {
-            zones.set(zone.zone_id, zone);
+            zones.set(zone.zone_id, { zone, sampledAt });
           }
         } else if (response === "Changed") {
           for (const zoneId of event.zones_removed ?? []) {
@@ -163,13 +178,30 @@ export function startRoonBridge({
             ...(event.zones_added ?? []),
             ...(event.zones_changed ?? []),
           ]) {
-            zones.set(zone.zone_id, zone);
+            zones.set(zone.zone_id, { zone, sampledAt });
+          }
+          for (const seekChange of event.zones_seek_changed ?? []) {
+            const retainedZone = zones.get(seekChange.zone_id);
+            if (retainedZone?.zone.now_playing === undefined) {
+              continue;
+            }
+
+            zones.set(seekChange.zone_id, {
+              sampledAt,
+              zone: {
+                ...retainedZone.zone,
+                now_playing: {
+                  ...retainedZone.zone.now_playing,
+                  seek_position: seekChange.seek_position,
+                },
+              },
+            });
           }
         } else {
           return;
         }
 
-        const displayZone = [...zones.values()].find((zone) =>
+        const displayZone = [...zones.values()].find(({ zone }) =>
           zone.outputs.some(
             (output) => output.output_id === configuration.displayOutputId,
           ),
@@ -238,15 +270,42 @@ function unavailableState(availability: Unavailable): SnapshotState {
   };
 }
 
-function availableState(zone: RoonZone): SnapshotState {
+function availableState({ zone, sampledAt }: RetainedZone): SnapshotState {
   return {
     schemaVersion: 1,
     availability: "available",
     playback: zone.state,
     displayZone: { name: zone.display_name },
     nowPlaying: null,
-    progress: null,
+    progress:
+      zone.state === "stopped"
+        ? null
+        : meaningfulProgress(zone.now_playing, sampledAt),
     artwork: null,
+  };
+}
+
+function meaningfulProgress(
+  nowPlaying: RoonNowPlaying | undefined,
+  sampledAt: string,
+): PresentationSnapshot["progress"] {
+  const positionSeconds = nowPlaying?.seek_position;
+  const durationSeconds = nowPlaying?.length;
+  if (
+    positionSeconds === undefined ||
+    !Number.isFinite(positionSeconds) ||
+    positionSeconds < 0 ||
+    durationSeconds === undefined ||
+    !Number.isFinite(durationSeconds) ||
+    durationSeconds <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    positionSeconds: Math.min(positionSeconds, durationSeconds),
+    durationSeconds,
+    sampledAt,
   };
 }
 

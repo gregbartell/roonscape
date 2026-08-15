@@ -1,6 +1,20 @@
 mod support;
 
-use roonscape_renderer::{Presentation, parse_snapshot, presentation_from_snapshot};
+use std::time::{Duration, UNIX_EPOCH};
+
+use roonscape_renderer::{
+    Playback, Presentation, PresentationState, PresentationTime, parse_snapshot,
+    presentation_from_snapshot,
+};
+
+const PLAYING_SAMPLED_AT: u64 = 1_786_821_600;
+
+fn presentation_time(monotonic_seconds: u64, utc_seconds: u64) -> PresentationTime {
+    PresentationTime::new(
+        Duration::from_secs(monotonic_seconds),
+        UNIX_EPOCH + Duration::from_secs(utc_seconds),
+    )
+}
 
 #[test]
 fn maps_the_playing_snapshot_to_gallery_split_content() {
@@ -72,4 +86,224 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
             (state_label, heading, explanation),
         );
     }
+}
+
+#[test]
+fn advances_playing_progress_from_the_latest_local_anchor() {
+    let snapshot =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    let state = PresentationState::new(snapshot, presentation_time(10, PLAYING_SAMPLED_AT))
+        .expect("Playing snapshot should anchor a presentation");
+
+    let presentation = state
+        .presentation_at(Duration::from_secs(15))
+        .expect("anchored Playing presentation should render");
+    let Presentation::NowPlaying(presentation) = presentation else {
+        panic!("Playing snapshot should produce Now Playing content");
+    };
+    let progress = presentation
+        .progress
+        .expect("Playing fixture should include progress");
+
+    assert!((progress.fraction - (87.0 / 234.0)).abs() < f64::EPSILON);
+    assert_eq!(progress.elapsed, "1:27");
+    assert_eq!(progress.remaining, "−2:27");
+}
+
+#[test]
+fn freezes_paused_and_loading_progress_at_the_source_sample() {
+    for (fixture_name, elapsed) in [("paused.json", "1:30"), ("loading.json", "1:31")] {
+        let snapshot = parse_snapshot(&support::fixture(fixture_name))
+            .expect("inactive playback fixture should be valid");
+        let state =
+            PresentationState::new(snapshot, presentation_time(10, PLAYING_SAMPLED_AT + 60))
+                .expect("inactive playback should anchor a presentation");
+
+        let presentation = state
+            .presentation_at(Duration::from_secs(70))
+            .expect("inactive presentation should render");
+        let Presentation::NowPlaying(presentation) = presentation else {
+            panic!("available playback should produce Now Playing content");
+        };
+
+        assert_eq!(
+            presentation.progress.map(|progress| progress.elapsed),
+            Some(elapsed.to_owned())
+        );
+    }
+}
+
+#[test]
+fn reanchors_playing_progress_when_a_new_source_sample_arrives() {
+    let initial =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("Playing snapshot should anchor a presentation");
+    let mut seeked =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    seeked.revision = 8;
+    let seeked_progress = seeked
+        .progress
+        .as_mut()
+        .expect("Playing fixture should contain progress");
+    seeked_progress.position_seconds = 30.0;
+    seeked_progress.sampled_at = "2026-08-15T19:20:05Z".to_owned();
+
+    state
+        .update(seeked, presentation_time(5, PLAYING_SAMPLED_AT + 5))
+        .expect("seek sample should replace the local anchor");
+    let presentation = state
+        .presentation_at(Duration::from_secs(7))
+        .expect("re-anchored presentation should render");
+    let Presentation::NowPlaying(presentation) = presentation else {
+        panic!("Playing snapshot should produce Now Playing content");
+    };
+
+    assert_eq!(
+        presentation.progress.map(|progress| progress.elapsed),
+        Some("0:32".to_owned())
+    );
+}
+
+#[test]
+fn clamps_source_and_locally_advanced_progress_at_duration() {
+    for (fixture_name, now) in [
+        ("playing-past-duration.json", Duration::ZERO),
+        ("playing.json", Duration::from_secs(1_000)),
+    ] {
+        let snapshot = parse_snapshot(&support::fixture(fixture_name))
+            .expect("clamping fixture should be valid");
+        let state = PresentationState::new(snapshot, presentation_time(0, PLAYING_SAMPLED_AT))
+            .expect("clamping fixture should anchor a presentation");
+        let presentation = state
+            .presentation_at(now)
+            .expect("clamped presentation should render");
+        let Presentation::NowPlaying(presentation) = presentation else {
+            panic!("Playing snapshot should produce Now Playing content");
+        };
+        let progress = presentation.progress.expect("fixture should show progress");
+
+        assert_eq!(progress.fraction, 1.0);
+        assert_eq!(progress.elapsed, "3:54");
+        assert_eq!(progress.remaining, "−0:00");
+    }
+}
+
+#[test]
+fn presents_each_playback_state_without_inventing_now_playing() {
+    let fixtures = [
+        ("playing.json", "Playing", Some("A Moment Apart")),
+        ("paused.json", "Paused", Some("A Moment Apart")),
+        ("loading.json", "Loading", Some("A Moment Apart")),
+        ("loading-empty.json", "Loading", None),
+        ("stopped.json", "Stopped", None),
+    ];
+
+    for (fixture_name, state_label, title) in fixtures {
+        let snapshot = parse_snapshot(&support::fixture(fixture_name))
+            .expect("playback fixture should be valid");
+        let presentation = presentation_from_snapshot(&snapshot)
+            .expect("playback fixture should produce a presentation");
+        let Presentation::NowPlaying(presentation) = presentation else {
+            panic!("available playback should produce an available presentation");
+        };
+
+        assert_eq!(presentation.playback_state, state_label);
+        assert_eq!(presentation.title.as_deref(), title);
+        if state_label == "Stopped" {
+            assert_eq!(presentation.artist, None);
+            assert_eq!(presentation.album, None);
+            assert_eq!(presentation.progress, None);
+            assert_eq!(presentation.artwork_path, None);
+        }
+    }
+}
+
+#[test]
+fn clears_now_playing_from_a_stopped_presentation() {
+    let mut snapshot =
+        parse_snapshot(&support::fixture("loading.json")).expect("Loading fixture should be valid");
+    snapshot.playback = Some(Playback::Stopped);
+
+    let presentation = presentation_from_snapshot(&snapshot)
+        .expect("Stopped playback should produce a presentation");
+    let Presentation::NowPlaying(presentation) = presentation else {
+        panic!("available playback should produce an available presentation");
+    };
+
+    assert_eq!(presentation.playback_state, "Stopped");
+    assert_eq!(presentation.title, None);
+    assert_eq!(presentation.artist, None);
+    assert_eq!(presentation.album, None);
+    assert_eq!(presentation.progress, None);
+    assert_eq!(presentation.artwork_path, None);
+}
+
+#[test]
+fn accounts_for_source_sample_age_when_anchoring_playing_progress() {
+    let snapshot =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    let state = PresentationState::new(snapshot, presentation_time(10, PLAYING_SAMPLED_AT + 5))
+        .expect("Playing snapshot should anchor a presentation");
+
+    let presentation = state
+        .presentation_at(Duration::from_secs(10))
+        .expect("source-aged Playing presentation should render");
+    let Presentation::NowPlaying(presentation) = presentation else {
+        panic!("Playing snapshot should produce Now Playing content");
+    };
+
+    assert_eq!(
+        presentation.progress.map(|progress| progress.elapsed),
+        Some("1:27".to_owned())
+    );
+}
+
+#[test]
+fn preserves_the_progress_anchor_for_a_presentation_only_revision() {
+    let initial =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("Playing snapshot should anchor a presentation");
+    let mut presentation_only =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    presentation_only.revision = 8;
+    presentation_only
+        .now_playing
+        .as_mut()
+        .expect("Playing fixture should contain Now Playing")
+        .title = Some("Updated opaque title".to_owned());
+
+    state
+        .update(
+            presentation_only,
+            presentation_time(5, PLAYING_SAMPLED_AT + 5),
+        )
+        .expect("presentation-only revision should be accepted");
+    let presentation = state
+        .presentation_at(Duration::from_secs(7))
+        .expect("presentation-only revision should render");
+    let Presentation::NowPlaying(presentation) = presentation else {
+        panic!("Playing snapshot should produce Now Playing content");
+    };
+
+    assert_eq!(presentation.title.as_deref(), Some("Updated opaque title"));
+    assert_eq!(
+        presentation.progress.map(|progress| progress.elapsed),
+        Some("1:29".to_owned())
+    );
+}
+
+#[test]
+fn hides_progress_for_indeterminate_now_playing() {
+    let snapshot = parse_snapshot(&support::fixture("indeterminate-progress.json"))
+        .expect("indeterminate progress fixture should be valid");
+    let presentation = presentation_from_snapshot(&snapshot)
+        .expect("indeterminate progress should produce a presentation");
+    let Presentation::NowPlaying(presentation) = presentation else {
+        panic!("available playback should produce an available presentation");
+    };
+
+    assert_eq!(presentation.title.as_deref(), Some("Radio Paradise"));
+    assert_eq!(presentation.progress, None);
 }

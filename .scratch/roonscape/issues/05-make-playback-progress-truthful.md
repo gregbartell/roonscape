@@ -9,20 +9,20 @@ shows no fabricated progress.
 
 **Status:** ready-for-agent
 
-- [ ] Availability remains separate from the playing, paused, loading, and
+- [x] Availability remains separate from the playing, paused, loading, and
       stopped playback states in complete versioned snapshots.
-- [ ] Playing, paused, loading, and stopped source updates produce distinct,
+- [x] Playing, paused, loading, and stopped source updates produce distinct,
       truthful presentations with an explicit state label.
-- [ ] Loading retains supplied Now Playing content but uses a neutral loading
+- [x] Loading retains supplied Now Playing content but uses a neutral loading
       presentation when content is absent; stopped always clears track-specific
       content.
-- [ ] Progress exists only for finite position and positive duration, clamps at
+- [x] Progress exists only for finite position and positive duration, clamps at
       duration, and stays absent for indeterminate or live content.
-- [ ] The renderer advances progress locally only while playing, freezes while
+- [x] The renderer advances progress locally only while playing, freezes while
       paused or loading, and re-anchors whenever Roon supplies a new sample.
-- [ ] Seek-position-only deltas merge into retained zone state before the
+- [x] Seek-position-only deltas merge into retained zone state before the
       bridge publishes a new complete snapshot with an increased revision.
-- [ ] Shared fixtures and seam-level tests cover every playback state, valid
+- [x] Shared fixtures and seam-level tests cover every playback state, valid
       and invalid timing, seek-only changes, and stale-content clearing.
 
 ## Comments
@@ -56,15 +56,15 @@ content; and invalid or indeterminate timing produces no progress display.
 
 **Acceptance criteria:**
 
-- [ ] Playing, paused, loading, and stopped produce distinct truthful
+- [x] Playing, paused, loading, and stopped produce distinct truthful
       presentations with explicit state labels.
-- [ ] Only Playing advances progress; paused and loading freeze it; stopped
+- [x] Only Playing advances progress; paused and loading freeze it; stopped
       clears all track-specific content.
-- [ ] Progress is absent for non-finite position, non-positive duration, and
+- [x] Progress is absent for non-finite position, non-positive duration, and
       indeterminate or live content.
-- [ ] Seek-only updates merge into current zone state and publish a complete
+- [x] Seek-only updates merge into current zone state and publish a complete
       snapshot with a higher revision.
-- [ ] Shared fixtures and seam tests cover every state, timing validity,
+- [x] Shared fixtures and seam tests cover every state, timing validity,
       seek-only changes, re-anchoring, clamping, and stale-content clearing.
 
 **Out of scope:**

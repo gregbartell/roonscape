@@ -117,6 +117,19 @@
           "artwork": { "type": "null" }
         }
       }
+    },
+    {
+      "if": {
+        "properties": { "playback": { "const": "stopped" } },
+        "required": ["playback"]
+      },
+      "then": {
+        "properties": {
+          "nowPlaying": { "type": "null" },
+          "progress": { "type": "null" },
+          "artwork": { "type": "null" }
+        }
+      }
     }
   ]
 }

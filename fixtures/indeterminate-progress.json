@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "revision": 12,
+  "availability": "available",
+  "playback": "playing",
+  "displayZone": {
+    "name": "Gallery"
+  },
+  "nowPlaying": {
+    "title": "Radio Paradise",
+    "artist": null,
+    "album": null
+  },
+  "progress": null,
+  "artwork": null
+}

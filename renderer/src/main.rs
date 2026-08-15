@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::env;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -5,7 +6,7 @@ use std::process::ExitCode;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, TryRecvError, sync_channel};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime};
 
 use gtk::gdk;
 use gtk::glib;
@@ -13,7 +14,7 @@ use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
     NowPlayingPresentation, Presentation, PresentationProgress, PresentationSnapshot,
-    SnapshotReader, UnavailablePresentation, presentation_from_snapshot,
+    PresentationState, PresentationTime, SnapshotReader, UnavailablePresentation,
 };
 
 const APPLICATION_ID: &str = "io.roonscape.Renderer";
@@ -35,7 +36,11 @@ fn run() -> Result<(), Box<dyn Error>> {
         .ok_or("ROONSCAPE_SOCKET must name the private Unix socket")?;
     let mut snapshot_reader = SnapshotReader::connect(&socket_path)?;
     let snapshot = snapshot_reader.read_snapshot()?;
-    let presentation = Rc::new(presentation_from_snapshot(&snapshot)?);
+    let progress_clock = Instant::now();
+    let presentation = Rc::new(RefCell::new(PresentationState::new(
+        snapshot,
+        PresentationTime::new(progress_clock.elapsed(), SystemTime::now()),
+    )?));
     let updates = Rc::new(start_snapshot_reader(snapshot_reader));
     let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -52,6 +57,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             presentation.clone(),
             updates.clone(),
             &repository_root,
+            progress_clock,
         );
     });
     application.run();
@@ -61,9 +67,10 @@ fn run() -> Result<(), Box<dyn Error>> {
 
 fn build_window(
     application: &gtk::Application,
-    presentation: Rc<Presentation>,
+    presentation: Rc<RefCell<PresentationState>>,
     updates: Rc<Receiver<PresentationSnapshot>>,
     repository_root: &Path,
+    progress_clock: Instant,
 ) {
     install_styles();
 
@@ -73,7 +80,15 @@ fn build_window(
         .default_height(900)
         .title("RoonScape")
         .build();
-    window.set_child(Some(&presentation_view(&presentation, repository_root)));
+    let initial_presentation = presentation
+        .borrow()
+        .presentation_at(progress_clock.elapsed())
+        .expect("the initial presentation was validated before GTK started");
+    let rendered_presentation = Rc::new(RefCell::new(presentation_view(
+        &initial_presentation,
+        repository_root,
+    )));
+    window.set_child(Some(&rendered_presentation.borrow().root));
 
     let updating_window = window.clone();
     let repository_root = repository_root.to_path_buf();
@@ -87,12 +102,34 @@ fn build_window(
             }
         }
 
+        let now = progress_clock.elapsed();
+        let mut presentation_changed = false;
         if let Some(snapshot) = latest_snapshot {
-            match presentation_from_snapshot(&snapshot) {
-                Ok(presentation) => updating_window
-                    .set_child(Some(&presentation_view(&presentation, &repository_root))),
+            match presentation
+                .borrow_mut()
+                .update(snapshot, PresentationTime::new(now, SystemTime::now()))
+            {
+                Ok(()) => presentation_changed = true,
                 Err(error) => eprintln!("RoonScape renderer: {error}"),
             }
+        }
+
+        match presentation.borrow().presentation_at(now) {
+            Ok(current_presentation) if presentation_changed => {
+                let next_view = presentation_view(&current_presentation, &repository_root);
+                updating_window.set_child(Some(&next_view.root));
+                *rendered_presentation.borrow_mut() = next_view;
+            }
+            Ok(Presentation::NowPlaying(current_presentation)) => {
+                if let (Some(progress), Some(progress_view)) = (
+                    current_presentation.progress.as_ref(),
+                    rendered_presentation.borrow().progress.as_ref(),
+                ) {
+                    progress_view.update(progress);
+                }
+            }
+            Ok(Presentation::Unavailable(_)) => {}
+            Err(error) => eprintln!("RoonScape renderer: {error}"),
         }
 
         glib::ControlFlow::Continue
@@ -135,14 +172,45 @@ fn start_snapshot_reader(mut reader: SnapshotReader) -> Receiver<PresentationSna
     receiver
 }
 
-fn presentation_view(presentation: &Presentation, repository_root: &Path) -> gtk::Box {
-    match presentation {
-        Presentation::NowPlaying(presentation) => gallery_split(presentation, repository_root),
-        Presentation::Unavailable(presentation) => unavailable(presentation),
+struct RenderedPresentation {
+    root: gtk::Box,
+    progress: Option<RenderedProgress>,
+}
+
+#[derive(Clone)]
+struct RenderedProgress {
+    bar: gtk::ProgressBar,
+    elapsed: gtk::Label,
+    remaining: gtk::Label,
+}
+
+impl RenderedProgress {
+    fn update(&self, progress: &PresentationProgress) {
+        self.bar.set_fraction(progress.fraction);
+        self.elapsed.set_text(&progress.elapsed);
+        self.remaining.set_text(&progress.remaining);
     }
 }
 
-fn gallery_split(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk::Box {
+struct RenderedMetadata {
+    root: gtk::Box,
+    progress: Option<RenderedProgress>,
+}
+
+fn presentation_view(presentation: &Presentation, repository_root: &Path) -> RenderedPresentation {
+    match presentation {
+        Presentation::NowPlaying(presentation) => gallery_split(presentation, repository_root),
+        Presentation::Unavailable(presentation) => RenderedPresentation {
+            root: unavailable(presentation),
+            progress: None,
+        },
+    }
+}
+
+fn gallery_split(
+    presentation: &NowPlayingPresentation,
+    repository_root: &Path,
+) -> RenderedPresentation {
     let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     root.add_css_class("gallery-split");
 
@@ -152,12 +220,15 @@ fn gallery_split(presentation: &NowPlayingPresentation, repository_root: &Path) 
     artwork_column.set_vexpand(true);
     artwork_column.append(&artwork(presentation, repository_root));
 
-    let metadata_column = metadata(presentation);
-    set_responsive_column_width(&root, &metadata_column);
+    let metadata = metadata(presentation);
+    set_responsive_column_width(&root, &metadata.root);
 
     root.append(&artwork_column);
-    root.append(&metadata_column);
-    root
+    root.append(&metadata.root);
+    RenderedPresentation {
+        root,
+        progress: metadata.progress,
+    }
 }
 
 fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk::AspectFrame {
@@ -178,7 +249,7 @@ fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk
     frame
 }
 
-fn metadata(presentation: &NowPlayingPresentation) -> gtk::Box {
+fn metadata(presentation: &NowPlayingPresentation) -> RenderedMetadata {
     let column = gtk::Box::new(gtk::Orientation::Vertical, 0);
     column.add_css_class("metadata-column");
     column.set_hexpand(true);
@@ -208,13 +279,18 @@ fn metadata(presentation: &NowPlayingPresentation) -> gtk::Box {
         album.set_wrap(true);
         copy.append(&album);
     }
-    if let Some(progress) = presentation.progress.as_ref() {
-        copy.append(&progress_view(progress));
-    }
+    let progress = presentation.progress.as_ref().map(|progress| {
+        let (group, rendered_progress) = progress_view(progress);
+        copy.append(&group);
+        rendered_progress
+    });
 
     column.append(&copy);
     column.append(&display_zone(&presentation.display_zone));
-    column
+    RenderedMetadata {
+        root: column,
+        progress,
+    }
 }
 
 fn unavailable(presentation: &UnavailablePresentation) -> gtk::Box {
@@ -284,7 +360,7 @@ fn playback_state(state: &str) -> gtk::Box {
     row
 }
 
-fn progress_view(progress: &PresentationProgress) -> gtk::Box {
+fn progress_view(progress: &PresentationProgress) -> (gtk::Box, RenderedProgress) {
     let group = gtk::Box::new(gtk::Orientation::Vertical, 0);
     group.add_css_class("progress-group");
 
@@ -302,7 +378,14 @@ fn progress_view(progress: &PresentationProgress) -> gtk::Box {
     times.append(&elapsed);
     times.append(&remaining);
     group.append(&times);
-    group
+    (
+        group,
+        RenderedProgress {
+            bar,
+            elapsed,
+            remaining,
+        },
+    )
 }
 
 fn display_zone(display_zone: &str) -> gtk::Box {

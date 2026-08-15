@@ -2,9 +2,9 @@
 
 RoonScape is an unattended, read-only presentation of current Roon playback.
 
-> **Status:** The shared contract, Playing fixture workflow, live Roon
-> availability, and deterministic Display Output selection are available. Live
-> Now Playing remains under development.
+> **Status:** The shared contract and fixtures, truthful playback progress,
+> live Roon availability, and deterministic Display Output selection are
+> available. Live Now Playing remains under development.
 
 RoonScape observes one configured physical Display Output, follows the Display
 Zone that currently contains it, and presents current artwork, metadata,

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "revision": 15,
+  "availability": "available",
+  "playback": "stopped",
+  "displayZone": {
+    "name": "Gallery"
+  },
+  "nowPlaying": {
+    "title": "Stale title",
+    "artist": "Stale artist",
+    "album": "Stale album"
+  },
+  "progress": null,
+  "artwork": null
+}
