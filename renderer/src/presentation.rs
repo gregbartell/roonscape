@@ -96,6 +96,7 @@ pub struct PresentationError(&'static str);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PresentationUpdate {
     ProgressOnly,
+    ReplaceImmediately,
     TransitionRequired,
 }
 
@@ -145,6 +146,26 @@ impl PresentationTime {
 }
 
 impl PresentationState {
+    pub fn disconnected() -> Self {
+        Self::disconnected_with_inactivity(Duration::ZERO, InactivityConfiguration::default())
+    }
+
+    pub fn disconnected_with_inactivity(
+        anchored_at: Duration,
+        inactivity_configuration: InactivityConfiguration,
+    ) -> Self {
+        Self {
+            snapshot: disconnected_snapshot(0),
+            progress_anchored_at: anchored_at,
+            source_sample_age: Duration::ZERO,
+            inactivity_configuration,
+            inactivity_condition: Some(InactivityCondition::Unavailable(
+                Availability::Disconnected,
+            )),
+            inactivity_anchored_at: anchored_at,
+        }
+    }
+
     pub fn new(
         snapshot: PresentationSnapshot,
         anchored_at: PresentationTime,
@@ -194,6 +215,24 @@ impl PresentationState {
         }
         self.snapshot = snapshot;
         Ok(update)
+    }
+
+    pub fn disconnect(&mut self, anchored_at: Duration) -> PresentationUpdate {
+        let snapshot = disconnected_snapshot(self.snapshot.revision);
+        let content_changed = transition_content_changed(&self.snapshot, &snapshot);
+        let next_inactivity_condition = inactivity_condition(&snapshot);
+        if self.inactivity_condition != next_inactivity_condition {
+            self.inactivity_condition = next_inactivity_condition;
+            self.inactivity_anchored_at = anchored_at;
+        }
+        self.snapshot = snapshot;
+        self.progress_anchored_at = anchored_at;
+        self.source_sample_age = Duration::ZERO;
+        if content_changed {
+            PresentationUpdate::ReplaceImmediately
+        } else {
+            PresentationUpdate::ProgressOnly
+        }
     }
 
     pub fn presentation_at(&self, now: Duration) -> Result<Presentation, PresentationError> {
@@ -260,6 +299,19 @@ fn inactivity_condition(snapshot: &PresentationSnapshot) -> Option<InactivityCon
         Some(Playback::Paused) => Some(InactivityCondition::Paused),
         Some(Playback::Stopped) => Some(InactivityCondition::Stopped),
         Some(Playback::Playing | Playback::Loading) | None => None,
+    }
+}
+
+fn disconnected_snapshot(revision: u64) -> PresentationSnapshot {
+    PresentationSnapshot {
+        schema_version: 1,
+        revision,
+        availability: Availability::Disconnected,
+        playback: None,
+        display_zone: None,
+        now_playing: None,
+        progress: None,
+        artwork: None,
     }
 }
 

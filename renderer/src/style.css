@@ -130,3 +130,14 @@ progressbar progress {
   margin-top: 30px;
   font-size: 28px;
 }
+
+.diagnostics {
+  margin: 24px;
+  padding: 14px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  color: #f4f4f4;
+  background-color: rgba(0, 0, 0, 0.88);
+  font-family: "Noto Sans Mono", "DejaVu Sans Mono", monospace;
+  font-size: 15px;
+}

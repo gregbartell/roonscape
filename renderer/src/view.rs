@@ -27,6 +27,16 @@ struct RenderedPresentation {
     palette: PresentationPalette,
 }
 
+pub(crate) struct RenderedDiagnostics {
+    label: gtk::Label,
+}
+
+impl RenderedDiagnostics {
+    pub(crate) fn update(&self, text: &str) {
+        self.label.set_text(text);
+    }
+}
+
 #[derive(Clone)]
 struct RenderedProgress {
     bar: gtk::ProgressBar,
@@ -122,6 +132,27 @@ impl PresentationView {
         self.stack.set_visible_child(&current.value().root);
     }
 
+    pub(crate) fn replace_immediately(
+        &mut self,
+        revision: u64,
+        presentation: &Presentation,
+        repository_root: &Path,
+    ) {
+        let rendered = render_presentation(presentation, repository_root);
+        rendered.root.add_css_class(CURRENT_LAYER_CLASS);
+        let (discarded_current, discarded_outgoing) =
+            self.transition.replace_immediately(revision, rendered);
+        self.stack.remove(&discarded_current.value().root);
+        if let Some(discarded_outgoing) = discarded_outgoing {
+            self.stack.remove(&discarded_outgoing.value().root);
+        }
+
+        let current = self.transition.current();
+        self.stack.add_child(&current.value().root);
+        self.install_palette_styles();
+        self.stack.set_visible_child(&current.value().root);
+    }
+
     pub(crate) fn finish_transition(&mut self, now: Duration) {
         let Some(outgoing) = self.transition.finish(now) else {
             return;
@@ -167,6 +198,22 @@ fn render_presentation(
             progress: None,
             palette,
         },
+    }
+}
+
+pub(crate) fn diagnostics_view(text: &str) -> RenderedDiagnostics {
+    let label = gtk::Label::new(Some(text));
+    label.add_css_class("diagnostics");
+    label.set_halign(gtk::Align::End);
+    label.set_valign(gtk::Align::Start);
+    label.set_xalign(0.0);
+    label.set_selectable(false);
+    RenderedDiagnostics { label }
+}
+
+impl RenderedDiagnostics {
+    pub(crate) fn widget(&self) -> &gtk::Widget {
+        self.label.upcast_ref()
     }
 }
 

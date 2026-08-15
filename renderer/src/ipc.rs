@@ -2,7 +2,10 @@ use std::error::Error;
 use std::fmt;
 use std::io::{self, BufRead, BufReader, Read};
 use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError, sync_channel};
+use std::thread;
+use std::time::Duration;
 
 use crate::contract::{PresentationSnapshot, SnapshotError, parse_snapshot};
 
@@ -10,6 +13,22 @@ const MAX_SNAPSHOT_BYTES: u64 = 64 * 1024;
 
 pub struct SnapshotReader {
     reader: BufReader<UnixStream>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConnectionState {
+    Connected,
+    Disconnected,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SnapshotEvent {
+    ConnectionChanged(ConnectionState),
+    Snapshot(PresentationSnapshot),
+}
+
+pub struct SnapshotSubscription {
+    events: Receiver<SnapshotEvent>,
 }
 
 #[derive(Debug)]
@@ -61,6 +80,69 @@ impl SnapshotReader {
 
     pub fn read_snapshot(&mut self) -> Result<PresentationSnapshot, SnapshotSocketError> {
         read_snapshot(&mut self.reader)
+    }
+}
+
+impl SnapshotSubscription {
+    pub fn start(socket_path: PathBuf, retry_delay: Duration) -> Self {
+        let (sender, events) = sync_channel(1);
+        thread::spawn(move || {
+            if sender
+                .send(SnapshotEvent::ConnectionChanged(
+                    ConnectionState::Disconnected,
+                ))
+                .is_err()
+            {
+                return;
+            }
+
+            loop {
+                let Ok(mut reader) = SnapshotReader::connect(&socket_path) else {
+                    thread::sleep(retry_delay);
+                    continue;
+                };
+                if sender
+                    .send(SnapshotEvent::ConnectionChanged(ConnectionState::Connected))
+                    .is_err()
+                {
+                    return;
+                }
+
+                loop {
+                    match reader.read_snapshot() {
+                        Ok(snapshot) => {
+                            if sender.send(SnapshotEvent::Snapshot(snapshot)).is_err() {
+                                return;
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("RoonScape renderer: {error}");
+                            break;
+                        }
+                    }
+                }
+
+                if sender
+                    .send(SnapshotEvent::ConnectionChanged(
+                        ConnectionState::Disconnected,
+                    ))
+                    .is_err()
+                {
+                    return;
+                }
+                thread::sleep(retry_delay);
+            }
+        });
+
+        Self { events }
+    }
+
+    pub fn try_recv(&self) -> Result<SnapshotEvent, TryRecvError> {
+        self.events.try_recv()
+    }
+
+    pub fn recv_timeout(&self, timeout: Duration) -> Result<SnapshotEvent, RecvTimeoutError> {
+        self.events.recv_timeout(timeout)
     }
 }
 

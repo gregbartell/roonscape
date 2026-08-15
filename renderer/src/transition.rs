@@ -53,6 +53,17 @@ impl<T> PresentationTransition<T> {
         self.outgoing.take()
     }
 
+    pub fn replace_immediately(
+        &mut self,
+        revision: u64,
+        value: T,
+    ) -> (PresentationRevision<T>, Option<PresentationRevision<T>>) {
+        let outgoing = self.outgoing.take();
+        self.started_at = None;
+        let current = mem::replace(&mut self.current, PresentationRevision { revision, value });
+        (current, outgoing)
+    }
+
     pub fn finish(&mut self, now: Duration) -> Option<PresentationRevision<T>> {
         let started_at = self.started_at?;
         if now.saturating_sub(started_at) < CROSSFADE_DURATION {

@@ -589,3 +589,44 @@ fn playing_immediately_restores_luminance_position_and_advancing_progress() {
         Some("1:30".to_owned())
     );
 }
+
+#[test]
+fn clears_now_playing_while_the_bridge_is_disconnected_and_recovers_after_reconnect() {
+    let mut state = PresentationState::disconnected();
+    let playing =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    state
+        .update(playing, presentation_time(10, PLAYING_SAMPLED_AT))
+        .expect("current state should be accepted after connection");
+    assert!(matches!(
+        state
+            .presentation_at(Duration::from_secs(10))
+            .expect("Playing state should remain presentable"),
+        Presentation::NowPlaying(_)
+    ));
+
+    assert_eq!(
+        state.disconnect(Duration::from_secs(11)),
+        PresentationUpdate::ReplaceImmediately
+    );
+    let Presentation::Unavailable(disconnected) = state
+        .presentation_at(Duration::from_secs(11))
+        .expect("disconnection should remain presentable")
+    else {
+        panic!("disconnection must clear stale Now Playing content");
+    };
+    assert_eq!(disconnected.state_label, "Disconnected");
+
+    let paused =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
+    state
+        .update(paused, presentation_time(12, PLAYING_SAMPLED_AT + 2))
+        .expect("current state should be accepted after reconnect");
+    let Presentation::NowPlaying(reconnected) = state
+        .presentation_at(Duration::from_secs(12))
+        .expect("reconnected state should remain presentable")
+    else {
+        panic!("reconnected current state should replace the Disconnected presentation");
+    };
+    assert_eq!(reconnected.playback_state, "Paused");
+}

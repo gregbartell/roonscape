@@ -1,4 +1,5 @@
 mod contract;
+mod diagnostics;
 mod display_configuration;
 mod ipc;
 mod metadata;
@@ -10,11 +11,18 @@ pub use contract::{
     ArtworkReference, Availability, DisplayZone, NowPlaying, Playback, PresentationSnapshot,
     Progress, SnapshotError, parse_snapshot,
 };
+pub use diagnostics::{
+    Diagnostics, DiagnosticsConfiguration, DiagnosticsConfigurationError,
+    current_process_memory_bytes,
+};
 pub use display_configuration::{
     DisplayConfigurationError, InactivityConfiguration, display_configuration_file_path,
     inactivity_configuration_from_display_configuration, load_inactivity_configuration,
 };
-pub use ipc::{SnapshotReader, SnapshotSocketError, read_snapshot_from_socket};
+pub use ipc::{
+    ConnectionState, SnapshotEvent, SnapshotReader, SnapshotSocketError, SnapshotSubscription,
+    read_snapshot_from_socket,
+};
 pub use metadata::{
     MetadataLayout, MetadataLineLayout, MetadataOverflow, MetadataTypography, metadata_layout,
 };

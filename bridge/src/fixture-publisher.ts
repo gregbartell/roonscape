@@ -1,5 +1,10 @@
-import { chmod, mkdir, stat } from "node:fs/promises";
-import { createServer, type Server, type Socket } from "node:net";
+import { chmod, lstat, mkdir, stat, unlink } from "node:fs/promises";
+import {
+  createConnection,
+  createServer,
+  type Server,
+  type Socket,
+} from "node:net";
 import path from "node:path";
 
 import type { PresentationSnapshot } from "./snapshot.js";
@@ -95,7 +100,34 @@ function serializeSnapshot(snapshot: PresentationSnapshot): string {
   return message;
 }
 
-function listen(server: Server, socketPath: string): Promise<void> {
+async function listen(server: Server, socketPath: string): Promise<void> {
+  try {
+    await listenOnce(server, socketPath);
+  } catch (error) {
+    if (!isErrorCode(error, "EADDRINUSE")) {
+      throw error;
+    }
+
+    let socketMetadata;
+    try {
+      socketMetadata = await lstat(socketPath);
+    } catch (statError) {
+      if (isErrorCode(statError, "ENOENT")) {
+        await listenOnce(server, socketPath);
+        return;
+      }
+      throw statError;
+    }
+    if (!socketMetadata.isSocket() || (await acceptsConnections(socketPath))) {
+      throw error;
+    }
+
+    await unlink(socketPath);
+    await listenOnce(server, socketPath);
+  }
+}
+
+function listenOnce(server: Server, socketPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const onError = (error: Error): void => {
       server.off("listening", onListening);
@@ -110,6 +142,28 @@ function listen(server: Server, socketPath: string): Promise<void> {
     server.once("listening", onListening);
     server.listen(socketPath);
   });
+}
+
+function acceptsConnections(socketPath: string): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const socket = createConnection(socketPath);
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", (error: NodeJS.ErrnoException) => {
+      socket.destroy();
+      if (error.code === "ECONNREFUSED" || error.code === "ENOENT") {
+        resolve(false);
+      } else {
+        reject(error);
+      }
+    });
+  });
+}
+
+function isErrorCode(error: unknown, code: string): boolean {
+  return error instanceof Error && "code" in error && error.code === code;
 }
 
 function close(server: Server): Promise<void> {
