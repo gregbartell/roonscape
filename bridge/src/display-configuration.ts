@@ -1,17 +1,39 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import path from "node:path";
+
+import { Ajv2020 } from "ajv/dist/2020.js";
 
 import { isMissingFile, writePrivateJsonFile } from "./private-json-file.js";
 
 export interface DisplayConfiguration {
   displayOutputId: string;
+  inactivity?: InactivityConfiguration;
+}
+
+export interface InactivityConfiguration {
+  gracePeriodSeconds: number;
+  dimmedOpacity: number;
+  repositionCadenceSeconds: number;
 }
 
 export interface DisplayConfigurationStore {
   load(): DisplayConfiguration | null;
   save(configuration: DisplayConfiguration): void;
 }
+
+const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
+const displayConfigurationValidator = new Ajv2020({
+  allErrors: true,
+}).compile<DisplayConfiguration>(
+  JSON.parse(
+    readFileSync(
+      path.resolve(repositoryRoot, "schema/display-configuration.schema.json"),
+      "utf8",
+    ),
+  ) as object,
+);
 
 export class FileDisplayConfigurationStore implements DisplayConfigurationStore {
   readonly #configurationFile: string;
@@ -59,13 +81,5 @@ export function displayConfigurationFilePath(
 function isDisplayConfiguration(
   candidate: unknown,
 ): candidate is DisplayConfiguration {
-  return (
-    typeof candidate === "object" &&
-    candidate !== null &&
-    !Array.isArray(candidate) &&
-    Object.keys(candidate).length === 1 &&
-    "displayOutputId" in candidate &&
-    typeof candidate.displayOutputId === "string" &&
-    candidate.displayOutputId.length > 0
-  );
+  return displayConfigurationValidator(candidate);
 }

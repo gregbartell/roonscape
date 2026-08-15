@@ -65,6 +65,67 @@ test("saves the selected Display Output without changing Roon", async () => {
   assert.deepEqual(lines, ["Selected Display Output: output-gallery"]);
 });
 
+test("preserves inactivity calibration when changing the Display Output", async () => {
+  const inactivity = {
+    gracePeriodSeconds: 240,
+    dimmedOpacity: 0.3,
+    repositionCadenceSeconds: 45,
+  };
+  let saved: DisplayConfiguration | undefined;
+
+  const exitCode = await runDisplayConfigurationCommand(
+    ["select", "output-library"],
+    {
+      configurationStore: {
+        load: () => ({ displayOutputId: "output-gallery", inactivity }),
+        save: (configuration) => {
+          saved = configuration;
+        },
+      },
+      discoverOutputs: async () => [],
+      writeLine: () => {},
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(saved, {
+    displayOutputId: "output-library",
+    inactivity,
+  });
+});
+
+test("configures OLED inactivity without changing the Display Output", async () => {
+  let saved: DisplayConfiguration | undefined;
+  const lines: string[] = [];
+
+  const exitCode = await runDisplayConfigurationCommand(
+    ["inactivity", "240", "0.3", "45"],
+    {
+      configurationStore: {
+        load: () => ({ displayOutputId: "output-gallery" }),
+        save: (configuration) => {
+          saved = configuration;
+        },
+      },
+      discoverOutputs: async () => [],
+      writeLine: (line) => lines.push(line),
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(saved, {
+    displayOutputId: "output-gallery",
+    inactivity: {
+      gracePeriodSeconds: 240,
+      dimmedOpacity: 0.3,
+      repositionCadenceSeconds: 45,
+    },
+  });
+  assert.deepEqual(lines, [
+    "OLED inactivity: grace 240s, opacity 0.3, reposition every 45s",
+  ]);
+});
+
 function unusedConfigurationStore(): DisplayConfigurationStore {
   return {
     load: () => null,

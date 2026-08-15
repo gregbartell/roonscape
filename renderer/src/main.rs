@@ -13,7 +13,9 @@ use std::time::{Duration, Instant, SystemTime};
 use gtk::glib;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    Presentation, PresentationSnapshot, PresentationState, PresentationTime, SnapshotReader,
+    InactivityConfiguration, Presentation, PresentationSnapshot, PresentationState,
+    PresentationTime, SnapshotReader, display_configuration_file_path,
+    load_inactivity_configuration,
 };
 
 use view::{install_style_provider, presentation_view};
@@ -36,10 +38,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         .ok_or("ROONSCAPE_SOCKET must name the private Unix socket")?;
     let mut snapshot_reader = SnapshotReader::connect(&socket_path)?;
     let snapshot = snapshot_reader.read_snapshot()?;
+    let inactivity_configuration = host_inactivity_configuration();
     let progress_clock = Instant::now();
-    let presentation = Rc::new(RefCell::new(PresentationState::new(
+    let presentation = Rc::new(RefCell::new(PresentationState::new_with_inactivity(
         snapshot,
         PresentationTime::new(progress_clock.elapsed(), SystemTime::now()),
+        inactivity_configuration,
     )?));
     let updates = Rc::new(start_snapshot_reader(snapshot_reader));
     let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -82,15 +86,17 @@ fn build_window(
         .show_menubar(false)
         .title("RoonScape")
         .build();
-    let initial_presentation = presentation
+    let initial_frame = presentation
         .borrow()
-        .presentation_at(progress_clock.elapsed())
+        .frame_at(progress_clock.elapsed())
         .expect("the initial presentation was validated before GTK started");
-    let rendered_presentation = Rc::new(RefCell::new(presentation_view(
-        &initial_presentation,
+    let initial_view = presentation_view(
+        &initial_frame.presentation,
         repository_root,
         &style_provider,
-    )));
+    );
+    initial_view.apply_inactivity(initial_frame.inactivity);
+    let rendered_presentation = Rc::new(RefCell::new(initial_view));
     window.set_child(Some(&rendered_presentation.borrow().root));
 
     let updating_window = window.clone();
@@ -118,25 +124,29 @@ fn build_window(
             }
         }
 
-        match presentation.borrow().presentation_at(now) {
-            Ok(current_presentation) if presentation_changed => {
+        match presentation.borrow().frame_at(now) {
+            Ok(current_frame) if presentation_changed => {
                 let next_view = presentation_view(
-                    &current_presentation,
+                    &current_frame.presentation,
                     &repository_root,
                     &updating_style_provider,
                 );
+                next_view.apply_inactivity(current_frame.inactivity);
                 updating_window.set_child(Some(&next_view.root));
                 *rendered_presentation.borrow_mut() = next_view;
             }
-            Ok(Presentation::NowPlaying(current_presentation)) => {
-                if let (Some(progress), Some(progress_view)) = (
-                    current_presentation.progress.as_ref(),
-                    rendered_presentation.borrow().progress.as_ref(),
-                ) {
+            Ok(current_frame) => {
+                let rendered = rendered_presentation.borrow();
+                if let Presentation::NowPlaying(current_presentation) = &current_frame.presentation
+                    && let (Some(progress), Some(progress_view)) = (
+                        current_presentation.progress.as_ref(),
+                        rendered.progress.as_ref(),
+                    )
+                {
                     progress_view.update(progress);
                 }
+                rendered.apply_inactivity(current_frame.inactivity);
             }
-            Ok(Presentation::Unavailable(_)) => {}
             Err(error) => eprintln!("RoonScape renderer: {error}"),
         }
 
@@ -158,6 +168,18 @@ fn build_window(
     }
 
     window.present();
+}
+
+fn host_inactivity_configuration() -> InactivityConfiguration {
+    let configuration =
+        display_configuration_file_path().and_then(|path| load_inactivity_configuration(&path));
+    match configuration {
+        Ok(configuration) => configuration,
+        Err(error) => {
+            eprintln!("RoonScape renderer: {error}; using default OLED inactivity calibration");
+            InactivityConfiguration::default()
+        }
+    }
 }
 
 fn start_snapshot_reader(mut reader: SnapshotReader) -> Receiver<PresentationSnapshot> {

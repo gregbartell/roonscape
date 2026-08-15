@@ -3,8 +3,8 @@ mod support;
 use std::time::{Duration, UNIX_EPOCH};
 
 use roonscape_renderer::{
-    Playback, Presentation, PresentationState, PresentationTime, parse_snapshot,
-    presentation_from_snapshot,
+    InactivityConfiguration, InactivityTransform, LayoutOffset, Playback, Presentation,
+    PresentationState, PresentationTime, parse_snapshot, presentation_from_snapshot,
 };
 
 const PLAYING_SAMPLED_AT: u64 = 1_786_821_600;
@@ -14,6 +14,11 @@ fn presentation_time(monotonic_seconds: u64, utc_seconds: u64) -> PresentationTi
         Duration::from_secs(monotonic_seconds),
         UNIX_EPOCH + Duration::from_secs(utc_seconds),
     )
+}
+
+fn inactivity_configuration() -> InactivityConfiguration {
+    InactivityConfiguration::new(Duration::from_secs(5), 0.3, Duration::from_secs(2))
+        .expect("test inactivity configuration should be valid")
 }
 
 #[test]
@@ -335,4 +340,198 @@ fn hides_progress_for_indeterminate_now_playing() {
 
     assert_eq!(presentation.title.as_deref(), Some("Radio Paradise"));
     assert_eq!(presentation.progress, None);
+}
+
+#[test]
+fn inactive_conditions_remain_fully_legible_until_the_grace_period_ends() {
+    for fixture_name in [
+        "paused.json",
+        "stopped.json",
+        "pairing-required.json",
+        "disconnected.json",
+        "output-unavailable.json",
+    ] {
+        let snapshot = parse_snapshot(&support::fixture(fixture_name))
+            .expect("inactive fixture should be valid");
+        let state = PresentationState::new_with_inactivity(
+            snapshot,
+            presentation_time(10, PLAYING_SAMPLED_AT),
+            inactivity_configuration(),
+        )
+        .expect("inactive fixture should anchor a presentation");
+
+        assert_eq!(
+            state
+                .frame_at(Duration::from_millis(14_999))
+                .expect("grace-period presentation should render")
+                .inactivity,
+            InactivityTransform::default(),
+            "{fixture_name} should remain fully legible before grace expires"
+        );
+        assert_eq!(
+            state
+                .frame_at(Duration::from_secs(15))
+                .expect("inactive presentation should render")
+                .inactivity,
+            InactivityTransform {
+                opacity: 0.3,
+                offset: LayoutOffset { x: -18, y: -12 },
+            },
+            "{fixture_name} should dim and reposition at the grace boundary"
+        );
+    }
+}
+
+#[test]
+fn repeatedly_repositions_inactive_content_within_gallery_split_bounds() {
+    let snapshot =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
+    let state = PresentationState::new_with_inactivity(
+        snapshot,
+        presentation_time(0, PLAYING_SAMPLED_AT),
+        inactivity_configuration(),
+    )
+    .expect("Paused fixture should anchor a presentation");
+
+    let offsets = [5, 7, 9, 11, 13].map(|seconds| {
+        state
+            .frame_at(Duration::from_secs(seconds))
+            .expect("inactive presentation should render")
+            .inactivity
+            .offset
+    });
+
+    assert_eq!(
+        offsets,
+        [
+            LayoutOffset { x: -18, y: -12 },
+            LayoutOffset { x: 12, y: 8 },
+            LayoutOffset { x: -8, y: 12 },
+            LayoutOffset { x: 18, y: -6 },
+            LayoutOffset { x: 6, y: -12 },
+        ]
+    );
+    assert!(offsets.iter().all(|offset| offset.x.abs() <= 18));
+    assert!(offsets.iter().all(|offset| offset.y.abs() <= 12));
+}
+
+#[test]
+fn changing_inactive_condition_restarts_the_grace_period() {
+    let paused =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
+    let mut state = PresentationState::new_with_inactivity(
+        paused,
+        presentation_time(0, PLAYING_SAMPLED_AT),
+        inactivity_configuration(),
+    )
+    .expect("Paused fixture should anchor a presentation");
+    assert_eq!(
+        state
+            .frame_at(Duration::from_secs(6))
+            .expect("dimmed Paused presentation should render")
+            .inactivity
+            .opacity,
+        0.3
+    );
+
+    let disconnected = parse_snapshot(&support::fixture("disconnected.json"))
+        .expect("Disconnected fixture should be valid");
+    state
+        .update(disconnected, presentation_time(6, PLAYING_SAMPLED_AT + 6))
+        .expect("Disconnected snapshot should replace Paused");
+
+    let changed = state
+        .frame_at(Duration::from_secs(6))
+        .expect("changed presentation should render");
+    assert_eq!(changed.inactivity, InactivityTransform::default());
+    assert!(matches!(changed.presentation, Presentation::Unavailable(_)));
+    assert_eq!(
+        state
+            .frame_at(Duration::from_millis(10_999))
+            .expect("new grace period should remain legible")
+            .inactivity,
+        InactivityTransform::default()
+    );
+    assert_eq!(
+        state
+            .frame_at(Duration::from_secs(11))
+            .expect("new inactive treatment should render")
+            .inactivity
+            .opacity,
+        0.3
+    );
+}
+
+#[test]
+fn playing_cancels_a_stale_inactivity_deadline_before_it_fires() {
+    let paused =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
+    let mut state = PresentationState::new_with_inactivity(
+        paused,
+        presentation_time(0, PLAYING_SAMPLED_AT),
+        inactivity_configuration(),
+    )
+    .expect("Paused fixture should anchor a presentation");
+    let playing =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+
+    state
+        .update(playing, presentation_time(4, PLAYING_SAMPLED_AT + 4))
+        .expect("Playing snapshot should replace Paused");
+
+    assert_eq!(
+        state
+            .frame_at(Duration::from_secs(5))
+            .expect("Playing presentation should render past the stale deadline")
+            .inactivity,
+        InactivityTransform::default()
+    );
+}
+
+#[test]
+fn playing_immediately_restores_luminance_position_and_advancing_progress() {
+    let paused =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
+    let mut state = PresentationState::new_with_inactivity(
+        paused,
+        presentation_time(0, PLAYING_SAMPLED_AT),
+        inactivity_configuration(),
+    )
+    .expect("Paused fixture should anchor a presentation");
+    assert_ne!(
+        state
+            .frame_at(Duration::from_secs(6))
+            .expect("inactive Paused presentation should render")
+            .inactivity,
+        InactivityTransform::default()
+    );
+
+    let playing =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    state
+        .update(playing, presentation_time(6, PLAYING_SAMPLED_AT + 6))
+        .expect("Playing snapshot should replace Paused");
+
+    let restored = state
+        .frame_at(Duration::from_secs(6))
+        .expect("restored Playing presentation should render");
+    assert_eq!(restored.inactivity, InactivityTransform::default());
+    let Presentation::NowPlaying(now_playing) = restored.presentation else {
+        panic!("Playing should restore Now Playing content");
+    };
+    assert_eq!(
+        now_playing.progress.map(|progress| progress.elapsed),
+        Some("1:28".to_owned())
+    );
+
+    let advanced = state
+        .frame_at(Duration::from_secs(8))
+        .expect("Playing progress should advance locally");
+    let Presentation::NowPlaying(now_playing) = advanced.presentation else {
+        panic!("Playing should retain Now Playing content");
+    };
+    assert_eq!(
+        now_playing.progress.map(|progress| progress.elapsed),
+        Some("1:30".to_owned())
+    );
 }

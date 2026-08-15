@@ -4,6 +4,7 @@ use gtk::gdk;
 use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
+    INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform,
     NowPlayingPresentation, Presentation, PresentationPalette, PresentationProgress,
     UnavailablePresentation,
 };
@@ -12,7 +13,27 @@ const STYLES: &str = include_str!("style.css");
 
 pub(crate) struct RenderedPresentation {
     pub(crate) root: gtk::Widget,
+    content: gtk::Widget,
     pub(crate) progress: Option<RenderedProgress>,
+}
+
+impl RenderedPresentation {
+    pub(crate) fn apply_inactivity(&self, transform: InactivityTransform) {
+        self.content.set_opacity(transform.opacity);
+        let (horizontal_bound, vertical_bound) = if transform == InactivityTransform::default() {
+            (0, 0)
+        } else {
+            (INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND)
+        };
+        self.content
+            .set_margin_start(horizontal_bound + transform.offset.x);
+        self.content
+            .set_margin_end(horizontal_bound - transform.offset.x);
+        self.content
+            .set_margin_top(vertical_bound + transform.offset.y);
+        self.content
+            .set_margin_bottom(vertical_bound - transform.offset.y);
+    }
 }
 
 #[derive(Clone)]
@@ -35,6 +56,11 @@ struct RenderedMetadata {
     progress: Option<RenderedProgress>,
 }
 
+struct RenderedContent {
+    root: gtk::Widget,
+    progress: Option<RenderedProgress>,
+}
+
 pub(crate) fn presentation_view(
     presentation: &Presentation,
     repository_root: &Path,
@@ -43,19 +69,31 @@ pub(crate) fn presentation_view(
     let palette = palette_for_presentation(presentation, repository_root);
     install_styles(style_provider, palette);
 
-    match presentation {
+    let rendered_content = match presentation {
         Presentation::NowPlaying(presentation) => gallery_split(presentation, repository_root),
-        Presentation::Unavailable(presentation) => RenderedPresentation {
+        Presentation::Unavailable(presentation) => RenderedContent {
             root: unavailable(presentation).upcast(),
             progress: None,
         },
+    };
+    let content = rendered_content.root;
+    content.set_hexpand(true);
+    content.set_vexpand(true);
+
+    let stage = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    stage.add_css_class("presentation-stage");
+    stage.set_hexpand(true);
+    stage.set_vexpand(true);
+    stage.append(&content);
+
+    RenderedPresentation {
+        root: stage.upcast(),
+        content,
+        progress: rendered_content.progress,
     }
 }
 
-fn gallery_split(
-    presentation: &NowPlayingPresentation,
-    repository_root: &Path,
-) -> RenderedPresentation {
+fn gallery_split(presentation: &NowPlayingPresentation, repository_root: &Path) -> RenderedContent {
     let root = gtk::Grid::new();
     root.add_css_class("gallery-split");
     root.set_column_homogeneous(true);
@@ -70,7 +108,7 @@ fn gallery_split(
 
     root.attach(&artwork_column, 0, 0, 58, 1);
     root.attach(&metadata.root, 58, 0, 42, 1);
-    RenderedPresentation {
+    RenderedContent {
         root: root.upcast(),
         progress: metadata.progress,
     }

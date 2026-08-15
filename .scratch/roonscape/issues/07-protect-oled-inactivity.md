@@ -10,18 +10,18 @@ playback and progress truthful.
 
 **Status:** ready-for-agent
 
-- [ ] Paused playback freezes progress and initially retains the complete Now
+- [x] Paused playback freezes progress and initially retains the complete Now
       Playing composition.
-- [ ] After a configurable grace period, paused content dims and periodically
+- [x] After a configurable grace period, paused content dims and periodically
       repositions within safe layout bounds.
-- [ ] Stopped, pairing-required, disconnected, and output-unavailable states
+- [x] Stopped, pairing-required, disconnected, and output-unavailable states
       explain their condition before receiving the corresponding inactive
       treatment.
-- [ ] Returning to Playing immediately restores full luminance and the normal
+- [x] Returning to Playing immediately restores full luminance and the normal
       Gallery split position.
-- [ ] Inactive timing, dimness, and reposition cadence remain configurable on
+- [x] Inactive timing, dimness, and reposition cadence remain configurable on
       the RoonScape Host for later calibration without adding a settings screen.
-- [ ] Deterministic tests exercise grace periods, repeated repositioning,
+- [x] Deterministic tests exercise grace periods, repeated repositioning,
       state changes during inactivity, and immediate active restoration.
 
 ## Comments
@@ -54,14 +54,14 @@ always cancels that treatment and restores the normal composition immediately.
 
 **Acceptance criteria:**
 
-- [ ] Paused playback freezes progress and retains full presentation during
+- [x] Paused playback freezes progress and retains full presentation during
       the grace period.
-- [ ] Paused, stopped, pairing-required, disconnected, and output-unavailable
+- [x] Paused, stopped, pairing-required, disconnected, and output-unavailable
       presentations dim and reposition only after explaining their state.
-- [ ] Repositioning remains within safe Gallery split bounds.
-- [ ] Returning to Playing immediately restores full luminance and the normal
+- [x] Repositioning remains within safe Gallery split bounds.
+- [x] Returning to Playing immediately restores full luminance and the normal
       position.
-- [ ] Deterministic tests cover grace periods, repeated repositioning, state
+- [x] Deterministic tests cover grace periods, repeated repositioning, state
       changes during inactivity, and active restoration.
 
 **Out of scope:**

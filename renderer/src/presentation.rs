@@ -6,6 +6,39 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::contract::{Availability, Playback, PresentationSnapshot, Progress};
+use crate::display_configuration::InactivityConfiguration;
+
+pub const INACTIVE_HORIZONTAL_BOUND: i32 = 18;
+pub const INACTIVE_VERTICAL_BOUND: i32 = 12;
+
+const INACTIVE_POSITIONS: [LayoutOffset; 8] = [
+    LayoutOffset {
+        x: -INACTIVE_HORIZONTAL_BOUND,
+        y: -INACTIVE_VERTICAL_BOUND,
+    },
+    LayoutOffset { x: 12, y: 8 },
+    LayoutOffset {
+        x: -8,
+        y: INACTIVE_VERTICAL_BOUND,
+    },
+    LayoutOffset {
+        x: INACTIVE_HORIZONTAL_BOUND,
+        y: -6,
+    },
+    LayoutOffset {
+        x: 6,
+        y: -INACTIVE_VERTICAL_BOUND,
+    },
+    LayoutOffset {
+        x: -INACTIVE_HORIZONTAL_BOUND,
+        y: 4,
+    },
+    LayoutOffset {
+        x: 16,
+        y: INACTIVE_VERTICAL_BOUND,
+    },
+    LayoutOffset { x: -4, y: -10 },
+];
 
 #[derive(Debug, PartialEq)]
 pub enum Presentation {
@@ -39,6 +72,24 @@ pub struct PresentationProgress {
     pub remaining: String,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct PresentationFrame {
+    pub presentation: Presentation,
+    pub inactivity: InactivityTransform,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LayoutOffset {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InactivityTransform {
+    pub opacity: f64,
+    pub offset: LayoutOffset,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct PresentationError(&'static str);
 
@@ -46,6 +97,16 @@ pub struct PresentationState {
     snapshot: PresentationSnapshot,
     progress_anchored_at: Duration,
     source_sample_age: Duration,
+    inactivity_configuration: InactivityConfiguration,
+    inactivity_condition: Option<InactivityCondition>,
+    inactivity_anchored_at: Duration,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InactivityCondition {
+    Paused,
+    Stopped,
+    Unavailable(Availability),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -62,6 +123,15 @@ impl fmt::Display for PresentationError {
 
 impl Error for PresentationError {}
 
+impl Default for InactivityTransform {
+    fn default() -> Self {
+        Self {
+            opacity: 1.0,
+            offset: LayoutOffset::default(),
+        }
+    }
+}
+
 impl PresentationTime {
     pub fn new(monotonic: Duration, utc: SystemTime) -> Self {
         Self { monotonic, utc }
@@ -73,12 +143,24 @@ impl PresentationState {
         snapshot: PresentationSnapshot,
         anchored_at: PresentationTime,
     ) -> Result<Self, PresentationError> {
+        Self::new_with_inactivity(snapshot, anchored_at, InactivityConfiguration::default())
+    }
+
+    pub fn new_with_inactivity(
+        snapshot: PresentationSnapshot,
+        anchored_at: PresentationTime,
+        inactivity_configuration: InactivityConfiguration,
+    ) -> Result<Self, PresentationError> {
         presentation_from_snapshot(&snapshot)?;
         let source_sample_age = source_sample_age(&snapshot, anchored_at.utc)?;
+        let inactivity_condition = inactivity_condition(&snapshot);
         Ok(Self {
             snapshot,
             progress_anchored_at: anchored_at.monotonic,
             source_sample_age,
+            inactivity_configuration,
+            inactivity_condition,
+            inactivity_anchored_at: anchored_at.monotonic,
         })
     }
 
@@ -88,11 +170,16 @@ impl PresentationState {
         anchored_at: PresentationTime,
     ) -> Result<(), PresentationError> {
         presentation_from_snapshot(&snapshot)?;
+        let next_inactivity_condition = inactivity_condition(&snapshot);
         let has_new_source_sample = self.snapshot.playback != snapshot.playback
             || self.snapshot.progress != snapshot.progress;
         if has_new_source_sample {
             self.source_sample_age = source_sample_age(&snapshot, anchored_at.utc)?;
             self.progress_anchored_at = anchored_at.monotonic;
+        }
+        if self.inactivity_condition != next_inactivity_condition {
+            self.inactivity_condition = next_inactivity_condition;
+            self.inactivity_anchored_at = anchored_at.monotonic;
         }
         self.snapshot = snapshot;
         Ok(())
@@ -103,6 +190,49 @@ impl PresentationState {
             .source_sample_age
             .saturating_add(now.saturating_sub(self.progress_anchored_at));
         presentation_from_snapshot_after(&self.snapshot, elapsed)
+    }
+
+    pub fn frame_at(&self, now: Duration) -> Result<PresentationFrame, PresentationError> {
+        Ok(PresentationFrame {
+            presentation: self.presentation_at(now)?,
+            inactivity: self.inactivity_transform_at(now),
+        })
+    }
+
+    fn inactivity_transform_at(&self, now: Duration) -> InactivityTransform {
+        let Some(_) = self.inactivity_condition else {
+            return InactivityTransform::default();
+        };
+        let inactive_for = now.saturating_sub(self.inactivity_anchored_at);
+        if inactive_for < self.inactivity_configuration.grace_period() {
+            return InactivityTransform::default();
+        }
+
+        let repositioning_for =
+            inactive_for.saturating_sub(self.inactivity_configuration.grace_period());
+        let position_index = (repositioning_for.as_nanos()
+            / self
+                .inactivity_configuration
+                .reposition_cadence()
+                .as_nanos())
+            % (INACTIVE_POSITIONS.len() as u128);
+
+        InactivityTransform {
+            opacity: self.inactivity_configuration.dimmed_opacity(),
+            offset: INACTIVE_POSITIONS[position_index as usize],
+        }
+    }
+}
+
+fn inactivity_condition(snapshot: &PresentationSnapshot) -> Option<InactivityCondition> {
+    if snapshot.availability != Availability::Available {
+        return Some(InactivityCondition::Unavailable(snapshot.availability));
+    }
+
+    match snapshot.playback {
+        Some(Playback::Paused) => Some(InactivityCondition::Paused),
+        Some(Playback::Stopped) => Some(InactivityCondition::Stopped),
+        Some(Playback::Playing | Playback::Loading) | None => None,
     }
 }
 

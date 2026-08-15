@@ -3,6 +3,10 @@ window {
   color: @primary_text;
 }
 
+.presentation-stage {
+  background-color: #000;
+}
+
 .gallery-split {
   background-image: linear-gradient(
     112deg,

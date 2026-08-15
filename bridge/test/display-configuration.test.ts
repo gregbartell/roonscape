@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 import test from "node:test";
 
@@ -7,6 +8,8 @@ import {
   FileDisplayConfigurationStore,
   displayConfigurationFilePath,
 } from "../src/display-configuration.js";
+
+const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 test("persists Display Configuration in a private dedicated file", async () => {
   const scratchRoot = "/tmp/codex/roonscape";
@@ -38,6 +41,56 @@ test("persists Display Configuration in a private dedicated file", async () => {
   }
 });
 
+test("loads existing Display Configuration without inactivity calibration", async () => {
+  const store = new FileDisplayConfigurationStore(
+    path.join(
+      repositoryRoot,
+      "fixtures/display-configuration-output-only.json",
+    ),
+  );
+
+  assert.deepEqual(store.load(), { displayOutputId: "output-gallery" });
+});
+
+test("persists inactivity calibration with Display Output selection", async () => {
+  const scratchRoot = "/tmp/codex/roonscape";
+  await mkdir(scratchRoot, { recursive: true });
+  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const configurationFile = path.join(taskDirectory, "display.json");
+  const store = new FileDisplayConfigurationStore(configurationFile);
+  const configuration = {
+    displayOutputId: "output-gallery",
+    inactivity: {
+      gracePeriodSeconds: 240,
+      dimmedOpacity: 0.3,
+      repositionCadenceSeconds: 45,
+    },
+  };
+
+  try {
+    store.save(configuration);
+
+    assert.deepEqual(store.load(), configuration);
+  } finally {
+    await rm(taskDirectory, { recursive: true });
+  }
+});
+
+test("loads shared inactivity Display Configuration", () => {
+  const store = new FileDisplayConfigurationStore(
+    path.join(repositoryRoot, "fixtures/display-configuration-inactivity.json"),
+  );
+
+  assert.deepEqual(store.load(), {
+    displayOutputId: "output-gallery",
+    inactivity: {
+      gracePeriodSeconds: 240,
+      dimmedOpacity: 0.3,
+      repositionCadenceSeconds: 45,
+    },
+  });
+});
+
 test("uses a Display Configuration path separate from Roon authorization", () => {
   assert.equal(
     displayConfigurationFilePath({
@@ -61,6 +114,30 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
       "not JSON",
       JSON.stringify({ displayOutputId: "" }),
       JSON.stringify({ displayOutputId: "output-1", fallback: "output-2" }),
+      JSON.stringify({
+        displayOutputId: "output-1",
+        inactivity: {
+          gracePeriodSeconds: 0,
+          dimmedOpacity: 0.3,
+          repositionCadenceSeconds: 45,
+        },
+      }),
+      JSON.stringify({
+        displayOutputId: "output-1",
+        inactivity: {
+          gracePeriodSeconds: 240,
+          dimmedOpacity: 1,
+          repositionCadenceSeconds: 45,
+        },
+      }),
+      JSON.stringify({
+        displayOutputId: "output-1",
+        inactivity: {
+          gracePeriodSeconds: 240,
+          dimmedOpacity: 1.1,
+          repositionCadenceSeconds: 45,
+        },
+      }),
     ]) {
       await writeFile(configurationFile, contents);
       assert.equal(store.load(), null);
