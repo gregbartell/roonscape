@@ -85,7 +85,7 @@ reposition to protect the OLED.
 22. As a listener, I want artwork, text, and palette to crossfade together when
     the selection changes, so that track changes feel coherent.
 23. As a listener, I do not want perpetual ambient animation, so that the
-    screen remains calm and the renderer does unnecessary work.
+    screen remains calm and the renderer does not do unnecessary work.
 24. As a listener, I want long metadata to wrap and reduce within readable
     limits, so that unusually long names remain useful.
 25. As a listener, I want extreme metadata to ellipsize rather than scroll

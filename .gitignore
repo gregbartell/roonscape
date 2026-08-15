@@ -1,0 +1,24 @@
+# JavaScript and TypeScript
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Rust
+target/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+
+# Runtime artifacts
+*.sock
+
+# Editors and operating systems
+*.swp
+.DS_Store

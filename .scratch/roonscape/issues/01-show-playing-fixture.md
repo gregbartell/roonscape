@@ -13,6 +13,10 @@ progress.
 
 - [ ] One documented command starts the TypeScript fixture publisher and the
   Rust/GTK renderer without requiring a live Roon Server.
+- [ ] Node.js and Rust toolchain versions are pinned, the selected Node package
+  manager is declared, and Cargo and Node dependency lockfiles are committed.
+- [ ] One repository-level command runs formatting, linting, and automated
+  tests for both modules; continuous integration invokes the same checks.
 - [ ] A language-neutral schema defines a complete snapshot with a schema
   version, monotonic revision, availability, playback, Display Zone, optional
   Now Playing values, progress, and artwork reference.
