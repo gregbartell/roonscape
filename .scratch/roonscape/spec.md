@@ -346,11 +346,10 @@ reposition to protect the OLED.
 - The user chose Variant A, Gallery split, from a five-variant throwaway visual
   prototype. The verdict includes hiding Display Output, labeling Display Zone
   as **Zone**, and deriving every presentation color from the actual artwork.
-- The current plan, glossary, ADRs, and prototype verdict are provisional
-  source material in the legacy checkout. After the new repository is created,
-  migrate the accepted records and preserve the full prototype only on a
-  throwaway branch.
-- The user will delete the local legacy repository after migration. The
-  upstream Web Controller project remains available if historical reference is
-  ever needed.
+- The accepted plan, glossary, ADRs, specification, and Gallery split verdict
+  now live in this repository. The full prototype is preserved only on the
+  `prototype/visual-variants` branch.
+- The documentation migration from the local legacy repository is complete,
+  so the user can delete that checkout. The upstream Web Controller project
+  remains available if historical reference is ever needed.
 - Do not create or push a GitHub remote unless the user requests that separately.

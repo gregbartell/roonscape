@@ -161,17 +161,20 @@ not make display failure a music-service or remote-access failure.
 
 ## Hobby-Sized Implementation Sequence
 
-### 1. Create the greenfield repository
+### 1. Establish the greenfield repository
 
-- Create `roonscape` only after this design is confirmed.
-- Migrate `CONTEXT.md`, the ADRs, this plan, and the selected prototype verdict
-  onto the main branch.
-- Preserve the full five-variant throwaway prototype on a throwaway branch and
-  reference it from the renderer work; do not promote prototype code directly
-  into the native renderer.
-- Add no license file.
-- Establish TypeScript bridge, Rust renderer, shared schema/fixtures, and
-  `roll` deployment directories without copying legacy source.
+The repository and documentation migration are complete:
+
+- `roonscape` exists as a local repository with no remote.
+- `CONTEXT.md`, the ADRs, this plan, the specification, and the selected
+  prototype verdict are on `main`.
+- The full five-variant throwaway prototype is preserved on
+  `prototype/visual-variants`; do not promote its code directly into the native
+  renderer.
+- No license file was added.
+
+Next, establish TypeScript bridge, Rust renderer, shared schema/fixtures, and
+`roll` deployment directories without copying legacy source.
 
 ### 2. Exercise the state seam
 
