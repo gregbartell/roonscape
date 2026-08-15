@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { stat, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import test from "node:test";
@@ -8,19 +8,17 @@ import {
   FileDisplayConfigurationStore,
   displayConfigurationFilePath,
 } from "../src/display-configuration.js";
+import { withTaskDirectory } from "./support.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 test("persists Display Configuration in a private dedicated file", async () => {
-  const scratchRoot = "/tmp/codex/roonscape";
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
-  const configDirectory = path.join(taskDirectory, "config");
-  const configurationFile = path.join(configDirectory, "display.json");
-  const store = new FileDisplayConfigurationStore(configurationFile);
-  const configuration = { displayOutputId: "output-gallery" };
+  await withTaskDirectory(async (taskDirectory) => {
+    const configDirectory = path.join(taskDirectory, "config");
+    const configurationFile = path.join(configDirectory, "display.json");
+    const store = new FileDisplayConfigurationStore(configurationFile);
+    const configuration = { displayOutputId: "output-gallery" };
 
-  try {
     assert.equal(store.load(), null);
     store.save(configuration);
 
@@ -36,9 +34,7 @@ test("persists Display Configuration in a private dedicated file", async () => {
         fileMode: 0o600,
       },
     );
-  } finally {
-    await rm(taskDirectory, { recursive: true });
-  }
+  });
 });
 
 test("loads existing Display Configuration without inactivity calibration", async () => {
@@ -53,27 +49,22 @@ test("loads existing Display Configuration without inactivity calibration", asyn
 });
 
 test("persists inactivity calibration with Display Output selection", async () => {
-  const scratchRoot = "/tmp/codex/roonscape";
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
-  const configurationFile = path.join(taskDirectory, "display.json");
-  const store = new FileDisplayConfigurationStore(configurationFile);
-  const configuration = {
-    displayOutputId: "output-gallery",
-    inactivity: {
-      gracePeriodSeconds: 240,
-      dimmedOpacity: 0.3,
-      repositionCadenceSeconds: 45,
-    },
-  };
+  await withTaskDirectory(async (taskDirectory) => {
+    const configurationFile = path.join(taskDirectory, "display.json");
+    const store = new FileDisplayConfigurationStore(configurationFile);
+    const configuration = {
+      displayOutputId: "output-gallery",
+      inactivity: {
+        gracePeriodSeconds: 240,
+        dimmedOpacity: 0.3,
+        repositionCadenceSeconds: 45,
+      },
+    };
 
-  try {
     store.save(configuration);
 
     assert.deepEqual(store.load(), configuration);
-  } finally {
-    await rm(taskDirectory, { recursive: true });
-  }
+  });
 });
 
 test("loads shared inactivity Display Configuration", () => {
@@ -103,13 +94,10 @@ test("uses a Display Configuration path separate from Roon authorization", () =>
 });
 
 test("treats malformed or invalid Display Configuration as unavailable", async () => {
-  const scratchRoot = "/tmp/codex/roonscape";
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
-  const configurationFile = path.join(taskDirectory, "display.json");
-  const store = new FileDisplayConfigurationStore(configurationFile);
+  await withTaskDirectory(async (taskDirectory) => {
+    const configurationFile = path.join(taskDirectory, "display.json");
+    const store = new FileDisplayConfigurationStore(configurationFile);
 
-  try {
     for (const contents of [
       "not JSON",
       JSON.stringify({ displayOutputId: "" }),
@@ -142,7 +130,5 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
       await writeFile(configurationFile, contents);
       assert.equal(store.load(), null);
     }
-  } finally {
-    await rm(taskDirectory, { recursive: true });
-  }
+  });
 });
