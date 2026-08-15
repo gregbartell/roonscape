@@ -1,13 +1,8 @@
-import { randomUUID } from "node:crypto";
-import {
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+
+import { isMissingFile, writePrivateJsonFile } from "./private-json-file.js";
 
 export interface DisplayConfiguration {
   displayOutputId: string;
@@ -41,39 +36,11 @@ export class FileDisplayConfigurationStore implements DisplayConfigurationStore 
   }
 
   save(configuration: DisplayConfiguration): void {
-    const configDirectory = path.dirname(this.#configurationFile);
-    mkdirSync(configDirectory, { mode: 0o700, recursive: true });
-    const temporaryFile = path.join(
-      configDirectory,
-      `.${path.basename(this.#configurationFile)}.${randomUUID()}.tmp`,
+    writePrivateJsonFile(
+      this.#configurationFile,
+      configuration,
+      "Could not persist Display Configuration",
     );
-
-    try {
-      writeFileSync(
-        temporaryFile,
-        `${JSON.stringify(configuration, null, 2)}\n`,
-        {
-          encoding: "utf8",
-          flag: "wx",
-          mode: 0o600,
-        },
-      );
-      renameSync(temporaryFile, this.#configurationFile);
-    } catch (error) {
-      try {
-        unlinkSync(temporaryFile);
-      } catch (cleanupError) {
-        if (!isMissingFile(cleanupError)) {
-          throw new AggregateError(
-            [error, cleanupError],
-            "Could not persist Display Configuration",
-            { cause: cleanupError },
-          );
-        }
-      }
-
-      throw error;
-    }
   }
 }
 
@@ -100,13 +67,5 @@ function isDisplayConfiguration(
     "displayOutputId" in candidate &&
     typeof candidate.displayOutputId === "string" &&
     candidate.displayOutputId.length > 0
-  );
-}
-
-function isMissingFile(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as NodeJS.ErrnoException).code === "ENOENT"
   );
 }

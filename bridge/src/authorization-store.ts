@@ -1,15 +1,9 @@
-import { randomUUID } from "node:crypto";
-import {
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
 import type { AuthorizationStore } from "./roon-bridge.js";
+import { isMissingFile, writePrivateJsonFile } from "./private-json-file.js";
 
 export class FileAuthorizationStore implements AuthorizationStore {
   readonly #authorizationFile: string;
@@ -33,35 +27,11 @@ export class FileAuthorizationStore implements AuthorizationStore {
   }
 
   save(state: unknown): void {
-    const stateDirectory = path.dirname(this.#authorizationFile);
-    mkdirSync(stateDirectory, { mode: 0o700, recursive: true });
-    const temporaryFile = path.join(
-      stateDirectory,
-      `.${path.basename(this.#authorizationFile)}.${randomUUID()}.tmp`,
+    writePrivateJsonFile(
+      this.#authorizationFile,
+      state,
+      "Could not persist Roon authorization state",
     );
-
-    try {
-      writeFileSync(temporaryFile, `${JSON.stringify(state, null, 2)}\n`, {
-        encoding: "utf8",
-        flag: "wx",
-        mode: 0o600,
-      });
-      renameSync(temporaryFile, this.#authorizationFile);
-    } catch (error) {
-      try {
-        unlinkSync(temporaryFile);
-      } catch (cleanupError) {
-        if (!isMissingFile(cleanupError)) {
-          throw new AggregateError(
-            [error, cleanupError],
-            "Could not persist Roon authorization state",
-            { cause: cleanupError },
-          );
-        }
-      }
-
-      throw error;
-    }
   }
 }
 
@@ -75,12 +45,4 @@ export function authorizationFilePath(
   const stateRoot =
     environment.XDG_STATE_HOME ?? path.join(homedir(), ".local", "state");
   return path.join(stateRoot, "roonscape", "authorization.json");
-}
-
-function isMissingFile(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as NodeJS.ErrnoException).code === "ENOENT"
-  );
 }
