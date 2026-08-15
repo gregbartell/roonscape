@@ -6,8 +6,11 @@ import { createInterface } from "node:readline";
 import path from "node:path";
 import test from "node:test";
 
-import { startFixturePublisher } from "../src/fixture-publisher.js";
-import { loadSnapshot } from "../src/snapshot.js";
+import {
+  MAX_SNAPSHOT_BYTES,
+  startFixturePublisher,
+} from "../src/fixture-publisher.js";
+import { loadSnapshot, type PresentationSnapshot } from "../src/snapshot.js";
 
 test("sends the current complete snapshot when a renderer connects", async () => {
   const scratchRoot = "/tmp/codex/roonscape";
@@ -56,6 +59,75 @@ test("replaces the current snapshot without retaining event history", async () =
     await rm(runtimeDirectory, { recursive: true });
   }
 });
+
+test("rejects an oversized snapshot without replacing the current snapshot", async () => {
+  const scratchRoot = "/tmp/codex/roonscape";
+  await mkdir(scratchRoot, { recursive: true });
+  const runtimeDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+  const snapshot = await loadSnapshot("fixtures/playing.json");
+  const publisher = await startFixturePublisher(snapshot, socketPath);
+
+  try {
+    assert.throws(
+      () =>
+        publisher.publish(withTitle(snapshot, "x".repeat(MAX_SNAPSHOT_BYTES))),
+      /Snapshot exceeds 64 KiB/,
+    );
+
+    const client = createConnection(socketPath);
+    const lines = createInterface({ input: client });
+    const [line] = (await once(lines, "line")) as [string];
+
+    assert.deepEqual(JSON.parse(line), snapshot);
+    client.destroy();
+  } finally {
+    await publisher.close();
+    await rm(runtimeDirectory, { recursive: true });
+  }
+});
+
+test(
+  "coalesces updates to the latest complete snapshot during backpressure",
+  { timeout: 5_000 },
+  async () => {
+    const scratchRoot = "/tmp/codex/roonscape";
+    await mkdir(scratchRoot, { recursive: true });
+    const runtimeDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+    const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+    const snapshot = await loadSnapshot("fixtures/playing.json");
+    const publisher = await startFixturePublisher(snapshot, socketPath);
+    const client = createConnection(socketPath);
+    const lines = createInterface({ input: client });
+    const snapshots = lines[Symbol.asyncIterator]();
+
+    try {
+      await snapshots.next();
+      client.pause();
+
+      const finalRevision = 107;
+      for (let revision = 8; revision <= finalRevision; revision += 1) {
+        publisher.publish(withTitle(snapshot, "x".repeat(60 * 1024), revision));
+      }
+
+      client.resume();
+      const observedRevisions: number[] = [];
+      while (observedRevisions.at(-1) !== finalRevision) {
+        const next = await snapshots.next();
+        assert.equal(next.done, false);
+        observedRevisions.push(
+          (JSON.parse(next.value ?? "null") as PresentationSnapshot).revision,
+        );
+      }
+
+      assert.ok(observedRevisions.length < 100);
+    } finally {
+      client.destroy();
+      await publisher.close();
+      await rm(runtimeDirectory, { recursive: true });
+    }
+  },
+);
 
 test("sends availability transitions over the current renderer connection", async () => {
   const scratchRoot = "/tmp/codex/roonscape";
@@ -119,3 +191,16 @@ test("refuses a shared runtime directory without changing its permissions", asyn
     await rm(taskDirectory, { recursive: true });
   }
 });
+
+function withTitle(
+  snapshot: PresentationSnapshot,
+  title: string,
+  revision = snapshot.revision,
+): PresentationSnapshot {
+  assert.ok(snapshot.nowPlaying);
+  return {
+    ...snapshot,
+    revision,
+    nowPlaying: { ...snapshot.nowPlaying, title },
+  };
+}
