@@ -302,7 +302,10 @@ fn metadata(presentation: &NowPlayingPresentation) -> RenderedMetadata {
     });
 
     column.append(&copy);
-    column.append(&display_zone(&presentation.display_zone));
+    column.append(&tracked_identity(
+        &presentation.tracked_output,
+        &presentation.tracked_zone,
+    ));
     RenderedMetadata {
         root: column,
         progress,
@@ -422,11 +425,13 @@ fn progress_view(progress: &PresentationProgress) -> (gtk::Box, RenderedProgress
     )
 }
 
-fn display_zone(display_zone: &str) -> gtk::Box {
+fn tracked_identity(tracked_output: &str, tracked_zone: &str) -> gtk::Box {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 18);
-    row.add_css_class("display-zone");
-    row.append(&metadata_label("ZONE", "zone-label"));
-    row.append(&metadata_label(display_zone, "zone-name"));
+    row.add_css_class("tracked-identity");
+    row.append(&metadata_label("OUTPUT", "identity-label"));
+    row.append(&metadata_label(tracked_output, "identity-name"));
+    row.append(&metadata_label("ZONE", "identity-label"));
+    row.append(&metadata_label(tracked_zone, "identity-name"));
     row
 }
 
@@ -491,10 +496,10 @@ fn palette_styles(class_name: &str, palette: PresentationPalette) -> String {
          .{class_name} .artwork {{ border-color: alpha({primary_text}, 0.16); background-color: {artwork_field}; }}\n\
          .{class_name} .artwork-missing {{ border-color: alpha({secondary_text}, 0.22); background-image: linear-gradient(142deg, alpha({secondary_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16); }}\n\
          .{class_name} .metadata-column, .{class_name}.unavailable .unavailable-copy {{ background-color: {metadata_field}; }}\n\
-         .{class_name} .playback-state, .{class_name} .zone-label, .{class_name} .unavailable-state {{ color: {accent}; }}\n\
+         .{class_name} .playback-state, .{class_name} .identity-label, .{class_name} .unavailable-state {{ color: {accent}; }}\n\
          .{class_name} .state-dot {{ background-color: {accent}; box-shadow: 0 0 18px alpha({accent}, 0.72); }}\n\
          .{class_name} .title, .{class_name} .unavailable-heading {{ color: {primary_text}; }}\n\
-         .{class_name} .artist, .{class_name} .album, .{class_name} .time, .{class_name} .display-zone, .{class_name} .unavailable-explanation {{ color: {secondary_text}; }}\n\
+         .{class_name} .artist, .{class_name} .album, .{class_name} .time, .{class_name} .tracked-identity, .{class_name} .unavailable-explanation {{ color: {secondary_text}; }}\n\
          .{class_name} progressbar trough {{ background-color: alpha({secondary_text}, 0.22); }}\n\
          .{class_name} progressbar progress {{ background-color: {accent}; }}\n\
          .{class_name}.unavailable {{ background-color: {background}; }}\n\

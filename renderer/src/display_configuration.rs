@@ -35,8 +35,8 @@ pub enum DisplayConfigurationError {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DisplayConfigurationFile {
-    #[serde(rename = "displayOutputId")]
-    _display_output_id: String,
+    #[serde(rename = "trackedOutputId")]
+    _tracked_output_id: String,
     inactivity: Option<InactivityConfigurationFile>,
 }
 

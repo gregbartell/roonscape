@@ -9,8 +9,8 @@ mod presentation;
 mod transition;
 
 pub use contract::{
-    ArtworkReference, Availability, DisplayZone, NowPlaying, Playback, PresentationSnapshot,
-    Progress, SnapshotError, parse_snapshot,
+    ArtworkReference, Availability, NowPlaying, Playback, PresentationSnapshot, Progress,
+    SnapshotError, TrackedOutput, TrackedZone, parse_snapshot,
 };
 pub use diagnostics::{
     Diagnostics, DiagnosticsConfiguration, DiagnosticsConfigurationError,

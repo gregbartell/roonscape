@@ -29,8 +29,8 @@ window {
 
 .utility-text,
 .state-label,
-.zone-label,
-.zone-name,
+.identity-label,
+.identity-name,
 .time {
   font-family: "Inter", "Avenir Next", "Noto Sans", "DejaVu Sans", sans-serif;
 }
@@ -85,12 +85,12 @@ progressbar progress {
   font-size: 19px;
 }
 
-.zone-label {
+.identity-label {
   font-size: 16px;
   font-weight: 800;
 }
 
-.zone-name {
+.identity-name {
   font-size: 20px;
   font-weight: 600;
 }

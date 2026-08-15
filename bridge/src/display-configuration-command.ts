@@ -3,15 +3,15 @@ import type {
   InactivityConfiguration,
 } from "./display-configuration.js";
 
-export interface DiscoverableDisplayOutput {
-  outputId: string;
-  displayName: string;
-  displayZoneName: string;
+export interface DiscoverableTrackedOutput {
+  trackedOutputId: string;
+  trackedOutputName: string;
+  trackedZoneName: string;
 }
 
 interface DisplayConfigurationCommandDependencies {
   configurationStore: DisplayConfigurationStore;
-  discoverOutputs(): Promise<DiscoverableDisplayOutput[]>;
+  discoverTrackedOutputs(): Promise<DiscoverableTrackedOutput[]>;
   writeLine(line: string): void;
 }
 
@@ -22,26 +22,26 @@ export async function runDisplayConfigurationCommand(
   const [command, ...operands] = arguments_;
 
   if (command === "list" && operands.length === 0) {
-    const outputs = await dependencies.discoverOutputs();
-    dependencies.writeLine("OUTPUT ID\tDISPLAY OUTPUT\tDISPLAY ZONE");
+    const outputs = await dependencies.discoverTrackedOutputs();
+    dependencies.writeLine("TRACKED OUTPUT ID\tTRACKED OUTPUT\tTRACKED ZONE");
     for (const output of outputs) {
       dependencies.writeLine(
-        `${output.outputId}\t${output.displayName}\t${output.displayZoneName}`,
+        `${output.trackedOutputId}\t${output.trackedOutputName}\t${output.trackedZoneName}`,
       );
     }
     return 0;
   }
 
   if (command === "select" && operands.length === 1 && operands[0]) {
-    const displayOutputId = operands[0];
+    const trackedOutputId = operands[0];
     const existing = dependencies.configurationStore.load();
     dependencies.configurationStore.save({
-      displayOutputId,
+      trackedOutputId,
       ...(existing?.inactivity === undefined
         ? {}
         : { inactivity: existing.inactivity }),
     });
-    dependencies.writeLine(`Selected Display Output: ${displayOutputId}`);
+    dependencies.writeLine(`Selected Tracked Output: ${trackedOutputId}`);
     return 0;
   }
 
@@ -58,7 +58,7 @@ export async function runDisplayConfigurationCommand(
   }
 
   dependencies.writeLine(
-    "Usage: npm run configure -- list | select <display-output-id> | inactivity <grace-seconds> <dimmed-opacity> <reposition-cadence-seconds>",
+    "Usage: npm run configure -- list | select <tracked-output-id> | inactivity <grace-seconds> <dimmed-opacity> <reposition-cadence-seconds>",
   );
   return 2;
 }

@@ -199,7 +199,7 @@ impl PresentationRuntime {
                     match self
                         .presentation
                         .borrow_mut()
-                        .update(snapshot, PresentationTime::new(now, SystemTime::now()))
+                        .update(*snapshot, PresentationTime::new(now, SystemTime::now()))
                     {
                         Ok(update) => Some(update),
                         Err(error) => {

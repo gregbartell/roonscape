@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://roonscape.local/schema/presentation-snapshot-v1.json",
+  "$id": "https://roonscape.local/schema/presentation-snapshot-v2.json",
   "title": "RoonScape presentation snapshot",
   "type": "object",
   "additionalProperties": false,
@@ -9,7 +9,8 @@
     "revision",
     "availability",
     "playback",
-    "displayZone",
+    "trackedOutput",
+    "trackedZone",
     "nowPlaying",
     "progress",
     "artwork"
@@ -17,7 +18,7 @@
   "properties": {
     "schemaVersion": {
       "description": "Version of this complete snapshot contract.",
-      "const": 1
+      "const": 2
     },
     "revision": {
       "description": "Monotonic presentation revision. A publisher MUST increase it whenever the presentation changes and MUST NOT reuse a lower value during its lifetime.",
@@ -38,7 +39,20 @@
         { "type": "null" }
       ]
     },
-    "displayZone": {
+    "trackedOutput": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "trackedZone": {
       "oneOf": [
         {
           "type": "object",
@@ -105,13 +119,15 @@
       "then": {
         "properties": {
           "playback": { "type": "string" },
-          "displayZone": { "type": "object" }
+          "trackedOutput": { "type": "object" },
+          "trackedZone": { "type": "object" }
         }
       },
       "else": {
         "properties": {
           "playback": { "type": "null" },
-          "displayZone": { "type": "null" },
+          "trackedOutput": { "type": "null" },
+          "trackedZone": { "type": "null" },
           "nowPlaying": { "type": "null" },
           "progress": { "type": "null" },
           "artwork": { "type": "null" }

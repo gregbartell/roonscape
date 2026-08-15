@@ -46,7 +46,7 @@ interface RoonBoundary {
 }
 
 function createRoonBoundary(
-  displayOutputId?: string,
+  trackedOutputId?: string,
   artworkFiles: ArtworkFiles = unusedArtworkFiles(),
   now: () => Date = () => new Date("2026-08-15T19:20:00Z"),
 ): RoonBoundary {
@@ -68,7 +68,7 @@ function createRoonBoundary(
     },
   };
   const displayConfigurationStore: DisplayConfigurationStore = {
-    load: () => (displayOutputId === undefined ? null : { displayOutputId }),
+    load: () => (trackedOutputId === undefined ? null : { trackedOutputId }),
     save: () => undefined,
   };
   const status: RoonStatusService = {
@@ -234,11 +234,12 @@ test("publishes truthful availability across authorization and connection events
       "disconnected",
       "outputUnavailable",
     ].map((availability, revision) => ({
-      schemaVersion: 1,
+      schemaVersion: 2,
       revision,
       availability,
       playback: null,
-      displayZone: null,
+      trackedOutput: null,
+      trackedZone: null,
       nowPlaying: null,
       progress: null,
       artwork: null,
@@ -248,7 +249,7 @@ test("publishes truthful availability across authorization and connection events
   await Promise.all(boundary.snapshots.map(validateSnapshot));
 });
 
-test("resolves the configured Display Output from the initial full zone state", async () => {
+test("resolves the configured Tracked Output from the initial full zone state", async () => {
   const boundary = createRoonBoundary("output-gallery");
   const extensionOptions = boundary.extensionOptions();
   const core = boundary.core();
@@ -281,11 +282,12 @@ test("resolves the configured Display Output from the initial full zone state", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 2,
     availability: "available",
     playback: "paused",
-    displayZone: { name: "Gallery" },
+    trackedOutput: { name: "NUC HDMI" },
+    trackedZone: { name: "Gallery" },
     nowPlaying: {
       title: "A Moment Apart",
       artist: "ODESZA",
@@ -361,11 +363,12 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
                 : { revision: snapshot.artwork.revision },
           },
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         revision: 4,
         availability: "available",
         playback: "playing",
-        displayZone: { name: "Gallery" },
+        trackedOutput: { name: "NUC HDMI" },
+        trackedZone: { name: "Gallery" },
         nowPlaying: {
           title: "A Moment Apart",
           artist: "ODESZA",
@@ -473,11 +476,12 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
     });
 
     assert.deepEqual(boundary.snapshots.at(-1), {
-      schemaVersion: 1,
+      schemaVersion: 2,
       revision: 9,
       availability: "available",
       playback: "stopped",
-      displayZone: { name: "Gallery" },
+      trackedOutput: { name: "NUC HDMI" },
+      trackedZone: { name: "Gallery" },
       nowPlaying: null,
       progress: null,
       artwork: null,
@@ -604,7 +608,7 @@ test("retains artwork while pause and resume update playback truthfully", async 
   }
 });
 
-test("ignores a volume-only Display Zone update", async () => {
+test("ignores a volume-only Tracked Zone update", async () => {
   const sampleTimes = [
     new Date("2026-08-15T19:20:00Z"),
     new Date("2026-08-15T19:20:05Z"),
@@ -724,7 +728,7 @@ test("a stale artwork response cannot delete a newer presentation file", async (
   const artworkDirectory = path.join(taskDirectory, "artwork");
   const artworkFiles = await ArtworkFileStore.open(artworkDirectory);
   const boundary = createRoonBoundary("output-gallery", artworkFiles);
-  const displayZone = {
+  const trackedZone = {
     zone_id: "zone-gallery",
     display_name: "Gallery",
     state: "playing" as const,
@@ -734,19 +738,19 @@ test("a stale artwork response cannot delete a newer presentation file", async (
     },
     outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
   };
-  const updatedDisplayZone = {
-    ...displayZone,
+  const updatedTrackedZone = {
+    ...trackedZone,
     now_playing: {
-      ...displayZone.now_playing,
+      ...trackedZone.now_playing,
       image_key: "current-artwork-key",
     },
   };
 
   try {
     boundary.extensionOptions().core_paired(boundary.core());
-    boundary.emitZones("Subscribed", { zones: [displayZone] });
+    boundary.emitZones("Subscribed", { zones: [trackedZone] });
     boundary.resolveImageRequest(0, "image/jpeg", Buffer.from("stale artwork"));
-    boundary.emitZones("Changed", { zones_changed: [updatedDisplayZone] });
+    boundary.emitZones("Changed", { zones_changed: [updatedTrackedZone] });
     boundary.resolveImageRequest(
       1,
       "image/jpeg",
@@ -779,7 +783,7 @@ async function waitFor(
   assert.fail("Timed out waiting for asynchronous bridge work");
 }
 
-test("publishes meaningful progress from the Display Zone timing sample", async () => {
+test("publishes meaningful progress from the Tracked Zone timing sample", async () => {
   const boundary = createRoonBoundary("output-gallery");
 
   boundary.extensionOptions().core_paired(boundary.core());
@@ -934,11 +938,12 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 3,
     availability: "available",
     playback: "playing",
-    displayZone: { name: "Gallery" },
+    trackedOutput: { name: "NUC HDMI" },
+    trackedZone: { name: "Gallery" },
     nowPlaying: {
       title: "A Moment Apart",
       artist: "ODESZA",
@@ -954,7 +959,7 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
   await validateSnapshot(boundary.snapshots.at(-1));
 });
 
-test("follows the configured Display Output through grouping and ungrouping", () => {
+test("follows the configured Tracked Output through grouping and ungrouping", () => {
   const boundary = createRoonBoundary("output-gallery");
   const extensionOptions = boundary.extensionOptions();
 
@@ -992,8 +997,11 @@ test("follows the configured Display Output through grouping and ungrouping", ()
       },
     ],
   });
-  assert.deepEqual(boundary.snapshots.at(-1)?.displayZone, {
+  assert.deepEqual(boundary.snapshots.at(-1)?.trackedZone, {
     name: "Whole Home",
+  });
+  assert.deepEqual(boundary.snapshots.at(-1)?.trackedOutput, {
+    name: "NUC HDMI",
   });
 
   boundary.emitZones("Changed", {
@@ -1020,24 +1028,27 @@ test("follows the configured Display Output through grouping and ungrouping", ()
     boundary.snapshots.slice(-2).map((snapshot) => ({
       revision: snapshot.revision,
       playback: snapshot.playback,
-      displayZone: snapshot.displayZone,
+      trackedOutput: snapshot.trackedOutput,
+      trackedZone: snapshot.trackedZone,
     })),
     [
       {
         revision: 3,
         playback: "playing",
-        displayZone: { name: "Whole Home" },
+        trackedOutput: { name: "NUC HDMI" },
+        trackedZone: { name: "Whole Home" },
       },
       {
         revision: 4,
         playback: "paused",
-        displayZone: { name: "Gallery" },
+        trackedOutput: { name: "NUC HDMI" },
+        trackedZone: { name: "Gallery" },
       },
     ],
   );
 });
 
-test("follows Display Zone renames but ignores unrelated active-zone changes", () => {
+test("publishes Tracked Output and Zone renames but ignores unrelated zones", () => {
   let sampledSecond = 0;
   const boundary = createRoonBoundary(
     "output-gallery",
@@ -1083,8 +1094,11 @@ test("follows Display Zone renames but ignores unrelated active-zone changes", (
   });
 
   assert.equal(boundary.snapshots.length, snapshotCount);
-  assert.deepEqual(boundary.snapshots.at(-1)?.displayZone, {
+  assert.deepEqual(boundary.snapshots.at(-1)?.trackedZone, {
     name: "Gallery",
+  });
+  assert.deepEqual(boundary.snapshots.at(-1)?.trackedOutput, {
+    name: "NUC HDMI",
   });
 
   boundary.emitZones("Changed", {
@@ -1093,18 +1107,21 @@ test("follows Display Zone renames but ignores unrelated active-zone changes", (
         zone_id: "zone-gallery",
         display_name: "Listening Room",
         state: "paused",
-        outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        outputs: [{ output_id: "output-gallery", display_name: "USB DAC" }],
       },
     ],
   });
 
   assert.equal(boundary.snapshots.length, snapshotCount + 1);
-  assert.deepEqual(boundary.snapshots.at(-1)?.displayZone, {
+  assert.deepEqual(boundary.snapshots.at(-1)?.trackedZone, {
     name: "Listening Room",
+  });
+  assert.deepEqual(boundary.snapshots.at(-1)?.trackedOutput, {
+    name: "USB DAC",
   });
 });
 
-test("clears presentation state when the configured Display Output is removed", async () => {
+test("clears presentation state when the configured Tracked Output is removed", async () => {
   const boundary = createRoonBoundary("output-gallery");
   const extensionOptions = boundary.extensionOptions();
 
@@ -1132,11 +1149,12 @@ test("clears presentation state when the configured Display Output is removed", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 3,
     availability: "outputUnavailable",
     playback: null,
-    displayZone: null,
+    trackedOutput: null,
+    trackedZone: null,
     nowPlaying: null,
     progress: null,
     artwork: null,
@@ -1226,7 +1244,7 @@ test("reports each availability condition through Roon extension status", () => 
       isError: false,
     },
     {
-      message: "Connected: Display Output unavailable",
+      message: "Connected: Tracked Output unavailable",
       isError: false,
     },
     { message: "Disconnected from Roon", isError: true },

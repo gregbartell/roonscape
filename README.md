@@ -3,12 +3,12 @@
 RoonScape is an unattended, read-only presentation of current Roon playback.
 
 > **Status:** The shared contract and fixtures, live Roon availability,
-> deterministic Display Output selection, live Now Playing metadata and
+> deterministic Tracked Output selection, live Now Playing metadata and
 > artwork, truthful playback progress, bounded metadata layout, and coordinated
 > presentation transitions, OLED-safe inactivity treatment, independent IPC
 > recovery, and optional local diagnostics are available.
 
-RoonScape observes one configured physical Display Output, follows the Display
+RoonScape observes one configured physical Tracked Output, follows the Tracked
 Zone that currently contains it, and presents current artwork, metadata,
 playback state, and progress on an attached display. It deliberately provides
 no Roon Control, browser interface, or network command surface.
@@ -79,11 +79,11 @@ npm run configure -- list
 
 On a fresh installation, enable RoonScape under **Settings → Extensions** in a
 Roon client while the command waits for Roon. The list includes the internal
-output ID needed by the host workflow, the Display Output name, and its current
-Display Zone. Save one selection without changing Roon playback:
+Tracked Output ID needed by the host workflow, the Tracked Output name, and its
+current Tracked Zone. Save one selection without changing Roon playback:
 
 ```sh
-npm run configure -- select 'display-output-id-from-the-list'
+npm run configure -- select 'tracked-output-id-from-the-list'
 ```
 
 OLED protection defaults to a 300-second grace period, 35% opacity, and a new
@@ -95,9 +95,10 @@ npm run configure -- inactivity 300 0.35 60
 ```
 
 The arguments are grace-period seconds, dimmed opacity greater than zero and
-less than one, and reposition-cadence seconds. Existing Display Configuration
-files containing only `displayOutputId` remain valid and use the defaults.
-Changing the Display Output preserves any saved inactivity calibration.
+less than one, and reposition-cadence seconds. Display Configuration requires
+`trackedOutputId`; the removed `displayOutputId` field is intentionally invalid
+and is not migrated. Changing the Tracked Output preserves any saved inactivity
+calibration.
 
 Display Configuration is stored at
 `$XDG_CONFIG_HOME/roonscape/display.json`, falling back to
@@ -123,10 +124,10 @@ retries the local socket until the bridge is available. A replacement bridge
 reclaims a stale socket left by an abruptly terminated predecessor, and every
 renderer connection receives its current complete snapshot immediately.
 
-The bridge follows the selected physical Display Output when Roon groups,
-ungroups, or renames its Display Zone. If the configuration is absent or
+The bridge follows the selected physical Tracked Output when Roon groups,
+ungroups, or renames its Tracked Zone. If the configuration is absent or
 invalid, or Roon removes the selected output, the viewer reports that the
-Display Output is unavailable instead of following another zone.
+Tracked Output is unavailable instead of following another zone.
 
 Current artwork is requested from Roon as a bounded JPEG derivative and staged
 atomically in an `artwork` directory beside the socket. Each complete snapshot

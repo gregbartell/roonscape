@@ -12,11 +12,12 @@ export type Availability =
 export type Playback = "playing" | "paused" | "loading" | "stopped";
 
 export interface PresentationSnapshot {
-  schemaVersion: 1;
+  schemaVersion: 2;
   revision: number;
   availability: Availability;
   playback: Playback | null;
-  displayZone: { name: string } | null;
+  trackedOutput: { name: string } | null;
+  trackedZone: { name: string } | null;
   nowPlaying: {
     title: string | null;
     artist: string | null;

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { discoverDisplayOutputs } from "../src/display-output-discovery.js";
+import { discoverTrackedOutputs } from "../src/tracked-output-discovery.js";
 import type { RoonExtensionOptions, RoonServices } from "../src/roon-bridge.js";
 
-test("discovers physical outputs from Roon's initial full zone state", async () => {
+test("discovers physical Tracked Outputs from Roon's initial full zone state", async () => {
   let extensionOptions: RoonExtensionOptions | undefined;
   let discoveryStarted = false;
   let discoveryStopped = false;
@@ -28,7 +28,7 @@ test("discovers physical outputs from Roon's initial full zone state", async () 
       set_status: () => undefined,
     },
   };
-  const discovery = discoverDisplayOutputs({
+  const discovery = discoverTrackedOutputs({
     authorizationStore: { load: () => ({}), save: () => undefined },
     createRoonServices: (options) => {
       extensionOptions = options;
@@ -80,19 +80,19 @@ test("discovers physical outputs from Roon's initial full zone state", async () 
   assert.equal(discoveryStarted, true);
   assert.deepEqual(await discovery, [
     {
-      outputId: "output-gallery",
-      displayName: "NUC HDMI",
-      displayZoneName: "Gallery",
+      trackedOutputId: "output-gallery",
+      trackedOutputName: "NUC HDMI",
+      trackedZoneName: "Gallery",
     },
     {
-      outputId: "output-kitchen",
-      displayName: "Kitchen Speaker",
-      displayZoneName: "Downstairs",
+      trackedOutputId: "output-kitchen",
+      trackedOutputName: "Kitchen Speaker",
+      trackedZoneName: "Downstairs",
     },
     {
-      outputId: "output-living",
-      displayName: "Living Room Speaker",
-      displayZoneName: "Downstairs",
+      trackedOutputId: "output-living",
+      trackedOutputName: "Living Room Speaker",
+      trackedZoneName: "Downstairs",
     },
   ]);
   assert.deepEqual(

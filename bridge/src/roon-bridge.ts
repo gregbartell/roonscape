@@ -144,6 +144,10 @@ interface RetainedZone {
   sampledAt: string;
 }
 
+interface TrackedZoneState extends RetainedZone {
+  trackedOutput: RoonOutput;
+}
+
 export function startRoonBridge({
   authorizationStore,
   artworkFiles,
@@ -247,12 +251,15 @@ export function startRoonBridge({
           return;
         }
 
-        const displayZone = [...zones.values()].find(({ zone }) =>
+        const trackedZone = [...zones.values()].find(({ zone }) =>
           zone.outputs.some(
-            (output) => output.output_id === configuration.displayOutputId,
+            (output) => output.output_id === configuration.trackedOutputId,
           ),
         );
-        if (displayZone === undefined) {
+        const trackedOutput = trackedZone?.zone.outputs.find(
+          (output) => output.output_id === configuration.trackedOutputId,
+        );
+        if (trackedZone === undefined || trackedOutput === undefined) {
           changeAvailability("outputUnavailable");
           return;
         }
@@ -260,11 +267,11 @@ export function startRoonBridge({
         const artworkIdentityMayHaveChanged =
           response === "Subscribed" ||
           [...(event.zones_added ?? []), ...(event.zones_changed ?? [])].some(
-            (zone) => zone.zone_id === displayZone.zone.zone_id,
+            (zone) => zone.zone_id === trackedZone.zone.zone_id,
           );
         artworkPresentation.present(
           core,
-          displayZone,
+          { ...trackedZone, trackedOutput },
           artworkIdentityMayHaveChanged,
         );
       });
@@ -328,11 +335,11 @@ class ArtworkPresentationCoordinator {
 
   present(
     core: RoonCore,
-    retainedZone: RetainedZone,
+    trackedZone: TrackedZoneState,
     artworkIdentityMayHaveChanged: boolean,
   ): void {
-    const { zone } = retainedZone;
-    const state = availableState(retainedZone);
+    const { zone } = trackedZone;
+    const state = availableState(trackedZone);
     const currentSnapshot = this.#currentSnapshot();
     const stateChanged = !samePresentationExceptArtwork(currentSnapshot, state);
 
@@ -428,7 +435,8 @@ class ArtworkPresentationCoordinator {
       schemaVersion: latest.schemaVersion,
       availability: latest.availability,
       playback: latest.playback,
-      displayZone: latest.displayZone,
+      trackedOutput: latest.trackedOutput,
+      trackedZone: latest.trackedZone,
       nowPlaying: latest.nowPlaying,
       progress: latest.progress,
       artwork,
@@ -459,38 +467,33 @@ function unavailableSnapshot(
 
 function unavailableState(availability: Unavailable): SnapshotState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     availability,
     playback: null,
-    displayZone: null,
+    trackedOutput: null,
+    trackedZone: null,
     nowPlaying: null,
     progress: null,
     artwork: null,
   };
 }
 
-function availableState({ zone, sampledAt }: RetainedZone): SnapshotState {
-  const retainsNowPlaying = zone.state !== "stopped";
-  const displayLines = retainsNowPlaying
-    ? zone.now_playing?.three_line
-    : undefined;
+function availableState({
+  zone,
+  sampledAt,
+  trackedOutput,
+}: TrackedZoneState): SnapshotState {
+  const { playback, trackedZone, nowPlaying, progress } =
+    zonePresentationSource({ zone, sampledAt });
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     availability: "available",
-    playback: zone.state,
-    displayZone: { name: zone.display_name },
-    nowPlaying:
-      displayLines === undefined
-        ? null
-        : {
-            title: displayLines.line1 ?? null,
-            artist: displayLines.line2 ?? null,
-            album: displayLines.line3 ?? null,
-          },
-    progress: retainsNowPlaying
-      ? meaningfulProgress(zone.now_playing, sampledAt)
-      : null,
+    playback,
+    trackedOutput: { name: trackedOutput.display_name },
+    trackedZone,
+    nowPlaying,
+    progress,
     artwork: null,
   };
 }
@@ -544,14 +547,43 @@ function sameZonePresentationSource(
   updatedZone: RoonZone,
 ): boolean {
   return (
-    JSON.stringify(availableState(retainedZone)) ===
+    JSON.stringify(zonePresentationSource(retainedZone)) ===
     JSON.stringify(
-      availableState({
+      zonePresentationSource({
         zone: updatedZone,
         sampledAt: retainedZone.sampledAt,
       }),
     )
   );
+}
+
+function zonePresentationSource({
+  zone,
+  sampledAt,
+}: RetainedZone): Pick<
+  SnapshotState,
+  "playback" | "trackedZone" | "nowPlaying" | "progress"
+> {
+  const retainsNowPlaying = zone.state !== "stopped";
+  const displayLines = retainsNowPlaying
+    ? zone.now_playing?.three_line
+    : undefined;
+
+  return {
+    playback: zone.state,
+    trackedZone: { name: zone.display_name },
+    nowPlaying:
+      displayLines === undefined
+        ? null
+        : {
+            title: displayLines.line1 ?? null,
+            artist: displayLines.line2 ?? null,
+            album: displayLines.line3 ?? null,
+          },
+    progress: retainsNowPlaying
+      ? meaningfulProgress(zone.now_playing, sampledAt)
+      : null,
+  };
 }
 
 function hasAuthorization(state: unknown): boolean {
@@ -580,7 +612,7 @@ function setExtensionStatus(
     },
     disconnected: { message: "Disconnected from Roon", isError: true },
     outputUnavailable: {
-      message: "Connected: Display Output unavailable",
+      message: "Connected: Tracked Output unavailable",
       isError: false,
     },
     available: { message: "Connected", isError: false },

@@ -19,8 +19,8 @@ platform.
 ## Solution
 
 Build RoonScape as a greenfield, display-only application in this repository.
-It observes one Display Output configured on the RoonScape Host, follows the
-Display Zone that currently contains that output, and presents Roon's current
+It observes one Tracked Output configured on the RoonScape Host, follows the
+Tracked Zone that currently contains that output, and presents Roon's current
 Now Playing state on the television without exposing any way to change Roon.
 
 Use Roon's supported JavaScript extension packages in a small TypeScript/Node.js
@@ -49,8 +49,8 @@ reposition to protect the OLED.
    rather than only someone standing beside it.
 5. As a listener, I want to see the current Zone, so that I can confirm which
    Roon playback context the television is presenting.
-6. As a listener, I do not want to see the internal Display Output identity, so
-   that implementation details do not clutter the presentation.
+6. As a listener, I want to see the Tracked Output name under **Output**, so
+   that I can confirm which physical Roon audio endpoint is being presented.
 7. As a listener, I want an explicit playing state, so that playback status is
    visible without relying on the meaning of a control button.
 8. As a listener, I want paused playback to freeze the progress display, so
@@ -104,7 +104,7 @@ reposition to protect the OLED.
     status remains useful without leaving bright static pixels indefinitely.
 31. As a listener, I want full presentation to return immediately when
     playback resumes, so that OLED protection never obscures active music.
-32. As the owner, I want RoonScape to observe one configured physical Display
+32. As the owner, I want RoonScape to observe one configured physical Tracked
     Output, so that its behavior is deterministic.
 33. As the owner, I want RoonScape to follow that output into and out of Roon
     groups, so that grouping does not disconnect the display from the physical
@@ -115,7 +115,7 @@ reposition to protect the OLED.
     RoonScape Host, so that the product needs no local or network settings
     interface.
 36. As the owner, I want first-time setup to provide some practical way to
-    discover and select a Display Output, so that I do not need to guess an
+    discover and select a Tracked Output, so that I do not need to guess an
     opaque identifier.
 37. As the owner, I want to enable RoonScape through an official Roon client,
     so that it uses Roon's normal extension authorization flow.
@@ -203,8 +203,8 @@ reposition to protect the OLED.
   re-anchors on each new sample.
 - Identify artwork by a presentation revision rather than treating Roon's
   opaque image key as a stable track or media identity.
-- Select one physical Display Output through Display Configuration on the
-  RoonScape Host and resolve its containing Display Zone on every relevant Roon
+- Select one physical Tracked Output through Display Configuration on the
+  RoonScape Host and resolve its containing Tracked Zone on every relevant Roon
   update. Grouping, ungrouping, and renaming must not trigger an automatic
   switch to another output.
 - Leave the exact one-time selection workflow and Display Configuration format
@@ -227,8 +227,8 @@ reposition to protect the OLED.
   second full-resolution decoded copy.
 - Adopt the Gallery split composition: dominant square artwork on the left and
   a narrower metadata column on the right.
-- Keep Display Output identity offscreen. Present only the Display Zone name
-  under the label **Zone**.
+- Present the Tracked Output name under **Output** and the Tracked Zone name
+  under **Zone** whenever those identities are authoritative.
 - Derive the full presentation palette, including text, from current artwork.
   Choose readable combinations from that artwork and use a neutral fallback
   when artwork is absent. Exact extraction and contrast algorithms remain an
@@ -318,7 +318,7 @@ reposition to protect the OLED.
 - Library browsing, search, queue management, notifications, settings screens,
   theme selection, and user-facing diagnostics during normal operation.
 - Automatic active-zone selection, fallback zones, multi-zone presentation,
-  or switching away from the configured Display Output.
+  or switching away from the configured Tracked Output.
 - Television power control, input switching, HDMI-CEC behavior, or making the
   display responsible for television availability.
 - Lyrics, which are deferred for now.
@@ -345,7 +345,8 @@ reposition to protect the OLED.
   hardware, display resolutions, and graphical session arrangements remain
   unverified until another deployment exercises them.
 - The user chose Variant A, Gallery split, from a five-variant throwaway visual
-  prototype. The verdict includes hiding Display Output, labeling Display Zone
-  as **Zone**, and deriving every presentation color from the actual artwork.
+  prototype. The current direction presents Tracked Output and Tracked Zone as
+  **Output** and **Zone** and derives every presentation color from the actual
+  artwork.
 - The full visual prototype is preserved only on the
   `prototype/visual-variants` branch.

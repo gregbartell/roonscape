@@ -1,21 +1,21 @@
-import type { DiscoverableDisplayOutput } from "./display-configuration-command.js";
+import type { DiscoverableTrackedOutput } from "./display-configuration-command.js";
 import {
   type AuthorizationStore,
   type CreateRoonServices,
 } from "./roon-bridge.js";
 import { initializeRoonExtension } from "./roon-extension.js";
 
-interface DisplayOutputDiscoveryOptions {
+interface TrackedOutputDiscoveryOptions {
   authorizationStore: AuthorizationStore;
   createRoonServices: CreateRoonServices;
   timeoutMilliseconds?: number;
 }
 
-export function discoverDisplayOutputs({
+export function discoverTrackedOutputs({
   authorizationStore,
   createRoonServices,
   timeoutMilliseconds = 60_000,
-}: DisplayOutputDiscoveryOptions): Promise<DiscoverableDisplayOutput[]> {
+}: TrackedOutputDiscoveryOptions): Promise<DiscoverableTrackedOutput[]> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const services = initializeRoonExtension({
@@ -34,9 +34,9 @@ export function discoverDisplayOutputs({
           resolve(
             (event.zones ?? []).flatMap((zone) =>
               zone.outputs.map((output) => ({
-                outputId: output.output_id,
-                displayName: output.display_name,
-                displayZoneName: zone.display_name,
+                trackedOutputId: output.output_id,
+                trackedOutputName: output.display_name,
+                trackedZoneName: zone.display_name,
               })),
             ),
           );
@@ -45,7 +45,7 @@ export function discoverDisplayOutputs({
       coreUnpaired: () => undefined,
     });
 
-    services.status.set_status("Discovering Display Outputs", false);
+    services.status.set_status("Discovering Tracked Outputs", false);
     const timeout = setTimeout(() => {
       settled = true;
       services.extension.stop_discovery();

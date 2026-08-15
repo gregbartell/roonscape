@@ -30,11 +30,11 @@ fn snapshot(fixture_name: &str, revision: u64) -> roonscape_renderer::Presentati
 }
 
 #[test]
-fn output_only_display_configuration_remains_valid_with_optional_diagnostics() {
+fn tracked_output_only_display_configuration_remains_valid_with_optional_diagnostics() {
     let inactivity = inactivity_configuration_from_display_configuration(&support::fixture(
-        "display-configuration-output-only.json",
+        "display-configuration-tracked-output-only.json",
     ))
-    .expect("Display Output-only configuration should remain valid");
+    .expect("Tracked Output-only configuration should remain valid");
 
     assert_eq!(inactivity, InactivityConfiguration::default());
     assert!(

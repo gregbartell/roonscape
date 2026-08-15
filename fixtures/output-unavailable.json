@@ -1,9 +1,10 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "revision": 1,
   "availability": "outputUnavailable",
   "playback": null,
-  "displayZone": null,
+  "trackedOutput": null,
+  "trackedZone": null,
   "nowPlaying": null,
   "progress": null,
   "artwork": null

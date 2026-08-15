@@ -4,9 +4,9 @@
   "title": "RoonScape Display Configuration",
   "type": "object",
   "additionalProperties": false,
-  "required": ["displayOutputId"],
+  "required": ["trackedOutputId"],
   "properties": {
-    "displayOutputId": {
+    "trackedOutputId": {
       "type": "string",
       "minLength": 1
     },

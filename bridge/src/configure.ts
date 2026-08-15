@@ -7,7 +7,7 @@ import {
   FileDisplayConfigurationStore,
   displayConfigurationFilePath,
 } from "./display-configuration.js";
-import { discoverDisplayOutputs } from "./display-output-discovery.js";
+import { discoverTrackedOutputs } from "./tracked-output-discovery.js";
 import { createSupportedRoonServices } from "./roon-services.js";
 
 const authorizationStore = new FileAuthorizationStore(authorizationFilePath());
@@ -20,8 +20,8 @@ try {
     process.argv.slice(2),
     {
       configurationStore,
-      discoverOutputs: () =>
-        discoverDisplayOutputs({
+      discoverTrackedOutputs: () =>
+        discoverTrackedOutputs({
           authorizationStore,
           createRoonServices: createSupportedRoonServices,
         }),

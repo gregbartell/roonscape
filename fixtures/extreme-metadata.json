@@ -1,9 +1,12 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "revision": 18,
   "availability": "available",
   "playback": "playing",
-  "displayZone": {
+  "trackedOutput": {
+    "name": "NUC HDMI"
+  },
+  "trackedZone": {
     "name": "Gallery"
   },
   "nowPlaying": {

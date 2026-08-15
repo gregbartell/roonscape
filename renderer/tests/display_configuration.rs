@@ -8,9 +8,9 @@ use roonscape_renderer::{
 };
 
 #[test]
-fn existing_display_output_only_configuration_uses_inactivity_defaults() {
+fn existing_tracked_output_only_configuration_uses_inactivity_defaults() {
     let configuration = inactivity_configuration_from_display_configuration(&fixture(
-        "display-configuration-output-only.json",
+        "display-configuration-tracked-output-only.json",
     ))
     .expect("existing Display Configuration should remain valid");
 
@@ -34,11 +34,11 @@ fn reads_host_inactivity_calibration_from_display_configuration() {
 #[test]
 fn rejects_invalid_host_inactivity_calibration() {
     for contents in [
-        r#"{"displayOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":0,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
-        r#"{"displayOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0,"repositionCadenceSeconds":45}}"#,
-        r#"{"displayOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1,"repositionCadenceSeconds":45}}"#,
-        r#"{"displayOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1.1,"repositionCadenceSeconds":45}}"#,
-        r#"{"displayOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":0}}"#,
+        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":0,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1.1,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":0}}"#,
     ] {
         assert!(inactivity_configuration_from_display_configuration(contents).is_err());
     }
@@ -48,7 +48,8 @@ fn rejects_invalid_host_inactivity_calibration() {
 fn rejects_display_configuration_outside_the_shared_contract() {
     for contents in [
         r#"{"inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
-        r#"{"displayOutputId":"output-gallery","fallback":"output-kitchen"}"#,
+        r#"{"trackedOutputId":"output-gallery","fallback":"output-kitchen"}"#,
+        r#"{"trackedOutputId":"output-gallery","displayOutputId":"output-gallery"}"#,
     ] {
         assert!(inactivity_configuration_from_display_configuration(contents).is_err());
     }
@@ -69,7 +70,7 @@ fn loads_inactivity_calibration_from_the_host_file() {
     let configuration_file = task_directory.path().join("display.json");
     fs::write(
         &configuration_file,
-        r#"{"displayOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
     )
     .expect("test Display Configuration should be writable");
 

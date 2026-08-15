@@ -36,7 +36,8 @@ fn maps_the_playing_snapshot_to_gallery_split_content() {
     assert_eq!(presentation.title.as_deref(), Some("A Moment Apart"));
     assert_eq!(presentation.artist.as_deref(), Some("ODESZA"));
     assert_eq!(presentation.album.as_deref(), Some("A Moment Apart"));
-    assert_eq!(presentation.display_zone, "Gallery");
+    assert_eq!(presentation.tracked_output, "NUC HDMI");
+    assert_eq!(presentation.tracked_zone, "Gallery");
     assert_eq!(presentation.playback_state, "Playing");
     assert_eq!(presentation.artwork_revision, Some(3));
     assert_eq!(
@@ -96,8 +97,8 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
         (
             "output-unavailable.json",
             "Output unavailable",
-            "Display Output unavailable",
-            "Configure a Display Output on this RoonScape Host, or check that the selected output is available in Roon.",
+            "Tracked Output unavailable",
+            "Configure a Tracked Output on this RoonScape Host, or check that the selected output is available in Roon.",
         ),
     ];
 

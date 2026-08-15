@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { loadSnapshot } from "../src/snapshot.js";
+import { loadSnapshot, validateSnapshot } from "../src/snapshot.js";
 
 test("loads the shared Playing fixture as a complete snapshot", async () => {
   const snapshot = await loadSnapshot("fixtures/playing.json");
 
   assert.deepEqual(snapshot, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 7,
     availability: "available",
     playback: "playing",
-    displayZone: { name: "Gallery" },
+    trackedOutput: { name: "NUC HDMI" },
+    trackedZone: { name: "Gallery" },
     nowPlaying: {
       title: "A Moment Apart",
       artist: "ODESZA",
@@ -82,7 +83,8 @@ test("loads every shared unavailable fixture without stale Now Playing", async (
       {
         availability: snapshot.availability,
         playback: snapshot.playback,
-        displayZone: snapshot.displayZone,
+        trackedOutput: snapshot.trackedOutput,
+        trackedZone: snapshot.trackedZone,
         nowPlaying: snapshot.nowPlaying,
         progress: snapshot.progress,
         artwork: snapshot.artwork,
@@ -90,7 +92,8 @@ test("loads every shared unavailable fixture without stale Now Playing", async (
       {
         availability,
         playback: null,
-        displayZone: null,
+        trackedOutput: null,
+        trackedZone: null,
         nowPlaying: null,
         progress: null,
         artwork: null,
@@ -140,6 +143,41 @@ test("loads indeterminate progress as absent and permits clamping samples", asyn
 test("rejects the shared invalid fixture", async () => {
   await assert.rejects(
     loadSnapshot("fixtures/invalid.json"),
+    /Invalid presentation snapshot/,
+  );
+});
+
+test("rejects the removed displayZone snapshot field", async () => {
+  await assert.rejects(
+    validateSnapshot({
+      schemaVersion: 2,
+      revision: 1,
+      availability: "available",
+      playback: "playing",
+      trackedOutput: { name: "NUC HDMI" },
+      trackedZone: { name: "Gallery" },
+      displayZone: { name: "Gallery" },
+      nowPlaying: null,
+      progress: null,
+      artwork: null,
+    }),
+    /Invalid presentation snapshot/,
+  );
+});
+
+test("requires both Tracked Output and Tracked Zone for available snapshots", async () => {
+  const snapshot = await loadSnapshot("fixtures/playing.json");
+  const missingTrackedOutput: Partial<typeof snapshot> = { ...snapshot };
+  const missingTrackedZone: Partial<typeof snapshot> = { ...snapshot };
+  Reflect.deleteProperty(missingTrackedOutput, "trackedOutput");
+  Reflect.deleteProperty(missingTrackedZone, "trackedZone");
+
+  await assert.rejects(
+    validateSnapshot(missingTrackedOutput),
+    /Invalid presentation snapshot/,
+  );
+  await assert.rejects(
+    validateSnapshot(missingTrackedZone),
     /Invalid presentation snapshot/,
   );
 });

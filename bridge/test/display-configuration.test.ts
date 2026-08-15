@@ -17,7 +17,7 @@ test("persists Display Configuration in a private dedicated file", async () => {
     const configDirectory = path.join(taskDirectory, "config");
     const configurationFile = path.join(configDirectory, "display.json");
     const store = new FileDisplayConfigurationStore(configurationFile);
-    const configuration = { displayOutputId: "output-gallery" };
+    const configuration = { trackedOutputId: "output-gallery" };
 
     assert.equal(store.load(), null);
     store.save(configuration);
@@ -41,19 +41,19 @@ test("loads existing Display Configuration without inactivity calibration", asyn
   const store = new FileDisplayConfigurationStore(
     path.join(
       repositoryRoot,
-      "fixtures/display-configuration-output-only.json",
+      "fixtures/display-configuration-tracked-output-only.json",
     ),
   );
 
-  assert.deepEqual(store.load(), { displayOutputId: "output-gallery" });
+  assert.deepEqual(store.load(), { trackedOutputId: "output-gallery" });
 });
 
-test("persists inactivity calibration with Display Output selection", async () => {
+test("persists inactivity calibration with Tracked Output selection", async () => {
   await withTaskDirectory(async (taskDirectory) => {
     const configurationFile = path.join(taskDirectory, "display.json");
     const store = new FileDisplayConfigurationStore(configurationFile);
     const configuration = {
-      displayOutputId: "output-gallery",
+      trackedOutputId: "output-gallery",
       inactivity: {
         gracePeriodSeconds: 240,
         dimmedOpacity: 0.3,
@@ -73,12 +73,29 @@ test("loads shared inactivity Display Configuration", () => {
   );
 
   assert.deepEqual(store.load(), {
-    displayOutputId: "output-gallery",
+    trackedOutputId: "output-gallery",
     inactivity: {
       gracePeriodSeconds: 240,
       dimmedOpacity: 0.3,
       repositionCadenceSeconds: 45,
     },
+  });
+});
+
+test("rejects the removed displayOutputId field", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const configurationFile = path.join(taskDirectory, "display.json");
+    const store = new FileDisplayConfigurationStore(configurationFile);
+
+    await writeFile(
+      configurationFile,
+      JSON.stringify({
+        trackedOutputId: "output-gallery",
+        displayOutputId: "output-gallery",
+      }),
+    );
+
+    assert.equal(store.load(), null);
   });
 });
 
@@ -100,10 +117,10 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
 
     for (const contents of [
       "not JSON",
-      JSON.stringify({ displayOutputId: "" }),
-      JSON.stringify({ displayOutputId: "output-1", fallback: "output-2" }),
+      JSON.stringify({ trackedOutputId: "" }),
+      JSON.stringify({ trackedOutputId: "output-1", fallback: "output-2" }),
       JSON.stringify({
-        displayOutputId: "output-1",
+        trackedOutputId: "output-1",
         inactivity: {
           gracePeriodSeconds: 0,
           dimmedOpacity: 0.3,
@@ -111,7 +128,7 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
         },
       }),
       JSON.stringify({
-        displayOutputId: "output-1",
+        trackedOutputId: "output-1",
         inactivity: {
           gracePeriodSeconds: 240,
           dimmedOpacity: 1,
@@ -119,7 +136,7 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
         },
       }),
       JSON.stringify({
-        displayOutputId: "output-1",
+        trackedOutputId: "output-1",
         inactivity: {
           gracePeriodSeconds: 240,
           dimmedOpacity: 1.1,

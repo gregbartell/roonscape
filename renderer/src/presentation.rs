@@ -51,7 +51,8 @@ pub struct NowPlayingPresentation {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
-    pub display_zone: String,
+    pub tracked_output: String,
+    pub tracked_zone: String,
     pub playback_state: String,
     pub progress: Option<PresentationProgress>,
     pub artwork_revision: Option<u64>,
@@ -284,7 +285,8 @@ fn transition_content_changed(
 ) -> bool {
     previous.availability != next.availability
         || previous.playback != next.playback
-        || previous.display_zone != next.display_zone
+        || previous.tracked_output != next.tracked_output
+        || previous.tracked_zone != next.tracked_zone
         || previous.now_playing != next.now_playing
         || previous.progress.is_some() != next.progress.is_some()
         || previous.artwork != next.artwork
@@ -304,11 +306,12 @@ fn inactivity_condition(snapshot: &PresentationSnapshot) -> Option<InactivityCon
 
 fn disconnected_snapshot(revision: u64) -> PresentationSnapshot {
     PresentationSnapshot {
-        schema_version: 1,
+        schema_version: 2,
         revision,
         availability: Availability::Disconnected,
         playback: None,
-        display_zone: None,
+        tracked_output: None,
+        tracked_zone: None,
         now_playing: None,
         progress: None,
         artwork: None,
@@ -356,8 +359,11 @@ fn presentation_from_snapshot_after(
     let playback = snapshot.playback.ok_or(PresentationError(
         "an available snapshot requires playback state",
     ))?;
-    let display_zone = snapshot.display_zone.as_ref().ok_or(PresentationError(
-        "an available snapshot requires a Display Zone",
+    let tracked_output = snapshot.tracked_output.as_ref().ok_or(PresentationError(
+        "an available snapshot requires a Tracked Output",
+    ))?;
+    let tracked_zone = snapshot.tracked_zone.as_ref().ok_or(PresentationError(
+        "an available snapshot requires a Tracked Zone",
     ))?;
     let retains_now_playing = playback != Playback::Stopped;
     let now_playing = if retains_now_playing {
@@ -370,7 +376,8 @@ fn presentation_from_snapshot_after(
         title: now_playing.and_then(|now_playing| now_playing.title.clone()),
         artist: now_playing.and_then(|now_playing| now_playing.artist.clone()),
         album: now_playing.and_then(|now_playing| now_playing.album.clone()),
-        display_zone: display_zone.name.clone(),
+        tracked_output: tracked_output.name.clone(),
+        tracked_zone: tracked_zone.name.clone(),
         playback_state: playback_label(playback).to_owned(),
         progress: if retains_now_playing {
             snapshot
@@ -410,8 +417,8 @@ fn unavailable_presentation(availability: Availability) -> UnavailablePresentati
         },
         Availability::OutputUnavailable => UnavailablePresentation {
             state_label: "Output unavailable",
-            heading: "Display Output unavailable",
-            explanation: "Configure a Display Output on this RoonScape Host, or check that the selected output is available in Roon.",
+            heading: "Tracked Output unavailable",
+            explanation: "Configure a Tracked Output on this RoonScape Host, or check that the selected output is available in Roon.",
         },
         Availability::Available => unreachable!("available snapshots use Now Playing"),
     }

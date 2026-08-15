@@ -13,7 +13,8 @@ pub struct PresentationSnapshot {
     pub revision: u64,
     pub availability: Availability,
     pub playback: Option<Playback>,
-    pub display_zone: Option<DisplayZone>,
+    pub tracked_output: Option<TrackedOutput>,
+    pub tracked_zone: Option<TrackedZone>,
     pub now_playing: Option<NowPlaying>,
     pub progress: Option<Progress>,
     pub artwork: Option<ArtworkReference>,
@@ -39,7 +40,13 @@ pub enum Playback {
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct DisplayZone {
+pub struct TrackedOutput {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TrackedZone {
     pub name: String,
 }
 

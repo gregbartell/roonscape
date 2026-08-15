@@ -8,7 +8,7 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { isMissingFile, writePrivateJsonFile } from "./private-json-file.js";
 
 export interface DisplayConfiguration {
-  displayOutputId: string;
+  trackedOutputId: string;
   inactivity?: InactivityConfiguration;
 }
 

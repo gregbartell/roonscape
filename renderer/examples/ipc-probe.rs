@@ -40,7 +40,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 let revision = snapshot.revision;
                 let availability = availability_name(snapshot.availability);
                 presentation.update(
-                    snapshot,
+                    *snapshot,
                     PresentationTime::new(clock.elapsed(), SystemTime::now()),
                 )?;
                 println!(

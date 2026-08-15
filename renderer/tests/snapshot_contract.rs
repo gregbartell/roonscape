@@ -7,13 +7,20 @@ fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
     let fixture = support::fixture("playing.json");
     let snapshot = parse_snapshot(&fixture).expect("shared Playing fixture should be valid");
 
-    assert_eq!(snapshot.schema_version, 1);
+    assert_eq!(snapshot.schema_version, 2);
     assert_eq!(snapshot.revision, 7);
     assert_eq!(snapshot.availability, Availability::Available);
     assert_eq!(snapshot.playback, Some(Playback::Playing));
     assert_eq!(
         snapshot
-            .display_zone
+            .tracked_output
+            .as_ref()
+            .map(|output| output.name.as_str()),
+        Some("NUC HDMI")
+    );
+    assert_eq!(
+        snapshot
+            .tracked_zone
             .as_ref()
             .map(|zone| zone.name.as_str()),
         Some("Gallery")
@@ -140,7 +147,8 @@ fn parses_every_shared_unavailable_fixture_without_stale_content() {
 
         assert_eq!(snapshot.availability, availability);
         assert_eq!(snapshot.playback, None);
-        assert_eq!(snapshot.display_zone, None);
+        assert_eq!(snapshot.tracked_output, None);
+        assert_eq!(snapshot.tracked_zone, None);
         assert_eq!(snapshot.now_playing, None);
         assert_eq!(snapshot.progress, None);
         assert_eq!(snapshot.artwork, None);
@@ -195,4 +203,14 @@ fn rejects_invalid_timing_and_stopped_snapshots_with_stale_now_playing() {
 
         assert!(error.to_string().contains("violates the schema"));
     }
+}
+
+#[test]
+fn rejects_the_removed_display_zone_snapshot_field() {
+    let error = parse_snapshot(
+        r#"{"schemaVersion":2,"revision":1,"availability":"available","playback":"playing","trackedOutput":{"name":"NUC HDMI"},"trackedZone":{"name":"Gallery"},"displayZone":{"name":"Gallery"},"nowPlaying":null,"progress":null,"artwork":null}"#,
+    )
+    .expect_err("the removed displayZone field should be rejected");
+
+    assert!(error.to_string().contains("violates the schema"));
 }

@@ -24,7 +24,7 @@ pub enum ConnectionState {
 #[derive(Debug, PartialEq)]
 pub enum SnapshotEvent {
     ConnectionChanged(ConnectionState),
-    Snapshot(PresentationSnapshot),
+    Snapshot(Box<PresentationSnapshot>),
 }
 
 pub struct SnapshotSubscription {
@@ -111,7 +111,10 @@ impl SnapshotSubscription {
                 loop {
                     match reader.read_snapshot() {
                         Ok(snapshot) => {
-                            if sender.send(SnapshotEvent::Snapshot(snapshot)).is_err() {
+                            if sender
+                                .send(SnapshotEvent::Snapshot(Box::new(snapshot)))
+                                .is_err()
+                            {
                                 return;
                             }
                         }
