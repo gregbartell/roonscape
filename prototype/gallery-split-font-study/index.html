@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+  PROTOTYPE / THROWAWAY — five typography treatments for the agreed Gallery
+  split restyle, switchable with ?variant= on this one static route.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>RoonScape Gallery split font study</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@500;600;700&amp;family=Inter:wght@500;600;700&amp;family=Libre+Baskerville:ital@0;1&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500&amp;family=Source+Sans+3:wght@500;600;700&amp;family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&amp;family=Work+Sans:wght@500;600;700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <aside class="fixture-inspector" id="fixture-inspector" hidden aria-label="Typography and fixture state">
+      <header>
+        <span>Typography and fixture state</span>
+        <kbd>I</kbd>
+      </header>
+      <pre id="fixture-json"></pre>
+    </aside>
+
+    <nav class="prototype-bar" aria-label="Prototype controls" data-prototype-only>
+      <span class="prototype-mark">FONT STUDY</span>
+      <button id="previous-variant" type="button" aria-label="Previous font pairing">←</button>
+      <div class="variant-readout" aria-live="polite">
+        <strong id="variant-key">A</strong>
+        <span id="variant-name">Original reference</span>
+      </div>
+      <button id="next-variant" type="button" aria-label="Next font pairing">→</button>
+      <span class="bar-rule" aria-hidden="true"></span>
+      <button class="text-button" id="cycle-state" type="button">State: Playing</button>
+      <button class="text-button" id="inspect-fixture" type="button" aria-expanded="false">Inspect</button>
+    </nav>
+
+    <script src="prototype.js"></script>
+  </body>
+</html>
