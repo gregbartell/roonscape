@@ -1,3 +1,6 @@
+import path from "node:path";
+
+import { ArtworkFileStore } from "./artwork-file-store.js";
 import {
   FileAuthorizationStore,
   authorizationFilePath,
@@ -20,12 +23,16 @@ const authorizationStore = new FileAuthorizationStore(authorizationFilePath());
 const displayConfigurationStore = new FileDisplayConfigurationStore(
   displayConfigurationFilePath(),
 );
+const artworkFiles = await ArtworkFileStore.open(
+  path.join(path.dirname(socketPath), "artwork"),
+);
 const publisher = await startSnapshotPublisher(
   initialAvailabilitySnapshot(authorizationStore),
   socketPath,
 );
 const bridge = startRoonBridge({
   authorizationStore,
+  artworkFiles,
   displayConfigurationStore,
   createRoonServices: createSupportedRoonServices,
   publish: (snapshot) => publisher.publish(snapshot),
@@ -35,7 +42,9 @@ process.stdout.write(`RoonScape bridge listening at ${socketPath}\n`);
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
-    bridge.stop();
-    void publisher.close().finally(() => process.exit(0));
+    void bridge
+      .stop()
+      .then(() => publisher.close())
+      .finally(() => process.exit(0));
   });
 }

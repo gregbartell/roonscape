@@ -12,8 +12,8 @@ use gtk::glib;
 use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    NowPlayingPresentation, Presentation, PresentationProgress, PresentationSnapshot,
-    SnapshotReader, UnavailablePresentation, presentation_from_snapshot,
+    NowPlayingPresentation, Presentation, PresentationPalette, PresentationProgress,
+    PresentationSnapshot, SnapshotReader, UnavailablePresentation, presentation_from_snapshot,
 };
 
 const APPLICATION_ID: &str = "io.roonscape.Renderer";
@@ -65,18 +65,25 @@ fn build_window(
     updates: Rc<Receiver<PresentationSnapshot>>,
     repository_root: &Path,
 ) {
-    install_styles();
+    let style_provider = install_style_provider();
 
     let window = gtk::ApplicationWindow::builder()
         .application(application)
+        .decorated(false)
         .default_width(1600)
         .default_height(900)
+        .show_menubar(false)
         .title("RoonScape")
         .build();
-    window.set_child(Some(&presentation_view(&presentation, repository_root)));
+    window.set_child(Some(&presentation_view(
+        &presentation,
+        repository_root,
+        &style_provider,
+    )));
 
     let updating_window = window.clone();
     let repository_root = repository_root.to_path_buf();
+    let updating_style_provider = style_provider.clone();
     glib::timeout_add_local(Duration::from_millis(50), move || {
         let mut latest_snapshot = None;
         loop {
@@ -89,8 +96,11 @@ fn build_window(
 
         if let Some(snapshot) = latest_snapshot {
             match presentation_from_snapshot(&snapshot) {
-                Ok(presentation) => updating_window
-                    .set_child(Some(&presentation_view(&presentation, &repository_root))),
+                Ok(presentation) => updating_window.set_child(Some(&presentation_view(
+                    &presentation,
+                    &repository_root,
+                    &updating_style_provider,
+                ))),
                 Err(error) => eprintln!("RoonScape renderer: {error}"),
             }
         }
@@ -135,16 +145,26 @@ fn start_snapshot_reader(mut reader: SnapshotReader) -> Receiver<PresentationSna
     receiver
 }
 
-fn presentation_view(presentation: &Presentation, repository_root: &Path) -> gtk::Box {
+fn presentation_view(
+    presentation: &Presentation,
+    repository_root: &Path,
+    style_provider: &gtk::CssProvider,
+) -> gtk::Widget {
+    let palette = palette_for_presentation(presentation, repository_root);
+    install_styles(style_provider, palette);
+
     match presentation {
-        Presentation::NowPlaying(presentation) => gallery_split(presentation, repository_root),
-        Presentation::Unavailable(presentation) => unavailable(presentation),
+        Presentation::NowPlaying(presentation) => {
+            gallery_split(presentation, repository_root).upcast()
+        }
+        Presentation::Unavailable(presentation) => unavailable(presentation).upcast(),
     }
 }
 
-fn gallery_split(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk::Box {
-    let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+fn gallery_split(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk::Grid {
+    let root = gtk::Grid::new();
     root.add_css_class("gallery-split");
+    root.set_column_homogeneous(true);
 
     let artwork_column = gtk::Box::new(gtk::Orientation::Vertical, 0);
     artwork_column.add_css_class("artwork-column");
@@ -153,10 +173,9 @@ fn gallery_split(presentation: &NowPlayingPresentation, repository_root: &Path) 
     artwork_column.append(&artwork(presentation, repository_root));
 
     let metadata_column = metadata(presentation);
-    set_responsive_column_width(&root, &metadata_column);
 
-    root.append(&artwork_column);
-    root.append(&metadata_column);
+    root.attach(&artwork_column, 0, 0, 58, 1);
+    root.attach(&metadata_column, 58, 0, 42, 1);
     root
 }
 
@@ -170,8 +189,12 @@ fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk
     picture.set_can_shrink(true);
     picture.set_hexpand(true);
     picture.set_vexpand(true);
+    if presentation.artwork_path.is_none() {
+        picture.add_css_class("artwork-missing");
+    }
 
     let frame = gtk::AspectFrame::new(0.5, 0.5, 1.0, false);
+    frame.add_css_class("artwork-frame");
     frame.set_hexpand(true);
     frame.set_vexpand(true);
     frame.set_child(Some(&picture));
@@ -255,21 +278,10 @@ fn unavailable(presentation: &UnavailablePresentation) -> gtk::Box {
 
     copy.append(&message);
 
-    set_responsive_column_width(&root, &copy);
+    copy.set_width_request(672);
 
     root.append(&copy);
     root
-}
-
-fn set_responsive_column_width(root: &gtk::Box, column: &gtk::Box) {
-    column.set_width_request(672);
-    let responsive_column = column.clone();
-    root.connect_notify_local(Some("width"), move |root, _| {
-        let width = root.width();
-        if width > 0 {
-            responsive_column.set_width_request(width * 42 / 100);
-        }
-    });
 }
 
 fn playback_state(state: &str) -> gtk::Box {
@@ -320,13 +332,38 @@ fn metadata_label(text: &str, class_name: &str) -> gtk::Label {
     label
 }
 
-fn install_styles() {
+fn palette_for_presentation(
+    presentation: &Presentation,
+    repository_root: &Path,
+) -> PresentationPalette {
+    let Presentation::NowPlaying(presentation) = presentation else {
+        return PresentationPalette::neutral();
+    };
+    let artwork_path = presentation
+        .artwork_path
+        .as_deref()
+        .map(|path| repository_root.join(path));
+
+    match PresentationPalette::for_artwork(artwork_path.as_deref()) {
+        Ok(palette) => palette,
+        Err(error) => {
+            eprintln!("RoonScape renderer: {error}");
+            PresentationPalette::neutral()
+        }
+    }
+}
+
+fn install_style_provider() -> gtk::CssProvider {
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(STYLES);
     let display = gdk::Display::default().expect("GTK should have a display");
     gtk::style_context_add_provider_for_display(
         &display,
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
+    provider
+}
+
+fn install_styles(provider: &gtk::CssProvider, palette: PresentationPalette) {
+    provider.load_from_data(&format!("{}\n{STYLES}", palette.css_definitions()));
 }

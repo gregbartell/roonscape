@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "revision": 9,
+  "availability": "available",
+  "playback": "playing",
+  "displayZone": {
+    "name": "Gallery"
+  },
+  "nowPlaying": {
+    "title": "Across the Room",
+    "artist": "ODESZA",
+    "album": "A Moment Apart"
+  },
+  "progress": null,
+  "artwork": {
+    "revision": 9,
+    "path": "fixtures/artwork/playing.svg"
+  }
+}

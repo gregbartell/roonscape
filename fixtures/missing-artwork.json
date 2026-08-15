@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "revision": 8,
+  "availability": "available",
+  "playback": "playing",
+  "displayZone": {
+    "name": "Gallery"
+  },
+  "nowPlaying": {
+    "title": "A Moment Apart",
+    "artist": "ODESZA",
+    "album": "A Moment Apart"
+  },
+  "progress": null,
+  "artwork": null
+}

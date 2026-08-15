@@ -32,6 +32,32 @@ fn maps_the_playing_snapshot_to_gallery_split_content() {
 }
 
 #[test]
+fn carries_artwork_presence_and_presentation_revision_into_gallery_split() {
+    let missing_fixture = support::fixture("missing-artwork.json");
+    let missing_snapshot =
+        parse_snapshot(&missing_fixture).expect("missing artwork fixture should be valid");
+    let Presentation::NowPlaying(missing) = presentation_from_snapshot(&missing_snapshot)
+        .expect("missing artwork should retain the neutral Now Playing presentation")
+    else {
+        panic!("available content should produce Now Playing");
+    };
+
+    assert_eq!(missing.artwork_path, None);
+    assert_eq!(missing.artwork_revision, None);
+
+    let revised_fixture = support::fixture("artwork-revision-changed.json");
+    let revised_snapshot =
+        parse_snapshot(&revised_fixture).expect("artwork revision fixture should be valid");
+    let Presentation::NowPlaying(revised) = presentation_from_snapshot(&revised_snapshot)
+        .expect("revised artwork should produce Now Playing")
+    else {
+        panic!("available content should produce Now Playing");
+    };
+
+    assert_eq!(revised.artwork_revision, Some(9));
+}
+
+#[test]
 fn maps_unavailable_snapshots_to_distinct_explanations() {
     let expected = [
         (

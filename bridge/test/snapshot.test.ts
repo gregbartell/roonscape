@@ -29,6 +29,20 @@ test("loads the shared Playing fixture as a complete snapshot", async () => {
   });
 });
 
+test("loads missing artwork and artwork revision fixtures", async () => {
+  const missingArtwork = await loadSnapshot("fixtures/missing-artwork.json");
+  const revisedArtwork = await loadSnapshot(
+    "fixtures/artwork-revision-changed.json",
+  );
+
+  assert.equal(missingArtwork.artwork, null);
+  assert.deepEqual(revisedArtwork.artwork, {
+    revision: 9,
+    path: "fixtures/artwork/playing.svg",
+  });
+  assert.equal(revisedArtwork.revision, 9);
+});
+
 test("loads every shared unavailable fixture without stale Now Playing", async () => {
   const fixtures = [
     ["pairing-required.json", "pairingRequired"],

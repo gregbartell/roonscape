@@ -56,6 +56,24 @@ fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
 }
 
 #[test]
+fn parses_missing_artwork_and_artwork_revision_fixtures() {
+    let missing = parse_snapshot(&support::fixture("missing-artwork.json"))
+        .expect("missing artwork fixture should be valid");
+    let revised = parse_snapshot(&support::fixture("artwork-revision-changed.json"))
+        .expect("artwork revision fixture should be valid");
+
+    assert_eq!(missing.artwork, None);
+    assert_eq!(revised.revision, 9);
+    assert_eq!(
+        revised
+            .artwork
+            .as_ref()
+            .map(|artwork| (artwork.revision, artwork.path.as_str())),
+        Some((9, "fixtures/artwork/playing.svg"))
+    );
+}
+
+#[test]
 fn rejects_the_shared_invalid_fixture() {
     let fixture = support::fixture("invalid.json");
 

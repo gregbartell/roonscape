@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 
+import {
+  ArtworkFileStore,
+  type ArtworkFiles,
+} from "../src/artwork-file-store.js";
 import {
   startRoonBridge,
   type AuthorizationStore,
@@ -23,11 +29,25 @@ interface RoonBoundary {
   emitZones(response: RoonZoneSubscriptionResponse, event: RoonZoneEvent): void;
   extension: RoonExtension;
   extensionOptions(): RoonExtensionOptions;
+  imageRequests: Array<{
+    imageKey: string;
+    options: {
+      scale: "fit";
+      width: number;
+      height: number;
+      format: "image/jpeg";
+    };
+  }>;
+  resolveImage(contentType: string, image: Buffer): void;
+  resolveImageRequest(index: number, contentType: string, image: Buffer): void;
   snapshots: PresentationSnapshot[];
   statusUpdates: Array<{ message: string; isError: boolean }>;
 }
 
-function createRoonBoundary(displayOutputId?: string): RoonBoundary {
+function createRoonBoundary(
+  displayOutputId?: string,
+  artworkFiles: ArtworkFiles = unusedArtworkFiles(),
+): RoonBoundary {
   let persistedState: unknown = {};
   let capturedOptions: RoonExtensionOptions | undefined;
   let zoneListener:
@@ -35,6 +55,10 @@ function createRoonBoundary(displayOutputId?: string): RoonBoundary {
     | undefined;
   const snapshots: PresentationSnapshot[] = [];
   const statusUpdates: Array<{ message: string; isError: boolean }> = [];
+  const imageRequests: RoonBoundary["imageRequests"] = [];
+  const imageCallbacks: Array<
+    (error: string | false, contentType?: string, image?: Buffer) => void
+  > = [];
   const authorizationStore: AuthorizationStore = {
     load: () => persistedState,
     save: (state) => {
@@ -60,6 +84,12 @@ function createRoonBoundary(displayOutputId?: string): RoonBoundary {
   const core: RoonCore = {
     core_id: "core-1",
     services: {
+      RoonApiImage: {
+        get_image: (imageKey, options, callback) => {
+          imageRequests.push({ imageKey, options });
+          imageCallbacks.push(callback);
+        },
+      },
       RoonApiTransport: {
         subscribe_zones: (listener) => {
           zoneListener = listener;
@@ -70,6 +100,7 @@ function createRoonBoundary(displayOutputId?: string): RoonBoundary {
 
   startRoonBridge({
     authorizationStore,
+    artworkFiles,
     displayConfigurationStore,
     createRoonServices: (options) => {
       capturedOptions = options;
@@ -94,8 +125,28 @@ function createRoonBoundary(displayOutputId?: string): RoonBoundary {
       assert.ok(capturedOptions);
       return capturedOptions;
     },
+    imageRequests,
+    resolveImage: (contentType, image) => {
+      const callback = imageCallbacks.at(-1);
+      assert.ok(callback);
+      callback(false, contentType, image);
+    },
+    resolveImageRequest: (index, contentType, image) => {
+      const callback = imageCallbacks[index];
+      assert.ok(callback);
+      callback(false, contentType, image);
+    },
     snapshots,
     statusUpdates,
+  };
+}
+
+function unusedArtworkFiles(): ArtworkFiles {
+  return {
+    stage: () => Promise.reject(new Error("Artwork was not expected")),
+    commit: () => Promise.resolve(),
+    discard: () => Promise.resolve(),
+    clear: () => Promise.resolve(),
   };
 }
 
@@ -153,6 +204,13 @@ test("resolves the configured Display Output from the initial full zone state", 
         zone_id: "zone-gallery",
         display_name: "Gallery",
         state: "paused",
+        now_playing: {
+          three_line: {
+            line1: "A Moment Apart",
+            line2: "ODESZA",
+            line3: "A Moment Apart",
+          },
+        },
         outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
       },
     ],
@@ -164,12 +222,227 @@ test("resolves the configured Display Output from the initial full zone state", 
     availability: "available",
     playback: "paused",
     displayZone: { name: "Gallery" },
-    nowPlaying: null,
+    nowPlaying: {
+      title: "A Moment Apart",
+      artist: "ODESZA",
+      album: "A Moment Apart",
+    },
     progress: null,
     artwork: null,
   });
   await validateSnapshot(boundary.snapshots.at(-1));
 });
+
+test("publishes prepared display lines with compressed artwork from Roon Image", async () => {
+  const scratchRoot = "/tmp/codex/roonscape";
+  await mkdir(scratchRoot, { recursive: true });
+  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const artworkDirectory = path.join(taskDirectory, "artwork");
+  const artworkFiles = await ArtworkFileStore.open(artworkDirectory);
+  const boundary = createRoonBoundary("output-gallery", artworkFiles);
+
+  try {
+    boundary.extensionOptions().core_paired(boundary.core());
+    boundary.emitZones("Subscribed", {
+      zones: [
+        {
+          zone_id: "zone-gallery",
+          display_name: "Gallery",
+          state: "playing",
+          now_playing: {
+            image_key: "opaque-roon-image-key",
+            three_line: {
+              line1: "A Moment Apart",
+              line2: "ODESZA",
+              line3: "A Moment Apart",
+            },
+          },
+          outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        },
+      ],
+    });
+
+    assert.deepEqual(boundary.imageRequests, [
+      {
+        imageKey: "opaque-roon-image-key",
+        options: {
+          scale: "fit",
+          width: 1600,
+          height: 1600,
+          format: "image/jpeg",
+        },
+      },
+    ]);
+    assert.equal(boundary.snapshots.at(-1)?.artwork, null);
+
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          zone_id: "zone-office",
+          display_name: "Office",
+          state: "playing",
+          outputs: [
+            { output_id: "output-office", display_name: "Office Speaker" },
+          ],
+        },
+      ],
+    });
+    boundary.resolveImage("image/jpeg", Buffer.from("compressed artwork"));
+    await waitFor(() => boundary.snapshots.at(-1)?.artwork !== null);
+
+    const snapshot = boundary.snapshots.at(-1);
+    assert.deepEqual(
+      snapshot === undefined
+        ? undefined
+        : {
+            ...snapshot,
+            artwork:
+              snapshot.artwork === null
+                ? null
+                : { revision: snapshot.artwork.revision },
+          },
+      {
+        schemaVersion: 1,
+        revision: 3,
+        availability: "available",
+        playback: "playing",
+        displayZone: { name: "Gallery" },
+        nowPlaying: {
+          title: "A Moment Apart",
+          artist: "ODESZA",
+          album: "A Moment Apart",
+        },
+        progress: null,
+        artwork: { revision: 3 },
+      },
+    );
+    assert.equal(path.dirname(snapshot?.artwork?.path ?? ""), artworkDirectory);
+    assert.match(
+      path.basename(snapshot?.artwork?.path ?? ""),
+      /^artwork-3-.+\.jpg$/,
+    );
+    await validateSnapshot(snapshot);
+    assert.equal(
+      await readFile(snapshot?.artwork?.path ?? "", "utf8"),
+      "compressed artwork",
+    );
+
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          zone_id: "zone-gallery",
+          display_name: "Gallery",
+          state: "playing",
+          now_playing: {
+            image_key: "opaque-roon-image-key",
+            three_line: {
+              line1: "Across the Room",
+              line2: "ODESZA",
+              line3: "A Moment Apart",
+            },
+          },
+          outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        },
+      ],
+    });
+    boundary.resolveImage("image/jpeg", Buffer.from("revised artwork"));
+    await waitFor(async () => {
+      const files = await readdir(artworkDirectory);
+      return files.length === 1 && /^artwork-5-.+\.jpg$/.test(files[0] ?? "");
+    });
+
+    assert.equal(boundary.snapshots.at(-1)?.artwork?.revision, 5);
+    assert.match(
+      path.basename(boundary.snapshots.at(-1)?.artwork?.path ?? ""),
+      /^artwork-5-.+\.jpg$/,
+    );
+    assert.equal(
+      await readFile(boundary.snapshots.at(-1)?.artwork?.path ?? "", "utf8"),
+      "revised artwork",
+    );
+  } finally {
+    await artworkFiles.clear();
+    await rm(taskDirectory, { recursive: true });
+  }
+});
+
+test("leaves absent prepared display lines absent without inventing fallbacks", () => {
+  const boundary = createRoonBoundary("output-gallery");
+
+  boundary.extensionOptions().core_paired(boundary.core());
+  boundary.emitZones("Subscribed", {
+    zones: [
+      {
+        zone_id: "zone-gallery",
+        display_name: "Gallery",
+        state: "playing",
+        now_playing: { three_line: {} },
+        outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+      },
+    ],
+  });
+
+  assert.deepEqual(boundary.snapshots.at(-1)?.nowPlaying, {
+    title: null,
+    artist: null,
+    album: null,
+  });
+});
+
+test("a stale artwork response cannot delete a newer presentation file", async () => {
+  const scratchRoot = "/tmp/codex/roonscape";
+  await mkdir(scratchRoot, { recursive: true });
+  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const artworkDirectory = path.join(taskDirectory, "artwork");
+  const artworkFiles = await ArtworkFileStore.open(artworkDirectory);
+  const boundary = createRoonBoundary("output-gallery", artworkFiles);
+  const displayZone = {
+    zone_id: "zone-gallery",
+    display_name: "Gallery",
+    state: "playing" as const,
+    now_playing: {
+      image_key: "reused-opaque-key",
+      three_line: { line1: "A Moment Apart", line2: "ODESZA" },
+    },
+    outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+  };
+
+  try {
+    boundary.extensionOptions().core_paired(boundary.core());
+    boundary.emitZones("Subscribed", { zones: [displayZone] });
+    boundary.resolveImageRequest(0, "image/jpeg", Buffer.from("stale artwork"));
+    boundary.emitZones("Changed", { zones_changed: [displayZone] });
+    boundary.resolveImageRequest(
+      1,
+      "image/jpeg",
+      Buffer.from("current artwork"),
+    );
+    await waitFor(() => boundary.snapshots.at(-1)?.artwork !== null);
+    for (let turn = 0; turn < 10; turn += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+
+    const currentArtworkPath = boundary.snapshots.at(-1)?.artwork?.path;
+    assert.ok(currentArtworkPath);
+    await waitFor(async () => (await readdir(artworkDirectory)).length === 1);
+    assert.equal(await readFile(currentArtworkPath, "utf8"), "current artwork");
+  } finally {
+    await artworkFiles.clear();
+    await rm(taskDirectory, { recursive: true });
+  }
+});
+
+async function waitFor(
+  condition: () => boolean | Promise<boolean>,
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (await condition()) {
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+  assert.fail("Timed out waiting for asynchronous bridge work");
+}
 
 test("follows the configured Display Output through grouping and ungrouping", () => {
   const boundary = createRoonBoundary("output-gallery");
@@ -374,6 +647,7 @@ test("registers only observer services and extension Status", () => {
 
   startRoonBridge({
     authorizationStore: boundary.authorizationStore,
+    artworkFiles: unusedArtworkFiles(),
     displayConfigurationStore: {
       load: () => null,
       save: () => undefined,

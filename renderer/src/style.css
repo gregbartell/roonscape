@@ -1,34 +1,49 @@
-/* The fixture palette is sampled from fixtures/artwork/playing.svg. */
 window {
-  background: #11131f;
-  color: #f2e8dd;
+  background: @background;
+  color: @primary_text;
 }
 
 .gallery-split {
   background-image: linear-gradient(
-    118deg,
-    #161a2d 0%,
-    #11131f 58%,
-    #24203a 100%
+    112deg,
+    @artwork_field 0%,
+    @background 58%,
+    @metadata_field 100%
   );
 }
 
 .artwork-column {
-  padding: 96px 56px 96px 112px;
-  background-color: alpha(#5969c7, 0.07);
+  padding: 0 56px 0 112px;
+  background-color: alpha(@artwork_field, 0.48);
+}
+
+.artwork-frame {
+  box-shadow: 0 36px 96px alpha(@background, 0.88);
 }
 
 .artwork {
-  border: 1px solid alpha(#f2e8dd, 0.14);
-  box-shadow: 0 32px 90px alpha(#05060c, 0.78);
+  border: 1px solid alpha(@primary_text, 0.16);
+  background-color: @artwork_field;
+}
+
+.artwork-missing {
+  border: 1px solid alpha(@secondary_text, 0.22);
+  background-image: linear-gradient(
+    142deg,
+    alpha(@secondary_text, 0.09),
+    @artwork_field 52%,
+    @background
+  );
+  box-shadow: inset 0 0 0 24px alpha(@background, 0.16);
 }
 
 .metadata-column {
-  padding: 118px 132px 108px 104px;
+  padding: 48px 132px 48px 104px;
+  background-color: @metadata_field;
 }
 
 .playback-state {
-  color: #eabf68;
+  color: @accent;
 }
 
 .state-dot {
@@ -36,8 +51,8 @@ window {
   min-height: 13px;
   margin-top: 4px;
   border-radius: 999px;
-  background-color: #eabf68;
-  box-shadow: 0 0 18px alpha(#eabf68, 0.78);
+  background-color: @accent;
+  box-shadow: 0 0 18px alpha(@accent, 0.72);
 }
 
 .state-label,
@@ -59,34 +74,34 @@ window {
 }
 
 .title {
-  color: #f2e8dd;
-  font-size: 92px;
+  color: @primary_text;
+  font-size: 108px;
   font-weight: 500;
 }
 
 .artist {
-  margin-top: 38px;
-  color: #c6cef8;
-  font-size: 34px;
+  margin-top: 32px;
+  color: @secondary_text;
+  font-size: 38px;
   font-weight: 600;
 }
 
 .album {
-  margin-top: 12px;
-  color: #aeb7ed;
-  font-size: 28px;
+  margin-top: 14px;
+  color: @secondary_text;
+  font-size: 31px;
   font-style: italic;
 }
 
 .progress-group {
-  margin-top: 76px;
+  margin-top: 56px;
 }
 
 progressbar trough {
   min-height: 5px;
   border: 0;
   border-radius: 0;
-  background-color: alpha(#f2e8dd, 0.2);
+  background-color: alpha(@secondary_text, 0.22);
 }
 
 progressbar progress {
@@ -94,7 +109,7 @@ progressbar progress {
   min-height: 5px;
   border: 0;
   border-radius: 0;
-  background-color: #eabf68;
+  background-color: @accent;
 }
 
 .times {
@@ -102,16 +117,16 @@ progressbar progress {
 }
 
 .time {
-  color: #aeb7ed;
+  color: @secondary_text;
   font-size: 19px;
 }
 
 .display-zone {
-  color: #aeb7ed;
+  color: @secondary_text;
 }
 
 .zone-label {
-  color: #cb6e7f;
+  color: @accent;
   font-size: 16px;
   font-weight: 800;
 }
@@ -122,17 +137,17 @@ progressbar progress {
 }
 
 .unavailable {
-  background-color: #11131f;
+  background-color: @background;
 }
 
 .unavailable-field {
-  border-right: 1px solid alpha(#f2e8dd, 0.08);
-  background-image: linear-gradient(142deg, #161a2d 0%, #11131f 72%);
+  border-right: 1px solid alpha(@secondary_text, 0.12);
+  background-image: linear-gradient(142deg, @artwork_field, @background 72%);
 }
 
 .unavailable-copy {
-  padding: 118px 132px 108px 104px;
-  background-color: #171827;
+  padding: 48px 132px 48px 104px;
+  background-color: @metadata_field;
 }
 
 .unavailable-message {
@@ -145,13 +160,13 @@ progressbar progress {
 }
 
 .unavailable-state {
-  color: #eabf68;
+  color: @accent;
   font-size: 18px;
   font-weight: 700;
 }
 
 .unavailable-heading {
-  color: #f2e8dd;
+  color: @primary_text;
   font-family: "Literata", "Iowan Old Style", "Noto Serif Display", serif;
   font-size: 78px;
   font-weight: 500;
@@ -159,6 +174,6 @@ progressbar progress {
 
 .unavailable-explanation {
   margin-top: 30px;
-  color: #aeb7ed;
+  color: @secondary_text;
   font-size: 28px;
 }

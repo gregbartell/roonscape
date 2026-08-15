@@ -9,22 +9,22 @@ neutral presentation when artwork is missing.
 
 **Status:** ready-for-agent
 
-- [ ] Roon's first, second, and third prepared display lines map positionally
+- [x] Roon's first, second, and third prepared display lines map positionally
       to optional Title, Artist, and Album values without invented fallbacks.
-- [ ] The bridge obtains current artwork through Roon's supported Image service
+- [x] The bridge obtains current artwork through Roon's supported Image service
       and passes compressed artwork through atomically replaced local files rather
       than state JSON or a network service.
-- [ ] Artwork identity follows presentation revision rather than assuming
+- [x] Artwork identity follows presentation revision rather than assuming
       Roon's opaque image key is a stable track identity.
-- [ ] Gallery split makes artwork dominant, gives metadata a dedicated column,
+- [x] Gallery split makes artwork dominant, gives metadata a dedicated column,
       emphasizes Title, and shows Artist, Album, Zone, and playback state without
       persistent RoonScape branding.
-- [ ] The renderer derives the full presentation palette, including readable
+- [x] The renderer derives the full presentation palette, including readable
       text, from current artwork and uses a deliberate neutral palette when
       artwork is absent.
-- [ ] Automated fixtures cover ordinary metadata, missing artwork, artwork
+- [x] Automated fixtures cover ordinary metadata, missing artwork, artwork
       revision changes, and Roon display-line mapping.
-- [ ] Completed artwork is bounded to the current presentation and obsolete
+- [x] Completed artwork is bounded to the current presentation and obsolete
       files are not retained as history.
 
 ## Comments
@@ -58,15 +58,15 @@ artwork is absent.
 
 **Acceptance criteria:**
 
-- [ ] Live metadata and artwork from the configured Display Zone produce
+- [x] Live metadata and artwork from the configured Display Zone produce
       complete schema-valid snapshots.
-- [ ] Gallery split preserves dominant artwork, Title hierarchy, metadata,
+- [x] Gallery split preserves dominant artwork, Title hierarchy, metadata,
       Zone, and explicit playback state without persistent branding.
-- [ ] Artwork-derived colors remain readable, while missing artwork uses a
+- [x] Artwork-derived colors remain readable, while missing artwork uses a
       calm neutral presentation.
-- [ ] Current artwork remains bounded and obsolete files are removed rather
+- [x] Current artwork remains bounded and obsolete files are removed rather
       than retained as history.
-- [ ] Fixtures cover ordinary metadata, missing artwork, revision changes, and
+- [x] Fixtures cover ordinary metadata, missing artwork, revision changes, and
       Roon display-line mapping.
 
 **Out of scope:**

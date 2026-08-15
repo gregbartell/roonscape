@@ -17,6 +17,7 @@ pub struct NowPlayingPresentation {
     pub display_zone: String,
     pub playback_state: String,
     pub progress: Option<PresentationProgress>,
+    pub artwork_revision: Option<u64>,
     pub artwork_path: Option<String>,
 }
 
@@ -77,6 +78,7 @@ pub fn presentation_from_snapshot(
         display_zone: display_zone.name.clone(),
         playback_state: playback_label(playback).to_owned(),
         progress: snapshot.progress.as_ref().map(presentation_progress),
+        artwork_revision: snapshot.artwork.as_ref().map(|artwork| artwork.revision),
         artwork_path: snapshot
             .artwork
             .as_ref()
