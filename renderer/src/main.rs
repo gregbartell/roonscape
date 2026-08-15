@@ -17,10 +17,19 @@ use roonscape_renderer::{
     current_process_memory_bytes, display_configuration_file_path, load_inactivity_configuration,
 };
 
-use view::{PresentationView, diagnostics_view, install_style_providers};
+use view::{PresentationView, RenderedDiagnostics, diagnostics_view, install_style_providers};
 
 const APPLICATION_ID: &str = "io.roonscape.Renderer";
 const SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(250);
+
+struct PresentationRuntime {
+    presentation: Rc<RefCell<PresentationState>>,
+    presentation_view: Rc<RefCell<PresentationView>>,
+    updates: Rc<SnapshotSubscription>,
+    diagnostics: Option<Rc<RefCell<Diagnostics>>>,
+    repository_root: PathBuf,
+    progress_clock: Instant,
+}
 
 fn main() -> ExitCode {
     match run() {
@@ -119,108 +128,20 @@ fn build_window(
     });
     window.set_child(Some(&display));
 
-    let repository_root = repository_root.to_path_buf();
-    let updating_diagnostics = diagnostics.clone();
+    let runtime = PresentationRuntime {
+        presentation,
+        presentation_view,
+        updates,
+        diagnostics: diagnostics.clone(),
+        repository_root: repository_root.to_path_buf(),
+        progress_clock,
+    };
     glib::timeout_add_local(Duration::from_millis(50), move || {
-        let now = progress_clock.elapsed();
-        let mut presentation_update = None;
-        loop {
-            match updates.try_recv() {
-                Ok(SnapshotEvent::Snapshot(snapshot)) => {
-                    if let Some(diagnostics) = updating_diagnostics.as_ref() {
-                        diagnostics
-                            .borrow_mut()
-                            .observe_snapshot(&snapshot, &repository_root);
-                    }
-                    match presentation
-                        .borrow_mut()
-                        .update(snapshot, PresentationTime::new(now, SystemTime::now()))
-                    {
-                        Ok(update) => {
-                            presentation_update =
-                                combine_presentation_update(presentation_update, update);
-                        }
-                        Err(error) => eprintln!("RoonScape renderer: {error}"),
-                    }
-                }
-                Ok(SnapshotEvent::ConnectionChanged(ConnectionState::Disconnected)) => {
-                    if let Some(diagnostics) = updating_diagnostics.as_ref() {
-                        diagnostics
-                            .borrow_mut()
-                            .observe_connection(ConnectionState::Disconnected);
-                    }
-                    let update = presentation.borrow_mut().disconnect(now);
-                    presentation_update = combine_presentation_update(presentation_update, update);
-                }
-                Ok(SnapshotEvent::ConnectionChanged(ConnectionState::Connected)) => {
-                    if let Some(diagnostics) = updating_diagnostics.as_ref() {
-                        diagnostics
-                            .borrow_mut()
-                            .observe_connection(ConnectionState::Connected);
-                    }
-                }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => break,
-            }
-        }
-
-        match presentation.borrow().frame_at(now) {
-            Ok(current_frame) => {
-                match presentation_update {
-                    Some(PresentationUpdate::ReplaceImmediately) => {
-                        presentation_view.borrow_mut().replace_immediately(
-                            presentation.borrow().revision(),
-                            &current_frame.presentation,
-                            &repository_root,
-                        );
-                    }
-                    Some(PresentationUpdate::TransitionRequired) => {
-                        presentation_view.borrow_mut().replace(
-                            presentation.borrow().revision(),
-                            &current_frame.presentation,
-                            &repository_root,
-                            now,
-                        );
-                    }
-                    Some(PresentationUpdate::ProgressOnly) | None => {
-                        if let Presentation::NowPlaying(current_presentation) =
-                            &current_frame.presentation
-                            && let Some(progress) = current_presentation.progress.as_ref()
-                        {
-                            presentation_view.borrow().update_progress(progress);
-                        }
-                    }
-                }
-                presentation_view
-                    .borrow()
-                    .apply_inactivity(current_frame.inactivity);
-            }
-            Err(error) => eprintln!("RoonScape renderer: {error}"),
-        }
-        presentation_view.borrow_mut().finish_transition(now);
-
+        runtime.tick();
         glib::ControlFlow::Continue
     });
 
-    if let (Some(diagnostics), Some(rendered_diagnostics)) = (diagnostics, rendered_diagnostics) {
-        let frame_diagnostics = diagnostics.clone();
-        window.add_tick_callback(move |_, frame_clock| {
-            if let Ok(frame_time) = u64::try_from(frame_clock.frame_time()) {
-                frame_diagnostics
-                    .borrow_mut()
-                    .observe_frame(Duration::from_micros(frame_time));
-            }
-            glib::ControlFlow::Continue
-        });
-        glib::timeout_add_local(Duration::from_millis(500), move || {
-            rendered_diagnostics.update(
-                &diagnostics
-                    .borrow()
-                    .overlay_text(current_process_memory_bytes()),
-            );
-            glib::ControlFlow::Continue
-        });
-    }
+    install_diagnostics_updates(&window, diagnostics, rendered_diagnostics);
 
     if env::var_os("ROONSCAPE_WINDOWED").is_none() {
         window.fullscreen();
@@ -237,6 +158,124 @@ fn build_window(
     }
 
     window.present();
+}
+
+impl PresentationRuntime {
+    fn tick(&self) {
+        let now = self.progress_clock.elapsed();
+        let presentation_update = self.apply_snapshot_events(now);
+        self.render(now, presentation_update);
+        self.presentation_view.borrow_mut().finish_transition(now);
+    }
+
+    fn apply_snapshot_events(&self, now: Duration) -> Option<PresentationUpdate> {
+        let mut presentation_update = None;
+        loop {
+            let update = match self.updates.try_recv() {
+                Ok(SnapshotEvent::Snapshot(snapshot)) => {
+                    if let Some(diagnostics) = self.diagnostics.as_ref() {
+                        diagnostics
+                            .borrow_mut()
+                            .observe_snapshot(&snapshot, &self.repository_root);
+                    }
+                    match self
+                        .presentation
+                        .borrow_mut()
+                        .update(snapshot, PresentationTime::new(now, SystemTime::now()))
+                    {
+                        Ok(update) => Some(update),
+                        Err(error) => {
+                            eprintln!("RoonScape renderer: {error}");
+                            None
+                        }
+                    }
+                }
+                Ok(SnapshotEvent::ConnectionChanged(connection)) => {
+                    if let Some(diagnostics) = self.diagnostics.as_ref() {
+                        diagnostics.borrow_mut().observe_connection(connection);
+                    }
+                    match connection {
+                        ConnectionState::Disconnected => {
+                            Some(self.presentation.borrow_mut().disconnect(now))
+                        }
+                        ConnectionState::Connected => None,
+                    }
+                }
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            };
+            if let Some(update) = update {
+                presentation_update = combine_presentation_update(presentation_update, update);
+            }
+        }
+        presentation_update
+    }
+
+    fn render(&self, now: Duration, presentation_update: Option<PresentationUpdate>) {
+        let current_frame = match self.presentation.borrow().frame_at(now) {
+            Ok(current_frame) => current_frame,
+            Err(error) => {
+                eprintln!("RoonScape renderer: {error}");
+                return;
+            }
+        };
+
+        match presentation_update {
+            Some(PresentationUpdate::ReplaceImmediately) => {
+                self.presentation_view.borrow_mut().replace_immediately(
+                    self.presentation.borrow().revision(),
+                    &current_frame.presentation,
+                    &self.repository_root,
+                );
+            }
+            Some(PresentationUpdate::TransitionRequired) => {
+                self.presentation_view.borrow_mut().replace(
+                    self.presentation.borrow().revision(),
+                    &current_frame.presentation,
+                    &self.repository_root,
+                    now,
+                );
+            }
+            Some(PresentationUpdate::ProgressOnly) | None => {
+                if let Presentation::NowPlaying(current_presentation) = &current_frame.presentation
+                    && let Some(progress) = current_presentation.progress.as_ref()
+                {
+                    self.presentation_view.borrow().update_progress(progress);
+                }
+            }
+        }
+        self.presentation_view
+            .borrow()
+            .apply_inactivity(current_frame.inactivity);
+    }
+}
+
+fn install_diagnostics_updates(
+    window: &gtk::ApplicationWindow,
+    diagnostics: Option<Rc<RefCell<Diagnostics>>>,
+    rendered_diagnostics: Option<RenderedDiagnostics>,
+) {
+    let (Some(diagnostics), Some(rendered_diagnostics)) = (diagnostics, rendered_diagnostics)
+    else {
+        return;
+    };
+
+    let frame_diagnostics = diagnostics.clone();
+    window.add_tick_callback(move |_, frame_clock| {
+        if let Ok(frame_time) = u64::try_from(frame_clock.frame_time()) {
+            frame_diagnostics
+                .borrow_mut()
+                .observe_frame(Duration::from_micros(frame_time));
+        }
+        glib::ControlFlow::Continue
+    });
+    glib::timeout_add_local(Duration::from_millis(500), move || {
+        rendered_diagnostics.update(
+            &diagnostics
+                .borrow()
+                .overlay_text(current_process_memory_bytes()),
+        );
+        glib::ControlFlow::Continue
+    });
 }
 
 fn combine_presentation_update(
