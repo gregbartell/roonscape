@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadSnapshot, validateSnapshot } from "../src/snapshot.js";
@@ -11,22 +12,86 @@ test("loads the shared Playing fixture as a complete snapshot", async () => {
     revision: 7,
     availability: "available",
     playback: "playing",
-    trackedOutput: { name: "NUC HDMI" },
-    trackedZone: { name: "Gallery" },
+    trackedOutput: { name: "AudioDevice" },
+    trackedZone: { name: "Living Room" },
     nowPlaying: {
-      title: "A Moment Apart",
-      artist: "ODESZA",
-      album: "A Moment Apart",
+      title: "Last Light on Phobos",
+      artist: "Evelyn Lark & The Orbital Choir",
+      album: "Signals from the Quiet Sea",
     },
     progress: {
-      positionSeconds: 82,
-      durationSeconds: 234,
+      positionSeconds: 171,
+      durationSeconds: 266,
       sampledAt: "2026-08-15T19:20:00Z",
     },
     artwork: {
       revision: 3,
       path: "fixtures/artwork/playing.svg",
     },
+  });
+});
+
+test("ships the selected prototype artwork byte for byte", async () => {
+  const [fixtureArtwork, prototypeArtwork] = await Promise.all([
+    readFile(new URL("../../../fixtures/artwork/playing.svg", import.meta.url)),
+    readFile(
+      new URL(
+        "../../../prototype/gallery-split-font-study/album-art.svg",
+        import.meta.url,
+      ),
+    ),
+  ]);
+
+  assert.deepEqual(fixtureArtwork, prototypeArtwork);
+});
+
+test("keeps the selected fictional release coherent across related fixtures", async () => {
+  const expected = {
+    title: "Last Light on Phobos",
+    artist: "Evelyn Lark & The Orbital Choir",
+    album: "Signals from the Quiet Sea",
+    trackedOutput: { name: "AudioDevice" },
+    trackedZone: { name: "Living Room" },
+  };
+  const relatedFixtures = [
+    "playing.json",
+    "paused.json",
+    "loading.json",
+    "missing-artwork.json",
+    "artwork-revision-changed.json",
+  ];
+
+  for (const fixtureName of relatedFixtures) {
+    const snapshot = await loadSnapshot(`fixtures/${fixtureName}`);
+
+    assert.deepEqual(snapshot.nowPlaying, {
+      title: expected.title,
+      artist: expected.artist,
+      album: expected.album,
+    });
+    assert.deepEqual(snapshot.trackedOutput, expected.trackedOutput);
+    assert.deepEqual(snapshot.trackedZone, expected.trackedZone);
+  }
+
+  const missingArtist = await loadSnapshot("fixtures/missing-artist.json");
+  assert.deepEqual(missingArtist.nowPlaying, {
+    title: expected.title,
+    artist: null,
+    album: expected.album,
+  });
+
+  const missingAlbum = await loadSnapshot("fixtures/missing-album.json");
+  assert.deepEqual(missingAlbum.nowPlaying, {
+    title: expected.title,
+    artist: expected.artist,
+    album: null,
+  });
+
+  const missingDetails = await loadSnapshot("fixtures/missing-metadata.json");
+  assert.deepEqual(missingDetails.nowPlaying, {
+    title: expected.title,
+    artist: null,
+    album: null,
   });
 });
 
@@ -52,16 +117,16 @@ test("loads missing, long, and extreme metadata fixtures without inventing value
   const extreme = await loadSnapshot("fixtures/extreme-metadata.json");
 
   assert.deepEqual(missing.nowPlaying, {
-    title: "An Ending (Ascent)",
+    title: "Last Light on Phobos",
     artist: null,
     album: null,
   });
   assert.equal(missingArtist.nowPlaying?.artist, null);
+  assert.equal(missingArtist.nowPlaying?.album, "Signals from the Quiet Sea");
   assert.equal(
-    missingArtist.nowPlaying?.album,
-    "Apollo: Atmospheres and Soundtracks",
+    missingAlbum.nowPlaying?.artist,
+    "Evelyn Lark & The Orbital Choir",
   );
-  assert.equal(missingAlbum.nowPlaying?.artist, "Brian Eno");
   assert.equal(missingAlbum.nowPlaying?.album, null);
   assert.ok((long.nowPlaying?.title?.length ?? 0) > 80);
   assert.ok((long.nowPlaying?.artist?.length ?? 0) > 80);
@@ -135,7 +200,7 @@ test("loads indeterminate progress as absent and permits clamping samples", asyn
   assert.equal(indeterminate.progress, null);
   assert.deepEqual(pastDuration.progress, {
     positionSeconds: 300,
-    durationSeconds: 234,
+    durationSeconds: 266,
     sampledAt: "2026-08-15T19:20:00Z",
   });
 });

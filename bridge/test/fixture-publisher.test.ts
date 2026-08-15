@@ -10,6 +10,7 @@ import test from "node:test";
 import {
   MAX_SNAPSHOT_BYTES,
   startFixturePublisher,
+  startSnapshotPublisher,
   type SnapshotPublisher,
 } from "../src/fixture-publisher.js";
 import { loadSnapshot, type PresentationSnapshot } from "../src/snapshot.js";
@@ -19,7 +20,7 @@ test("sends the current complete snapshot when a renderer connects", async () =>
   await withTaskDirectory(async (runtimeDirectory) => {
     const socketPath = path.join(runtimeDirectory, "roonscape.sock");
     const snapshot = await loadSnapshot("fixtures/playing.json");
-    const publisher = await startFixturePublisher(snapshot, socketPath);
+    const publisher = await startSnapshotPublisher(snapshot, socketPath);
 
     try {
       assert.equal((await stat(runtimeDirectory)).mode & 0o777, 0o700);
@@ -36,6 +37,61 @@ test("sends the current complete snapshot when a renderer connects", async () =>
 
     await assert.rejects(readFile(socketPath), /ENOENT/);
   });
+});
+
+test("re-anchors Playing at fixture launch before using the shared publisher", async () => {
+  await withTaskDirectory(async (runtimeDirectory) => {
+    const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+    const snapshot = await loadSnapshot("fixtures/playing.json");
+    const publisher = await startFixturePublisher(
+      snapshot,
+      socketPath,
+      new Date("2030-01-02T03:04:05Z"),
+    );
+
+    try {
+      const client = createConnection(socketPath);
+      const lines = createInterface({ input: client });
+      const [line] = (await once(lines, "line")) as [string];
+      const published = JSON.parse(line) as PresentationSnapshot;
+
+      assert.deepEqual(published.progress, {
+        positionSeconds: 171,
+        durationSeconds: 266,
+        sampledAt: "2030-01-02T03:04:05.000Z",
+      });
+      assert.equal(snapshot.progress?.sampledAt, "2026-08-15T19:20:00Z");
+      client.destroy();
+    } finally {
+      await publisher.close();
+    }
+  });
+});
+
+test("does not re-anchor Paused or Loading fixture progress", async () => {
+  for (const fixtureName of ["paused.json", "loading.json"]) {
+    await withTaskDirectory(async (runtimeDirectory) => {
+      const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+      const snapshot = await loadSnapshot(`fixtures/${fixtureName}`);
+      const publisher = await startFixturePublisher(
+        snapshot,
+        socketPath,
+        new Date("2030-01-02T03:04:05Z"),
+      );
+
+      try {
+        const client = createConnection(socketPath);
+        const lines = createInterface({ input: client });
+        const [line] = (await once(lines, "line")) as [string];
+        const published = JSON.parse(line) as PresentationSnapshot;
+
+        assert.deepEqual(published.progress, snapshot.progress);
+        client.destroy();
+      } finally {
+        await publisher.close();
+      }
+    });
+  }
 });
 
 test("replaces the current snapshot without retaining event history", async () => {
@@ -195,7 +251,7 @@ test("reclaims a stale socket left by an abruptly terminated publisher", async (
       stalePublisher.kill("SIGKILL");
       await closed;
 
-      publisher = await startFixturePublisher(snapshot, socketPath);
+      publisher = await startSnapshotPublisher(snapshot, socketPath);
       const client = createConnection(socketPath);
       const lines = createInterface({ input: client });
       const [line] = (await once(lines, "line")) as [string];
@@ -213,7 +269,7 @@ test("does not replace an active publisher socket", async () => {
   const snapshot = await loadSnapshot("fixtures/playing.json");
   await withPublisher(snapshot, async ({ socketPath }) => {
     await assert.rejects(
-      startFixturePublisher(snapshot, socketPath),
+      startSnapshotPublisher(snapshot, socketPath),
       /EADDRINUSE/,
     );
     const client = createConnection(socketPath);
@@ -236,7 +292,7 @@ async function withPublisher(
 ): Promise<void> {
   await withTaskDirectory(async (runtimeDirectory) => {
     const socketPath = path.join(runtimeDirectory, "roonscape.sock");
-    const publisher = await startFixturePublisher(snapshot, socketPath);
+    const publisher = await startSnapshotPublisher(snapshot, socketPath);
     try {
       await run({ publisher, socketPath });
     } finally {

@@ -4,10 +4,10 @@
   "availability": "available",
   "playback": "playing",
   "trackedOutput": {
-    "name": "NUC HDMI"
+    "name": "AudioDevice"
   },
   "trackedZone": {
-    "name": "Gallery"
+    "name": "Living Room"
   },
   "nowPlaying": {
     "title": "The Complete and Unabridged Chronicle of Every Constellation Reflected in Every Window Along the Coast During the Longest Imagined Night, Including Their Alternate Names, Forgotten Coordinates, Seasonal Variations, and the Patient Observations of Travelers Who Never Reached the End of the Road",

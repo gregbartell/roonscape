@@ -60,10 +60,10 @@ fn revisions_transition_artwork_metadata_and_the_complete_palette_together() {
         .outgoing()
         .expect("a changed revision should retain one outgoing presentation");
     assert_eq!((current.revision(), outgoing.revision()), (8, 7));
-    assert_eq!(title(current.value()), Some("A Moment Apart"));
+    assert_eq!(title(current.value()), Some("Last Light on Phobos"));
     assert_eq!(current.value().artwork_path, None);
     assert_eq!(current.value().palette, PresentationPalette::neutral());
-    assert_eq!(title(outgoing.value()), Some("A Moment Apart"));
+    assert_eq!(title(outgoing.value()), Some("Last Light on Phobos"));
     assert_eq!(
         outgoing.value().artwork_path.as_deref(),
         Some("fixtures/artwork/playing.svg")
@@ -90,7 +90,10 @@ fn rapid_revisions_keep_only_current_and_one_outgoing_presentation() {
     assert_eq!(discarded.revision(), 7);
     assert_eq!(transition.current().revision(), 9);
     assert_eq!(transition.outgoing().map(|layer| layer.revision()), Some(8));
-    assert_eq!(title(transition.current().value()), Some("Across the Room"));
+    assert_eq!(
+        title(transition.current().value()),
+        Some("Last Light on Phobos")
+    );
     assert_eq!(
         transition.current().value().artwork_path.as_deref(),
         Some("fixtures/artwork/revised.svg")

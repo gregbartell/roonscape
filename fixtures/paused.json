@@ -4,19 +4,19 @@
   "availability": "available",
   "playback": "paused",
   "trackedOutput": {
-    "name": "NUC HDMI"
+    "name": "AudioDevice"
   },
   "trackedZone": {
-    "name": "Gallery"
+    "name": "Living Room"
   },
   "nowPlaying": {
-    "title": "A Moment Apart",
-    "artist": "ODESZA",
-    "album": "A Moment Apart"
+    "title": "Last Light on Phobos",
+    "artist": "Evelyn Lark & The Orbital Choir",
+    "album": "Signals from the Quiet Sea"
   },
   "progress": {
     "positionSeconds": 90,
-    "durationSeconds": 234,
+    "durationSeconds": 266,
     "sampledAt": "2026-08-15T19:20:00Z"
   },
   "artwork": {

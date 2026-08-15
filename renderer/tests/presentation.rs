@@ -33,11 +33,17 @@ fn maps_the_playing_snapshot_to_gallery_split_content() {
         panic!("Playing snapshot should produce Now Playing content");
     };
 
-    assert_eq!(presentation.title.as_deref(), Some("A Moment Apart"));
-    assert_eq!(presentation.artist.as_deref(), Some("ODESZA"));
-    assert_eq!(presentation.album.as_deref(), Some("A Moment Apart"));
-    assert_eq!(presentation.tracked_output, "NUC HDMI");
-    assert_eq!(presentation.tracked_zone, "Gallery");
+    assert_eq!(presentation.title.as_deref(), Some("Last Light on Phobos"));
+    assert_eq!(
+        presentation.artist.as_deref(),
+        Some("Evelyn Lark & The Orbital Choir")
+    );
+    assert_eq!(
+        presentation.album.as_deref(),
+        Some("Signals from the Quiet Sea")
+    );
+    assert_eq!(presentation.tracked_output, "AudioDevice");
+    assert_eq!(presentation.tracked_zone, "Living Room");
     assert_eq!(presentation.playback_state, "Playing");
     assert_eq!(presentation.artwork_revision, Some(3));
     assert_eq!(
@@ -48,9 +54,9 @@ fn maps_the_playing_snapshot_to_gallery_split_content() {
     let progress = presentation
         .progress
         .expect("Playing fixture should include determinate progress");
-    assert!((progress.fraction - (82.0 / 234.0)).abs() < f64::EPSILON);
-    assert_eq!(progress.elapsed, "1:22");
-    assert_eq!(progress.remaining, "−2:32");
+    assert!((progress.fraction - (171.0 / 266.0)).abs() < f64::EPSILON);
+    assert_eq!(progress.elapsed, "2:51");
+    assert_eq!(progress.remaining, "−1:35");
 }
 
 #[test]
@@ -139,9 +145,9 @@ fn advances_playing_progress_from_the_latest_local_anchor() {
         .progress
         .expect("Playing fixture should include progress");
 
-    assert!((progress.fraction - (87.0 / 234.0)).abs() < f64::EPSILON);
-    assert_eq!(progress.elapsed, "1:27");
-    assert_eq!(progress.remaining, "−2:27");
+    assert!((progress.fraction - (176.0 / 266.0)).abs() < f64::EPSILON);
+    assert_eq!(progress.elapsed, "2:56");
+    assert_eq!(progress.remaining, "−1:30");
 }
 
 #[test]
@@ -218,7 +224,7 @@ fn clamps_source_and_locally_advanced_progress_at_duration() {
         let progress = presentation.progress.expect("fixture should show progress");
 
         assert_eq!(progress.fraction, 1.0);
-        assert_eq!(progress.elapsed, "3:54");
+        assert_eq!(progress.elapsed, "4:26");
         assert_eq!(progress.remaining, "−0:00");
     }
 }
@@ -226,9 +232,24 @@ fn clamps_source_and_locally_advanced_progress_at_duration() {
 #[test]
 fn presents_each_playback_state_without_inventing_now_playing() {
     let fixtures = [
-        ("playing.json", "Playing", Some("A Moment Apart"), Some(3)),
-        ("paused.json", "Paused", Some("A Moment Apart"), Some(3)),
-        ("loading.json", "Loading", Some("A Moment Apart"), Some(3)),
+        (
+            "playing.json",
+            "Playing",
+            Some("Last Light on Phobos"),
+            Some(3),
+        ),
+        (
+            "paused.json",
+            "Paused",
+            Some("Last Light on Phobos"),
+            Some(3),
+        ),
+        (
+            "loading.json",
+            "Loading",
+            Some("Last Light on Phobos"),
+            Some(3),
+        ),
         ("loading-empty.json", "Loading", None, None),
         ("stopped.json", "Stopped", None, None),
     ];
@@ -291,7 +312,7 @@ fn accounts_for_source_sample_age_when_anchoring_playing_progress() {
 
     assert_eq!(
         presentation.progress.map(|progress| progress.elapsed),
-        Some("1:27".to_owned())
+        Some("2:56".to_owned())
     );
 }
 
@@ -326,7 +347,7 @@ fn preserves_the_progress_anchor_for_a_presentation_only_revision() {
     assert_eq!(presentation.title.as_deref(), Some("Updated opaque title"));
     assert_eq!(
         presentation.progress.map(|progress| progress.elapsed),
-        Some("1:29".to_owned())
+        Some("2:58".to_owned())
     );
 }
 
@@ -576,7 +597,7 @@ fn playing_immediately_restores_luminance_position_and_advancing_progress() {
     };
     assert_eq!(
         now_playing.progress.map(|progress| progress.elapsed),
-        Some("1:28".to_owned())
+        Some("2:57".to_owned())
     );
 
     let advanced = state
@@ -587,7 +608,7 @@ fn playing_immediately_restores_luminance_position_and_advancing_progress() {
     };
     assert_eq!(
         now_playing.progress.map(|progress| progress.elapsed),
-        Some("1:30".to_owned())
+        Some("2:59".to_owned())
     );
 }
 

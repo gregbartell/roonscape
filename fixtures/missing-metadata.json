@@ -4,16 +4,19 @@
   "availability": "available",
   "playback": "playing",
   "trackedOutput": {
-    "name": "NUC HDMI"
+    "name": "AudioDevice"
   },
   "trackedZone": {
-    "name": "Gallery"
+    "name": "Living Room"
   },
   "nowPlaying": {
-    "title": "An Ending (Ascent)",
+    "title": "Last Light on Phobos",
     "artist": null,
     "album": null
   },
   "progress": null,
-  "artwork": null
+  "artwork": {
+    "revision": 3,
+    "path": "fixtures/artwork/playing.svg"
+  }
 }

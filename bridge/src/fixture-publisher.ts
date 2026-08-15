@@ -66,7 +66,33 @@ export async function startSnapshotPublisher(
   };
 }
 
-export const startFixturePublisher = startSnapshotPublisher;
+export function startFixturePublisher(
+  snapshot: PresentationSnapshot,
+  socketPath: string,
+  launchedAt = new Date(),
+): Promise<SnapshotPublisher> {
+  return startSnapshotPublisher(
+    reanchorPlayingFixture(snapshot, launchedAt),
+    socketPath,
+  );
+}
+
+function reanchorPlayingFixture(
+  snapshot: PresentationSnapshot,
+  launchedAt: Date,
+): PresentationSnapshot {
+  if (snapshot.playback !== "playing" || snapshot.progress === null) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    progress: {
+      ...snapshot.progress,
+      sampledAt: launchedAt.toISOString(),
+    },
+  };
+}
 
 interface SnapshotConnection {
   socket: Socket;

@@ -22,7 +22,7 @@ fn omits_missing_artist_and_album_from_the_metadata_layout() {
 
     assert_eq!(
         layout.title.as_ref().map(|line| line.text.as_str()),
-        Some("An Ending (Ascent)")
+        Some("Last Light on Phobos")
     );
     assert_eq!(layout.artist, None);
     assert_eq!(layout.album, None);
@@ -36,11 +36,11 @@ fn independently_collapses_each_missing_optional_metadata_line() {
     assert!(missing_artist.artist.is_none());
     assert_eq!(
         missing_artist.album.as_ref().map(|line| line.text.as_str()),
-        Some("Apollo: Atmospheres and Soundtracks")
+        Some("Signals from the Quiet Sea")
     );
     assert_eq!(
         missing_album.artist.as_ref().map(|line| line.text.as_str()),
-        Some("Brian Eno")
+        Some("Evelyn Lark & The Orbital Choir")
     );
     assert!(missing_album.album.is_none());
 }

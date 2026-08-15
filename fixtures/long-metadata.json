@@ -4,10 +4,10 @@
   "availability": "available",
   "playback": "playing",
   "trackedOutput": {
-    "name": "NUC HDMI"
+    "name": "AudioDevice"
   },
   "trackedZone": {
-    "name": "Gallery"
+    "name": "Living Room"
   },
   "nowPlaying": {
     "title": "An Imaginary Catalogue of Constellations Observed Through the Longest Night of the Turning Year",

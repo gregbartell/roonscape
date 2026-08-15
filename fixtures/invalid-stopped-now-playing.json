@@ -4,10 +4,10 @@
   "availability": "available",
   "playback": "stopped",
   "trackedOutput": {
-    "name": "NUC HDMI"
+    "name": "AudioDevice"
   },
   "trackedZone": {
-    "name": "Gallery"
+    "name": "Living Room"
   },
   "nowPlaying": {
     "title": "Stale title",

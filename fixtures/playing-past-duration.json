@@ -4,15 +4,15 @@
   "availability": "available",
   "playback": "playing",
   "trackedOutput": {
-    "name": "NUC HDMI"
+    "name": "AudioDevice"
   },
   "trackedZone": {
-    "name": "Gallery"
+    "name": "Living Room"
   },
   "nowPlaying": null,
   "progress": {
     "positionSeconds": 300,
-    "durationSeconds": 234,
+    "durationSeconds": 266,
     "sampledAt": "2026-08-15T19:20:00Z"
   },
   "artwork": null
