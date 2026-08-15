@@ -9,15 +9,15 @@ fixture and live Roon operation.
 
 **Status:** ready-for-agent
 
-- [ ] Pressing Escape while the renderer has focus closes the renderer in
+- [x] Pressing Escape while the renderer has focus closes the renderer in
       windowed mode.
-- [ ] Pressing Escape while the renderer has focus closes the renderer in
+- [x] Pressing Escape while the renderer has focus closes the renderer in
       fullscreen mode.
-- [ ] The shortcut behaves the same with fixture snapshots and live Roon
+- [x] The shortcut behaves the same with fixture snapshots and live Roon
       snapshots and does not introduce Roon Control.
-- [ ] Other keys do not close the renderer, and the existing window-close
+- [x] Other keys do not close the renderer, and the existing window-close
       behavior remains unchanged.
-- [ ] Closing a fixture preview with Escape lets its launcher stop both
+- [x] Closing a fixture preview with Escape lets its launcher stop both
       processes and remove the temporary runtime directory.
-- [ ] Automated checks cover Escape handling and protection against unrelated
+- [x] Automated checks cover Escape handling and protection against unrelated
       key presses without depending on toolkit implementation details.
