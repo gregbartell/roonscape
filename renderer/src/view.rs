@@ -7,7 +7,8 @@ use gtk::prelude::*;
 use roonscape_renderer::{
     INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform, MetadataLineLayout,
     MetadataTypography, NowPlayingPresentation, Presentation, PresentationPalette,
-    PresentationProgress, PresentationTransition, UnavailablePresentation, metadata_layout,
+    PresentationProgress, PresentationRevision, PresentationTransition, UnavailablePresentation,
+    metadata_layout,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -111,10 +112,9 @@ impl PresentationView {
         started_at: Duration,
     ) {
         if let Some(discarded) = self.transition.discard_outgoing() {
-            self.stack.remove(&discarded.value().root);
+            self.remove_layer(discarded);
         }
-        let rendered = render_presentation(presentation, repository_root);
-        rendered.root.add_css_class(CURRENT_LAYER_CLASS);
+        let rendered = render_current(presentation, repository_root);
         let discarded = self.transition.begin(revision, rendered, started_at);
         debug_assert!(discarded.is_none());
 
@@ -124,11 +124,7 @@ impl PresentationView {
             .expect("a started presentation transition has an outgoing layer");
         outgoing.value().root.remove_css_class(CURRENT_LAYER_CLASS);
         outgoing.value().root.add_css_class(OUTGOING_LAYER_CLASS);
-
-        let current = self.transition.current();
-        self.stack.add_child(&current.value().root);
-        self.install_palette_styles();
-        self.stack.set_visible_child(&current.value().root);
+        self.reveal_current();
     }
 
     pub(crate) fn replace_immediately(
@@ -137,19 +133,14 @@ impl PresentationView {
         presentation: &Presentation,
         repository_root: &Path,
     ) {
-        let rendered = render_presentation(presentation, repository_root);
-        rendered.root.add_css_class(CURRENT_LAYER_CLASS);
+        let rendered = render_current(presentation, repository_root);
         let (discarded_current, discarded_outgoing) =
             self.transition.replace_immediately(revision, rendered);
-        self.stack.remove(&discarded_current.value().root);
+        self.remove_layer(discarded_current);
         if let Some(discarded_outgoing) = discarded_outgoing {
-            self.stack.remove(&discarded_outgoing.value().root);
+            self.remove_layer(discarded_outgoing);
         }
-
-        let current = self.transition.current();
-        self.stack.add_child(&current.value().root);
-        self.install_palette_styles();
-        self.stack.set_visible_child(&current.value().root);
+        self.reveal_current();
     }
 
     pub(crate) fn finish_transition(&mut self, now: Duration) {
@@ -167,6 +158,17 @@ impl PresentationView {
         }
     }
 
+    fn remove_layer(&self, layer: PresentationRevision<RenderedPresentation>) {
+        self.stack.remove(&layer.value().root);
+    }
+
+    fn reveal_current(&self) {
+        let current = self.transition.current();
+        self.stack.add_child(&current.value().root);
+        self.install_palette_styles();
+        self.stack.set_visible_child(&current.value().root);
+    }
+
     fn install_palette_styles(&self) {
         let mut styles = palette_styles(
             CURRENT_LAYER_CLASS,
@@ -180,6 +182,12 @@ impl PresentationView {
         }
         self.palette_provider.load_from_data(&styles);
     }
+}
+
+fn render_current(presentation: &Presentation, repository_root: &Path) -> RenderedPresentation {
+    let rendered = render_presentation(presentation, repository_root);
+    rendered.root.add_css_class(CURRENT_LAYER_CLASS);
+    rendered
 }
 
 fn render_presentation(
