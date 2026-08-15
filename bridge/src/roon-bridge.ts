@@ -44,19 +44,23 @@ export interface RoonOutput {
   display_name: string;
 }
 
+export interface RoonNowPlaying {
+  image_key?: string;
+  seek_position?: number;
+  length?: number;
+  three_line?: {
+    line1?: string;
+    line2?: string;
+    line3?: string;
+  };
+}
+
 export interface RoonZone {
   zone_id: string;
   display_name: string;
   state: NonNullable<PresentationSnapshot["playback"]>;
-  now_playing?: {
-    image_key?: string;
-    three_line: {
-      line1?: string;
-      line2?: string;
-      line3?: string;
-    };
-  };
   outputs: RoonOutput[];
+  now_playing?: RoonNowPlaying;
 }
 
 export type RoonZoneSubscriptionResponse =
@@ -66,6 +70,7 @@ export interface RoonZoneEvent {
   zones?: RoonZone[];
   zones_added?: RoonZone[];
   zones_changed?: RoonZone[];
+  zones_seek_changed?: Array<{ zone_id: string; seek_position: number }>;
   zones_removed?: string[];
 }
 
@@ -131,6 +136,12 @@ interface StartRoonBridgeOptions {
   displayConfigurationStore: DisplayConfigurationStore;
   createRoonServices: CreateRoonServices;
   publish(snapshot: PresentationSnapshot): void;
+  now?: () => Date;
+}
+
+interface RetainedZone {
+  zone: RoonZone;
+  sampledAt: string;
 }
 
 export function startRoonBridge({
@@ -139,6 +150,7 @@ export function startRoonBridge({
   displayConfigurationStore,
   createRoonServices,
   publish,
+  now = () => new Date(),
 }: StartRoonBridgeOptions): RoonBridge {
   let revision = 0;
   const initialAvailability: Unavailable = hasAuthorization(
@@ -184,16 +196,17 @@ export function startRoonBridge({
         return;
       }
 
-      const zones = new Map<string, RoonZone>();
+      const zones = new Map<string, RetainedZone>();
       core.services.RoonApiTransport.subscribe_zones((response, event) => {
         if (activeCore !== core) {
           return;
         }
 
+        const sampledAt = now().toISOString();
         if (response === "Subscribed") {
           zones.clear();
           for (const zone of event.zones ?? []) {
-            zones.set(zone.zone_id, zone);
+            zones.set(zone.zone_id, { zone, sampledAt });
           }
         } else if (response === "Changed") {
           for (const zoneId of event.zones_removed ?? []) {
@@ -203,13 +216,30 @@ export function startRoonBridge({
             ...(event.zones_added ?? []),
             ...(event.zones_changed ?? []),
           ]) {
-            zones.set(zone.zone_id, zone);
+            zones.set(zone.zone_id, { zone, sampledAt });
+          }
+          for (const seekChange of event.zones_seek_changed ?? []) {
+            const retainedZone = zones.get(seekChange.zone_id);
+            if (retainedZone?.zone.now_playing === undefined) {
+              continue;
+            }
+
+            zones.set(seekChange.zone_id, {
+              sampledAt,
+              zone: {
+                ...retainedZone.zone,
+                now_playing: {
+                  ...retainedZone.zone.now_playing,
+                  seek_position: seekChange.seek_position,
+                },
+              },
+            });
           }
         } else {
           return;
         }
 
-        const displayZone = [...zones.values()].find((zone) =>
+        const displayZone = [...zones.values()].find(({ zone }) =>
           zone.outputs.some(
             (output) => output.output_id === configuration.displayOutputId,
           ),
@@ -222,7 +252,7 @@ export function startRoonBridge({
         const displayZoneWasUpdated =
           response === "Subscribed" ||
           [...(event.zones_added ?? []), ...(event.zones_changed ?? [])].some(
-            (zone) => zone.zone_id === displayZone.zone_id,
+            (zone) => zone.zone_id === displayZone.zone.zone_id,
           );
         artworkPresentation.present(core, displayZone, displayZoneWasUpdated);
       });
@@ -282,30 +312,52 @@ class ArtworkPresentationCoordinator {
     return this.#artworkFiles.clear();
   }
 
-  present(core: RoonCore, zone: RoonZone, refreshArtwork: boolean): void {
-    const state = availableState(zone);
-    const stateChanged = !samePresentationExceptArtwork(
-      this.#currentSnapshot(),
-      state,
-    );
+  present(
+    core: RoonCore,
+    retainedZone: RetainedZone,
+    refreshArtwork: boolean,
+  ): void {
+    const { zone } = retainedZone;
+    const state = availableState(retainedZone);
+    const currentSnapshot = this.#currentSnapshot();
+    const stateChanged = !samePresentationExceptArtwork(currentSnapshot, state);
+
+    if (zone.state === "stopped") {
+      if (stateChanged) {
+        this.#publishState(state);
+      }
+      void this.cancelAndClear().catch(reportArtworkError);
+      return;
+    }
+
     if (!stateChanged && !refreshArtwork) {
       return;
     }
 
-    const request = ++this.#request;
-    if (stateChanged) {
-      this.#publishState(state);
+    if (!refreshArtwork) {
+      this.#publishState({ ...state, artwork: currentSnapshot.artwork });
+      return;
     }
 
+    const request = ++this.#request;
     const imageKey = zone.now_playing?.image_key;
+    const retainArtworkWhileLoading =
+      zone.state === "loading" && imageKey !== undefined;
+    if (stateChanged) {
+      this.#publishState({
+        ...state,
+        artwork: retainArtworkWhileLoading ? currentSnapshot.artwork : null,
+      });
+    }
+
     const imageService = core.services.RoonApiImage;
     if (imageKey === undefined || imageService === undefined) {
-      this.#publishState(state);
+      this.#publishLatestWithArtwork(null);
       void this.#artworkFiles.clear().catch(reportArtworkError);
       return;
     }
 
-    if (stateChanged) {
+    if (stateChanged && !retainArtworkWhileLoading) {
       void this.#artworkFiles.clear().catch(reportArtworkError);
     }
 
@@ -326,23 +378,17 @@ class ArtworkPresentationCoordinator {
           contentType !== "image/jpeg" ||
           image === undefined
         ) {
-          this.#publishState(state);
+          this.#publishLatestWithArtwork(null);
           void this.#artworkFiles.clear().catch(reportArtworkError);
           return;
         }
 
-        void this.#publishArtwork(request, image, state).catch(
-          reportArtworkError,
-        );
+        void this.#publishArtwork(request, image).catch(reportArtworkError);
       },
     );
   }
 
-  async #publishArtwork(
-    request: number,
-    image: Buffer,
-    state: SnapshotState,
-  ): Promise<void> {
+  async #publishArtwork(request: number, image: Buffer): Promise<void> {
     const reference = await this.#artworkFiles.stage(
       this.#currentRevision() + 1,
       image,
@@ -352,8 +398,21 @@ class ArtworkPresentationCoordinator {
       return;
     }
 
-    this.#publishState({ ...state, artwork: reference });
+    this.#publishLatestWithArtwork(reference);
     await this.#artworkFiles.commit(reference);
+  }
+
+  #publishLatestWithArtwork(artwork: PresentationSnapshot["artwork"]): void {
+    const latest = this.#currentSnapshot();
+    this.#publishState({
+      schemaVersion: latest.schemaVersion,
+      availability: latest.availability,
+      playback: latest.playback,
+      displayZone: latest.displayZone,
+      nowPlaying: latest.nowPlaying,
+      progress: latest.progress,
+      artwork,
+    });
   }
 }
 
@@ -390,8 +449,11 @@ function unavailableState(availability: Unavailable): SnapshotState {
   };
 }
 
-function availableState(zone: RoonZone): SnapshotState {
-  const displayLines = zone.now_playing?.three_line;
+function availableState({ zone, sampledAt }: RetainedZone): SnapshotState {
+  const retainsNowPlaying = zone.state !== "stopped";
+  const displayLines = retainsNowPlaying
+    ? zone.now_playing?.three_line
+    : undefined;
 
   return {
     schemaVersion: 1,
@@ -406,8 +468,34 @@ function availableState(zone: RoonZone): SnapshotState {
             artist: displayLines.line2 ?? null,
             album: displayLines.line3 ?? null,
           },
-    progress: null,
+    progress: retainsNowPlaying
+      ? meaningfulProgress(zone.now_playing, sampledAt)
+      : null,
     artwork: null,
+  };
+}
+
+function meaningfulProgress(
+  nowPlaying: RoonNowPlaying | undefined,
+  sampledAt: string,
+): PresentationSnapshot["progress"] {
+  const positionSeconds = nowPlaying?.seek_position;
+  const durationSeconds = nowPlaying?.length;
+  if (
+    positionSeconds === undefined ||
+    !Number.isFinite(positionSeconds) ||
+    positionSeconds < 0 ||
+    durationSeconds === undefined ||
+    !Number.isFinite(durationSeconds) ||
+    durationSeconds <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    positionSeconds: Math.min(positionSeconds, durationSeconds),
+    durationSeconds,
+    sampledAt,
   };
 }
 

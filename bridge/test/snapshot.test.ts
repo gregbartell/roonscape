@@ -74,9 +74,59 @@ test("loads every shared unavailable fixture without stale Now Playing", async (
   }
 });
 
+test("loads every shared playback state with truthful Now Playing", async () => {
+  const expected = [
+    ["playing.json", "playing", true, true],
+    ["paused.json", "paused", true, true],
+    ["loading.json", "loading", true, true],
+    ["loading-empty.json", "loading", false, false],
+    ["stopped.json", "stopped", false, false],
+  ] as const;
+
+  for (const [fixture, playback, hasNowPlaying, hasProgress] of expected) {
+    const snapshot = await loadSnapshot(`fixtures/${fixture}`);
+
+    assert.equal(snapshot.availability, "available");
+    assert.equal(snapshot.playback, playback);
+    assert.equal(snapshot.nowPlaying !== null, hasNowPlaying);
+    assert.equal(snapshot.progress !== null, hasProgress);
+    if (playback === "stopped") {
+      assert.equal(snapshot.artwork, null);
+    }
+  }
+});
+
+test("loads indeterminate progress as absent and permits clamping samples", async () => {
+  const indeterminate = await loadSnapshot(
+    "fixtures/indeterminate-progress.json",
+  );
+  const pastDuration = await loadSnapshot(
+    "fixtures/playing-past-duration.json",
+  );
+
+  assert.equal(indeterminate.progress, null);
+  assert.deepEqual(pastDuration.progress, {
+    positionSeconds: 300,
+    durationSeconds: 234,
+    sampledAt: "2026-08-15T19:20:00Z",
+  });
+});
+
 test("rejects the shared invalid fixture", async () => {
   await assert.rejects(
     loadSnapshot("fixtures/invalid.json"),
     /Invalid presentation snapshot/,
+  );
+});
+
+test("rejects invalid timing and stopped snapshots with stale Now Playing", async () => {
+  await Promise.all(
+    ["invalid-progress.json", "invalid-stopped-now-playing.json"].map(
+      async (fixture) =>
+        assert.rejects(
+          loadSnapshot(`fixtures/${fixture}`),
+          /Invalid presentation snapshot/,
+        ),
+    ),
   );
 });
