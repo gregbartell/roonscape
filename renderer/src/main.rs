@@ -1,6 +1,7 @@
 mod view;
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::env;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -15,7 +16,8 @@ use roonscape_renderer::{
     ConnectionState, Diagnostics, DiagnosticsConfiguration, InactivityConfiguration, Presentation,
     PresentationState, PresentationTime, PresentationUpdate, RendererKey, SnapshotEvent,
     SnapshotSubscription, current_process_memory_bytes, display_configuration_file_path,
-    load_inactivity_configuration, should_close_renderer,
+    load_inactivity_configuration, register_packaged_fallback_fonts, select_typography,
+    should_close_renderer,
 };
 
 use view::{PresentationView, RenderedDiagnostics, diagnostics_view, install_style_providers};
@@ -65,6 +67,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         .parent()
         .ok_or("renderer manifest should be inside the repository")?
         .to_path_buf();
+    register_packaged_fallback_fonts(&repository_root.join("renderer"))?;
 
     let application = gtk::Application::builder()
         .application_id(APPLICATION_ID)
@@ -93,8 +96,6 @@ fn build_window(
     repository_root: &Path,
     progress_clock: Instant,
 ) {
-    let palette_provider = install_style_providers();
-
     let window = gtk::ApplicationWindow::builder()
         .application(application)
         .decorated(false)
@@ -103,6 +104,19 @@ fn build_window(
         .show_menubar(false)
         .title("RoonScape")
         .build();
+    let available_families = window
+        .pango_context()
+        .font_map()
+        .map(|font_map| {
+            font_map
+                .list_families()
+                .into_iter()
+                .map(|family| family.name().to_string())
+                .collect::<HashSet<_>>()
+        })
+        .unwrap_or_default();
+    let typography = select_typography(&available_families);
+    let palette_provider = install_style_providers(typography);
     let initial_frame = presentation
         .borrow()
         .frame_at(progress_clock.elapsed())

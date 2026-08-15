@@ -7,6 +7,7 @@ mod metadata;
 mod palette;
 mod presentation;
 mod transition;
+mod typography;
 
 pub use contract::{
     ArtworkReference, Availability, NowPlaying, Playback, PresentationSnapshot, Progress,
@@ -34,3 +35,7 @@ pub use presentation::{
     UnavailablePresentation, presentation_from_snapshot,
 };
 pub use transition::{PresentationRevision, PresentationTransition};
+pub use typography::{
+    FALLBACK_FONT_FILES, FALLBACK_FONT_LICENSES, TypographyError, TypographyPair,
+    register_packaged_fallback_fonts, select_typography,
+};

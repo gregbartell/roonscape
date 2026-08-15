@@ -27,23 +27,9 @@ window {
   border-radius: 999px;
 }
 
-.utility-text,
-.state-label,
-.identity-label,
-.identity-name,
-.time {
-  font-family: "Inter", "Avenir Next", "Noto Sans", "DejaVu Sans", sans-serif;
-}
-
 .state-label {
   font-size: 18px;
   font-weight: 700;
-}
-
-.editorial-text {
-  font-family:
-    "Literata", "Iowan Old Style", "Noto Serif Display", "Noto Serif",
-    "DejaVu Serif", serif;
 }
 
 .title {
@@ -108,20 +94,12 @@ progressbar progress {
   padding-bottom: 46px;
 }
 
-.unavailable-state,
-.unavailable-explanation {
-  font-family: "Inter", "Avenir Next", "Noto Sans", "DejaVu Sans", sans-serif;
-}
-
 .unavailable-state {
   font-size: 18px;
   font-weight: 700;
 }
 
 .unavailable-heading {
-  font-family:
-    "Literata", "Iowan Old Style", "Noto Serif Display", "Noto Serif",
-    "DejaVu Serif", serif;
   font-size: 78px;
   font-weight: 500;
 }
