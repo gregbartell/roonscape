@@ -19,8 +19,9 @@ playback and progress truthful.
   renderer can be disconnected instead of causing event-history growth.
 - [ ] Artwork and transition cleanup remain bounded across disconnects,
   reconnects, and rapid presentation changes.
-- [ ] A host-enabled overlay reports memory, frame timing, artwork dimensions,
-  connection state, and state revision and is disabled by default.
+- [ ] An overlay enabled through RoonScape Host configuration reports memory,
+  frame timing, artwork dimensions, connection state, and state revision and is
+  disabled by default.
 - [ ] An IPC smoke check restarts each process once and confirms reconnection,
   current-state replay, and truthful availability.
 - [ ] Automated checks cover malformed or oversized frames, stalled clients,

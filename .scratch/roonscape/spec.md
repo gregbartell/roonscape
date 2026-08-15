@@ -4,22 +4,24 @@ Status: ready-for-agent
 
 ## Problem Statement
 
-The user runs Roon Server continuously on `roll`, an Intel NUC connected to a
-4K OLED television. The television is not always on and is not always showing
-`roll`'s input, but when that input is selected the user wants an attractive,
-current now-playing view that requires no local interaction.
+The initial Reference Deployment runs RoonScape and Roon Server on an Intel NUC
+connected to a 4K OLED television. The television is not always on and is not
+always showing the RoonScape Host's input, but when that input is selected the
+user wants an attractive, current Now Playing view that requires no local
+interaction.
 
-`roll` has no mouse, keyboard, touchscreen, or future need for Roon Control. On
-a 4 GiB host, RoonScape should be a small personal appliance without browsing,
-settings, command surfaces, or the resource cost of a permanent browser
-process. It does not need to become an enterprise-grade platform.
+The Reference Deployment has no mouse, keyboard, touchscreen, or future need
+for Roon Control. On a 4 GiB RoonScape Host, RoonScape should be a small personal
+appliance without browsing, settings, command surfaces, or the resource cost of
+a permanent browser process. It does not need to become an enterprise-grade
+platform.
 
 ## Solution
 
 Build RoonScape as a greenfield, display-only application in this repository.
-It observes one host-configured Display Output, follows the Display Zone that
-currently contains that output, and presents Roon's current Now Playing state
-on the television without exposing any way to change Roon.
+It observes one Display Output configured on the RoonScape Host, follows the
+Display Zone that currently contains that output, and presents Roon's current
+Now Playing state on the television without exposing any way to change Roon.
 
 Use Roon's supported JavaScript extension packages in a small TypeScript/Node.js
 bridge. Publish the latest complete presentation snapshot over a private local
@@ -110,7 +112,8 @@ reposition to protect the OLED.
 34. As the owner, I do not want RoonScape to follow whichever zone becomes
     active, so that playback in another room never appears unexpectedly.
 35. As the owner, I want Display Configuration to be managed once from the
-    host, so that the product needs no local or network settings interface.
+    RoonScape Host, so that the product needs no local or network settings
+    interface.
 36. As the owner, I want first-time setup to provide some practical way to
     discover and select a Display Output, so that I do not need to guess an
     opaque identifier.
@@ -122,7 +125,8 @@ reposition to protect the OLED.
     outside RoonScape, so that the hobby project does not acquire fragile CEC
     or hardware-control behavior.
 40. As the owner, I want RoonScape to remain current while the television is
-    off or showing another input, so that returning to `roll` is immediate.
+    off or showing another input, so that returning to the display input is
+    immediate.
 41. As the owner, I want the bridge and renderer to restart independently, so
     that one process failure does not collapse the other process or the whole
     graphical session.
@@ -130,10 +134,11 @@ reposition to protect the OLED.
     so that process order and ordinary restarts require no intervention.
 43. As the owner, I want RoonScape to recover after Roon or the network returns,
     so that temporary availability problems do not require an SSH session.
-44. As the owner, I want display failure to leave Roon Server, SSH, and
-    Tailscale unaffected, so that music and remote access remain independent.
+44. As the owner, I want display failure to leave Roon Server, other RoonScape
+    Host workloads, and remote administration unaffected, so that they remain
+    operationally independent.
 45. As the owner, I want no browser engine in the runtime, so that the display
-    remains lightweight on its always-on host.
+    remains lightweight on its always-on RoonScape Host.
 46. As the owner, I want no network listener or remote command surface, so that
     the display cannot accidentally remain a controller for other LAN devices.
 47. As the owner, I want no Roon Control capability inside the bridge, so that
@@ -141,18 +146,21 @@ reposition to protect the OLED.
     choice.
 48. As the owner, I want artwork and pending state to remain bounded, so that
     changing tracks cannot accumulate an unbounded history.
-49. As the owner, I want an optional host-enabled diagnostics overlay, so that
-    memory, frame timing, artwork dimensions, connection state, and revision
-    can be inspected when something seems wrong.
+49. As the owner, I want an optional diagnostics overlay enabled through
+    RoonScape Host configuration, so that memory, frame timing, artwork
+    dimensions, connection state, and revision can be inspected when something
+    seems wrong.
 50. As the owner, I want diagnostics absent during normal use, so that they do
     not become part of the viewer-facing product.
-51. As the owner, I want RoonScape to start from the existing tty1 appliance
-    flow without a display manager, so that startup stays small.
+51. As the owner, I want the included Linux deployment to support unattended
+    graphical startup without requiring a display manager, so that startup
+    stays small.
 52. As the owner, I want a sharp 4K signal even if that means using 30 Hz when
     full-quality 4K60 is unavailable, so that typography is not softened by
     chroma subsampling.
-53. As the owner, I want resource use to be obviously reasonable beside Roon,
-    so that the display does not interfere with music playback.
+53. As the owner, I want resource use to be obviously reasonable on a
+    constrained RoonScape Host, so that the display does not interfere with
+    Roon Server when they share a machine.
 54. As a hobbyist maintainer, I want ordinary smoke checks rather than formal
     enterprise release gates, so that engineering effort stays proportional to
     a personal project.
@@ -195,12 +203,16 @@ reposition to protect the OLED.
   re-anchors on each new sample.
 - Identify artwork by a presentation revision rather than treating Roon's
   opaque image key as a stable track or media identity.
-- Select one physical Display Output through host-managed Display
-  Configuration and resolve its containing Display Zone on every relevant Roon
+- Select one physical Display Output through Display Configuration on the
+  RoonScape Host and resolve its containing Display Zone on every relevant Roon
   update. Grouping, ungrouping, and renaming must not trigger an automatic
   switch to another output.
 - Leave the exact one-time selection workflow and Display Configuration format
   to implementation judgment.
+- Treat the service account, runtime locations, graphical session command, and
+  display mode as deployment configuration. Keep host variation in
+  configuration and deployment templates rather than product identifiers,
+  host-identity branches, or a speculative host-adapter framework.
 - Register a new RoonScape extension identity and store its authorization state
   separately from ordinary Display Configuration.
 - Exchange the latest complete state snapshot over a private Unix-domain
@@ -236,18 +248,20 @@ reposition to protect the OLED.
 - For stopped, disconnected, pairing-required, and output-unavailable states,
   clear stale track-specific content rather than leaving the prior selection
   visible.
-- Run the bridge as an independently supervised system service and the renderer
-  as an independently supervised user service tied to the graphical session.
-  Each process reconnects rather than requiring the other to start first.
-- Use the existing tty1 autologin with a guarded `startx` session rather than
-  installing a display manager.
-- Use the standard Xorg modesetting driver rather than the obsolete Intel DDX.
-  Prefer 4K60 RGB/4:4:4 when available and otherwise favor sharp 4K30
-  RGB/4:4:4 over 4K60 chroma subsampling.
-- Provide an optional host-enabled diagnostics overlay but leave it off in
-  normal operation.
-- Keep SSH, Tailscale, and Roon Server operationally independent from
-  RoonScape.
+- Ship an initial Linux deployment profile that runs the bridge as an
+  independently supervised system service and the renderer as an independently
+  supervised user service tied to the graphical session. Each process
+  reconnects rather than requiring the other to start first.
+- On the Reference Deployment, use tty1 autologin with a guarded `startx`
+  session instead of a display manager and use the standard Xorg modesetting
+  driver instead of the obsolete Intel DDX. Prefer 4K60 RGB/4:4:4 when
+  available and otherwise favor sharp 4K30 RGB/4:4:4 over 4K60 chroma
+  subsampling.
+- Provide an optional diagnostics overlay enabled through RoonScape Host
+  configuration but leave it off in normal operation.
+- Keep RoonScape operationally independent from Roon Server, other RoonScape
+  Host workloads, and remote administration. The bridge must not require Roon
+  Server to run on the RoonScape Host.
 - Treat exact socket framing, retry intervals, configuration syntax, palette
   algorithm, font files, inactive timing, optional window manager, and final
   display mode as implementation details unless a real tradeoff emerges.
@@ -289,9 +303,9 @@ reposition to protect the OLED.
   to prototype DOM or CSS details.
 - Perform a small local IPC smoke check: connect, receive current state,
   restart each process once, and confirm reconnection without stale content.
-- On `roll`, exercise ordinary playing, paused, loading, stopped, missing
-  artwork, and unavailable states; confirm the normal boot and return-to-input
-  workflow.
+- On the Reference Deployment, exercise ordinary playing, paused, loading,
+  stopped, missing artwork, and unavailable states; confirm the normal boot and
+  return-to-input workflow.
 - Glance at process memory, CPU, and swap during normal use to catch an obvious
   regression. Do not enforce numerical budgets, a 72-hour soak, hundreds of
   synthetic track changes, or a formal television-state matrix.
@@ -308,7 +322,7 @@ reposition to protect the OLED.
 - Television power control, input switching, HDMI-CEC behavior, or making the
   display responsible for television availability.
 - Lyrics, which are deferred for now.
-- General support commitments beyond `roll` as the initial tested deployment.
+- Broad hardware compatibility guarantees beyond the Reference Deployment.
 - Enterprise release machinery, hard resource budgets, long formal soak
   tests, and exhaustive hardware-state matrices.
 
@@ -319,12 +333,17 @@ reposition to protect the OLED.
 - The name RoonScape is intentional: it combines Roon with a visual “scape” and
   embraces the RuneScape homophone. Existing small naming collisions are
   accepted because public discoverability is not a goal.
-- The television is an LG 4K OLED. Exact inactive luminance and timing should
-  be calibrated by looking at that physical screen rather than specified in
-  advance.
-- `roll` currently has the required Node.js, Rust, GTK 4, Pango, Mesa, and Xorg
-  building blocks, but no active graphical session. Its historical Xorg setup
-  used an obsolete graphics driver and should not be copied unchanged.
+- The Reference Deployment is an Intel NUC RoonScape Host with about 4 GiB RAM,
+  Linux, systemd, Xorg, and an attached LG 3840×2160 OLED television. It also
+  runs Roon Server, but co-location is not a RoonScape requirement.
+- The Reference Deployment has the required Node.js, Rust, GTK 4, Pango, Mesa,
+  and Xorg building blocks but no active graphical session. Its historical Xorg
+  setup used an obsolete graphics driver and should not be copied unchanged.
+  Exact inactive luminance and timing should be calibrated by looking at the
+  physical screen rather than specified in advance.
+- RoonScape is expected to run on compatible Linux/GTK RoonScape Hosts. Other
+  hardware, display resolutions, and graphical session arrangements remain
+  unverified until another deployment exercises them.
 - The user chose Variant A, Gallery split, from a five-variant throwaway visual
   prototype. The verdict includes hiding Display Output, labeling Display Zone
   as **Zone**, and deriving every presentation color from the actual artwork.

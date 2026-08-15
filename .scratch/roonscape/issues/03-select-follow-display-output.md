@@ -1,17 +1,18 @@
 # 03 — Select and follow the Display Output
 
-**What to build:** Give the owner a one-time host workflow for discovering and
-saving one physical Display Output, then continuously resolve the Display Zone
-that contains it. The viewer follows that physical output through ordinary
-Roon grouping changes and never switches to whichever unrelated zone becomes
-active.
+**What to build:** Give the owner a one-time RoonScape Host workflow for
+discovering and saving one physical Display Output, then continuously resolve
+the Display Zone that contains it. The viewer follows that physical output
+through ordinary Roon grouping changes and never switches to whichever
+unrelated zone becomes active.
 
 **Blocked by:** 02 — Explain Roon connection availability.
 
 **Status:** ready-for-agent
 
-- [ ] A practical host workflow lists discoverable outputs and saves one
-  Display Output without requiring an onscreen or network settings interface.
+- [ ] A practical RoonScape Host workflow lists discoverable outputs and saves
+  one Display Output without requiring an onscreen or network settings
+  interface.
 - [ ] Display Configuration is stored separately from Roon authorization state
   and can be changed without changing Roon playback.
 - [ ] Initial zone state, grouping, ungrouping, and zone renaming all resolve

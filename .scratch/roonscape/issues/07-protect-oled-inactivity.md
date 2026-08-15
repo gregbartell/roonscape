@@ -19,7 +19,7 @@ playback and progress truthful.
   treatment.
 - [ ] Returning to Playing immediately restores full luminance and the normal
   Gallery split position.
-- [ ] Inactive timing, dimness, and reposition cadence remain host-tunable for
-  later calibration without adding a settings screen.
+- [ ] Inactive timing, dimness, and reposition cadence remain configurable on
+  the RoonScape Host for later calibration without adding a settings screen.
 - [ ] Deterministic tests exercise grace periods, repeated repositioning,
   state changes during inactivity, and immediate active restoration.

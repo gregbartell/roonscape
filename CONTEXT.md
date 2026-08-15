@@ -1,13 +1,18 @@
 # RoonScape
 
 This context describes a personal, unattended visual display of Roon playback
-on a dedicated host.
+on a RoonScape Host.
 
 ## Language
 
 **RoonScape**:
 An unattended, read-only presentation of current Roon playback.
 _Avoid_: Roon Display, web controller, remote
+
+**RoonScape Host**:
+The machine that runs RoonScape and drives its attached display. It may also
+run Roon Server or unrelated workloads.
+_Avoid_: Dedicated host
 
 **Roon Control**:
 An action that changes Roon playback, volume, or playback settings. Roon
@@ -20,8 +25,8 @@ Roon state.
 _Avoid_: Roon Control
 
 **Display Output**:
-The single host-configured physical Roon output whose playback RoonScape
-presents, including while the output joins or leaves a group.
+The single physical Roon output configured on the RoonScape Host whose playback
+RoonScape presents, including while the output joins or leaves a group.
 _Avoid_: Selected zone, active zone, fallback zone
 
 **Display Zone**:
