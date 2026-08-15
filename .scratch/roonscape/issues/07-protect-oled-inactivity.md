@@ -8,7 +8,7 @@ period, while resumed playback immediately restores the full composition.
 **Blocked by:** 04 — Present live Now Playing and artwork; and 05 — Make
 playback and progress truthful.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] Paused playback freezes progress and initially retains the complete Now
       Playing composition.

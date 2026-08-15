@@ -8,7 +8,7 @@ unrelated zone becomes active.
 
 **Blocked by:** 02 — Explain Roon connection availability.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] A practical RoonScape Host workflow lists discoverable outputs and saves
       one Display Output without requiring an onscreen or network settings

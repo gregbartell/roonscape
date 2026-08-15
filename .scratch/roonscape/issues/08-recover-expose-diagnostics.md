@@ -8,7 +8,7 @@ the viewer sees no diagnostic UI.
 **Blocked by:** 04 — Present live Now Playing and artwork; and 05 — Make
 playback and progress truthful.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] Either process can start first or restart independently, and the renderer
       reconnects indefinitely without terminating its own session.

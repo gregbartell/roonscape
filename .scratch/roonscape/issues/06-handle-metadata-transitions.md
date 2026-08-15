@@ -8,7 +8,7 @@ text, and palette transition as one presentation.
 **Blocked by:** 04 — Present live Now Playing and artwork; and 05 — Make
 playback and progress truthful.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] Missing Artist or Album values remain absent without invented labels,
       placeholders, or broken spacing.

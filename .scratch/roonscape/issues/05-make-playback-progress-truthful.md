@@ -7,7 +7,7 @@ shows no fabricated progress.
 
 **Blocked by:** 03 — Select and follow the Display Output.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] Availability remains separate from the playing, paused, loading, and
       stopped playback states in complete versioned snapshots.

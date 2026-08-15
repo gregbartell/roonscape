@@ -7,7 +7,7 @@ fixture and live Roon operation.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] Pressing Escape while the renderer has focus closes the renderer in
       windowed mode.

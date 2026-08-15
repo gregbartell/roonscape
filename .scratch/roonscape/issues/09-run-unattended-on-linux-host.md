@@ -6,7 +6,7 @@ product. Normal boot reaches a ready display without local interaction, and a
 display failure cannot take down Roon Server, other RoonScape Host workloads,
 or remote administration.
 
-**Blocked by:** None — 06, 07, and 08 are complete.
+**Blocked by:** None — 06, 07, and 08 are `done`.
 
 **Status:** ready-for-human
 

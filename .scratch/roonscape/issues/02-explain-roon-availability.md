@@ -7,7 +7,7 @@ connected-but-unconfigured explanation instead of stale Now Playing content.
 
 **Blocked by:** None — 01 is complete.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] RoonScape registers with its own extension identity and uses Roon's normal
       client authorization flow with fresh authorization state.

@@ -9,7 +9,7 @@ progress.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] One documented command starts the TypeScript fixture publisher and the
   Rust/GTK renderer without requiring a live Roon Server.

@@ -8,7 +8,7 @@ transitions.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] A Display Zone update that retains the same Roon artwork identity also
       retains the current artwork reference without publishing an intermediate

@@ -7,7 +7,7 @@ neutral presentation when artwork is missing.
 
 **Blocked by:** 03 — Select and follow the Display Output.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] Roon's first, second, and third prepared display lines map positionally
       to optional Title, Artist, and Album values without invented fallbacks.
