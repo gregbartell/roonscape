@@ -153,6 +153,67 @@ function unusedArtworkFiles(): ArtworkFiles {
   };
 }
 
+interface ArtworkTestContext {
+  artwork: NonNullable<PresentationSnapshot["artwork"]>;
+  artworkDirectory: string;
+  boundary: RoonBoundary;
+  cleanup(): Promise<void>;
+  zone: RoonZone;
+}
+
+async function prepareArtworkTestContext({
+  image = "stable artwork",
+  imageKey = "same-track-artwork",
+  now,
+  output = { output_id: "output-gallery", display_name: "NUC HDMI" },
+}: {
+  image?: string;
+  imageKey?: string;
+  now?: () => Date;
+  output?: RoonZone["outputs"][number];
+} = {}): Promise<ArtworkTestContext> {
+  const scratchRoot = "/tmp/codex/roonscape";
+  await mkdir(scratchRoot, { recursive: true });
+  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const artworkDirectory = path.join(taskDirectory, "artwork");
+  const artworkFiles = await ArtworkFileStore.open(artworkDirectory);
+  const boundary = createRoonBoundary("output-gallery", artworkFiles, now);
+  const zone: RoonZone = {
+    zone_id: "zone-gallery",
+    display_name: "Gallery",
+    state: "playing",
+    outputs: [output],
+    now_playing: {
+      image_key: imageKey,
+      seek_position: 82,
+      length: 234,
+      three_line: {
+        line1: "A Moment Apart",
+        line2: "ODESZA",
+        line3: "A Moment Apart",
+      },
+    },
+  };
+
+  boundary.extensionOptions().core_paired(boundary.core());
+  boundary.emitZones("Subscribed", { zones: [zone] });
+  boundary.resolveImage("image/jpeg", Buffer.from(image));
+  await waitFor(() => boundary.snapshots.at(-1)?.artwork !== null);
+  const artwork = boundary.snapshots.at(-1)?.artwork;
+  assert.ok(artwork);
+
+  return {
+    artwork,
+    artworkDirectory,
+    boundary,
+    cleanup: async () => {
+      await artworkFiles.clear();
+      await rm(taskDirectory, { recursive: true });
+    },
+    zone,
+  };
+}
+
 test("publishes truthful availability across authorization and connection events", async () => {
   const boundary = createRoonBoundary();
   const extensionOptions = boundary.extensionOptions();
@@ -336,7 +397,7 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
           display_name: "Gallery",
           state: "loading",
           now_playing: {
-            image_key: "opaque-roon-image-key",
+            image_key: "loading-artwork-key",
             seek_position: 30,
             length: 234,
             three_line: {
@@ -365,7 +426,7 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
           display_name: "Gallery",
           state: "playing",
           now_playing: {
-            image_key: "opaque-roon-image-key",
+            image_key: "revised-artwork-key",
             seek_position: 31,
             length: 234,
             three_line: {
@@ -434,6 +495,205 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
   }
 });
 
+test("retains artwork through a full same-track timing update", async () => {
+  const sampleTimes = [
+    new Date("2026-08-15T19:20:00Z"),
+    new Date("2026-08-15T19:20:05Z"),
+  ];
+  const context = await prepareArtworkTestContext({
+    now: () => sampleTimes.shift() ?? new Date("2026-08-15T19:20:05Z"),
+  });
+  const { artwork, boundary, zone } = context;
+
+  try {
+    const snapshotCount = boundary.snapshots.length;
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          ...zone,
+          now_playing: { ...zone.now_playing, seek_position: 90 },
+        },
+      ],
+    });
+
+    const timingSnapshots = boundary.snapshots.slice(snapshotCount);
+    assert.equal(boundary.imageRequests.length, 1);
+    assert.deepEqual(
+      timingSnapshots.map((snapshot) => ({
+        artwork: snapshot.artwork,
+        progress: snapshot.progress,
+      })),
+      [
+        {
+          artwork,
+          progress: {
+            positionSeconds: 90,
+            durationSeconds: 234,
+            sampledAt: "2026-08-15T19:20:05.000Z",
+          },
+        },
+      ],
+    );
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("retains artwork while pause and resume update playback truthfully", async () => {
+  const sampleTimes = [
+    new Date("2026-08-15T19:20:00Z"),
+    new Date("2026-08-15T19:20:05Z"),
+    new Date("2026-08-15T19:20:10Z"),
+  ];
+  const context = await prepareArtworkTestContext({
+    now: () => sampleTimes.shift() ?? new Date("2026-08-15T19:20:10Z"),
+  });
+  const { artwork, boundary, zone } = context;
+
+  try {
+    const snapshotCount = boundary.snapshots.length;
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          ...zone,
+          state: "paused",
+          now_playing: { ...zone.now_playing, seek_position: 90 },
+        },
+      ],
+    });
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          ...zone,
+          now_playing: { ...zone.now_playing, seek_position: 91 },
+        },
+      ],
+    });
+
+    const playbackSnapshots = boundary.snapshots.slice(snapshotCount);
+    assert.equal(boundary.imageRequests.length, 1);
+    assert.deepEqual(
+      playbackSnapshots.map((snapshot) => ({
+        playback: snapshot.playback,
+        progress: snapshot.progress,
+      })),
+      [
+        {
+          playback: "paused",
+          progress: {
+            positionSeconds: 90,
+            durationSeconds: 234,
+            sampledAt: "2026-08-15T19:20:05.000Z",
+          },
+        },
+        {
+          playback: "playing",
+          progress: {
+            positionSeconds: 91,
+            durationSeconds: 234,
+            sampledAt: "2026-08-15T19:20:10.000Z",
+          },
+        },
+      ],
+    );
+    for (const snapshot of playbackSnapshots) {
+      assert.deepEqual(snapshot.artwork, artwork);
+    }
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("ignores a volume-only Display Zone update", async () => {
+  const sampleTimes = [
+    new Date("2026-08-15T19:20:00Z"),
+    new Date("2026-08-15T19:20:05Z"),
+  ];
+  const output = {
+    output_id: "output-gallery",
+    display_name: "NUC HDMI",
+    volume: { type: "number", min: 0, max: 100, value: 30, step: 1 },
+  };
+  const context = await prepareArtworkTestContext({
+    now: () => sampleTimes.shift() ?? new Date("2026-08-15T19:20:05Z"),
+    output,
+  });
+  const { boundary, zone } = context;
+
+  try {
+    const snapshots = [...boundary.snapshots];
+    const updatedOutput = {
+      ...output,
+      volume: { ...output.volume, value: 35 },
+    };
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          ...zone,
+          outputs: [updatedOutput],
+        },
+      ],
+    });
+
+    assert.deepEqual(boundary.snapshots, snapshots);
+    assert.equal(boundary.imageRequests.length, 1);
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("transitions once and cleans up when artwork identity changes", async () => {
+  const context = await prepareArtworkTestContext({
+    image: "first artwork",
+    imageKey: "first-artwork-key",
+  });
+  const { artwork: firstArtwork, artworkDirectory, boundary, zone } = context;
+
+  try {
+    const snapshotCount = boundary.snapshots.length;
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          ...zone,
+          now_playing: {
+            ...zone.now_playing,
+            image_key: "second-artwork-key",
+            seek_position: 0,
+            three_line: {
+              line1: "Across the Room",
+              line2: "ODESZA",
+              line3: "A Moment Apart",
+            },
+          },
+        },
+      ],
+    });
+
+    assert.equal(boundary.snapshots.at(-1)?.artwork, null);
+    assert.deepEqual(
+      boundary.imageRequests.map(({ imageKey }) => imageKey),
+      ["first-artwork-key", "second-artwork-key"],
+    );
+
+    boundary.resolveImage("image/jpeg", Buffer.from("second artwork"));
+    await waitFor(() => boundary.snapshots.at(-1)?.artwork !== null);
+    await waitFor(async () => (await readdir(artworkDirectory)).length === 1);
+
+    const transitionSnapshots = boundary.snapshots.slice(snapshotCount);
+    const secondArtwork = transitionSnapshots.at(-1)?.artwork;
+    assert.equal(transitionSnapshots.length, 2);
+    assert.equal(transitionSnapshots[0]?.artwork, null);
+    assert.notDeepEqual(secondArtwork, firstArtwork);
+    assert.equal(secondArtwork?.revision, transitionSnapshots.at(-1)?.revision);
+    assert.equal(
+      await readFile(secondArtwork?.path ?? "", "utf8"),
+      "second artwork",
+    );
+  } finally {
+    await context.cleanup();
+  }
+});
+
 test("leaves absent prepared display lines absent without inventing fallbacks", () => {
   const boundary = createRoonBoundary("output-gallery");
 
@@ -469,17 +729,24 @@ test("a stale artwork response cannot delete a newer presentation file", async (
     display_name: "Gallery",
     state: "playing" as const,
     now_playing: {
-      image_key: "reused-opaque-key",
+      image_key: "stale-artwork-key",
       three_line: { line1: "A Moment Apart", line2: "ODESZA" },
     },
     outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+  };
+  const updatedDisplayZone = {
+    ...displayZone,
+    now_playing: {
+      ...displayZone.now_playing,
+      image_key: "current-artwork-key",
+    },
   };
 
   try {
     boundary.extensionOptions().core_paired(boundary.core());
     boundary.emitZones("Subscribed", { zones: [displayZone] });
     boundary.resolveImageRequest(0, "image/jpeg", Buffer.from("stale artwork"));
-    boundary.emitZones("Changed", { zones_changed: [displayZone] });
+    boundary.emitZones("Changed", { zones_changed: [updatedDisplayZone] });
     boundary.resolveImageRequest(
       1,
       "image/jpeg",
