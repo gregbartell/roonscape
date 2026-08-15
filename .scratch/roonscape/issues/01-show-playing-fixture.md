@@ -11,21 +11,21 @@ progress.
 
 **Status:** ready-for-agent
 
-- [ ] One documented command starts the TypeScript fixture publisher and the
+- [x] One documented command starts the TypeScript fixture publisher and the
   Rust/GTK renderer without requiring a live Roon Server.
-- [ ] Node.js and Rust toolchain versions are pinned, the selected Node package
+- [x] Node.js and Rust toolchain versions are pinned, the selected Node package
   manager is declared, and Cargo and Node dependency lockfiles are committed.
-- [ ] One repository-level command runs formatting, linting, and automated
+- [x] One repository-level command runs formatting, linting, and automated
   tests for both modules; continuous integration invokes the same checks.
-- [ ] A language-neutral schema defines a complete snapshot with a schema
+- [x] A language-neutral schema defines a complete snapshot with a schema
   version, monotonic revision, availability, playback, Display Zone, optional
   Now Playing values, progress, and artwork reference.
-- [ ] TypeScript and Rust both validate and consume the same Playing fixture,
+- [x] TypeScript and Rust both validate and consume the same Playing fixture,
   and each rejects a deliberately invalid fixture.
-- [ ] The snapshot crosses a private Unix-domain socket; fixture mode opens no
+- [x] The snapshot crosses a private Unix-domain socket; fixture mode opens no
   network listener and sends the current snapshot when the renderer connects.
-- [ ] The renderer uses GTK 4 and Pango, embeds no browser engine, and presents
+- [x] The renderer uses GTK 4 and Pango, embeds no browser engine, and presents
   dominant artwork beside a metadata column without exposing Roon Control.
-- [ ] Automated checks exercise the fixture-to-snapshot and
+- [x] Automated checks exercise the fixture-to-snapshot and
   snapshot-to-presentation boundaries rather than private implementation
   structure.

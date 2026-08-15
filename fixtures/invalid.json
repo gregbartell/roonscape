@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "revision": 8,
+  "availability": "available",
+  "playback": "playing",
+  "displayZone": {
+    "name": "Gallery"
+  },
+  "nowPlaying": null,
+  "progress": {
+    "positionSeconds": 10,
+    "durationSeconds": 60,
+    "sampledAt": "not-a-timestamp"
+  },
+  "artwork": null
+}

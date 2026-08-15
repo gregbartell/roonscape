@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" role="img" aria-labelledby="title description">
+  <title id="title">Synthetic artwork for the Playing fixture</title>
+  <desc id="description">Layered lapis arches rise above a rose horizon and a small saffron moon.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#11131f"/>
+      <stop offset="0.52" stop-color="#28315f"/>
+      <stop offset="1" stop-color="#5969c7"/>
+    </linearGradient>
+    <linearGradient id="horizon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cb6e7f"/>
+      <stop offset="1" stop-color="#6d354f"/>
+    </linearGradient>
+    <filter id="soft-glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="32"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="1200" fill="url(#sky)"/>
+  <circle cx="895" cy="268" r="132" fill="#eabf68" opacity=".23" filter="url(#soft-glow)"/>
+  <circle cx="895" cy="268" r="82" fill="#eabf68"/>
+  <path d="M0 706C204 598 362 612 541 706s347 111 659-49v543H0Z" fill="url(#horizon)"/>
+  <g fill="none" stroke-linecap="round">
+    <path d="M-130 742C109 565 326 527 531 647s381 142 799-86" stroke="#f2e8dd" stroke-width="22"/>
+    <path d="M-126 826C132 642 341 624 546 730s386 123 788-91" stroke="#8794e1" stroke-width="14" opacity=".86"/>
+    <path d="M-123 907C147 743 360 718 565 814s383 105 769-82" stroke="#c6cef8" stroke-width="9" opacity=".62"/>
+    <path d="M-115 994C159 847 374 826 586 909s386 84 752-75" stroke="#eabf68" stroke-width="7" opacity=".76"/>
+  </g>
+  <g fill="#f2e8dd">
+    <circle cx="139" cy="210" r="5"/>
+    <circle cx="303" cy="153" r="3"/>
+    <circle cx="483" cy="278" r="4"/>
+    <circle cx="686" cy="132" r="5"/>
+    <circle cx="1052" cy="421" r="3"/>
+  </g>
+  <path d="M92 1008h432" stroke="#f2e8dd" stroke-width="5"/>
+  <path d="M92 1042h276" stroke="#f2e8dd" stroke-width="5" opacity=".52"/>
+</svg>

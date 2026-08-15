@@ -1,0 +1,30 @@
+{
+  "name": "roonscape",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.17.0",
+  "workspaces": [
+    "bridge"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @roonscape/bridge",
+    "check": "npm run format:check && npm run typecheck && npm run lint && npm test",
+    "fixture": "npm run build && node scripts/run-fixture.mjs",
+    "format": "prettier --write bridge/src bridge/test renderer/src/style.css scripts eslint.config.js package.json bridge/package.json bridge/tsconfig.json schema fixtures .github && cargo fmt --all",
+    "format:check": "prettier --check bridge/src bridge/test renderer/src/style.css scripts eslint.config.js package.json bridge/package.json bridge/tsconfig.json schema fixtures .github && cargo fmt --all -- --check",
+    "lint": "eslint bridge/src bridge/test scripts eslint.config.js && cargo clippy --workspace --all-targets -- -D warnings",
+    "test": "npm run test:bridge && cargo test --workspace",
+    "test:bridge": "npm run test --workspace @roonscape/bridge",
+    "typecheck": "npm run build && cargo check --workspace --all-targets"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.2.0",
+    "eslint": "10.8.1",
+    "globals": "17.11.0",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.67.0"
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roonscape.local/schema/presentation-snapshot-v1.json",
+  "title": "RoonScape presentation snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "revision",
+    "availability",
+    "playback",
+    "displayZone",
+    "nowPlaying",
+    "progress",
+    "artwork"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "description": "Version of this complete snapshot contract.",
+      "const": 1
+    },
+    "revision": {
+      "description": "Monotonic presentation revision. A publisher MUST increase it whenever the presentation changes and MUST NOT reuse a lower value during its lifetime.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "availability": {
+      "enum": [
+        "pairingRequired",
+        "disconnected",
+        "outputUnavailable",
+        "available"
+      ]
+    },
+    "playback": {
+      "oneOf": [
+        { "enum": ["playing", "paused", "loading", "stopped"] },
+        { "type": "null" }
+      ]
+    },
+    "displayZone": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "nowPlaying": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title", "artist", "album"],
+          "properties": {
+            "title": { "type": ["string", "null"] },
+            "artist": { "type": ["string", "null"] },
+            "album": { "type": ["string", "null"] }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "progress": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["positionSeconds", "durationSeconds", "sampledAt"],
+          "properties": {
+            "positionSeconds": { "type": "number", "minimum": 0 },
+            "durationSeconds": { "type": "number", "exclusiveMinimum": 0 },
+            "sampledAt": { "type": "string", "format": "date-time" }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "artwork": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["revision", "path"],
+          "properties": {
+            "revision": { "type": "integer", "minimum": 0 },
+            "path": { "type": "string", "minLength": 1 }
+          }
+        },
+        { "type": "null" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "availability": { "const": "available" } },
+        "required": ["availability"]
+      },
+      "then": {
+        "properties": {
+          "playback": { "type": "string" },
+          "displayZone": { "type": "object" }
+        }
+      },
+      "else": {
+        "properties": {
+          "playback": { "type": "null" },
+          "displayZone": { "type": "null" },
+          "nowPlaying": { "type": "null" },
+          "progress": { "type": "null" },
+          "artwork": { "type": "null" }
+        }
+      }
+    }
+  ]
+}

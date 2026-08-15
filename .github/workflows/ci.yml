@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install GTK development libraries
+        run: sudo apt-get update && sudo apt-get install --yes libgtk-4-dev
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Run repository checks
+        run: npm run check
