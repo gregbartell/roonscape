@@ -38,9 +38,34 @@ test("loads missing artwork and artwork revision fixtures", async () => {
   assert.equal(missingArtwork.artwork, null);
   assert.deepEqual(revisedArtwork.artwork, {
     revision: 9,
-    path: "fixtures/artwork/playing.svg",
+    path: "fixtures/artwork/revised.svg",
   });
   assert.equal(revisedArtwork.revision, 9);
+});
+
+test("loads missing, long, and extreme metadata fixtures without inventing values", async () => {
+  const missing = await loadSnapshot("fixtures/missing-metadata.json");
+  const missingArtist = await loadSnapshot("fixtures/missing-artist.json");
+  const missingAlbum = await loadSnapshot("fixtures/missing-album.json");
+  const long = await loadSnapshot("fixtures/long-metadata.json");
+  const extreme = await loadSnapshot("fixtures/extreme-metadata.json");
+
+  assert.deepEqual(missing.nowPlaying, {
+    title: "An Ending (Ascent)",
+    artist: null,
+    album: null,
+  });
+  assert.equal(missingArtist.nowPlaying?.artist, null);
+  assert.equal(
+    missingArtist.nowPlaying?.album,
+    "Apollo: Atmospheres and Soundtracks",
+  );
+  assert.equal(missingAlbum.nowPlaying?.artist, "Brian Eno");
+  assert.equal(missingAlbum.nowPlaying?.album, null);
+  assert.ok((long.nowPlaying?.title?.length ?? 0) > 80);
+  assert.ok((long.nowPlaying?.artist?.length ?? 0) > 80);
+  assert.ok((long.nowPlaying?.album?.length ?? 0) > 80);
+  assert.ok((extreme.nowPlaying?.title?.length ?? 0) > 250);
 });
 
 test("loads every shared unavailable fixture without stale Now Playing", async () => {

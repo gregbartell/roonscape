@@ -221,18 +221,6 @@ impl PresentationPalette {
             None => Ok(Self::neutral()),
         }
     }
-
-    pub fn css_definitions(self) -> String {
-        format!(
-            "@define-color background {};\n@define-color artwork_field {};\n@define-color metadata_field {};\n@define-color primary_text {};\n@define-color secondary_text {};\n@define-color accent {};\n",
-            self.background.to_hex(),
-            self.artwork_field.to_hex(),
-            self.metadata_field.to_hex(),
-            self.primary_text.to_hex(),
-            self.secondary_text.to_hex(),
-            self.accent.to_hex(),
-        )
-    }
 }
 
 #[derive(Debug)]

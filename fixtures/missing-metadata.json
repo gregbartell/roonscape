@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "revision": 16,
+  "availability": "available",
+  "playback": "playing",
+  "displayZone": {
+    "name": "Gallery"
+  },
+  "nowPlaying": {
+    "title": "An Ending (Ascent)",
+    "artist": null,
+    "album": null
+  },
+  "progress": null,
+  "artwork": null
+}

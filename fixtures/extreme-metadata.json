@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "revision": 18,
+  "availability": "available",
+  "playback": "playing",
+  "displayZone": {
+    "name": "Gallery"
+  },
+  "nowPlaying": {
+    "title": "The Complete and Unabridged Chronicle of Every Constellation Reflected in Every Window Along the Coast During the Longest Imagined Night, Including Their Alternate Names, Forgotten Coordinates, Seasonal Variations, and the Patient Observations of Travelers Who Never Reached the End of the Road",
+    "artist": "The International Assembly of Patient Astronomers, Metropolitan Chamber Players, Northern Coast Signal Choir, Cartographers Without Borders, and Friends",
+    "album": "Collected Nocturnes for Temporary Cities, Fading Radio Signals, Unmapped Roads, Impossible Weather, Borrowed Telescopes, and All of the Quiet Rooms We Remember Only After Waking"
+  },
+  "progress": null,
+  "artwork": null
+}

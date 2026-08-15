@@ -1,49 +1,23 @@
 window {
-  background: @background;
-  color: @primary_text;
-}
-
-.gallery-split {
-  background-image: linear-gradient(
-    112deg,
-    @artwork_field 0%,
-    @background 58%,
-    @metadata_field 100%
-  );
+  background: #000000;
 }
 
 .artwork-column {
   padding: 0 56px 0 112px;
-  background-color: alpha(@artwork_field, 0.48);
-}
-
-.artwork-frame {
-  box-shadow: 0 36px 96px alpha(@background, 0.88);
 }
 
 .artwork {
-  border: 1px solid alpha(@primary_text, 0.16);
-  background-color: @artwork_field;
+  border-width: 1px;
+  border-style: solid;
 }
 
 .artwork-missing {
-  border: 1px solid alpha(@secondary_text, 0.22);
-  background-image: linear-gradient(
-    142deg,
-    alpha(@secondary_text, 0.09),
-    @artwork_field 52%,
-    @background
-  );
-  box-shadow: inset 0 0 0 24px alpha(@background, 0.16);
+  border-width: 1px;
+  border-style: solid;
 }
 
 .metadata-column {
   padding: 48px 132px 48px 104px;
-  background-color: @metadata_field;
-}
-
-.playback-state {
-  color: @accent;
 }
 
 .state-dot {
@@ -51,16 +25,14 @@ window {
   min-height: 13px;
   margin-top: 4px;
   border-radius: 999px;
-  background-color: @accent;
-  box-shadow: 0 0 18px alpha(@accent, 0.72);
 }
 
+.utility-text,
 .state-label,
 .zone-label,
 .zone-name,
-.time,
-.artist {
-  font-family: "Inter", "Avenir Next", "Noto Sans", sans-serif;
+.time {
+  font-family: "Inter", "Avenir Next", "Noto Sans", "DejaVu Sans", sans-serif;
 }
 
 .state-label {
@@ -68,28 +40,23 @@ window {
   font-weight: 700;
 }
 
-.title,
-.album {
-  font-family: "Literata", "Iowan Old Style", "Noto Serif Display", serif;
+.editorial-text {
+  font-family:
+    "Literata", "Iowan Old Style", "Noto Serif Display", "Noto Serif",
+    "DejaVu Serif", serif;
 }
 
 .title {
-  color: @primary_text;
-  font-size: 108px;
   font-weight: 500;
 }
 
 .artist {
   margin-top: 32px;
-  color: @secondary_text;
-  font-size: 38px;
   font-weight: 600;
 }
 
 .album {
   margin-top: 14px;
-  color: @secondary_text;
-  font-size: 31px;
   font-style: italic;
 }
 
@@ -101,7 +68,6 @@ progressbar trough {
   min-height: 5px;
   border: 0;
   border-radius: 0;
-  background-color: alpha(@secondary_text, 0.22);
 }
 
 progressbar progress {
@@ -109,7 +75,6 @@ progressbar progress {
   min-height: 5px;
   border: 0;
   border-radius: 0;
-  background-color: @accent;
 }
 
 .times {
@@ -117,16 +82,10 @@ progressbar progress {
 }
 
 .time {
-  color: @secondary_text;
   font-size: 19px;
 }
 
-.display-zone {
-  color: @secondary_text;
-}
-
 .zone-label {
-  color: @accent;
   font-size: 16px;
   font-weight: 800;
 }
@@ -136,18 +95,13 @@ progressbar progress {
   font-weight: 600;
 }
 
-.unavailable {
-  background-color: @background;
-}
-
 .unavailable-field {
-  border-right: 1px solid alpha(@secondary_text, 0.12);
-  background-image: linear-gradient(142deg, @artwork_field, @background 72%);
+  border-right-width: 1px;
+  border-right-style: solid;
 }
 
 .unavailable-copy {
   padding: 48px 132px 48px 104px;
-  background-color: @metadata_field;
 }
 
 .unavailable-message {
@@ -156,24 +110,23 @@ progressbar progress {
 
 .unavailable-state,
 .unavailable-explanation {
-  font-family: "Inter", "Avenir Next", "Noto Sans", sans-serif;
+  font-family: "Inter", "Avenir Next", "Noto Sans", "DejaVu Sans", sans-serif;
 }
 
 .unavailable-state {
-  color: @accent;
   font-size: 18px;
   font-weight: 700;
 }
 
 .unavailable-heading {
-  color: @primary_text;
-  font-family: "Literata", "Iowan Old Style", "Noto Serif Display", serif;
+  font-family:
+    "Literata", "Iowan Old Style", "Noto Serif Display", "Noto Serif",
+    "DejaVu Serif", serif;
   font-size: 78px;
   font-weight: 500;
 }
 
 .unavailable-explanation {
   margin-top: 30px;
-  color: @secondary_text;
   font-size: 28px;
 }

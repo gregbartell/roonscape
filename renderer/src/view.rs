@@ -1,29 +1,40 @@
 use std::path::Path;
+use std::time::Duration;
 
 use gtk::gdk;
 use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    NowPlayingPresentation, Presentation, PresentationPalette, PresentationProgress,
-    UnavailablePresentation,
+    MetadataLineLayout, MetadataOverflow, MetadataTypography, NowPlayingPresentation, Presentation,
+    PresentationPalette, PresentationProgress, PresentationTransition, UnavailablePresentation,
+    metadata_layout,
 };
 
 const STYLES: &str = include_str!("style.css");
+const CURRENT_LAYER_CLASS: &str = "presentation-current";
+const OUTGOING_LAYER_CLASS: &str = "presentation-outgoing";
 
-pub(crate) struct RenderedPresentation {
-    pub(crate) root: gtk::Widget,
-    pub(crate) progress: Option<RenderedProgress>,
+pub(crate) struct PresentationView {
+    stack: gtk::Stack,
+    transition: PresentationTransition<RenderedPresentation>,
+    palette_provider: gtk::CssProvider,
+}
+
+struct RenderedPresentation {
+    root: gtk::Widget,
+    progress: Option<RenderedProgress>,
+    palette: PresentationPalette,
 }
 
 #[derive(Clone)]
-pub(crate) struct RenderedProgress {
+struct RenderedProgress {
     bar: gtk::ProgressBar,
     elapsed: gtk::Label,
     remaining: gtk::Label,
 }
 
 impl RenderedProgress {
-    pub(crate) fn update(&self, progress: &PresentationProgress) {
+    fn update(&self, progress: &PresentationProgress) {
         self.bar.set_fraction(progress.fraction);
         self.elapsed.set_text(&progress.elapsed);
         self.remaining.set_text(&progress.remaining);
@@ -35,19 +46,108 @@ struct RenderedMetadata {
     progress: Option<RenderedProgress>,
 }
 
-pub(crate) fn presentation_view(
+impl PresentationView {
+    pub(crate) fn new(
+        revision: u64,
+        presentation: &Presentation,
+        repository_root: &Path,
+        palette_provider: gtk::CssProvider,
+    ) -> Self {
+        let rendered = render_presentation(presentation, repository_root);
+        rendered.root.add_css_class(CURRENT_LAYER_CLASS);
+        let transition = PresentationTransition::new(revision, rendered);
+        let stack = gtk::Stack::new();
+        stack.set_hexpand(true);
+        stack.set_vexpand(true);
+        stack.set_transition_type(gtk::StackTransitionType::Crossfade);
+        stack.set_transition_duration(transition.duration().as_millis() as u32);
+        stack.add_child(&transition.current().value().root);
+
+        let view = Self {
+            stack,
+            transition,
+            palette_provider,
+        };
+        view.install_palette_styles();
+        view
+    }
+
+    pub(crate) fn root(&self) -> gtk::Widget {
+        self.stack.clone().upcast()
+    }
+
+    pub(crate) fn replace(
+        &mut self,
+        revision: u64,
+        presentation: &Presentation,
+        repository_root: &Path,
+        started_at: Duration,
+    ) {
+        if let Some(discarded) = self.transition.discard_outgoing() {
+            self.stack.remove(&discarded.value().root);
+        }
+        let rendered = render_presentation(presentation, repository_root);
+        rendered.root.add_css_class(CURRENT_LAYER_CLASS);
+        let discarded = self.transition.begin(revision, rendered, started_at);
+        debug_assert!(discarded.is_none());
+
+        let outgoing = self
+            .transition
+            .outgoing()
+            .expect("a started presentation transition has an outgoing layer");
+        outgoing.value().root.remove_css_class(CURRENT_LAYER_CLASS);
+        outgoing.value().root.add_css_class(OUTGOING_LAYER_CLASS);
+
+        let current = self.transition.current();
+        self.stack.add_child(&current.value().root);
+        self.install_palette_styles();
+        self.stack.set_visible_child(&current.value().root);
+    }
+
+    pub(crate) fn finish_transition(&mut self, now: Duration) {
+        let Some(outgoing) = self.transition.finish(now) else {
+            return;
+        };
+
+        self.stack.remove(&outgoing.value().root);
+        self.install_palette_styles();
+    }
+
+    pub(crate) fn update_progress(&self, progress: &PresentationProgress) {
+        if let Some(rendered_progress) = self.transition.current().value().progress.as_ref() {
+            rendered_progress.update(progress);
+        }
+    }
+
+    fn install_palette_styles(&self) {
+        let mut styles = palette_styles(
+            CURRENT_LAYER_CLASS,
+            self.transition.current().value().palette,
+        );
+        if let Some(outgoing) = self.transition.outgoing() {
+            styles.push_str(&palette_styles(
+                OUTGOING_LAYER_CLASS,
+                outgoing.value().palette,
+            ));
+        }
+        self.palette_provider.load_from_data(&styles);
+    }
+}
+
+fn render_presentation(
     presentation: &Presentation,
     repository_root: &Path,
-    style_provider: &gtk::CssProvider,
 ) -> RenderedPresentation {
     let palette = palette_for_presentation(presentation, repository_root);
-    install_styles(style_provider, palette);
 
     match presentation {
-        Presentation::NowPlaying(presentation) => gallery_split(presentation, repository_root),
+        Presentation::NowPlaying(presentation) => {
+            gallery_split(presentation, repository_root, palette)
+        }
         Presentation::Unavailable(presentation) => RenderedPresentation {
             root: unavailable(presentation).upcast(),
             progress: None,
+            palette,
         },
     }
 }
@@ -55,6 +155,7 @@ pub(crate) fn presentation_view(
 fn gallery_split(
     presentation: &NowPlayingPresentation,
     repository_root: &Path,
+    palette: PresentationPalette,
 ) -> RenderedPresentation {
     let root = gtk::Grid::new();
     root.add_css_class("gallery-split");
@@ -73,6 +174,7 @@ fn gallery_split(
     RenderedPresentation {
         root: root.upcast(),
         progress: metadata.progress,
+        palette,
     }
 }
 
@@ -111,22 +213,15 @@ fn metadata(presentation: &NowPlayingPresentation) -> RenderedMetadata {
     copy.set_valign(gtk::Align::Center);
     copy.set_vexpand(true);
 
-    let title = metadata_label(presentation.title.as_deref().unwrap_or(""), "title");
-    title.set_lines(3);
-    title.set_ellipsize(pango::EllipsizeMode::End);
-    title.set_wrap(true);
-    title.set_wrap_mode(pango::WrapMode::WordChar);
-    copy.append(&title);
-
-    if let Some(artist) = presentation.artist.as_deref() {
-        copy.append(&metadata_label(artist, "artist"));
+    let layout = metadata_layout(presentation);
+    if let Some(title) = layout.title.as_ref() {
+        copy.append(&metadata_line(title, "title"));
     }
-    if let Some(album) = presentation.album.as_deref() {
-        let album = metadata_label(album, "album");
-        album.set_lines(2);
-        album.set_ellipsize(pango::EllipsizeMode::End);
-        album.set_wrap(true);
-        copy.append(&album);
+    if let Some(artist) = layout.artist.as_ref() {
+        copy.append(&metadata_line(artist, "artist"));
+    }
+    if let Some(album) = layout.album.as_ref() {
+        copy.append(&metadata_line(album, "album"));
     }
     let progress = presentation.progress.as_ref().map(|progress| {
         let (group, rendered_progress) = progress_view(progress);
@@ -140,6 +235,38 @@ fn metadata(presentation: &NowPlayingPresentation) -> RenderedMetadata {
         root: column,
         progress,
     }
+}
+
+fn metadata_line(layout: &MetadataLineLayout, class_name: &str) -> gtk::Label {
+    let label = metadata_label(&layout.text, class_name);
+    label.add_css_class(match layout.typography {
+        MetadataTypography::EditorialSerif => "editorial-text",
+        MetadataTypography::UtilitySans => "utility-text",
+    });
+    label.set_lines(layout.maximum_lines as i32);
+    label.set_ellipsize(match layout.overflow {
+        MetadataOverflow::EllipsizeEnd => pango::EllipsizeMode::End,
+    });
+    label.set_wrap(true);
+    label.set_wrap_mode(pango::WrapMode::WordChar);
+    set_label_font_size(&label, layout.preferred_font_size_px);
+
+    let fitting_layout = layout.clone();
+    label.connect_map(move |label| {
+        let _ = fitting_layout.fitting_font_size(|font_size_px| {
+            set_label_font_size(label, font_size_px);
+            !label.layout().is_ellipsized()
+        });
+    });
+    label
+}
+
+fn set_label_font_size(label: &gtk::Label, font_size_px: u32) {
+    let attributes = pango::AttrList::new();
+    attributes.insert(pango::AttrSize::new_size_absolute(
+        font_size_px as i32 * pango::SCALE,
+    ));
+    label.set_attributes(Some(&attributes));
 }
 
 fn unavailable(presentation: &UnavailablePresentation) -> gtk::Box {
@@ -261,17 +388,46 @@ fn palette_for_presentation(
     }
 }
 
-pub(crate) fn install_style_provider() -> gtk::CssProvider {
-    let provider = gtk::CssProvider::new();
+pub(crate) fn install_style_providers() -> gtk::CssProvider {
+    let static_provider = gtk::CssProvider::new();
+    static_provider.load_from_data(STYLES);
+    let palette_provider = gtk::CssProvider::new();
     let display = gdk::Display::default().expect("GTK should have a display");
     gtk::style_context_add_provider_for_display(
         &display,
-        &provider,
+        &static_provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
-    provider
+    gtk::style_context_add_provider_for_display(
+        &display,
+        &palette_provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 1,
+    );
+    palette_provider
 }
 
-fn install_styles(provider: &gtk::CssProvider, palette: PresentationPalette) {
-    provider.load_from_data(&format!("{}\n{STYLES}", palette.css_definitions()));
+fn palette_styles(class_name: &str, palette: PresentationPalette) -> String {
+    let background = palette.background.to_hex();
+    let artwork_field = palette.artwork_field.to_hex();
+    let metadata_field = palette.metadata_field.to_hex();
+    let primary_text = palette.primary_text.to_hex();
+    let secondary_text = palette.secondary_text.to_hex();
+    let accent = palette.accent.to_hex();
+    format!(
+        ".{class_name} {{ background-color: {background}; color: {primary_text}; }}\n\
+         .{class_name}.gallery-split {{ background-image: linear-gradient(112deg, {artwork_field} 0%, {background} 58%, {metadata_field} 100%); }}\n\
+         .{class_name} .artwork-column {{ background-color: alpha({artwork_field}, 0.48); }}\n\
+         .{class_name} .artwork-frame {{ box-shadow: 0 36px 96px alpha({background}, 0.88); }}\n\
+         .{class_name} .artwork {{ border-color: alpha({primary_text}, 0.16); background-color: {artwork_field}; }}\n\
+         .{class_name} .artwork-missing {{ border-color: alpha({secondary_text}, 0.22); background-image: linear-gradient(142deg, alpha({secondary_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16); }}\n\
+         .{class_name} .metadata-column, .{class_name}.unavailable .unavailable-copy {{ background-color: {metadata_field}; }}\n\
+         .{class_name} .playback-state, .{class_name} .zone-label, .{class_name} .unavailable-state {{ color: {accent}; }}\n\
+         .{class_name} .state-dot {{ background-color: {accent}; box-shadow: 0 0 18px alpha({accent}, 0.72); }}\n\
+         .{class_name} .title, .{class_name} .unavailable-heading {{ color: {primary_text}; }}\n\
+         .{class_name} .artist, .{class_name} .album, .{class_name} .time, .{class_name} .display-zone, .{class_name} .unavailable-explanation {{ color: {secondary_text}; }}\n\
+         .{class_name} progressbar trough {{ background-color: alpha({secondary_text}, 0.22); }}\n\
+         .{class_name} progressbar progress {{ background-color: {accent}; }}\n\
+         .{class_name}.unavailable {{ background-color: {background}; }}\n\
+         .{class_name} .unavailable-field {{ border-color: alpha({secondary_text}, 0.12); background-image: linear-gradient(142deg, {artwork_field}, {background} 72%); }}\n"
+    )
 }

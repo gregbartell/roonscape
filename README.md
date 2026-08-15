@@ -4,7 +4,8 @@ RoonScape is an unattended, read-only presentation of current Roon playback.
 
 > **Status:** The shared contract and fixtures, live Roon availability,
 > deterministic Display Output selection, live Now Playing metadata and
-> artwork, and truthful playback progress are available.
+> artwork, truthful playback progress, bounded metadata layout, and coordinated
+> presentation transitions are available.
 
 RoonScape observes one configured physical Display Output, follows the Display
 Zone that currently contains it, and presents current artwork, metadata,
@@ -98,7 +99,10 @@ Current artwork is requested from Roon as a bounded JPEG derivative and staged
 atomically in an `artwork` directory beside the socket. Each complete snapshot
 identifies artwork by its presentation revision. Superseded files are removed;
 the renderer derives a readable presentation palette from the current file and
-uses a neutral palette when no artwork is present.
+uses a neutral palette when no artwork is present. Metadata wraps within fixed
+line counts, reduces to readable minimum sizes, and ellipsizes only when it
+still cannot fit. Visual revision changes crossfade artwork, metadata, and both
+layers' full palettes together while progress-only samples update in place.
 
 Roon authorization is stored separately at
 `$XDG_STATE_HOME/roonscape/authorization.json`, falling back to
