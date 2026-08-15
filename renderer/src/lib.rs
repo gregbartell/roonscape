@@ -23,9 +23,7 @@ pub use ipc::{
     ConnectionState, SnapshotEvent, SnapshotReader, SnapshotSocketError, SnapshotSubscription,
     read_snapshot_from_socket,
 };
-pub use metadata::{
-    MetadataLayout, MetadataLineLayout, MetadataOverflow, MetadataTypography, metadata_layout,
-};
+pub use metadata::{MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout};
 pub use palette::{PaletteError, PresentationPalette, Rgb};
 pub use presentation::{
     INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform, LayoutOffset,

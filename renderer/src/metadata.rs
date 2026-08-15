@@ -6,11 +6,6 @@ pub enum MetadataTypography {
     UtilitySans,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MetadataOverflow {
-    EllipsizeEnd,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MetadataLineLayout {
     pub text: String,
@@ -19,7 +14,6 @@ pub struct MetadataLineLayout {
     pub reduced_font_size_px: u32,
     pub minimum_font_size_px: u32,
     pub maximum_lines: u32,
-    pub overflow: MetadataOverflow,
 }
 
 impl MetadataLineLayout {
@@ -103,6 +97,5 @@ fn line_layout(text: &str, bounds: LayoutBounds) -> MetadataLineLayout {
         reduced_font_size_px: bounds.reduced_size_px,
         minimum_font_size_px: bounds.minimum_size_px,
         maximum_lines: bounds.maximum_lines,
-        overflow: MetadataOverflow::EllipsizeEnd,
     }
 }

@@ -1,8 +1,7 @@
 mod support;
 
 use roonscape_renderer::{
-    MetadataOverflow, MetadataTypography, Presentation, metadata_layout, parse_snapshot,
-    presentation_from_snapshot,
+    MetadataTypography, Presentation, metadata_layout, parse_snapshot, presentation_from_snapshot,
 };
 
 fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation {
@@ -85,14 +84,6 @@ fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
             album.maximum_lines
         ),
         (3, 2, 2)
-    );
-    assert_eq!(
-        (title.overflow, artist.overflow, album.overflow),
-        (
-            MetadataOverflow::EllipsizeEnd,
-            MetadataOverflow::EllipsizeEnd,
-            MetadataOverflow::EllipsizeEnd,
-        )
     );
 }
 

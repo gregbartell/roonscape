@@ -6,9 +6,8 @@ use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
     INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform, MetadataLineLayout,
-    MetadataOverflow, MetadataTypography, NowPlayingPresentation, Presentation,
-    PresentationPalette, PresentationProgress, PresentationTransition, UnavailablePresentation,
-    metadata_layout,
+    MetadataTypography, NowPlayingPresentation, Presentation, PresentationPalette,
+    PresentationProgress, PresentationTransition, UnavailablePresentation, metadata_layout,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -309,9 +308,7 @@ fn metadata_line(layout: &MetadataLineLayout, class_name: &str) -> gtk::Label {
         MetadataTypography::UtilitySans => "utility-text",
     });
     label.set_lines(layout.maximum_lines as i32);
-    label.set_ellipsize(match layout.overflow {
-        MetadataOverflow::EllipsizeEnd => pango::EllipsizeMode::End,
-    });
+    label.set_ellipsize(pango::EllipsizeMode::End);
     label.set_wrap(true);
     label.set_wrap_mode(pango::WrapMode::WordChar);
     set_label_font_size(&label, layout.preferred_font_size_px);
