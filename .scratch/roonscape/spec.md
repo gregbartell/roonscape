@@ -19,7 +19,7 @@ an enterprise-grade platform.
 
 ## Solution
 
-Build RoonScape as a greenfield, display-only application in a new repository.
+Build RoonScape as a greenfield, display-only application in this repository.
 It observes one host-configured Display Output, follows the Display Zone that
 currently contains that output, and presents Roon's current Now Playing state
 on the television without exposing any way to change Roon.
@@ -176,14 +176,12 @@ reposition to protect the OLED.
 
 ## Implementation Decisions
 
-- Create a greenfield repository named `roonscape`. Do not extract or modernize
-  legacy Web Controller implementation code.
+- Implement RoonScape without extracting or modernizing legacy Web Controller
+  implementation code.
 - Do not add a license file.
-- Migrate the accepted glossary, ADRs, plan, and Gallery split verdict into the
-  new repository's main branch.
-- Preserve the complete five-variant visual prototype on a throwaway branch and
-  reference it from the renderer work. Do not promote prototype code directly
-  into the native renderer.
+- Use the complete five-variant visual prototype preserved on
+  `prototype/visual-variants` as reference material only. Do not promote
+  prototype code directly into the native renderer.
 - Keep the Node bridge and native renderer as separate modules in one
   repository and one coordinated release.
 - Implement the bridge in TypeScript on Node.js using Roon's supported
@@ -346,10 +344,6 @@ reposition to protect the OLED.
 - The user chose Variant A, Gallery split, from a five-variant throwaway visual
   prototype. The verdict includes hiding Display Output, labeling Display Zone
   as **Zone**, and deriving every presentation color from the actual artwork.
-- The accepted plan, glossary, ADRs, specification, and Gallery split verdict
-  now live in this repository. The full prototype is preserved only on the
-  `prototype/visual-variants` branch.
-- The documentation migration from the local legacy repository is complete,
-  so the user can delete that checkout. The upstream Web Controller project
+- The full visual prototype is preserved only on the
+  `prototype/visual-variants` branch; the upstream Web Controller project
   remains available if historical reference is ever needed.
-- Do not create or push a GitHub remote unless the user requests that separately.

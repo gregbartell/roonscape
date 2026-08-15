@@ -88,8 +88,8 @@ not meaningful.
 
 ## Architecture
 
-Build a greenfield repository named `roonscape`; do not extract legacy Web
-Controller code.
+Implement RoonScape in this repository without extracting legacy Web Controller
+code.
 
 ```text
 Roon Server
@@ -165,7 +165,8 @@ not make display failure a music-service or remote-access failure.
 
 The repository and documentation migration are complete:
 
-- `roonscape` exists as a local repository with no remote.
+- The public [`gregbartell/roonscape`](https://github.com/gregbartell/roonscape)
+  GitHub repository exists with `main` as its default branch.
 - `CONTEXT.md`, the ADRs, this plan, the specification, and the selected
   prototype verdict are on `main`.
 - The full five-variant throwaway prototype is preserved on
