@@ -7,11 +7,14 @@ presentation, keeps browser engines out of the runtime, and avoids depending
 on immature native UI bindings for Node.js or reimplementing Roon's private
 protocol.
 
-The native renderer will use Rust with GTK 4 and Pango. The processes will be
-supervised independently and exchange complete, versioned state snapshots over
-a private Unix-domain socket; artwork will move through bounded, atomically
-replaced files rather than the state payload. Either process must tolerate the
-other restarting without terminating its own session.
+The native renderer will use Rust with GTK 4 and Pango. A single RoonScape
+launcher will supervise the bridge and renderer as one runtime session. If
+either process exits, the launcher will ask the other to stop cleanly and then
+exit rather than concealing the failure by restarting a child. An external
+supervisor may restart the complete runtime session. The processes will
+exchange complete, versioned state snapshots over a private Unix-domain
+socket; artwork will move through bounded, atomically replaced files rather
+than the state payload.
 
 Both modules will live in one repository and one coordinated release. The
 bridge will use TypeScript and the renderer Rust; a language-neutral JSON
