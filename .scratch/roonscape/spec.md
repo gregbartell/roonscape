@@ -9,13 +9,10 @@ The user runs Roon Server continuously on `roll`, an Intel NUC connected to a
 `roll`'s input, but when that input is selected the user wants an attractive,
 current now-playing view that requires no local interaction.
 
-The legacy Web Controller is the wrong product for this job. It includes a
-browser-based controller, library browsing, settings, remote command surfaces,
-and old frontend dependencies even though `roll` has no mouse, keyboard,
-touchscreen, or future need for Roon Control. Its permanent Chromium kiosk also
-consumes scarce memory on a 4 GiB host and has shown poor long-running behavior.
-The replacement should be a small personal appliance, not a general remote or
-an enterprise-grade platform.
+`roll` has no mouse, keyboard, touchscreen, or future need for Roon Control. On
+a 4 GiB host, RoonScape should be a small personal appliance without browsing,
+settings, command surfaces, or the resource cost of a permanent browser
+process. It does not need to become an enterprise-grade platform.
 
 ## Solution
 
@@ -119,9 +116,8 @@ reposition to protect the OLED.
     opaque identifier.
 37. As the owner, I want to enable RoonScape through an official Roon client,
     so that it uses Roon's normal extension authorization flow.
-38. As the owner, I want RoonScape to use a new extension identity and fresh
-    authorization state, so that it does not inherit the legacy controller's
-    identity or credentials.
+38. As the owner, I want RoonScape to use its own extension identity and fresh
+    authorization state, so that its authorization belongs only to RoonScape.
 39. As the owner, I want the television's power and input selection to remain
     outside RoonScape, so that the hobby project does not acquire fragile CEC
     or hardware-control behavior.
@@ -136,8 +132,8 @@ reposition to protect the OLED.
     so that temporary availability problems do not require an SSH session.
 44. As the owner, I want display failure to leave Roon Server, SSH, and
     Tailscale unaffected, so that music and remote access remain independent.
-45. As the owner, I want no browser engine in the runtime, so that the
-    replacement avoids the resource-heavy technology that motivated it.
+45. As the owner, I want no browser engine in the runtime, so that the display
+    remains lightweight on its always-on host.
 46. As the owner, I want no network listener or remote command surface, so that
     the display cannot accidentally remain a controller for other LAN devices.
 47. As the owner, I want no Roon Control capability inside the bridge, so that
@@ -165,20 +161,14 @@ reposition to protect the OLED.
 56. As a hobbyist maintainer, I want a language-neutral state contract and
     shared fixtures, so that the bridge and renderer can be developed and
     checked independently.
-57. As a hobbyist maintainer, I want the implementation to start cleanly rather
-    than extracting legacy controller code, so that obsolete globals,
-    dependencies, and assumptions do not enter RoonScape.
-58. As a hobbyist maintainer, I want the selected prototype to guide the final
+57. As a hobbyist maintainer, I want the selected prototype to guide the final
     renderer without copying throwaway code into production, so that the design
     decision is preserved without inheriting prototype shortcuts.
-59. As the owner, I want lyrics deferred for now, so that the initial project
+58. As the owner, I want lyrics deferred for now, so that the initial project
     stays focused on the agreed now-playing display.
 
 ## Implementation Decisions
 
-- Implement RoonScape without extracting or modernizing legacy Web Controller
-  implementation code.
-- Do not add a license file.
 - Use the complete five-variant visual prototype preserved on
   `prototype/visual-variants` as reference material only. Do not promote
   prototype code directly into the native renderer.
@@ -187,7 +177,7 @@ reposition to protect the OLED.
 - Implement the bridge in TypeScript on Node.js using Roon's supported
   Transport, Image, and Status services.
 - Do not load Roon Browse and do not implement any Roon Control command,
-  controller endpoint, browser UI, or network listener.
+  command endpoint, browser UI, or network listener.
 - Implement the renderer in Rust using GTK 4 and Pango. Do not embed Chromium,
   Electron, WebKit, or another browser engine.
 - Define one language-neutral, versioned state schema and a shared fixture set
@@ -305,16 +295,12 @@ reposition to protect the OLED.
 - Glance at process memory, CPU, and swap during normal use to catch an obvious
   regression. Do not enforce numerical budgets, a 72-hour soak, hundreds of
   synthetic track changes, or a formal television-state matrix.
-- The legacy Web Controller has no useful automated test suite to reuse. Its
-  value is historical context only; the new schema fixtures and visual
-  prototype are the relevant prior art.
 
 ## Out of Scope
 
 - Any Roon Control capability, including play, pause, stop, previous, next,
   volume, loop, shuffle, Roon Radio, grouping, or other mutations.
-- A web controller, LAN remote, network API, public HTTP service, browser UI,
-  or browser engine.
+- A LAN remote, network API, public HTTP service, browser UI, or browser engine.
 - Library browsing, search, queue management, notifications, settings screens,
   theme selection, and user-facing diagnostics during normal operation.
 - Automatic active-zone selection, fallback zones, multi-zone presentation,
@@ -325,8 +311,6 @@ reposition to protect the OLED.
 - General support commitments beyond `roll` as the initial tested deployment.
 - Enterprise release machinery, hard resource budgets, long formal soak
   tests, and exhaustive hardware-state matrices.
-- Reusing legacy controller source, credentials, extension identity, runtime
-  service, or deployment conventions.
 
 ## Further Notes
 
@@ -345,5 +329,4 @@ reposition to protect the OLED.
   prototype. The verdict includes hiding Display Output, labeling Display Zone
   as **Zone**, and deriving every presentation color from the actual artwork.
 - The full visual prototype is preserved only on the
-  `prototype/visual-variants` branch; the upstream Web Controller project
-  remains available if historical reference is ever needed.
+  `prototype/visual-variants` branch.
