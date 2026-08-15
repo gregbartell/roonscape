@@ -5,7 +5,7 @@ RoonScape is an unattended, read-only presentation of current Roon playback.
 > **Status:** The shared contract and fixtures, live Roon availability,
 > deterministic Display Output selection, live Now Playing metadata and
 > artwork, truthful playback progress, bounded metadata layout, and coordinated
-> presentation transitions are available.
+> presentation transitions, and OLED-safe inactivity treatment are available.
 
 RoonScape observes one configured physical Display Output, follows the Display
 Zone that currently contains it, and presents current artwork, metadata,
@@ -74,11 +74,26 @@ Display Zone. Save one selection without changing Roon playback:
 npm run configure -- select 'display-output-id-from-the-list'
 ```
 
+OLED protection defaults to a 300-second grace period, 35% opacity, and a new
+bounded Gallery split position every 60 seconds. Calibrate those values on the
+RoonScape Host without a settings screen:
+
+```sh
+npm run configure -- inactivity 300 0.35 60
+```
+
+The arguments are grace-period seconds, dimmed opacity greater than zero and
+less than one, and reposition-cadence seconds. Existing Display Configuration
+files containing only `displayOutputId` remain valid and use the defaults.
+Changing the Display Output preserves any saved inactivity calibration.
+
 Display Configuration is stored at
 `$XDG_CONFIG_HOME/roonscape/display.json`, falling back to
 `~/.config/roonscape/display.json`. Set `ROONSCAPE_DISPLAY_CONFIG` to choose
 another dedicated file. Start or restart the bridge after changing the
-selection.
+selection. Restart both the bridge and renderer after changing inactivity
+calibration. The renderer reads inactivity calibration from the same file and
+falls back to the defaults when it is absent or invalid.
 
 Start the bridge with a private runtime directory and local socket:
 

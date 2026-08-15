@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roonscape.local/schema/display-configuration.json",
+  "title": "RoonScape Display Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["displayOutputId"],
+  "properties": {
+    "displayOutputId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inactivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gracePeriodSeconds",
+        "dimmedOpacity",
+        "repositionCadenceSeconds"
+      ],
+      "properties": {
+        "gracePeriodSeconds": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "dimmedOpacity": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "repositionCadenceSeconds": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

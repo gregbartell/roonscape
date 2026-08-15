@@ -5,7 +5,8 @@ use gtk::gdk;
 use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    MetadataLineLayout, MetadataOverflow, MetadataTypography, NowPlayingPresentation, Presentation,
+    INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform, MetadataLineLayout,
+    MetadataOverflow, MetadataTypography, NowPlayingPresentation, Presentation,
     PresentationPalette, PresentationProgress, PresentationTransition, UnavailablePresentation,
     metadata_layout,
 };
@@ -74,6 +75,23 @@ impl PresentationView {
 
     pub(crate) fn root(&self) -> gtk::Widget {
         self.stack.clone().upcast()
+    }
+
+    pub(crate) fn apply_inactivity(&self, transform: InactivityTransform) {
+        self.stack.set_opacity(transform.opacity);
+        let (horizontal_bound, vertical_bound) = if transform == InactivityTransform::default() {
+            (0, 0)
+        } else {
+            (INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND)
+        };
+        self.stack
+            .set_margin_start(horizontal_bound + transform.offset.x);
+        self.stack
+            .set_margin_end(horizontal_bound - transform.offset.x);
+        self.stack
+            .set_margin_top(vertical_bound + transform.offset.y);
+        self.stack
+            .set_margin_bottom(vertical_bound - transform.offset.y);
     }
 
     pub(crate) fn replace(

@@ -1,4 +1,7 @@
-import type { DisplayConfigurationStore } from "./display-configuration.js";
+import type {
+  DisplayConfigurationStore,
+  InactivityConfiguration,
+} from "./display-configuration.js";
 
 export interface DiscoverableDisplayOutput {
   outputId: string;
@@ -31,13 +34,56 @@ export async function runDisplayConfigurationCommand(
 
   if (command === "select" && operands.length === 1 && operands[0]) {
     const displayOutputId = operands[0];
-    dependencies.configurationStore.save({ displayOutputId });
+    const existing = dependencies.configurationStore.load();
+    dependencies.configurationStore.save({
+      displayOutputId,
+      ...(existing?.inactivity === undefined
+        ? {}
+        : { inactivity: existing.inactivity }),
+    });
     dependencies.writeLine(`Selected Display Output: ${displayOutputId}`);
     return 0;
   }
 
+  if (command === "inactivity" && operands.length === 3) {
+    const existing = dependencies.configurationStore.load();
+    const inactivity = parseInactivityConfiguration(operands);
+    if (existing !== null && inactivity !== null) {
+      dependencies.configurationStore.save({ ...existing, inactivity });
+      dependencies.writeLine(
+        `OLED inactivity: grace ${inactivity.gracePeriodSeconds}s, opacity ${inactivity.dimmedOpacity}, reposition every ${inactivity.repositionCadenceSeconds}s`,
+      );
+      return 0;
+    }
+  }
+
   dependencies.writeLine(
-    "Usage: npm run configure -- list | select <display-output-id>",
+    "Usage: npm run configure -- list | select <display-output-id> | inactivity <grace-seconds> <dimmed-opacity> <reposition-cadence-seconds>",
   );
   return 2;
+}
+
+function parseInactivityConfiguration(
+  operands: string[],
+): InactivityConfiguration | null {
+  const gracePeriod = Number(operands[0]);
+  const dimmedOpacity = Number(operands[1]);
+  const repositionCadence = Number(operands[2]);
+  if (
+    !Number.isSafeInteger(gracePeriod) ||
+    gracePeriod <= 0 ||
+    !Number.isFinite(dimmedOpacity) ||
+    dimmedOpacity <= 0 ||
+    dimmedOpacity >= 1 ||
+    !Number.isSafeInteger(repositionCadence) ||
+    repositionCadence <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    gracePeriodSeconds: gracePeriod,
+    dimmedOpacity,
+    repositionCadenceSeconds: repositionCadence,
+  };
 }

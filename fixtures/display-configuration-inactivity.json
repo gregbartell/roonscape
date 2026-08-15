@@ -1,0 +1,8 @@
+{
+  "displayOutputId": "output-gallery",
+  "inactivity": {
+    "gracePeriodSeconds": 240,
+    "dimmedOpacity": 0.3,
+    "repositionCadenceSeconds": 45
+  }
+}
