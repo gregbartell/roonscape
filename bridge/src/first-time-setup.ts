@@ -1,9 +1,12 @@
 import type { DiscoverableTrackedOutput } from "./display-configuration-command.js";
-import type { DisplayConfiguration } from "./display-configuration.js";
+import type {
+  DisplayConfiguration,
+  InactivityConfiguration,
+} from "./display-configuration.js";
 
-export type SetupKey = "up" | "down" | "enter" | "retry" | "quit";
+export type SetupKey = "up" | "down" | "enter" | "customize" | "retry" | "quit";
 
-export interface FirstTimeSetupDependencies {
+export interface SetupDependencies {
   authorizationFile(): string;
   configurationFileExists(configurationFile: string): boolean;
   discoverTrackedOutputs(
@@ -11,6 +14,11 @@ export interface FirstTimeSetupDependencies {
     signal: AbortSignal,
   ): Promise<DiscoverableTrackedOutput[]>;
   readSetupKey(signal: AbortSignal): Promise<SetupKey>;
+  readSetupValue(
+    prompt: string,
+    initialValue: string,
+    signal: AbortSignal,
+  ): Promise<string | null>;
   saveConfiguration(
     configurationFile: string,
     configuration: DisplayConfiguration,
@@ -26,11 +34,15 @@ const defaultInactivity = {
   repositionCadenceSeconds: 60,
 } as const;
 
-export async function runFirstTimeSetup(
+export async function runSetup(
   configurationFile: string,
-  dependencies: FirstTimeSetupDependencies,
+  dependencies: SetupDependencies,
+  existingConfiguration: DisplayConfiguration | null,
 ): Promise<boolean> {
-  if (dependencies.configurationFileExists(configurationFile)) {
+  if (
+    existingConfiguration === null &&
+    dependencies.configurationFileExists(configurationFile)
+  ) {
     dependencies.writeError(
       `Display Configuration is invalid: ${configurationFile}`,
     );
@@ -44,7 +56,11 @@ export async function runFirstTimeSetup(
     }
   }
 
-  dependencies.writeOutput("RoonScape first-time setup");
+  dependencies.writeOutput(
+    existingConfiguration === null
+      ? "RoonScape first-time setup"
+      : "RoonScape setup",
+  );
   dependencies.writeOutput(
     "In an official Roon client, open Settings → Extensions and enable RoonScape.",
   );
@@ -57,29 +73,54 @@ export async function runFirstTimeSetup(
     return false;
   }
 
-  const selected = await chooseTrackedOutput(outputs, dependencies);
+  const selected = await chooseTrackedOutput(
+    outputs,
+    dependencies,
+    existingConfiguration?.trackedOutputId,
+  );
   if (selected === null) {
     return false;
   }
 
-  dependencies.writeOutput("OLED protection defaults:");
+  const inactivity = existingConfiguration?.inactivity ?? defaultInactivity;
   dependencies.writeOutput(
-    `  Dim after ${formatDuration(defaultInactivity.gracePeriodSeconds)}`,
+    existingConfiguration === null
+      ? "OLED protection defaults:"
+      : "OLED protection settings:",
   );
   dependencies.writeOutput(
-    `  Use ${defaultInactivity.dimmedOpacity * 100} percent dimmed opacity`,
+    `  Dim after ${formatDuration(inactivity.gracePeriodSeconds)}`,
   );
   dependencies.writeOutput(
-    `  Reposition every ${formatDuration(defaultInactivity.repositionCadenceSeconds)}`,
+    `  Use ${inactivity.dimmedOpacity * 100} percent dimmed opacity`,
   );
-  dependencies.writeOutput("Press Enter to accept all defaults, or Q to quit.");
-  if ((await readAllowedSetupKey(dependencies, ["enter", "quit"])) === "quit") {
+  dependencies.writeOutput(
+    `  Reposition every ${formatDuration(inactivity.repositionCadenceSeconds)}`,
+  );
+  dependencies.writeOutput(
+    existingConfiguration === null
+      ? "Press Enter to accept all defaults, C to customize, or Q to quit."
+      : "Press Enter to keep these settings, C to customize, or Q to quit.",
+  );
+  const inactivityChoice = await readAllowedSetupKey(dependencies, [
+    "enter",
+    "customize",
+    "quit",
+  ]);
+  if (inactivityChoice === "quit") {
+    return false;
+  }
+  const completedInactivity =
+    inactivityChoice === "customize"
+      ? await customizeInactivity(inactivity, dependencies)
+      : inactivity;
+  if (completedInactivity === null) {
     return false;
   }
 
   dependencies.saveConfiguration(configurationFile, {
     trackedOutputId: selected.trackedOutputId,
-    inactivity: defaultInactivity,
+    inactivity: completedInactivity,
   });
   dependencies.writeOutput(`Display Configuration saved: ${configurationFile}`);
   return true;
@@ -92,7 +133,7 @@ type DiscoveryOutcome =
   | { kind: "troubleshooting" };
 
 async function waitForTrackedOutputs(
-  dependencies: FirstTimeSetupDependencies,
+  dependencies: SetupDependencies,
 ): Promise<DiscoverableTrackedOutput[] | null> {
   while (true) {
     const discoveryAbort = new AbortController();
@@ -185,9 +226,13 @@ async function waitForTrackedOutputs(
 
 async function chooseTrackedOutput(
   outputs: DiscoverableTrackedOutput[],
-  dependencies: FirstTimeSetupDependencies,
+  dependencies: SetupDependencies,
+  trackedOutputId?: string,
 ): Promise<DiscoverableTrackedOutput | null> {
-  let selectedIndex = 0;
+  const savedIndex = outputs.findIndex(
+    (output) => output.trackedOutputId === trackedOutputId,
+  );
+  let selectedIndex = savedIndex < 0 ? 0 : savedIndex;
   const duplicateLabels = duplicateOutputLabels(outputs);
 
   while (true) {
@@ -250,8 +295,100 @@ function formatDuration(seconds: number): string {
   return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
 }
 
+async function customizeInactivity(
+  inactivity: InactivityConfiguration,
+  dependencies: SetupDependencies,
+): Promise<InactivityConfiguration | null> {
+  const gracePeriodSeconds = await readValidatedSetupValue(
+    dependencies,
+    "Grace period in minutes:",
+    String(inactivity.gracePeriodSeconds / 60),
+    parseMinutesAsSeconds,
+    "Grace period must be a positive number of minutes.",
+  );
+  if (gracePeriodSeconds === null) {
+    return null;
+  }
+
+  const dimmedOpacity = await readValidatedSetupValue(
+    dependencies,
+    "Dimmed opacity in percent:",
+    String(inactivity.dimmedOpacity * 100),
+    parsePercentageAsOpacity,
+    "Dimmed opacity must be greater than 0 and less than 100 percent.",
+  );
+  if (dimmedOpacity === null) {
+    return null;
+  }
+
+  const repositionCadenceSeconds = await readValidatedSetupValue(
+    dependencies,
+    "Reposition cadence in seconds:",
+    String(inactivity.repositionCadenceSeconds),
+    parsePositiveWholeNumber,
+    "Reposition cadence must be a positive whole number of seconds.",
+  );
+  if (repositionCadenceSeconds === null) {
+    return null;
+  }
+
+  return {
+    gracePeriodSeconds,
+    dimmedOpacity,
+    repositionCadenceSeconds,
+  };
+}
+
+async function readValidatedSetupValue(
+  dependencies: SetupDependencies,
+  prompt: string,
+  initialValue: string,
+  parse: (value: string) => number | null,
+  validationMessage: string,
+): Promise<number | null> {
+  while (true) {
+    const value = await dependencies.readSetupValue(
+      prompt,
+      initialValue,
+      new AbortController().signal,
+    );
+    if (value === null) {
+      return null;
+    }
+    const parsed = parse(value);
+    if (parsed !== null) {
+      return parsed;
+    }
+    dependencies.writeError(validationMessage);
+  }
+}
+
+function parseMinutesAsSeconds(value: string): number | null {
+  const seconds = Number(value) * 60;
+  return value.trim() !== "" && Number.isSafeInteger(seconds) && seconds > 0
+    ? seconds
+    : null;
+}
+
+function parsePercentageAsOpacity(value: string): number | null {
+  const percentage = Number(value);
+  return value.trim() !== "" &&
+    Number.isFinite(percentage) &&
+    percentage > 0 &&
+    percentage < 100
+    ? percentage / 100
+    : null;
+}
+
+function parsePositiveWholeNumber(value: string): number | null {
+  const parsed = Number(value);
+  return value.trim() !== "" && Number.isSafeInteger(parsed) && parsed > 0
+    ? parsed
+    : null;
+}
+
 async function readAllowedSetupKey(
-  dependencies: FirstTimeSetupDependencies,
+  dependencies: SetupDependencies,
   allowed: readonly SetupKey[],
 ): Promise<SetupKey> {
   while (true) {

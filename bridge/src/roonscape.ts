@@ -14,7 +14,11 @@ import {
 import { createSupportedRoonServices } from "./roon-services.js";
 import { runRoonScapeCommand } from "./roonscape-command.js";
 import { openRuntimeSession } from "./runtime-session.js";
-import { readSetupKey, terminalIsInteractive } from "./setup-terminal.js";
+import {
+  readSetupKey,
+  readSetupValue,
+  terminalIsInteractive,
+} from "./setup-terminal.js";
 import { discoverTrackedOutputs } from "./tracked-output-discovery.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -57,6 +61,7 @@ process.exitCode = await runRoonScapeCommand(process.argv.slice(2), {
       signal,
     }),
   readSetupKey,
+  readSetupValue,
   saveConfiguration: (configurationFile, configuration) =>
     new FileDisplayConfigurationStore(configurationFile).save(configuration),
   openRuntime: async () =>

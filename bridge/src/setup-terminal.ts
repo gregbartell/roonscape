@@ -1,4 +1,4 @@
-import { emitKeypressEvents, type Key } from "node:readline";
+import { createInterface, emitKeypressEvents, type Key } from "node:readline";
 import type { ReadStream } from "node:tty";
 
 import type { SetupKey } from "./first-time-setup.js";
@@ -53,6 +53,8 @@ export function readSetupKey(
         finish("enter");
       } else if (key.name === "r") {
         finish("retry");
+      } else if (key.name === "c") {
+        finish("customize");
       } else if (key.name === "q") {
         finish("quit");
       }
@@ -60,6 +62,51 @@ export function readSetupKey(
 
     input.on("keypress", handleKeypress);
     signal.addEventListener("abort", handleAbort, { once: true });
+  });
+}
+
+export function readSetupValue(
+  prompt: string,
+  initialValue: string,
+  signal: AbortSignal,
+  input: ReadStream = process.stdin,
+  output: NodeJS.WriteStream = process.stdout,
+): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(abortError());
+      return;
+    }
+
+    const terminal = createInterface({ input, output, terminal: true });
+    let settled = false;
+    const cleanup = (): void => {
+      signal.removeEventListener("abort", handleAbort);
+      terminal.off("SIGINT", handleInterrupt);
+      terminal.close();
+    };
+    const finish = (value: string | null): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+    const handleAbort = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(abortError());
+    };
+    const handleInterrupt = (): void => finish(null);
+
+    signal.addEventListener("abort", handleAbort, { once: true });
+    terminal.on("SIGINT", handleInterrupt);
+    terminal.question(`${prompt} `, finish);
+    terminal.write(initialValue);
   });
 }
 

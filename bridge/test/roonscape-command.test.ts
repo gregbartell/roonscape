@@ -3,6 +3,7 @@ import {
   access,
   chmod,
   mkdir,
+  readFile,
   readdir,
   stat,
   writeFile,
@@ -30,7 +31,11 @@ test("help describes the owner-facing command", async () => {
   const result = await runRoonScapeCommand(["--help"], dependencies);
 
   assert.equal(result, 0);
-  assert.match(output.join("\n"), /Usage: roonscape \[--config PATH\]/);
+  assert.match(
+    output.join("\n"),
+    /Usage: roonscape \[--setup\] \[--config PATH\]/,
+  );
+  assert.match(output.join("\n"), /--setup/);
   assert.match(output.join("\n"), /--help/);
   assert.match(output.join("\n"), /--version/);
 });
@@ -228,6 +233,318 @@ test("first-time setup saves OLED defaults and continues into the presentation",
     "bridge:SIGTERM",
     "runtime:cleanup",
   ]);
+});
+
+test("--setup preserves the saved choices and exits without launching", async () => {
+  const output: string[] = [];
+  const savedConfiguration = {
+    trackedOutputId: "output-study",
+    inactivity: {
+      gracePeriodSeconds: 240,
+      dimmedOpacity: 0.3,
+      repositionCadenceSeconds: 45,
+    },
+  };
+  let keyRead = 0;
+  let saved: typeof savedConfiguration | undefined;
+  const result = await runRoonScapeCommand(
+    ["--setup"],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      loadConfiguration: () => savedConfiguration,
+      configurationFileExists: () => true,
+      discoverTrackedOutputs: async () => [
+        {
+          trackedOutputId: "output-gallery",
+          trackedOutputName: "NUC HDMI",
+          trackedZoneName: "Gallery",
+        },
+        {
+          trackedOutputId: "output-study",
+          trackedOutputName: "USB DAC",
+          trackedZoneName: "Study",
+        },
+      ],
+      readSetupKey: (signal) => {
+        keyRead += 1;
+        return keyRead === 1
+          ? abortedKeyRead(signal)
+          : Promise.resolve("enter");
+      },
+      saveConfiguration: (_configurationFile, configuration) => {
+        saved = configuration as typeof savedConfiguration;
+      },
+      openRuntime: async () => {
+        throw new Error("runtime should not be opened");
+      },
+      writeOutput: (line) => output.push(line),
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.match(output.join("\n"), /> USB DAC.*Study/);
+  assert.match(output.join("\n"), /4 minutes/);
+  assert.match(output.join("\n"), /30 percent/);
+  assert.match(output.join("\n"), /45 seconds/);
+  assert.deepEqual(saved, savedConfiguration);
+});
+
+test("--setup refuses to wait for input without an interactive terminal", async () => {
+  const errors: string[] = [];
+  let inputRead = false;
+  const result = await runRoonScapeCommand(
+    ["--setup"],
+    commandDependencies({
+      loadConfiguration: () => ({ trackedOutputId: "output-study" }),
+      readSetupKey: async () => {
+        inputRead = true;
+        return "quit";
+      },
+      writeError: (line) => errors.push(line),
+    }),
+  );
+
+  assert.equal(result, 1);
+  assert.equal(inputRead, false);
+  assert.match(errors.join("\n"), /requires an interactive terminal/);
+});
+
+test("--setup prefills OLED values and corrects invalid custom entries", async () => {
+  const errors: string[] = [];
+  const prompts: Array<{ prompt: string; initialValue: string }> = [];
+  const answers = ["0", "6.5", "100", "25", "1.5", "90"];
+  let keyRead = 0;
+  let savedConfiguration:
+    | Parameters<RoonScapeCommandDependencies["saveConfiguration"]>[1]
+    | undefined;
+  const result = await runRoonScapeCommand(
+    ["--setup"],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      loadConfiguration: () => ({
+        trackedOutputId: "output-study",
+        inactivity: {
+          gracePeriodSeconds: 240,
+          dimmedOpacity: 0.3,
+          repositionCadenceSeconds: 45,
+        },
+      }),
+      configurationFileExists: () => true,
+      discoverTrackedOutputs: async () => [
+        {
+          trackedOutputId: "output-study",
+          trackedOutputName: "USB DAC",
+          trackedZoneName: "Study",
+        },
+      ],
+      readSetupKey: (signal) => {
+        keyRead += 1;
+        if (keyRead === 1) {
+          return abortedKeyRead(signal);
+        }
+        return Promise.resolve(keyRead === 2 ? "enter" : "customize");
+      },
+      readSetupValue: async (prompt, initialValue) => {
+        prompts.push({ prompt, initialValue });
+        return answers.shift() ?? null;
+      },
+      saveConfiguration: (_configurationFile, configuration) => {
+        savedConfiguration = configuration;
+      },
+      writeError: (line) => errors.push(line),
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.deepEqual(prompts, [
+    { prompt: "Grace period in minutes:", initialValue: "4" },
+    { prompt: "Grace period in minutes:", initialValue: "4" },
+    { prompt: "Dimmed opacity in percent:", initialValue: "30" },
+    { prompt: "Dimmed opacity in percent:", initialValue: "30" },
+    { prompt: "Reposition cadence in seconds:", initialValue: "45" },
+    { prompt: "Reposition cadence in seconds:", initialValue: "45" },
+  ]);
+  assert.match(errors.join("\n"), /positive number of minutes/);
+  assert.match(errors.join("\n"), /less than 100 percent/);
+  assert.match(errors.join("\n"), /positive whole number of seconds/);
+  assert.deepEqual(savedConfiguration, {
+    trackedOutputId: "output-study",
+    inactivity: {
+      gracePeriodSeconds: 390,
+      dimmedOpacity: 0.25,
+      repositionCadenceSeconds: 90,
+    },
+  });
+});
+
+test("--setup --config changes only the Tracked Output with a private atomic replacement", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const configurationFile = path.join(taskDirectory, "settings/display.json");
+    await mkdir(path.dirname(configurationFile), { recursive: true });
+    await writeFile(
+      configurationFile,
+      '{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n',
+      { mode: 0o644 },
+    );
+    const configurationStore = new FileDisplayConfigurationStore(
+      configurationFile,
+    );
+    let keyRead = 0;
+
+    const result = await runRoonScapeCommand(
+      ["--setup", "--config", "settings/display.json"],
+      commandDependencies({
+        currentDirectory: taskDirectory,
+        standardConfigurationFile: () => {
+          throw new Error("the standard path should not be selected");
+        },
+        terminalIsInteractive: () => true,
+        loadConfiguration: (selectedFile) => {
+          assert.equal(selectedFile, configurationFile);
+          return configurationStore.load();
+        },
+        configurationFileExists: (selectedFile) =>
+          selectedFile === configurationFile,
+        discoverTrackedOutputs: async () => [
+          {
+            trackedOutputId: "output-gallery",
+            trackedOutputName: "NUC HDMI",
+            trackedZoneName: "Gallery",
+          },
+          {
+            trackedOutputId: "output-study",
+            trackedOutputName: "USB DAC",
+            trackedZoneName: "Study",
+          },
+        ],
+        readSetupKey: (signal) => {
+          keyRead += 1;
+          if (keyRead === 1) {
+            return abortedKeyRead(signal);
+          }
+          const keys = ["down", "enter", "enter"] as const;
+          return Promise.resolve(keys[keyRead - 2] ?? "quit");
+        },
+        saveConfiguration: (selectedFile, configuration) => {
+          assert.equal(selectedFile, configurationFile);
+          configurationStore.save(configuration);
+        },
+      }),
+    );
+
+    assert.equal(result, 0);
+    assert.deepEqual(configurationStore.load(), {
+      trackedOutputId: "output-study",
+      inactivity: {
+        gracePeriodSeconds: 240,
+        dimmedOpacity: 0.3,
+        repositionCadenceSeconds: 45,
+      },
+    });
+    assert.match(await readFile(configurationFile, "utf8"), /output-study/);
+    assert.equal((await stat(configurationFile)).mode & 0o777, 0o600);
+    assert.deepEqual(await readdir(path.dirname(configurationFile)), [
+      "display.json",
+    ]);
+  });
+});
+
+test("cancelling reconfiguration leaves the Display Configuration byte-for-byte intact", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const configurationFile = path.join(taskDirectory, "display.json");
+    const original = `{
+  "trackedOutputId": "output-study",
+  "inactivity": {
+    "gracePeriodSeconds": 240,
+    "dimmedOpacity": 0.3,
+    "repositionCadenceSeconds": 45
+  }
+}
+`;
+    await writeFile(configurationFile, original, { mode: 0o600 });
+    const configurationStore = new FileDisplayConfigurationStore(
+      configurationFile,
+    );
+    let keyRead = 0;
+
+    const result = await runRoonScapeCommand(
+      ["--setup", "--config", configurationFile],
+      commandDependencies({
+        terminalIsInteractive: () => true,
+        loadConfiguration: () => configurationStore.load(),
+        configurationFileExists: () => true,
+        discoverTrackedOutputs: async () => [
+          {
+            trackedOutputId: "output-study",
+            trackedOutputName: "USB DAC",
+            trackedZoneName: "Study",
+          },
+        ],
+        readSetupKey: (signal) => {
+          keyRead += 1;
+          if (keyRead === 1) {
+            return abortedKeyRead(signal);
+          }
+          return Promise.resolve(keyRead === 2 ? "enter" : "customize");
+        },
+        readSetupValue: async () => null,
+        saveConfiguration: (_selectedFile, configuration) =>
+          configurationStore.save(configuration),
+      }),
+    );
+
+    assert.equal(result, 0);
+    assert.equal(await readFile(configurationFile, "utf8"), original);
+  });
+});
+
+test("failed reconfiguration leaves the Display Configuration byte-for-byte intact", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const configurationFile = path.join(taskDirectory, "config/display.json");
+    const original =
+      '{"trackedOutputId":"output-study","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n';
+    await mkdir(path.dirname(configurationFile), { recursive: true });
+    await writeFile(configurationFile, original, { mode: 0o600 });
+    const configurationStore = new FileDisplayConfigurationStore(
+      configurationFile,
+    );
+    let keyRead = 0;
+    const errors: string[] = [];
+    await chmod(path.dirname(configurationFile), 0o500);
+
+    try {
+      const result = await runRoonScapeCommand(
+        ["--setup", "--config", configurationFile],
+        commandDependencies({
+          terminalIsInteractive: () => true,
+          loadConfiguration: () => configurationStore.load(),
+          configurationFileExists: () => true,
+          discoverTrackedOutputs: async () => [
+            {
+              trackedOutputId: "output-study",
+              trackedOutputName: "USB DAC",
+              trackedZoneName: "Study",
+            },
+          ],
+          readSetupKey: (signal) => {
+            keyRead += 1;
+            return keyRead === 1
+              ? abortedKeyRead(signal)
+              : Promise.resolve("enter");
+          },
+          saveConfiguration: (_selectedFile, configuration) =>
+            configurationStore.save(configuration),
+          writeError: (line) => errors.push(line),
+        }),
+      );
+
+      assert.equal(result, 1);
+      assert.match(errors.join("\n"), /Could not complete setup/);
+      assert.equal(await readFile(configurationFile, "utf8"), original);
+    } finally {
+      await chmod(path.dirname(configurationFile), 0o700);
+    }
+  });
 });
 
 test("setup atomically publishes a private Display Configuration before launch", async () => {
@@ -982,6 +1299,9 @@ function commandDependencies(
     },
     readSetupKey: async () => {
       throw new Error("setup input should not be read");
+    },
+    readSetupValue: async () => {
+      throw new Error("setup value should not be read");
     },
     saveConfiguration: () => {
       throw new Error("Display Configuration should not be saved");

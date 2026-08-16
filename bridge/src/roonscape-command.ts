@@ -4,10 +4,7 @@ import {
   type DisplayConfiguration,
   rejectRemovedDisplayConfigurationOverride,
 } from "./display-configuration.js";
-import {
-  type FirstTimeSetupDependencies,
-  runFirstTimeSetup,
-} from "./first-time-setup.js";
+import { runSetup, type SetupDependencies } from "./first-time-setup.js";
 
 export type TerminationSignal = "SIGINT" | "SIGTERM";
 
@@ -37,7 +34,7 @@ export interface RendererLaunchOptions {
   socketPath: string;
 }
 
-export interface RoonScapeCommandDependencies extends FirstTimeSetupDependencies {
+export interface RoonScapeCommandDependencies extends SetupDependencies {
   readonly version: string;
   readonly environment: NodeJS.ProcessEnv;
   readonly currentDirectory: string;
@@ -52,11 +49,12 @@ export interface RoonScapeCommandDependencies extends FirstTimeSetupDependencies
   ): () => void;
 }
 
-const usage = `Usage: roonscape [--config PATH]
+const usage = `Usage: roonscape [--setup] [--config PATH]
 
 Launch RoonScape as one foreground session.
 
 Options:
+  --setup        Reconfigure and exit without launching
   --config PATH  Use this Display Configuration
   --help         Show this help
   --version      Show the RoonScape version`;
@@ -75,10 +73,8 @@ export async function runRoonScapeCommand(
     return 0;
   }
 
-  if (
-    arguments_.length > 0 &&
-    !(arguments_.length === 2 && arguments_[0] === "--config" && arguments_[1])
-  ) {
+  const options = parseLaunchOptions(arguments_);
+  if (options === null) {
     dependencies.writeError(
       `Unknown option: ${arguments_[0] ?? ""}\n\n${usage}`,
     );
@@ -95,10 +91,16 @@ export async function runRoonScapeCommand(
   }
 
   const configurationFile =
-    arguments_[0] === "--config"
-      ? path.resolve(dependencies.currentDirectory, arguments_[1] as string)
-      : dependencies.standardConfigurationFile();
+    options.configurationPath === undefined
+      ? dependencies.standardConfigurationFile()
+      : path.resolve(dependencies.currentDirectory, options.configurationPath);
   const configuration = dependencies.loadConfiguration(configurationFile);
+  if (options.setupRequested && !dependencies.terminalIsInteractive()) {
+    dependencies.writeError(
+      "roonscape --setup requires an interactive terminal.",
+    );
+    return 1;
+  }
   if (configuration === null && !dependencies.terminalIsInteractive()) {
     dependencies.writeError(
       `Display Configuration is missing or invalid: ${configurationFile}. Run roonscape in an interactive terminal to complete setup, or supply a valid Display Configuration with --config PATH.`,
@@ -106,13 +108,14 @@ export async function runRoonScapeCommand(
     return 1;
   }
 
-  if (configuration === null) {
+  if (configuration === null || options.setupRequested) {
     try {
-      const completed = await runFirstTimeSetup(
+      const completed = await runSetup(
         configurationFile,
         dependencies,
+        configuration,
       );
-      if (!completed) {
+      if (!completed || options.setupRequested) {
         return 0;
       }
     } catch (error) {
@@ -131,6 +134,35 @@ export async function runRoonScapeCommand(
     );
     return 1;
   }
+}
+
+interface LaunchOptions {
+  setupRequested: boolean;
+  configurationPath?: string;
+}
+
+function parseLaunchOptions(arguments_: string[]): LaunchOptions | null {
+  const options: LaunchOptions = { setupRequested: false };
+
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === "--setup" && !options.setupRequested) {
+      options.setupRequested = true;
+      continue;
+    }
+    if (argument === "--config" && options.configurationPath === undefined) {
+      const configurationPath = arguments_[index + 1];
+      if (configurationPath === undefined || configurationPath === "") {
+        return null;
+      }
+      options.configurationPath = configurationPath;
+      index += 1;
+      continue;
+    }
+    return null;
+  }
+
+  return options;
 }
 
 interface MonitoredChild {
