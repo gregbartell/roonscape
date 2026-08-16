@@ -1,7 +1,7 @@
 # RoonScape
 
-This context describes a personal, unattended visual display of Roon playback
-on a RoonScape Host.
+This context describes an unattended visual display of Roon playback on a
+RoonScape Host.
 
 Keep the Language section alphabetized by vocabulary term.
 
