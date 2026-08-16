@@ -23,6 +23,8 @@ starts the production native renderer against each shared fixture, waits for
 the exact-size RoonScape window, captures that window, verifies the PNG
 dimensions, and writes `manifest.json`. Files have stable, descriptive names;
 the new directory prevents a repeat run from overwriting earlier evidence.
+The command supplies its own Display Configuration with a one-hour inactivity
+grace, so a host's OLED calibration cannot dim or reposition capture evidence.
 
 Inspect the plan without launching GTK:
 
@@ -66,7 +68,9 @@ At 3840×2160, five additional representatives cover the host-provided
 preferred pair, the forced packaged fallback pair, and diagnostics over dark,
 light, and fixed no-art palettes. A preferred-pair capture fails clearly if
 Palatino Linotype and Segoe UI are not both installed; it never substitutes
-other faces while claiming to show the preferred pair.
+other faces while claiming to show the preferred pair. Both typography
+representatives append `月` to Album so readable Pango glyph fallback is
+visible with each complete pair.
 
 ## Review references
 
@@ -95,7 +99,8 @@ each item. Review all three dimensions unless an item names a representative.
   crowded, and neither side reads as an opaque competing panel.
 - **Hierarchy:** Title dominates; Artist, Album, status, progress, and utility
   text step down deliberately. Missing fields do not leave broken gaps. Long
-  and extreme values remain calm within their three/two/two line bounds.
+  and extreme values remain calm within their three/two/two line bounds. The
+  typography representatives render `月` readably without a missing-glyph box.
 - **Artwork fit:** Square artwork is complete; non-square artwork is centered
   and contained; missing artwork preserves the Gallery split without an
   invented icon or label.

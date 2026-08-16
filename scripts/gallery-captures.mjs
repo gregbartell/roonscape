@@ -1,5 +1,11 @@
+const REFERENCE_VIEWPORT = {
+  key: "3840x2160",
+  width: 3840,
+  height: 2160,
+};
+
 const VIEWPORTS = [
-  { key: "3840x2160", width: 3840, height: 2160 },
+  REFERENCE_VIEWPORT,
   { key: "3840x2400", width: 3840, height: 2400 },
   { key: "1600x900", width: 1600, height: 900 },
 ];
@@ -44,14 +50,14 @@ const SCENARIOS = [
 const REPRESENTATIVES = [
   representative(
     "preferred-typography",
-    "playing.json",
+    "glyph-fallback.json",
     "preferred",
     false,
     "dark",
   ),
   representative(
     "fallback-typography",
-    "playing.json",
+    "glyph-fallback.json",
     "fallback",
     false,
     "dark",
@@ -78,9 +84,7 @@ export function buildGalleryCapturePlan() {
     SCENARIOS.map((scenario) => ({
       variant: "matrix",
       ...scenario,
-      viewport: viewport.key,
-      width: viewport.width,
-      height: viewport.height,
+      ...viewportFields(viewport),
       typography: "automatic",
       diagnostics: false,
       fileName: `${viewport.key}--${scenario.scenario}.png`,
@@ -108,11 +112,17 @@ function representative(
   return {
     variant: "representative",
     ...fixtureScenario(scenario, fixtureName, palette),
-    viewport: "3840x2160",
-    width: 3840,
-    height: 2160,
+    ...viewportFields(REFERENCE_VIEWPORT),
     typography,
     diagnostics,
-    fileName: `3840x2160--representative--${scenario}.png`,
+    fileName: `${REFERENCE_VIEWPORT.key}--representative--${scenario}.png`,
+  };
+}
+
+function viewportFields(viewport) {
+  return {
+    viewport: viewport.key,
+    width: viewport.width,
+    height: viewport.height,
   };
 }

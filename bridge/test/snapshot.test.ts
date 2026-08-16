@@ -139,6 +139,16 @@ test("loads the light-artwork visual acceptance fixture", async () => {
   });
 });
 
+test("loads the typography glyph-fallback visual acceptance fixture", async () => {
+  const snapshot = await loadSnapshot("fixtures/glyph-fallback.json");
+
+  assert.equal(snapshot.nowPlaying?.album, "Signals from the Quiet Sea — 月");
+  assert.deepEqual(snapshot.artwork, {
+    revision: 3,
+    path: "fixtures/artwork/playing.svg",
+  });
+});
+
 test("loads missing, long, and extreme metadata fixtures without inventing values", async () => {
   const missing = await loadSnapshot("fixtures/missing-metadata.json");
   const missingArtist = await loadSnapshot("fixtures/missing-artist.json");

@@ -17,6 +17,14 @@ import { buildGalleryCapturePlan } from "./gallery-captures.mjs";
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const scratchRoot = "/tmp/codex/roonscape";
 const nativeRenderer = "native GTK 4/Pango";
+const captureDisplayConfiguration = {
+  trackedOutputId: "visual-acceptance-capture",
+  inactivity: {
+    gracePeriodSeconds: 3600,
+    dimmedOpacity: 0.35,
+    repositionCadenceSeconds: 60,
+  },
+};
 const options = parseArguments(process.argv.slice(2));
 
 if (options.list) {
@@ -99,6 +107,11 @@ async function captureFixture(
     path.join(scratchRoot, "gallery-capture."),
   );
   const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+  const displayConfigurationPath = path.join(runtimeDirectory, "display.json");
+  await writeFile(
+    displayConfigurationPath,
+    `${JSON.stringify(captureDisplayConfiguration, null, 2)}\n`,
+  );
   const environment = {
     ...process.env,
     DISPLAY: display,
@@ -106,6 +119,7 @@ async function captureFixture(
     NO_AT_BRIDGE: "1",
     ROONSCAPE_CAPTURE_VIEWPORT: capture.viewport,
     ROONSCAPE_DIAGNOSTICS: capture.diagnostics ? "1" : "0",
+    ROONSCAPE_DISPLAY_CONFIG: displayConfigurationPath,
     ROONSCAPE_FIXTURE: capture.fixture,
     ROONSCAPE_SOCKET: socketPath,
   };

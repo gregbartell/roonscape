@@ -100,6 +100,23 @@ fn parses_the_light_artwork_visual_acceptance_fixture() {
 }
 
 #[test]
+fn parses_the_typography_glyph_fallback_visual_acceptance_fixture() {
+    let snapshot = parse_snapshot(&support::fixture("glyph-fallback.json"))
+        .expect("glyph fallback fixture should be valid");
+
+    assert_eq!(
+        snapshot
+            .now_playing
+            .and_then(|now_playing| now_playing.album),
+        Some("Signals from the Quiet Sea — 月".to_owned())
+    );
+    assert_eq!(
+        snapshot.artwork.map(|artwork| artwork.path),
+        Some("fixtures/artwork/playing.svg".to_owned())
+    );
+}
+
+#[test]
 fn parses_missing_long_and_extreme_metadata_fixtures() {
     let missing = parse_snapshot(&support::fixture("missing-metadata.json"))
         .expect("missing metadata fixture should be valid");
