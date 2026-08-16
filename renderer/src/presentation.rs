@@ -55,7 +55,7 @@ pub struct NowPlayingPresentation {
     pub album: Option<String>,
     pub tracked_output: String,
     pub tracked_zone: String,
-    pub playback_state: String,
+    pub playback: Playback,
     pub progress: Option<PresentationProgress>,
     pub artwork_revision: Option<u64>,
     pub artwork_path: Option<String>,
@@ -397,7 +397,7 @@ fn presentation_from_snapshot_after(
         album: now_playing.and_then(|now_playing| now_playing.album.clone()),
         tracked_output: tracked_output.name.clone(),
         tracked_zone: tracked_zone.name.clone(),
-        playback_state: playback_label(playback).to_owned(),
+        playback,
         progress: snapshot
             .progress
             .as_ref()
@@ -435,6 +435,10 @@ fn available_full_field(
 }
 
 impl NowPlayingPresentation {
+    pub fn playback_state(&self) -> &'static str {
+        playback_label(self.playback)
+    }
+
     pub(crate) fn has_usable_metadata(&self) -> bool {
         [
             self.title.as_deref(),
@@ -448,19 +452,19 @@ impl NowPlayingPresentation {
 }
 
 pub(crate) fn trackless_full_field(presentation: &NowPlayingPresentation) -> FullFieldPresentation {
-    let (state_label, heading, status_emphasis) = match presentation.playback_state.as_str() {
-        "Loading" => ("Loading", "Loading", StatusEmphasis::Quiet),
-        "Paused" => (
+    let (state_label, heading, status_emphasis) = match presentation.playback {
+        Playback::Loading => ("Loading", "Loading", StatusEmphasis::Quiet),
+        Playback::Paused => (
             "Paused",
             "Now Playing details unavailable",
             StatusEmphasis::Quiet,
         ),
-        "Playing" => (
+        Playback::Playing => (
             "Playing",
             "Now Playing details unavailable",
             StatusEmphasis::Prominent,
         ),
-        state => unreachable!("{state} cannot be a trackless Now Playing presentation"),
+        Playback::Stopped => unreachable!("Idle uses the full-field presentation"),
     };
     FullFieldPresentation {
         state_label,

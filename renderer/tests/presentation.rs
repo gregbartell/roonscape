@@ -57,7 +57,7 @@ fn maps_the_playing_snapshot_to_gallery_split_content() {
     );
     assert_eq!(presentation.tracked_output, "AudioDevice");
     assert_eq!(presentation.tracked_zone, "Living Room");
-    assert_eq!(presentation.playback_state, "Playing");
+    assert_eq!(presentation.playback_state(), "Playing");
     assert_eq!(presentation.artwork_revision, Some(3));
     assert_eq!(
         presentation.artwork_path.as_deref(),
@@ -344,7 +344,7 @@ fn presents_each_playback_state_without_inventing_now_playing() {
             panic!("available playback should produce an available presentation");
         };
 
-        assert_eq!(presentation.playback_state, state_label);
+        assert_eq!(presentation.playback_state(), state_label);
         assert_eq!(presentation.title.as_deref(), title);
         assert_eq!(presentation.artwork_revision, artwork_revision);
     }
@@ -721,5 +721,5 @@ fn clears_now_playing_while_the_bridge_is_disconnected_and_recovers_after_reconn
     else {
         panic!("reconnected current state should replace the Disconnected presentation");
     };
-    assert_eq!(reconnected.playback_state, "Paused");
+    assert_eq!(reconnected.playback_state(), "Paused");
 }

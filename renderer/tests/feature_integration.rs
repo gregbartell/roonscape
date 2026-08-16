@@ -96,7 +96,7 @@ fn revision_crossfade_enters_inactivity_and_playing_restores_during_the_transiti
     let Presentation::NowPlaying(now_playing) = &restored.presentation else {
         panic!("Playing should restore Now Playing content");
     };
-    assert_eq!(now_playing.playback_state, "Playing");
+    assert_eq!(now_playing.playback_state(), "Playing");
 
     let discarded = transition
         .begin(9, restored.presentation, Duration::from_millis(120))

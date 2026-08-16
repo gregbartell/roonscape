@@ -483,7 +483,7 @@ fn metadata(
     copy.set_valign(gtk::Align::Center);
     copy.set_vexpand(true);
 
-    let playback_state = playback_state(&presentation.playback_state);
+    let playback_state = playback_state(presentation.playback_state());
 
     let layout = metadata_layout_for_viewport(presentation, Viewport::WINDOWED_FIXTURE);
     let title = layout
