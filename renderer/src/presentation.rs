@@ -214,10 +214,14 @@ impl PresentationState {
         anchored_at: PresentationTime,
     ) -> Result<PresentationUpdate, PresentationError> {
         presentation_from_snapshot(&snapshot)?;
-        let update = if transition_content_changed(&self.snapshot, &snapshot) {
-            PresentationUpdate::TransitionRequired
-        } else {
+        let update = if !transition_content_changed(&self.snapshot, &snapshot) {
             PresentationUpdate::ProgressOnly
+        } else if self.snapshot.availability == Availability::Available
+            && snapshot.availability != Availability::Available
+        {
+            PresentationUpdate::ReplaceImmediately
+        } else {
+            PresentationUpdate::TransitionRequired
         };
         let next_inactivity_condition = inactivity_condition(&snapshot);
         let has_new_source_sample = self.snapshot.playback != snapshot.playback

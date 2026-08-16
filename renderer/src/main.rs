@@ -129,7 +129,7 @@ fn build_window(
         palette_provider,
     )));
     presentation_view
-        .borrow()
+        .borrow_mut()
         .apply_inactivity(initial_frame.inactivity);
     let display = gtk::Overlay::new();
     display.set_child(Some(&presentation_view.borrow().root()));
@@ -291,7 +291,7 @@ impl PresentationRuntime {
             }
         }
         self.presentation_view
-            .borrow()
+            .borrow_mut()
             .apply_inactivity(current_frame.inactivity);
     }
 }

@@ -6,12 +6,12 @@ use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
     ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, FullFieldLayout,
-    FullFieldPresentation, GalleryField, GallerySplitLayout, GallerySplitRole,
-    INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, IdentityLineLayout, IdentityPlacement,
-    InactivityTransform, MetadataFontSizes, MetadataLineLayout, MetadataTypography,
-    NowPlayingPresentation, Presentation, PresentationPalette, PresentationProgress,
-    PresentationRevision, PresentationTransition, StatusEmphasis, TextOverflow, TypographyPair,
-    Viewport, metadata_layout_for_viewport, presentation_palette_styles, resolve_presentation,
+    FullFieldPresentation, GalleryField, GallerySplitLayout, GallerySplitRole, IdentityLineLayout,
+    IdentityPlacement, InactivityLayout, InactivityTransform, MetadataFontSizes,
+    MetadataLineLayout, MetadataTypography, NowPlayingPresentation, Presentation,
+    PresentationPalette, PresentationProgress, PresentationRevision, PresentationTransition,
+    StatusEmphasis, TextOverflow, TypographyPair, Viewport, metadata_layout_for_viewport,
+    presentation_palette_styles, resolve_presentation,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -22,7 +22,9 @@ pub(crate) struct PresentationView {
     stack: gtk::Stack,
     transition: PresentationTransition<RenderedPresentation>,
     palette_provider: gtk::CssProvider,
-    viewport: Option<Viewport>,
+    display_viewport: Viewport,
+    layout_viewport: Option<Viewport>,
+    inactivity: InactivityTransform,
 }
 
 struct RenderedPresentation {
@@ -126,9 +128,11 @@ impl PresentationView {
             stack,
             transition,
             palette_provider,
-            viewport: None,
+            display_viewport: Viewport::WINDOWED_FIXTURE,
+            layout_viewport: None,
+            inactivity: InactivityTransform::default(),
         };
-        view.apply_viewport(Viewport::WINDOWED_FIXTURE);
+        view.apply_layout();
         view
     }
 
@@ -136,34 +140,45 @@ impl PresentationView {
         self.stack.clone().upcast()
     }
 
-    pub(crate) fn apply_inactivity(&self, transform: InactivityTransform) {
-        self.stack.set_opacity(transform.opacity);
-        let (horizontal_bound, vertical_bound) = if transform == InactivityTransform::default() {
-            (0, 0)
-        } else {
-            (INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND)
-        };
-        self.stack
-            .set_margin_start(horizontal_bound + transform.offset.x);
-        self.stack
-            .set_margin_end(horizontal_bound - transform.offset.x);
-        self.stack
-            .set_margin_top(vertical_bound + transform.offset.y);
-        self.stack
-            .set_margin_bottom(vertical_bound - transform.offset.y);
+    pub(crate) fn apply_inactivity(&mut self, transform: InactivityTransform) {
+        if self.inactivity == transform {
+            return;
+        }
+        self.inactivity = transform;
+        self.apply_layout();
     }
 
-    pub(crate) fn apply_viewport(&mut self, viewport: Viewport) {
-        if self.viewport == Some(viewport) {
+    fn apply_layout(&mut self) {
+        let layout = InactivityLayout::for_viewport(self.display_viewport, self.inactivity);
+        self.stack.set_opacity(self.inactivity.opacity);
+        self.stack
+            .set_margin_start(dimension(layout.margin_start_px));
+        self.stack.set_margin_end(dimension(layout.margin_end_px));
+        self.stack.set_margin_top(dimension(layout.margin_top_px));
+        self.stack
+            .set_margin_bottom(dimension(layout.margin_bottom_px));
+
+        if self.layout_viewport == Some(layout.content_viewport) {
             return;
         }
 
-        self.transition.current().value().apply_viewport(viewport);
+        self.transition
+            .current()
+            .value()
+            .apply_viewport(layout.content_viewport);
         if let Some(outgoing) = self.transition.outgoing() {
-            outgoing.value().apply_viewport(viewport);
+            outgoing.value().apply_viewport(layout.content_viewport);
         }
-        self.viewport = Some(viewport);
+        self.layout_viewport = Some(layout.content_viewport);
         self.install_palette_styles();
+    }
+
+    pub(crate) fn apply_viewport(&mut self, viewport: Viewport) {
+        if self.display_viewport == viewport {
+            return;
+        }
+        self.display_viewport = viewport;
+        self.apply_layout();
     }
 
     pub(crate) fn replace(
@@ -230,7 +245,7 @@ impl PresentationView {
         repository_root: &Path,
     ) -> RenderedPresentation {
         let rendered = render_current(presentation, repository_root);
-        if let Some(viewport) = self.viewport {
+        if let Some(viewport) = self.layout_viewport {
             rendered.apply_viewport(viewport);
         }
         rendered
@@ -244,7 +259,7 @@ impl PresentationView {
     }
 
     fn install_palette_styles(&self) {
-        let viewport = self.viewport.unwrap_or(Viewport::WINDOWED_FIXTURE);
+        let viewport = self.layout_viewport.unwrap_or(Viewport::WINDOWED_FIXTURE);
         let layout = GallerySplitLayout::for_viewport(viewport);
         let full_field_layout = FullFieldLayout::for_viewport(viewport);
         let mut styles = presentation_palette_styles(

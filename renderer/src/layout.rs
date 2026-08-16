@@ -1,9 +1,64 @@
-use crate::presentation::NowPlayingPresentation;
+use crate::presentation::{
+    INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform, NowPlayingPresentation,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Viewport {
     pub width_px: u32,
     pub height_px: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InactivityLayout {
+    pub content_viewport: Viewport,
+    pub margin_start_px: u32,
+    pub margin_end_px: u32,
+    pub margin_top_px: u32,
+    pub margin_bottom_px: u32,
+}
+
+impl InactivityLayout {
+    pub fn for_viewport(viewport: Viewport, transform: InactivityTransform) -> Self {
+        if transform == InactivityTransform::default() {
+            return Self {
+                content_viewport: viewport,
+                margin_start_px: 0,
+                margin_end_px: 0,
+                margin_top_px: 0,
+                margin_bottom_px: 0,
+            };
+        }
+
+        let horizontal_bound = INACTIVE_HORIZONTAL_BOUND as u32;
+        let vertical_bound = INACTIVE_VERTICAL_BOUND as u32;
+        assert!(
+            viewport.width_px > horizontal_bound * 2,
+            "viewport width must contain the OLED movement envelope"
+        );
+        assert!(
+            viewport.height_px > vertical_bound * 2,
+            "viewport height must contain the OLED movement envelope"
+        );
+        assert!(
+            (-INACTIVE_HORIZONTAL_BOUND..=INACTIVE_HORIZONTAL_BOUND).contains(&transform.offset.x),
+            "horizontal OLED offset must stay inside the configured bound"
+        );
+        assert!(
+            (-INACTIVE_VERTICAL_BOUND..=INACTIVE_VERTICAL_BOUND).contains(&transform.offset.y),
+            "vertical OLED offset must stay inside the configured bound"
+        );
+
+        Self {
+            content_viewport: Viewport::new(
+                viewport.width_px - horizontal_bound * 2,
+                viewport.height_px - vertical_bound * 2,
+            ),
+            margin_start_px: (INACTIVE_HORIZONTAL_BOUND + transform.offset.x) as u32,
+            margin_end_px: (INACTIVE_HORIZONTAL_BOUND - transform.offset.x) as u32,
+            margin_top_px: (INACTIVE_VERTICAL_BOUND + transform.offset.y) as u32,
+            margin_bottom_px: (INACTIVE_VERTICAL_BOUND - transform.offset.y) as u32,
+        }
+    }
 }
 
 impl Viewport {

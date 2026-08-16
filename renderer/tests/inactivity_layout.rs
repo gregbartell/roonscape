@@ -1,0 +1,96 @@
+use roonscape_renderer::{
+    FullFieldLayout, GallerySplitLayout, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND,
+    InactivityLayout, InactivityTransform, LayoutOffset, Viewport,
+};
+
+#[test]
+fn reserves_the_complete_oled_movement_envelope_around_restyled_layouts() {
+    for display_viewport in [
+        Viewport::WINDOWED_FIXTURE,
+        Viewport::REFERENCE,
+        Viewport::new(3840, 2400),
+    ] {
+        for offset in [
+            LayoutOffset {
+                x: -INACTIVE_HORIZONTAL_BOUND,
+                y: -INACTIVE_VERTICAL_BOUND,
+            },
+            LayoutOffset {
+                x: INACTIVE_HORIZONTAL_BOUND,
+                y: INACTIVE_VERTICAL_BOUND,
+            },
+        ] {
+            let inactivity = InactivityTransform {
+                opacity: 0.3,
+                offset,
+            };
+            let safe = InactivityLayout::for_viewport(display_viewport, inactivity);
+
+            assert_eq!(
+                safe.content_viewport.width_px + safe.margin_start_px + safe.margin_end_px,
+                display_viewport.width_px
+            );
+            assert_eq!(
+                safe.content_viewport.height_px + safe.margin_top_px + safe.margin_bottom_px,
+                display_viewport.height_px
+            );
+            assert_eq!(
+                safe.content_viewport.width_px,
+                display_viewport.width_px - 2 * INACTIVE_HORIZONTAL_BOUND as u32
+            );
+            assert_eq!(
+                safe.content_viewport.height_px,
+                display_viewport.height_px - 2 * INACTIVE_VERTICAL_BOUND as u32
+            );
+
+            let gallery = GallerySplitLayout::for_viewport(safe.content_viewport);
+            assert_eq!(
+                gallery.outer_gutter_px * 2
+                    + gallery.artwork_column_width_px
+                    + gallery.column_gap_px
+                    + gallery.metadata_column_width_px,
+                safe.content_viewport.width_px,
+                "Gallery split should fit the viewport left inside the OLED envelope"
+            );
+            let artwork_bottom_clearance =
+                (safe.content_viewport.height_px - gallery.artwork_field_height_px) / 2;
+            let shadow_bottom_extent =
+                gallery.artwork_shadow_offset_px + gallery.artwork_shadow_blur_px.div_ceil(2);
+            assert!(
+                shadow_bottom_extent <= artwork_bottom_clearance,
+                "the artwork shadow should remain inside the OLED-safe Gallery split"
+            );
+
+            let full_field = FullFieldLayout::for_viewport(safe.content_viewport);
+            assert!(
+                full_field.copy_width_px + 2 * full_field.outer_gutter_px
+                    <= safe.content_viewport.width_px,
+                "full-field copy should remain inside the OLED envelope"
+            );
+            assert!(
+                full_field.identity_width_px
+                    + full_field.identity_right_inset_px
+                    + full_field.outer_gutter_px
+                    <= safe.content_viewport.width_px,
+                "the Output and Zone footer should remain inside the OLED envelope"
+            );
+        }
+    }
+}
+
+#[test]
+fn leaves_the_active_gallery_viewport_uninset() {
+    let active =
+        InactivityLayout::for_viewport(Viewport::WINDOWED_FIXTURE, InactivityTransform::default());
+
+    assert_eq!(active.content_viewport, Viewport::WINDOWED_FIXTURE);
+    assert_eq!(
+        (
+            active.margin_start_px,
+            active.margin_end_px,
+            active.margin_top_px,
+            active.margin_bottom_px,
+        ),
+        (0, 0, 0, 0)
+    );
+}

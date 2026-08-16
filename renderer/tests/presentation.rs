@@ -490,6 +490,102 @@ fn distinguishes_progress_samples_from_visual_revision_changes() {
 }
 
 #[test]
+fn every_visual_snapshot_field_requests_one_coordinated_transition() {
+    let playing_snapshot = || {
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid")
+    };
+    let mut playback = playing_snapshot();
+    playback.playback = Some(Playback::Paused);
+    let mut identity = playing_snapshot();
+    identity
+        .tracked_zone
+        .as_mut()
+        .expect("Playing fixture should identify the Tracked Zone")
+        .name = "Kitchen".to_owned();
+    let mut metadata = playing_snapshot();
+    metadata
+        .now_playing
+        .as_mut()
+        .expect("Playing fixture should contain Now Playing")
+        .title = Some("A different track".to_owned());
+    let mut progress_presence = playing_snapshot();
+    progress_presence.progress = None;
+    let mut artwork = playing_snapshot();
+    let artwork_reference = artwork
+        .artwork
+        .as_mut()
+        .expect("Playing fixture should reference artwork");
+    artwork_reference.revision = 12;
+    artwork_reference.path = "fixtures/artwork/revised.svg".to_owned();
+
+    for (index, (field, mut changed)) in [
+        ("playback", playback),
+        ("identity", identity),
+        ("metadata", metadata),
+        ("progress presence", progress_presence),
+        ("artwork and palette", artwork),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut state =
+            PresentationState::new(playing_snapshot(), presentation_time(0, PLAYING_SAMPLED_AT))
+                .expect("Playing snapshot should anchor a presentation");
+        changed.revision = 30 + index as u64;
+
+        assert_eq!(
+            state
+                .update(
+                    changed,
+                    presentation_time(index as u64 + 1, PLAYING_SAMPLED_AT + index as u64 + 1),
+                )
+                .expect("visual snapshot change should be accepted"),
+            PresentationUpdate::TransitionRequired,
+            "a {field} change should replace the complete presentation once"
+        );
+    }
+}
+
+#[test]
+fn unavailable_snapshots_replace_now_playing_immediately() {
+    for (index, fixture_name) in [
+        "pairing-required.json",
+        "disconnected.json",
+        "output-unavailable.json",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let playing = parse_snapshot(&support::fixture("playing.json"))
+            .expect("Playing fixture should be valid");
+        let mut state = PresentationState::new(playing, presentation_time(0, PLAYING_SAMPLED_AT))
+            .expect("Playing snapshot should anchor a presentation");
+        let mut unavailable = parse_snapshot(&support::fixture(fixture_name))
+            .expect("unavailable fixture should be valid");
+        unavailable.revision = 20 + index as u64;
+
+        let update = state
+            .update(
+                unavailable,
+                presentation_time(index as u64 + 1, PLAYING_SAMPLED_AT + index as u64 + 1),
+            )
+            .expect("unavailable snapshot should replace Playing");
+
+        assert_eq!(
+            update,
+            PresentationUpdate::ReplaceImmediately,
+            "{fixture_name} must not retain outgoing Now Playing content"
+        );
+        assert!(matches!(
+            state
+                .presentation_at(Duration::from_secs(index as u64 + 1))
+                .expect("unavailable snapshot should remain presentable"),
+            Presentation::FullField(_)
+        ));
+    }
+}
+
+#[test]
 fn inactive_conditions_remain_fully_legible_until_the_grace_period_ends() {
     for fixture_name in [
         "paused.json",
@@ -525,6 +621,34 @@ fn inactive_conditions_remain_fully_legible_until_the_grace_period_ends() {
                 offset: LayoutOffset { x: -18, y: -12 },
             },
             "{fixture_name} should dim and reposition at the grace boundary"
+        );
+    }
+}
+
+#[test]
+fn loading_and_playing_stay_active_with_gallery_or_missing_content() {
+    for fixture_name in [
+        "playing.json",
+        "loading.json",
+        "playing-empty.json",
+        "loading-empty.json",
+    ] {
+        let snapshot = parse_snapshot(&support::fixture(fixture_name))
+            .expect("active fixture should be valid");
+        let state = PresentationState::new_with_inactivity(
+            snapshot,
+            presentation_time(0, PLAYING_SAMPLED_AT),
+            inactivity_configuration(),
+        )
+        .expect("active fixture should anchor a presentation");
+
+        assert_eq!(
+            state
+                .frame_at(Duration::from_secs(60))
+                .expect("active fixture should remain presentable")
+                .inactivity,
+            InactivityTransform::default(),
+            "{fixture_name} must not enter OLED inactivity"
         );
     }
 }

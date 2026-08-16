@@ -1,12 +1,14 @@
 mod support;
 
+use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
 use roonscape_renderer::{
-    Presentation, PresentationPalette, PresentationTransition, parse_snapshot,
-    presentation_from_snapshot,
+    ArtworkReference, Presentation, PresentationPalette, PresentationTransition, Rgb,
+    parse_snapshot, presentation_from_snapshot, resolve_presentation,
 };
+use tempfile::tempdir;
 
 struct CoordinatedPresentation {
     presentation: Presentation,
@@ -128,4 +130,67 @@ fn completed_transition_releases_the_outgoing_presentation_and_becomes_stable() 
     assert_eq!(released.revision(), 7);
     assert!(transition.outgoing().is_none());
     assert!(!transition.is_active());
+}
+
+#[test]
+fn crossfades_light_gallery_split_into_missing_content_as_complete_layers() {
+    let artwork_directory = tempdir().expect("temporary artwork directory should be available");
+    let light_artwork = artwork_directory.path().join("light.svg");
+    fs::write(
+        &light_artwork,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+            <rect width="64" height="64" fill="#f4e7c5"/>
+            <circle cx="48" cy="16" r="10" fill="#e59a73"/>
+        </svg>"##,
+    )
+    .expect("light artwork should be writable");
+    let mut snapshot =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    snapshot.revision = 18;
+    snapshot.artwork = Some(ArtworkReference {
+        revision: 18,
+        path: light_artwork.to_string_lossy().into_owned(),
+    });
+    let presentation = presentation_from_snapshot(&snapshot)
+        .expect("light artwork snapshot should produce a presentation");
+    let resolved = resolve_presentation(&presentation, Path::new(""));
+    let artwork_path = match &resolved.presentation {
+        Presentation::NowPlaying(now_playing) => now_playing.artwork_path.clone(),
+        Presentation::FullField(_) => panic!("light artwork should retain Gallery split"),
+    };
+    let light = CoordinatedPresentation {
+        presentation: resolved.presentation,
+        artwork_path,
+        palette: resolved.palette,
+    };
+    assert!(
+        light.palette.background.contrast_ratio(Rgb {
+            red: 0,
+            green: 0,
+            blue: 0,
+        }) >= 7.0,
+        "light artwork should retain its readable light palette"
+    );
+
+    let (missing_revision, missing) = coordinated("playing-empty.json");
+    let mut transition = PresentationTransition::new(snapshot.revision, light);
+    transition.begin(missing_revision, missing, Duration::from_millis(100));
+
+    assert!(matches!(
+        transition.current().value().presentation,
+        Presentation::FullField(_)
+    ));
+    assert_eq!(
+        transition.current().value().palette,
+        PresentationPalette::fallback()
+    );
+    let outgoing = transition
+        .outgoing()
+        .expect("the complete light Gallery split should remain as the outgoing layer");
+    assert!(matches!(
+        outgoing.value().presentation,
+        Presentation::NowPlaying(_)
+    ));
+    assert!(outgoing.value().artwork_path.is_some());
+    assert_ne!(outgoing.value().palette, PresentationPalette::fallback());
 }

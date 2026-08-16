@@ -32,7 +32,7 @@ pub use keyboard::{RendererKey, should_close_renderer};
 pub use layout::{
     ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, FullFieldLayout, GalleryField,
     GallerySplitLayout, GallerySplitRole, GallerySplitTypography, IdentityLineLayout,
-    IdentityPlacement, MetadataFontSizes, TextOverflow, Viewport,
+    IdentityPlacement, InactivityLayout, MetadataFontSizes, TextOverflow, Viewport,
 };
 pub use metadata::{
     MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout,
