@@ -3,8 +3,8 @@ mod representative_viewports;
 mod support;
 
 use roonscape_renderer::{
-    MetadataFontSizes, MetadataTypography, Presentation, TextOverflow, Viewport, metadata_layout,
-    parse_snapshot, presentation_from_snapshot,
+    MetadataTypography, Presentation, TextOverflow, Viewport, metadata_layout, parse_snapshot,
+    presentation_from_snapshot,
 };
 
 const VIEWPORT: Viewport = Viewport::new(1920, 1200);
@@ -62,49 +62,55 @@ fn collapses_blank_optional_metadata_without_dead_spacing() {
 #[test]
 fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
     let presentation = now_playing("long-metadata.json");
-    let layout = metadata_layout(&presentation, VIEWPORT);
-    let title = layout.title.expect("long fixture should have a Title");
-    let artist = layout.artist.expect("long fixture should have an Artist");
-    let album = layout.album.expect("long fixture should have an Album");
 
-    assert_eq!(title.font_sizes, font_sizes(88, 70, 54));
-    assert_eq!(artist.font_sizes, font_sizes(34, 28, 24));
-    assert_eq!(album.font_sizes, font_sizes(23, 20, 18));
-    assert_eq!(
-        (
-            title.maximum_lines,
-            artist.maximum_lines,
-            album.maximum_lines
-        ),
-        (3, 2, 2)
-    );
-    assert_eq!(title.overflow, TextOverflow::EllipsizeEnd);
-    assert_eq!(artist.overflow, TextOverflow::EllipsizeEnd);
-    assert_eq!(album.overflow, TextOverflow::EllipsizeEnd);
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = metadata_layout(&presentation, viewport);
+        let title = layout.title.expect("long fixture should have a Title");
+        let artist = layout.artist.expect("long fixture should have an Artist");
+        let album = layout.album.expect("long fixture should have an Album");
+
+        assert!(title.font_sizes.minimum_px >= 36);
+        assert!(artist.font_sizes.minimum_px >= 18);
+        assert!(album.font_sizes.minimum_px >= 15);
+        assert_eq!(
+            (
+                title.maximum_lines,
+                artist.maximum_lines,
+                album.maximum_lines
+            ),
+            (3, 2, 2)
+        );
+        assert_eq!(title.overflow, TextOverflow::EllipsizeEnd);
+        assert_eq!(artist.overflow, TextOverflow::EllipsizeEnd);
+        assert_eq!(album.overflow, TextOverflow::EllipsizeEnd);
+    }
 }
 
 #[test]
 fn extreme_metadata_stops_reducing_at_readable_minimum_sizes() {
     let presentation = now_playing("extreme-metadata.json");
-    let layout = metadata_layout(&presentation, VIEWPORT);
-    let title = layout.title.expect("extreme fixture should have a Title");
-    let artist = layout
-        .artist
-        .expect("extreme fixture should have an Artist");
-    let album = layout.album.expect("extreme fixture should have an Album");
 
-    assert_eq!(
-        title.fitting_font_size(|_| false),
-        title.font_sizes.minimum_px
-    );
-    assert_eq!(
-        artist.fitting_font_size(|_| false),
-        artist.font_sizes.minimum_px
-    );
-    assert_eq!(
-        album.fitting_font_size(|_| false),
-        album.font_sizes.minimum_px
-    );
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = metadata_layout(&presentation, viewport);
+        let title = layout.title.expect("extreme fixture should have a Title");
+        let artist = layout
+            .artist
+            .expect("extreme fixture should have an Artist");
+        let album = layout.album.expect("extreme fixture should have an Album");
+
+        assert_eq!(
+            title.fitting_font_size(|_| false),
+            title.font_sizes.minimum_px
+        );
+        assert_eq!(
+            artist.fitting_font_size(|_| false),
+            artist.font_sizes.minimum_px
+        );
+        assert_eq!(
+            album.fitting_font_size(|_| false),
+            album.font_sizes.minimum_px
+        );
+    }
 }
 
 #[test]
@@ -156,12 +162,4 @@ fn scales_metadata_typography_across_representative_landscape_viewports() {
         });
 
     assert_eq!(preferred_title_sizes, [59, 74, 88, 118, 168]);
-}
-
-fn font_sizes(preferred_px: u32, reduced_px: u32, minimum_px: u32) -> MetadataFontSizes {
-    MetadataFontSizes {
-        preferred_px,
-        reduced_px,
-        minimum_px,
-    }
 }

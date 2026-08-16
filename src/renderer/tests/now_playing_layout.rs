@@ -7,7 +7,7 @@ use std::path::Path;
 use roonscape_renderer::{
     ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, IdentityLineLayout,
     IdentityPlacement, NowPlayingField, NowPlayingLayout, NowPlayingRole, Presentation,
-    TextOverflow, Viewport, parse_snapshot, presentation_from_snapshot,
+    TextOverflow, parse_snapshot, presentation_from_snapshot,
 };
 
 fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation {
@@ -100,7 +100,6 @@ fn contains_the_artwork_and_its_depth_at_representative_landscape_viewports() {
 fn keeps_imperfect_artwork_inside_the_stable_square_field() {
     let missing = now_playing("missing-artwork.json");
     let non_square = now_playing("non-square-artwork.json");
-    let viewport = Viewport::WINDOWED_FIXTURE;
     let artwork_path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/non-square.svg");
     let artwork = gdk_pixbuf::Pixbuf::from_file(artwork_path)
@@ -125,71 +124,78 @@ fn keeps_imperfect_artwork_inside_the_stable_square_field() {
         }
     );
 
-    let missing_geometry = NowPlayingLayout::for_presentation(&missing, viewport);
-    let non_square_geometry = NowPlayingLayout::for_presentation(&non_square, viewport);
-    assert_eq!(
-        (
-            missing_geometry.artwork_field_width_px,
-            missing_geometry.artwork_field_height_px,
-        ),
-        (
-            non_square_geometry.artwork_field_width_px,
-            non_square_geometry.artwork_field_height_px,
-        ),
-        "imperfect artwork must not change the Now Playing layout geometry"
-    );
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let missing_geometry = NowPlayingLayout::for_presentation(&missing, viewport);
+        let non_square_geometry = NowPlayingLayout::for_presentation(&non_square, viewport);
+        assert_eq!(
+            (
+                missing_geometry.artwork_field_width_px,
+                missing_geometry.artwork_field_height_px,
+            ),
+            (
+                non_square_geometry.artwork_field_width_px,
+                non_square_geometry.artwork_field_height_px,
+            ),
+            "imperfect artwork must not change the Now Playing geometry at {viewport:?}"
+        );
+    }
 }
 
 #[test]
 fn omits_the_complete_timeline_for_indeterminate_content() {
-    let determinate = NowPlayingLayout::for_presentation(
-        &now_playing("playing.json"),
-        Viewport::WINDOWED_FIXTURE,
-    );
-    let indeterminate = NowPlayingLayout::for_presentation(
-        &now_playing("indeterminate-progress.json"),
-        Viewport::WINDOWED_FIXTURE,
-    );
+    let determinate = now_playing("playing.json");
+    let indeterminate = now_playing("indeterminate-progress.json");
 
-    assert!(
-        determinate
-            .metadata_roles
-            .contains(&NowPlayingRole::Progress)
-    );
-    assert!(
-        !indeterminate
-            .metadata_roles
-            .contains(&NowPlayingRole::Progress)
-    );
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let determinate = NowPlayingLayout::for_presentation(&determinate, viewport);
+        let indeterminate = NowPlayingLayout::for_presentation(&indeterminate, viewport);
+
+        assert!(
+            determinate
+                .metadata_roles
+                .contains(&NowPlayingRole::Progress),
+            "determinate progress should retain its hierarchy at {viewport:?}"
+        );
+        assert!(
+            !indeterminate
+                .metadata_roles
+                .contains(&NowPlayingRole::Progress),
+            "indeterminate progress should remain absent at {viewport:?}"
+        );
+    }
 }
 
 #[test]
 fn defensively_ellipsizes_long_identities_without_moving_the_footer() {
-    let viewport = Viewport::WINDOWED_FIXTURE;
-    let ordinary = NowPlayingLayout::for_presentation(&now_playing("playing.json"), viewport);
-    let long = NowPlayingLayout::for_presentation(&now_playing("long-identities.json"), viewport);
+    let ordinary = now_playing("playing.json");
+    let long_identities = now_playing("long-identities.json");
 
-    assert_eq!(
-        long.identity_line,
-        IdentityLineLayout {
-            maximum_lines: 1,
-            overflow: TextOverflow::EllipsizeEnd,
-        }
-    );
-    assert_eq!(long.identity_placement, IdentityPlacement::BottomRight);
-    assert_eq!(
-        (
-            long.metadata_column_width_px,
-            long.metadata_right_inset_px,
-            long.identity_gap_px,
-        ),
-        (
-            ordinary.metadata_column_width_px,
-            ordinary.metadata_right_inset_px,
-            ordinary.identity_gap_px,
-        ),
-        "identity content must not move or resize the footer"
-    );
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let ordinary = NowPlayingLayout::for_presentation(&ordinary, viewport);
+        let long = NowPlayingLayout::for_presentation(&long_identities, viewport);
+
+        assert_eq!(
+            long.identity_line,
+            IdentityLineLayout {
+                maximum_lines: 1,
+                overflow: TextOverflow::EllipsizeEnd,
+            }
+        );
+        assert_eq!(long.identity_placement, IdentityPlacement::BottomRight);
+        assert_eq!(
+            (
+                long.metadata_column_width_px,
+                long.metadata_right_inset_px,
+                long.identity_gap_px,
+            ),
+            (
+                ordinary.metadata_column_width_px,
+                ordinary.metadata_right_inset_px,
+                ordinary.identity_gap_px,
+            ),
+            "identity content must not move or resize the footer at {viewport:?}"
+        );
+    }
 }
 
 #[test]
@@ -227,10 +233,12 @@ fn applies_one_complete_now_playing_policy_to_fixture_and_roon_snapshots() {
         now_playing_from_snapshot(roon_snapshot),
     ];
 
-    for presentation in presentations {
-        let layout = NowPlayingLayout::for_presentation(&presentation, Viewport::WINDOWED_FIXTURE);
-        assert_eq!(layout.field, NowPlayingField::Cohesive);
-        assert_eq!(layout.metadata_roles, expected_roles);
-        assert_eq!(layout.identity_placement, IdentityPlacement::BottomRight);
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        for presentation in &presentations {
+            let layout = NowPlayingLayout::for_presentation(presentation, viewport);
+            assert_eq!(layout.field, NowPlayingField::Cohesive);
+            assert_eq!(layout.metadata_roles, expected_roles);
+            assert_eq!(layout.identity_placement, IdentityPlacement::BottomRight);
+        }
     }
 }
