@@ -127,6 +127,42 @@ enum PaletteTone {
     Light,
 }
 
+#[derive(Clone, Copy)]
+struct ToneProfile {
+    background_lightness: f64,
+    metadata_lightness: f64,
+    artwork_lightness: f64,
+    primary_lightness: f64,
+    secondary_lightness: f64,
+    accent_lightness: f64,
+    contrast_step: f64,
+}
+
+impl PaletteTone {
+    fn profile(self) -> ToneProfile {
+        match self {
+            Self::Dark => ToneProfile {
+                background_lightness: 0.065,
+                metadata_lightness: 0.19,
+                artwork_lightness: 0.3,
+                primary_lightness: 0.88,
+                secondary_lightness: 0.68,
+                accent_lightness: 0.58,
+                contrast_step: 0.02,
+            },
+            Self::Light => ToneProfile {
+                background_lightness: 0.92,
+                metadata_lightness: 0.82,
+                artwork_lightness: 0.72,
+                primary_lightness: 0.14,
+                secondary_lightness: 0.28,
+                accent_lightness: 0.32,
+                contrast_step: -0.02,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PresentationPalette {
     pub background: Rgb,
@@ -190,22 +226,18 @@ impl PresentationPalette {
         let dominant_hsl = dominant.hsl();
         let vibrant_hsl = vibrant.hsl();
         let light_hsl = light.hsl();
-        let tone = palette_tone(&swatches);
-        let (background_lightness, metadata_lightness, artwork_lightness) = match tone {
-            PaletteTone::Dark => (0.065, 0.19, 0.3),
-            PaletteTone::Light => (0.92, 0.82, 0.72),
-        };
+        let profile = palette_tone(&swatches).profile();
         let background = dominant_hsl
             .with_saturation_and_lightness(
                 dominant_hsl.saturation.clamp(0.12, 0.52),
-                background_lightness,
+                profile.background_lightness,
             )
             .rgb();
         let metadata_field = background.mix(
             dominant_hsl
                 .with_saturation_and_lightness(
                     dominant_hsl.saturation.clamp(0.14, 0.58),
-                    metadata_lightness,
+                    profile.metadata_lightness,
                 )
                 .rgb(),
             0.34,
@@ -214,50 +246,47 @@ impl PresentationPalette {
             vibrant_hsl
                 .with_saturation_and_lightness(
                     vibrant_hsl.saturation.clamp(0.24, 0.72),
-                    artwork_lightness,
+                    profile.artwork_lightness,
                 )
                 .rgb(),
             0.42,
         );
-        let (primary_lightness, secondary_lightness, accent_lightness) = match tone {
-            PaletteTone::Dark => (0.88, 0.68, 0.58),
-            PaletteTone::Light => (0.14, 0.28, 0.32),
-        };
+        let presentation_fields = [background, artwork_field, metadata_field];
         let primary_text = readable_tint(
             light_hsl.with_saturation_and_lightness(
                 light_hsl.saturation.clamp(0.08, 0.24),
-                primary_lightness,
+                profile.primary_lightness,
             ),
-            metadata_field,
+            &presentation_fields,
             7.0,
-            tone,
+            profile.contrast_step,
         );
         let secondary_text = readable_tint(
             dominant_hsl.with_saturation_and_lightness(
                 dominant_hsl.saturation.clamp(0.12, 0.3),
-                secondary_lightness,
+                profile.secondary_lightness,
             ),
-            metadata_field,
+            &presentation_fields,
             4.5,
-            tone,
+            profile.contrast_step,
         );
         let muted_text = readable_tint(
             dominant_hsl.with_saturation_and_lightness(
                 dominant_hsl.saturation.clamp(0.08, 0.2),
-                secondary_lightness,
+                profile.secondary_lightness,
             ),
-            metadata_field,
+            &presentation_fields,
             4.5,
-            tone,
+            profile.contrast_step,
         );
         let accent = readable_tint(
             vibrant_hsl.with_saturation_and_lightness(
                 vibrant_hsl.saturation.clamp(0.48, 0.86),
-                accent_lightness,
+                profile.accent_lightness,
             ),
-            metadata_field,
+            &presentation_fields,
             4.5,
-            tone,
+            profile.contrast_step,
         );
 
         Ok(Self {
@@ -276,10 +305,10 @@ impl PresentationPalette {
         })
     }
 
-    pub fn for_artwork(path: Option<&Path>) -> Result<Self, PaletteError> {
+    pub fn for_artwork(path: Option<&Path>) -> Self {
         match path {
-            Some(path) => Ok(Self::from_artwork(path).unwrap_or_else(|_| Self::fallback())),
-            None => Ok(Self::fallback()),
+            Some(path) => Self::from_artwork(path).unwrap_or_else(|_| Self::fallback()),
+            None => Self::fallback(),
         }
     }
 }
@@ -392,13 +421,13 @@ fn palette_tone(swatches: &[Swatch]) -> PaletteTone {
     }
 }
 
-fn readable_tint(mut tint: Hsl, background: Rgb, minimum_contrast: f64, tone: PaletteTone) -> Rgb {
+fn readable_tint(mut tint: Hsl, fields: &[Rgb], minimum_contrast: f64, contrast_step: f64) -> Rgb {
     let mut color = tint.rgb();
-    while color.contrast_ratio(background) < minimum_contrast {
-        let next_lightness = match tone {
-            PaletteTone::Dark => (tint.lightness + 0.02).min(0.98),
-            PaletteTone::Light => (tint.lightness - 0.02).max(0.02),
-        };
+    while fields
+        .iter()
+        .any(|field| color.contrast_ratio(*field) < minimum_contrast)
+    {
+        let next_lightness = (tint.lightness + contrast_step).clamp(0.02, 0.98);
         if next_lightness == tint.lightness {
             break;
         }

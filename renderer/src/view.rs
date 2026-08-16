@@ -762,13 +762,7 @@ fn palette_for_presentation(
         .as_deref()
         .map(|path| repository_root.join(path));
 
-    match PresentationPalette::for_artwork(artwork_path.as_deref()) {
-        Ok(palette) => palette,
-        Err(error) => {
-            eprintln!("RoonScape renderer: {error}");
-            PresentationPalette::fallback()
-        }
-    }
+    PresentationPalette::for_artwork(artwork_path.as_deref())
 }
 
 pub(crate) fn install_style_providers(typography: TypographyPair) -> gtk::CssProvider {

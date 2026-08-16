@@ -27,8 +27,7 @@ fn coordinated(fixture_name: &str) -> (u64, CoordinatedPresentation) {
     let resolved_artwork = artwork_path
         .as_deref()
         .map(|path| Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(path));
-    let palette = PresentationPalette::for_artwork(resolved_artwork.as_deref())
-        .expect("transition artwork should produce a palette");
+    let palette = PresentationPalette::for_artwork(resolved_artwork.as_deref());
 
     (
         revision,

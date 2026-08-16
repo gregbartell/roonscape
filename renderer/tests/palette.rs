@@ -15,6 +15,19 @@ const WHITE: Rgb = Rgb {
     blue: 255,
 };
 
+fn assert_color_near(role: &str, actual: Rgb, expected: Rgb, maximum_channel_delta: u8) {
+    for (channel, actual, expected) in [
+        ("red", actual.red, expected.red),
+        ("green", actual.green, expected.green),
+        ("blue", actual.blue, expected.blue),
+    ] {
+        assert!(
+            actual.abs_diff(expected) <= maximum_channel_delta,
+            "prototype {role} {channel} channel should stay within {maximum_channel_delta} of the visual reference; expected {expected}, got {actual}"
+        );
+    }
+}
+
 fn synthetic_artwork(directory: &TempDir, file_name: &str, field: &str, accent: &str) -> PathBuf {
     let artwork_path = directory.path().join(file_name);
     fs::write(
@@ -38,26 +51,51 @@ fn keeps_the_prototype_artworks_navy_coral_and_cream_direction() {
     let palette = PresentationPalette::from_artwork(&artwork_path)
         .expect("the shared artwork should produce a palette");
 
-    assert!(
-        palette.background.blue > palette.background.red
-            && palette.background.blue > palette.background.green,
-        "the prototype artwork should retain its navy field direction"
+    assert_color_near(
+        "navy field",
+        palette.background,
+        Rgb {
+            red: 0x07,
+            green: 0x15,
+            blue: 0x22,
+        },
+        18,
     );
-    assert!(
-        palette.accent.red > palette.accent.green && palette.accent.green > palette.accent.blue,
-        "the prototype artwork should retain its coral accent direction"
+    assert_color_near(
+        "coral accent",
+        palette.accent,
+        Rgb {
+            red: 0xff,
+            green: 0x70,
+            blue: 0x51,
+        },
+        32,
     );
-    assert!(
-        palette.primary_text.red >= palette.primary_text.green
-            && palette.primary_text.green >= palette.primary_text.blue,
-        "the prototype artwork should retain its warm cream text direction"
+    assert_color_near(
+        "cream primary text",
+        palette.primary_text,
+        Rgb {
+            red: 0xf3,
+            green: 0xea,
+            blue: 0xd7,
+        },
+        24,
+    );
+    assert_color_near(
+        "muted supporting text",
+        palette.muted_text,
+        Rgb {
+            red: 0x92,
+            green: 0x99,
+            blue: 0xa8,
+        },
+        32,
     );
 }
 
 #[test]
 fn uses_the_fixed_prototype_palette_without_artwork() {
-    let palette = PresentationPalette::for_artwork(None)
-        .expect("missing artwork should deliberately select the fallback palette");
+    let palette = PresentationPalette::for_artwork(None);
 
     assert_eq!(palette.background.to_hex(), "#071522");
     assert_eq!(palette.artwork_field.to_hex(), "#142856");
@@ -108,8 +146,7 @@ fn uses_the_fixed_fallback_for_unreadable_artwork() {
     fs::write(&artwork_path, b"not an image")
         .expect("the unreadable artwork fixture should be writable");
 
-    let palette = PresentationPalette::for_artwork(Some(&artwork_path))
-        .expect("unreadable artwork should select the fallback palette");
+    let palette = PresentationPalette::for_artwork(Some(&artwork_path));
 
     assert_eq!(palette, PresentationPalette::fallback());
 }
@@ -141,54 +178,32 @@ fn every_semantic_text_and_accent_role_meets_its_field_contrast() {
     ];
 
     for (source, palette) in palettes {
-        for (role, color, field, minimum) in [
-            (
-                "primary text",
-                palette.primary_text,
-                palette.metadata_field,
-                7.0,
-            ),
-            (
-                "secondary text",
-                palette.secondary_text,
-                palette.metadata_field,
-                4.5,
-            ),
-            (
-                "muted text",
-                palette.muted_text,
-                palette.metadata_field,
-                4.5,
-            ),
-            ("accent", palette.accent, palette.metadata_field, 4.5),
-            (
-                "progress track",
-                palette.progress_track,
-                palette.metadata_field,
-                4.5,
-            ),
-            (
-                "progress fill",
-                palette.progress_fill,
-                palette.metadata_field,
-                4.5,
-            ),
-            (
-                "diagnostics text",
-                palette.diagnostics_text,
-                palette.diagnostics_field,
-                7.0,
-            ),
-            (
-                "diagnostics border",
-                palette.diagnostics_border,
-                palette.diagnostics_field,
-                4.5,
-            ),
+        for (field_name, field) in [
+            ("background", palette.background),
+            ("artwork field", palette.artwork_field),
+            ("metadata field", palette.metadata_field),
+        ] {
+            for (role, color, minimum) in [
+                ("primary text", palette.primary_text, 7.0),
+                ("secondary text", palette.secondary_text, 4.5),
+                ("muted text", palette.muted_text, 4.5),
+                ("accent", palette.accent, 4.5),
+                ("progress track", palette.progress_track, 4.5),
+                ("progress fill", palette.progress_fill, 4.5),
+            ] {
+                assert!(
+                    color.contrast_ratio(field) >= minimum,
+                    "{source} {role} must have at least {minimum}:1 contrast against the {field_name}"
+                );
+            }
+        }
+        for (role, color, minimum) in [
+            ("diagnostics text", palette.diagnostics_text, 7.0),
+            ("diagnostics border", palette.diagnostics_border, 4.5),
         ] {
             assert!(
-                color.contrast_ratio(field) >= minimum,
-                "{source} {role} must have at least {minimum}:1 contrast"
+                color.contrast_ratio(palette.diagnostics_field) >= minimum,
+                "{source} {role} must have at least {minimum}:1 contrast against the diagnostics field"
             );
         }
     }
