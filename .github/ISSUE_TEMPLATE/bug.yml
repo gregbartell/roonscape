@@ -1,0 +1,53 @@
+name: Bug report
+description: Report something that is not working as expected
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe the problem.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Describe the RoonScape Host, operating system, display, and Roon version involved.
+      placeholder: Ubuntu 24.04, 1920x1080 display, Roon Server 2.x
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Tell us how to reproduce the problem from a known starting point.
+      placeholder: |
+        1. Start RoonScape with ...
+        2. Wait for ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect RoonScape to present or do?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs
+      description: Paste relevant logs after removing tokens, paths, hostnames, email addresses, and other private information.
+      render: shell

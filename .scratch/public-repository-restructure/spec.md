@@ -1,6 +1,6 @@
 # Restructure RoonScape for public use
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 
