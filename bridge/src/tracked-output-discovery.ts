@@ -22,7 +22,7 @@ export function discoverTrackedOutputs({
   return new Promise((resolve, reject) => {
     let settled = false;
     let timeout: NodeJS.Timeout | undefined;
-    const finish = (complete: () => void): void => {
+    const settleAfterCleanup = (settlePromise: () => void): void => {
       if (settled) {
         return;
       }
@@ -33,10 +33,10 @@ export function discoverTrackedOutputs({
       signal?.removeEventListener("abort", handleAbort);
       services.extension.stop_discovery();
       services.extension.disconnect_all();
-      complete();
+      settlePromise();
     };
     const handleAbort = (): void => {
-      finish(() =>
+      settleAfterCleanup(() =>
         reject(new DOMException("Roon discovery cancelled", "AbortError")),
       );
     };
@@ -52,7 +52,7 @@ export function discoverTrackedOutputs({
             return;
           }
 
-          finish(() =>
+          settleAfterCleanup(() =>
             resolve(
               (event.zones ?? []).flatMap((zone) =>
                 zone.outputs.map((output) => ({
@@ -76,7 +76,7 @@ export function discoverTrackedOutputs({
     }
     if (timeoutMilliseconds !== null) {
       timeout = setTimeout(() => {
-        finish(() =>
+        settleAfterCleanup(() =>
           reject(
             new Error(
               "Timed out waiting for Roon; confirm RoonScape is enabled in Settings → Extensions",
