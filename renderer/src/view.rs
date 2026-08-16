@@ -10,8 +10,8 @@ use roonscape_renderer::{
     IdentityPlacement, InactivityLayout, InactivityTransform, MetadataFontSizes,
     MetadataLineLayout, MetadataTypography, NowPlayingPresentation, Presentation,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationTransition,
-    StatusEmphasis, TextOverflow, TypographyPair, Viewport, metadata_layout_for_viewport,
-    presentation_palette_styles, resolve_presentation,
+    StatusEmphasis, TextOverflow, TypographyPair, Viewport, diagnostics_palette_styles,
+    metadata_layout_for_viewport, presentation_palette_styles, resolve_presentation,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -286,6 +286,9 @@ impl PresentationView {
                 &full_field_layout,
             ));
         }
+        styles.push_str(&diagnostics_palette_styles(
+            self.transition.current().value().palette,
+        ));
         self.palette_provider.load_from_data(&styles);
     }
 }

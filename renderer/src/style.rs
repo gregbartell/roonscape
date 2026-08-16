@@ -35,3 +35,12 @@ pub fn presentation_palette_styles(
          .{class_name} progressbar progress {{ background-color: {progress_fill}; }}\n"
     )
 }
+
+pub fn diagnostics_palette_styles(palette: PresentationPalette) -> String {
+    format!(
+        ".diagnostics {{ color: {}; background-color: {}; border-color: {}; }}\n",
+        palette.diagnostics_text.to_hex(),
+        palette.diagnostics_field.to_hex(),
+        palette.diagnostics_border.to_hex(),
+    )
+}
