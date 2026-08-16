@@ -1,0 +1,113 @@
+use std::error::Error;
+use std::fmt;
+
+use serde::Deserialize;
+use serde_json::Value;
+
+const SNAPSHOT_SCHEMA: &str = include_str!("../../shared/schema/presentation-snapshot.schema.json");
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PresentationSnapshot {
+    pub schema_version: u32,
+    pub revision: u64,
+    pub availability: Availability,
+    pub playback: Option<Playback>,
+    pub tracked_output: Option<TrackedOutput>,
+    pub tracked_zone: Option<TrackedZone>,
+    pub now_playing: Option<NowPlaying>,
+    pub progress: Option<Progress>,
+    pub artwork: Option<ArtworkReference>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Availability {
+    PairingRequired,
+    Disconnected,
+    OutputUnavailable,
+    Available,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Playback {
+    Playing,
+    Paused,
+    Loading,
+    Stopped,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TrackedOutput {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TrackedZone {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NowPlaying {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Progress {
+    pub position_seconds: f64,
+    pub duration_seconds: f64,
+    pub sampled_at: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ArtworkReference {
+    pub revision: u64,
+    pub path: String,
+}
+
+#[derive(Debug)]
+pub enum SnapshotError {
+    Json(serde_json::Error),
+    Schema(String),
+}
+
+impl fmt::Display for SnapshotError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Json(error) => write!(formatter, "snapshot is not valid JSON: {error}"),
+            Self::Schema(error) => write!(formatter, "snapshot violates the schema: {error}"),
+        }
+    }
+}
+
+impl Error for SnapshotError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Json(error) => Some(error),
+            Self::Schema(_) => None,
+        }
+    }
+}
+
+pub fn parse_snapshot(contents: &str) -> Result<PresentationSnapshot, SnapshotError> {
+    let candidate: Value = serde_json::from_str(contents).map_err(SnapshotError::Json)?;
+    let schema: Value = serde_json::from_str(SNAPSHOT_SCHEMA).map_err(SnapshotError::Json)?;
+    let validator = jsonschema::options()
+        .should_validate_formats(true)
+        .build(&schema)
+        .map_err(|error| SnapshotError::Schema(error.to_string()))?;
+
+    validator
+        .validate(&candidate)
+        .map_err(|error| SnapshotError::Schema(error.to_string()))?;
+
+    serde_json::from_value(candidate).map_err(SnapshotError::Json)
+}

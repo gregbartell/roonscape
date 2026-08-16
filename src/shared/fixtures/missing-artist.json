@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 2,
+  "revision": 16,
+  "availability": "available",
+  "playback": "playing",
+  "trackedOutput": {
+    "name": "AudioDevice"
+  },
+  "trackedZone": {
+    "name": "Living Room"
+  },
+  "nowPlaying": {
+    "title": "Last Light on Phobos",
+    "artist": null,
+    "album": "Signals from the Quiet Sea"
+  },
+  "progress": {
+    "positionSeconds": 171,
+    "durationSeconds": 266,
+    "sampledAt": "2026-08-15T19:20:00Z"
+  },
+  "artwork": {
+    "revision": 3,
+    "path": "src/shared/fixtures/artwork/playing.svg"
+  }
+}

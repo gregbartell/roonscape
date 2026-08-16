@@ -35,7 +35,7 @@ test(
   (context) => {
     const staleBuildOutput = path.join(
       repositoryRoot,
-      "bridge/dist/src/stale-package-output.js",
+      "src/bridge/dist/src/stale-package-output.js",
     );
     mkdirSync(path.dirname(staleBuildOutput), { recursive: true });
     writeFileSync(staleBuildOutput, "throw new Error('stale build output');\n");
@@ -68,25 +68,31 @@ test(
       assert.throws(
         () =>
           statSync(
-            path.join(relocatedRoot, "bridge/dist/src/stale-package-output.js"),
+            path.join(
+              relocatedRoot,
+              "src/bridge/dist/src/stale-package-output.js",
+            ),
           ),
         { code: "ENOENT" },
       );
 
       for (const relativePath of [
-        "bridge/dist/src/index.js",
-        "bridge/dist/src/roonscape.js",
-        "bridge/node_modules/ajv/package.json",
+        "src/bridge/dist/src/index.js",
+        "src/bridge/dist/src/roonscape.js",
+        "src/bridge/node_modules/ajv/package.json",
         "node_modules/ajv-formats/package.json",
         "node_modules/node-roon-api/package.json",
         "package.json",
-        "renderer/assets/fonts/IBM-Plex-Sans-OFL.txt",
-        "renderer/assets/fonts/IBMPlexSans-Variable.ttf",
-        "renderer/assets/fonts/Libre-Baskerville-OFL.txt",
-        "renderer/assets/fonts/LibreBaskerville-Variable.ttf",
+        "src/renderer/assets/fonts/IBM-Plex-Sans-OFL.txt",
+        "src/renderer/assets/fonts/IBMPlexSans-Variable.ttf",
+        "src/renderer/assets/fonts/Libre-Baskerville-OFL.txt",
+        "src/renderer/assets/fonts/LibreBaskerville-Variable.ttf",
         "runtime/node/LICENSE",
-        "schema/display-configuration.schema.json",
-        "schema/presentation-snapshot.schema.json",
+        "src/shared/fixtures/fixture-scenario-catalog.json",
+        "src/shared/fixtures/playing.json",
+        "src/shared/fixtures/artwork/playing.svg",
+        "src/shared/schema/display-configuration.schema.json",
+        "src/shared/schema/presentation-snapshot.schema.json",
       ]) {
         assert.ok(
           statSync(path.join(relocatedRoot, relativePath)).isFile(),

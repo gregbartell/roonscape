@@ -42,7 +42,7 @@ if (process.platform !== "linux" || process.arch !== "x64") {
 
 try {
   run("pkg-config", ["--atleast-version=4.6", "gtk4"]);
-  rmSync(path.join(repositoryRoot, "bridge/dist"), {
+  rmSync(path.join(repositoryRoot, "src/bridge/dist"), {
     force: true,
     recursive: true,
   });
@@ -56,7 +56,7 @@ try {
   ]);
 
   const dependencyWorkspace = path.join(scratchDirectory, "dependencies");
-  mkdirSync(path.join(dependencyWorkspace, "bridge"), { recursive: true });
+  mkdirSync(path.join(dependencyWorkspace, "src/bridge"), { recursive: true });
   copyFileSync(
     path.join(repositoryRoot, "package.json"),
     path.join(dependencyWorkspace, "package.json"),
@@ -66,8 +66,8 @@ try {
     path.join(dependencyWorkspace, "package-lock.json"),
   );
   copyFileSync(
-    path.join(repositoryRoot, "bridge/package.json"),
-    path.join(dependencyWorkspace, "bridge/package.json"),
+    path.join(repositoryRoot, "src/bridge/package.json"),
+    path.join(dependencyWorkspace, "src/bridge/package.json"),
   );
   run(
     "npm",
@@ -135,12 +135,12 @@ try {
 
 function copyRuntimeTree(stageRoot, dependencyWorkspace, nodeDistributionRoot) {
   copyFile(
-    path.join(repositoryRoot, "roonscape"),
+    path.join(repositoryRoot, "src/launcher/roonscape"),
     path.join(stageRoot, "roonscape"),
   );
   copyJavaScript(
-    path.join(repositoryRoot, "bridge/dist/src"),
-    path.join(stageRoot, "bridge/dist/src"),
+    path.join(repositoryRoot, "src/bridge/dist/src"),
+    path.join(stageRoot, "src/bridge/dist/src"),
   );
   copyTree(
     path.join(dependencyWorkspace, "node_modules"),
@@ -151,13 +151,16 @@ function copyRuntimeTree(stageRoot, dependencyWorkspace, nodeDistributionRoot) {
         path.join(dependencyWorkspace, "node_modules/@roonscape/bridge"),
   );
   copyTree(
-    path.join(dependencyWorkspace, "bridge/node_modules"),
-    path.join(stageRoot, "bridge/node_modules"),
+    path.join(dependencyWorkspace, "src/bridge/node_modules"),
+    path.join(stageRoot, "src/bridge/node_modules"),
   );
-  copyTree(path.join(repositoryRoot, "schema"), path.join(stageRoot, "schema"));
   copyTree(
-    path.join(repositoryRoot, "renderer/assets/fonts"),
-    path.join(stageRoot, "renderer/assets/fonts"),
+    path.join(repositoryRoot, "src/shared"),
+    path.join(stageRoot, "src/shared"),
+  );
+  copyTree(
+    path.join(repositoryRoot, "src/renderer/assets/fonts"),
+    path.join(stageRoot, "src/renderer/assets/fonts"),
   );
   copyFile(
     path.join(repositoryRoot, "target/release/roonscape-renderer"),

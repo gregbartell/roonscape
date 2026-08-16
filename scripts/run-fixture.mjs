@@ -19,7 +19,7 @@ if (explicitFixture) {
   environment.ROONSCAPE_FIXTURE_CONTROL = controlSocketPath;
 }
 
-const publisher = spawn(process.execPath, ["bridge/dist/src/fixture.js"], {
+const publisher = spawn(process.execPath, ["src/bridge/dist/src/fixture.js"], {
   env: environment,
   stdio: "inherit",
 });

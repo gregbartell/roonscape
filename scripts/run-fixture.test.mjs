@@ -35,7 +35,7 @@ test("an explicit single-fixture session does not activate navigation", async ()
     const { socketPath, controlSocketPath } = await launchFixture(
       taskDirectory,
       {
-        ROONSCAPE_FIXTURE: "fixtures/paused.json",
+        ROONSCAPE_FIXTURE: "src/shared/fixtures/paused.json",
         ROONSCAPE_FIXTURE_CONTROL: path.join(taskDirectory, "inherited.sock"),
       },
     );

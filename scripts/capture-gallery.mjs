@@ -147,7 +147,7 @@ async function captureFixture(
     );
     publisher = startLongRunning(
       process.execPath,
-      [path.join(repositoryRoot, "bridge/dist/src/fixture.js")],
+      [path.join(repositoryRoot, "src/bridge/dist/src/fixture.js")],
       environment,
     );
     await waitForPath(socketPath, publisher, "the fixture publisher");

@@ -82,7 +82,10 @@ test("derives the visual acceptance matrix from the Fixture Scenario catalog", a
   try {
     const catalog = JSON.parse(
       await readFile(
-        new URL("../fixtures/fixture-scenario-catalog.json", import.meta.url),
+        new URL(
+          "../src/shared/fixtures/fixture-scenario-catalog.json",
+          import.meta.url,
+        ),
         "utf8",
       ),
     );
@@ -123,7 +126,10 @@ test("plans explicit typography and adaptive diagnostics representatives", () =>
   assert.ok(
     representatives
       .filter((capture) => capture.typography !== "automatic")
-      .every((capture) => capture.fixture === "fixtures/glyph-fallback.json"),
+      .every(
+        (capture) =>
+          capture.fixture === "src/shared/fixtures/glyph-fallback.json",
+      ),
     "both complete font pairs should visibly exercise Pango glyph fallback",
   );
   assert.deepEqual(

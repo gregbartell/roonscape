@@ -160,7 +160,7 @@ representatives, the decision checklist, and the physical-display handoff.
 The renderer uses the host-provided Palatino Linotype and Segoe UI families
 only when both are available. Otherwise it atomically selects the packaged
 Libre Baskerville and IBM Plex Sans fallback pair. The open fallback files and
-their license notices live under `renderer/assets/fonts/`; renderer startup
+their license notices live under `src/renderer/assets/fonts/`; renderer startup
 registers them privately without a network request or global font install.
 
 Run every formatter check, linter, typecheck, and automated test used by CI with

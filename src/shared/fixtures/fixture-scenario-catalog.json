@@ -1,0 +1,113 @@
+{
+  "formatVersion": 1,
+  "scenarios": [
+    {
+      "scenario": "playing",
+      "label": "Playing",
+      "fixture": "src/shared/fixtures/playing.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "paused",
+      "label": "Paused",
+      "fixture": "src/shared/fixtures/paused.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "loading-with-content",
+      "label": "Loading with content",
+      "fixture": "src/shared/fixtures/loading.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "loading-without-content",
+      "label": "Loading without content",
+      "fixture": "src/shared/fixtures/loading-empty.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "idle",
+      "label": "Idle",
+      "fixture": "src/shared/fixtures/stopped.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "pairing-required",
+      "label": "Pairing required",
+      "fixture": "src/shared/fixtures/pairing-required.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "disconnected",
+      "label": "Disconnected",
+      "fixture": "src/shared/fixtures/disconnected.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "output-unavailable",
+      "label": "Output unavailable",
+      "fixture": "src/shared/fixtures/output-unavailable.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "playing-without-content",
+      "label": "Playing without content",
+      "fixture": "src/shared/fixtures/playing-empty.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "missing-metadata",
+      "label": "Missing metadata",
+      "fixture": "src/shared/fixtures/missing-metadata.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "missing-artist",
+      "label": "Missing Artist",
+      "fixture": "src/shared/fixtures/missing-artist.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "missing-album",
+      "label": "Missing Album",
+      "fixture": "src/shared/fixtures/missing-album.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "missing-artwork",
+      "label": "Missing artwork",
+      "fixture": "src/shared/fixtures/missing-artwork.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "long-metadata",
+      "label": "Long metadata",
+      "fixture": "src/shared/fixtures/long-metadata.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "extreme-metadata",
+      "label": "Extreme metadata",
+      "fixture": "src/shared/fixtures/extreme-metadata.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "indeterminate-progress",
+      "label": "Indeterminate progress",
+      "fixture": "src/shared/fixtures/indeterminate-progress.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "non-square-artwork",
+      "label": "Non-square artwork",
+      "fixture": "src/shared/fixtures/non-square-artwork.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "light-artwork",
+      "label": "Light artwork",
+      "fixture": "src/shared/fixtures/light-artwork.json",
+      "palette": "light"
+    }
+  ]
+}

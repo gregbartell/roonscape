@@ -23,7 +23,10 @@ try {
     "renderer-first disconnected presentation",
   );
 
-  const firstBridge = startBridge("fixtures/playing.json", "bridge-initial");
+  const firstBridge = startBridge(
+    "src/shared/fixtures/playing.json",
+    "bridge-initial",
+  );
   await firstBridge.output.next(
     (line) => line.includes("Fixture publisher listening"),
     "initial bridge listener",
@@ -50,7 +53,7 @@ try {
   );
 
   const restartedBridge = startBridge(
-    "fixtures/paused.json",
+    "src/shared/fixtures/paused.json",
     "bridge-restarted",
   );
   await restartedBridge.output.next(
@@ -112,7 +115,7 @@ function startBridge(fixture, label) {
   const child = startChild(
     label,
     process.execPath,
-    [path.join(repositoryRoot, "bridge/dist/src/fixture.js")],
+    [path.join(repositoryRoot, "src/bridge/dist/src/fixture.js")],
     { ...environment, ROONSCAPE_FIXTURE: fixture },
   );
   return { child, output: lineOutput(child, label) };

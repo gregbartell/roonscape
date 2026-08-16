@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-import { readFixtureScenarioCatalog } from "../bridge/dist/src/fixture-scenario-catalog.js";
+import { readFixtureScenarioCatalog } from "../src/bridge/dist/src/fixture-scenario-catalog.js";
 
 const REFERENCE_VIEWPORT = {
   key: "3840x2160",
@@ -15,7 +15,10 @@ const VIEWPORTS = [
 ];
 
 const defaultCatalogPath = fileURLToPath(
-  new URL("../fixtures/fixture-scenario-catalog.json", import.meta.url),
+  new URL(
+    "../src/shared/fixtures/fixture-scenario-catalog.json",
+    import.meta.url,
+  ),
 );
 
 const REPRESENTATIVES = [
@@ -73,7 +76,7 @@ export function buildGalleryCapturePlan({
 function fixtureScenario(scenario, fixtureName, palette) {
   return {
     scenario,
-    fixture: `fixtures/${fixtureName}`,
+    fixture: `src/shared/fixtures/${fixtureName}`,
     palette,
   };
 }
