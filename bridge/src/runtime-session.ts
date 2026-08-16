@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -28,6 +29,7 @@ interface RuntimeOwner {
 const runtimeDirectoryName = "roonscape";
 const ownershipDirectoryName = "owner";
 const acquisitionDirectoryName = ".acquiring";
+const recoveryDirectoryName = ".recovering";
 const ownershipFileName = "session.json";
 
 export function openRuntimeSession({
@@ -94,7 +96,7 @@ function acquireOwnership(
     runtimeDirectory,
     acquisitionDirectoryName,
   );
-  acquireAcquisitionGuard(acquisitionDirectory, owner, processExists);
+  acquireAcquisitionGuard(runtimeDirectory, owner, processExists);
   try {
     acquireSessionOwnership(runtimeDirectory, owner, processExists);
   } finally {
@@ -103,33 +105,103 @@ function acquireOwnership(
 }
 
 function acquireAcquisitionGuard(
-  acquisitionDirectory: string,
+  runtimeDirectory: string,
   owner: RuntimeOwner,
   processExists: (processId: number) => boolean,
 ): void {
-  try {
-    mkdirSync(acquisitionDirectory, { mode: 0o700 });
+  const acquisitionDirectory = path.join(
+    runtimeDirectory,
+    acquisitionDirectoryName,
+  );
+  const recoveryDirectory = path.join(runtimeDirectory, recoveryDirectoryName);
+  for (;;) {
+    rejectExistingRecovery(recoveryDirectory, processExists);
     try {
-      writeRuntimeOwner(acquisitionDirectory, owner);
+      mkdirSync(acquisitionDirectory, { mode: 0o700 });
+      try {
+        writeRuntimeOwner(acquisitionDirectory, owner);
+      } catch (error) {
+        rmSync(acquisitionDirectory, { force: true, recursive: true });
+        throw error;
+      }
+      return;
     } catch (error) {
-      rmSync(acquisitionDirectory, { force: true, recursive: true });
-      throw error;
+      if (!isAlreadyExists(error)) {
+        throw error;
+      }
     }
-  } catch (error) {
-    if (!isAlreadyExists(error)) {
-      throw error;
-    }
+
     const acquisitionOwner = readRuntimeOwner(acquisitionDirectory);
     if (processExists(acquisitionOwner.processId)) {
       throw new Error(
         `Another RoonScape launch is acquiring runtime ownership (process ${acquisitionOwner.processId})`,
-        { cause: error },
       );
     }
-    throw new Error(
-      `Cannot safely recover interrupted runtime acquisition at ${acquisitionDirectory}; remove it only after confirming no RoonScape launch is running`,
-      { cause: error },
+    reclaimInterruptedAcquisition(
+      acquisitionDirectory,
+      recoveryDirectory,
+      acquisitionOwner,
+      owner,
+      processExists,
     );
+  }
+}
+
+function rejectExistingRecovery(
+  recoveryDirectory: string,
+  processExists: (processId: number) => boolean,
+): void {
+  if (!existsSync(recoveryDirectory)) {
+    return;
+  }
+  const recoveryOwner = readRuntimeOwner(recoveryDirectory);
+  if (processExists(recoveryOwner.processId)) {
+    throw new Error(
+      `Another RoonScape launch is recovering runtime ownership (process ${recoveryOwner.processId})`,
+    );
+  }
+  throw new Error(
+    `Cannot safely recover interrupted ownership recovery at ${recoveryDirectory}; remove it only after confirming no RoonScape launch is running`,
+  );
+}
+
+function reclaimInterruptedAcquisition(
+  acquisitionDirectory: string,
+  recoveryDirectory: string,
+  interruptedOwner: RuntimeOwner,
+  owner: RuntimeOwner,
+  processExists: (processId: number) => boolean,
+): void {
+  try {
+    mkdirSync(recoveryDirectory, { mode: 0o700 });
+    try {
+      writeRuntimeOwner(recoveryDirectory, owner);
+    } catch (error) {
+      rmSync(recoveryDirectory, { force: true, recursive: true });
+      throw error;
+    }
+  } catch (error) {
+    if (isAlreadyExists(error)) {
+      rejectExistingRecovery(recoveryDirectory, processExists);
+    }
+    throw error;
+  }
+
+  try {
+    const currentOwner = readRuntimeOwner(acquisitionDirectory);
+    if (currentOwner.token !== interruptedOwner.token) {
+      throw new Error(
+        `Runtime acquisition ownership changed at ${acquisitionDirectory}; refusing to reclaim it`,
+      );
+    }
+    if (processExists(currentOwner.processId)) {
+      throw new Error(
+        `Cannot reclaim runtime acquisition still owned by process ${currentOwner.processId}`,
+      );
+    }
+    rmSync(acquisitionDirectory, { force: true, recursive: true });
+  } finally {
+    releaseOwnedDirectory(recoveryDirectory, owner);
   }
 }
 
@@ -187,7 +259,9 @@ function reclaimVerifiedArtifacts(
 ): void {
   const artifactNames = readdirSync(runtimeDirectory).filter(
     (name) =>
-      name !== ownershipDirectoryName && name !== acquisitionDirectoryName,
+      name !== ownershipDirectoryName &&
+      name !== acquisitionDirectoryName &&
+      name !== recoveryDirectoryName,
   );
   if (artifactNames.length === 0) {
     return;

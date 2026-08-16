@@ -103,7 +103,7 @@ test("rejects the removed Display Configuration environment override", async () 
   assert.equal(result, 2);
   assert.match(
     errors.join("\n"),
-    /ROONSCAPE_DISPLAY_CONFIG is no longer supported; use --config PATH/,
+    /ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH/,
   );
 });
 
@@ -346,6 +346,48 @@ test("runtime artifacts without verifiable ownership are preserved", async () =>
   });
 });
 
+test("an interrupted runtime acquisition is reclaimed after its owner is gone", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const runtimeRoot = path.join(taskDirectory, "runtime");
+    const runtimeDirectory = path.join(runtimeRoot, "roonscape");
+    const interruptedAcquisition = path.join(runtimeDirectory, ".acquiring");
+    await mkdir(interruptedAcquisition, { mode: 0o700, recursive: true });
+    await chmod(runtimeRoot, 0o700);
+    await chmod(runtimeDirectory, 0o700);
+    await writeFile(
+      path.join(interruptedAcquisition, "session.json"),
+      '{"processId":424242,"token":"interrupted"}\n',
+      { mode: 0o600 },
+    );
+    const environment = { XDG_RUNTIME_DIR: runtimeRoot };
+    const bridge = pendingChild(() => undefined);
+    let bridgeStarted = false;
+
+    const result = await runRoonScapeCommand(
+      [],
+      commandDependencies({
+        environment,
+        loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+        openRuntime: async () =>
+          openRuntimeSession({
+            environment,
+            processId: process.pid,
+            userId: process.getuid?.() ?? 1_000,
+            processExists: () => false,
+          }),
+        launchBridge: () => {
+          bridgeStarted = true;
+          return bridge;
+        },
+        launchRenderer: () => completedChild({ exitCode: 0, signal: null }),
+      }),
+    );
+
+    assert.equal(result, 0);
+    assert.equal(bridgeStarted, true);
+  });
+});
+
 test("a child failure determines the session result and stops its peer", async () => {
   const events: string[] = [];
   const renderer = pendingChild((signal) => events.push(`renderer:${signal}`));
@@ -445,6 +487,40 @@ test("a child still running after five seconds is forcibly terminated", async ()
   assert.deepEqual(events, ["bridge:SIGTERM", "delay:5000", "bridge:SIGKILL"]);
 });
 
+test("shutdown remains bounded when a child never reports exit", async () => {
+  const events: string[] = [];
+  const errors: string[] = [];
+  const result = await runRoonScapeCommand(
+    [],
+    commandDependencies({
+      loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+      openRuntime: async () => ({
+        socketPath: "/runtime/roonscape/roonscape.sock",
+        cleanup: async () => {
+          events.push("runtime:cleanup");
+        },
+      }),
+      launchBridge: () =>
+        unresponsiveChild((signal) => events.push(`bridge:${signal}`)),
+      launchRenderer: () => completedChild({ exitCode: 0, signal: null }),
+      delay: async (milliseconds) => {
+        events.push(`delay:${milliseconds}`);
+      },
+      writeError: (line) => errors.push(line),
+    }),
+  );
+
+  assert.equal(result, 1);
+  assert.deepEqual(events, [
+    "bridge:SIGTERM",
+    "delay:5000",
+    "bridge:SIGKILL",
+    "delay:1000",
+    "runtime:cleanup",
+  ]);
+  assert.match(errors.join("\n"), /did not report exit after SIGKILL/);
+});
+
 function commandDependencies(
   overrides: Partial<RoonScapeCommandDependencies> = {},
 ): RoonScapeCommandDependencies {
@@ -510,5 +586,14 @@ function stubbornChild(
         finish?.({ exitCode: null, signal });
       }
     },
+  };
+}
+
+function unresponsiveChild(
+  observeSignal: (signal: "SIGTERM" | "SIGKILL") => void,
+): RunningChild {
+  return {
+    result: new Promise(() => undefined),
+    sendSignal: observeSignal,
   };
 }

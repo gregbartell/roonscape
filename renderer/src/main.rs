@@ -17,8 +17,8 @@ use roonscape_renderer::{
     ConnectionState, Diagnostics, DiagnosticsConfiguration, InactivityConfiguration, Presentation,
     PresentationState, PresentationTime, PresentationUpdate, RendererKey, SnapshotEvent,
     SnapshotSubscription, current_process_memory_bytes, display_configuration_file_path,
-    load_inactivity_configuration, register_packaged_fallback_fonts, select_typography,
-    should_close_renderer,
+    load_inactivity_configuration, register_packaged_fallback_fonts,
+    reject_removed_display_configuration_override, select_typography, should_close_renderer,
 };
 
 use view::{PresentationView, RenderedDiagnostics, diagnostics_view, install_style_providers};
@@ -326,13 +326,7 @@ fn combine_presentation_update(
 }
 
 fn configuration_file_from_arguments() -> Result<PathBuf, Box<dyn Error>> {
-    if env::var_os("ROONSCAPE_DISPLAY_CONFIG").is_some() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH",
-        )
-        .into());
-    }
+    reject_removed_display_configuration_override()?;
     let mut arguments = env::args_os().skip(1);
     match (arguments.next(), arguments.next(), arguments.next()) {
         (None, None, None) => Ok(display_configuration_file_path()?),

@@ -173,13 +173,18 @@ pub fn load_inactivity_configuration(
 }
 
 pub fn display_configuration_file_path() -> Result<PathBuf, DisplayConfigurationError> {
-    if env::var_os("ROONSCAPE_DISPLAY_CONFIG").is_some() {
-        return Err(DisplayConfigurationError::RemovedEnvironmentOverride);
-    }
+    reject_removed_display_configuration_override()?;
     if let Some(config_root) = env::var_os("XDG_CONFIG_HOME") {
         return Ok(PathBuf::from(config_root).join("roonscape/display.json"));
     }
 
     let home = env::var_os("HOME").ok_or(DisplayConfigurationError::MissingHome)?;
     Ok(PathBuf::from(home).join(".config/roonscape/display.json"))
+}
+
+pub fn reject_removed_display_configuration_override() -> Result<(), DisplayConfigurationError> {
+    if env::var_os("ROONSCAPE_DISPLAY_CONFIG").is_some() {
+        return Err(DisplayConfigurationError::RemovedEnvironmentOverride);
+    }
+    Ok(())
 }

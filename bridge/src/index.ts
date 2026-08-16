@@ -8,6 +8,7 @@ import {
 import {
   FileDisplayConfigurationStore,
   displayConfigurationFilePath,
+  rejectRemovedDisplayConfigurationOverride,
 } from "./display-configuration.js";
 import { startSnapshotPublisher } from "./fixture-publisher.js";
 import { initialAvailabilitySnapshot, startRoonBridge } from "./roon-bridge.js";
@@ -19,11 +20,7 @@ if (socketPath === undefined || socketPath.length === 0) {
   throw new Error("ROONSCAPE_SOCKET must name the private Unix socket");
 }
 
-if (process.env.ROONSCAPE_DISPLAY_CONFIG !== undefined) {
-  throw new Error(
-    "ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH",
-  );
-}
+rejectRemovedDisplayConfigurationOverride(process.env);
 
 const bridgeOptions = bridgeFileOptions(process.argv.slice(2));
 

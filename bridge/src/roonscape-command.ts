@@ -1,6 +1,9 @@
 import path from "node:path";
 
-import type { DisplayConfiguration } from "./display-configuration.js";
+import {
+  type DisplayConfiguration,
+  rejectRemovedDisplayConfigurationOverride,
+} from "./display-configuration.js";
 
 export type TerminationSignal = "SIGINT" | "SIGTERM";
 
@@ -81,9 +84,11 @@ export async function runRoonScapeCommand(
     return 2;
   }
 
-  if (dependencies.environment.ROONSCAPE_DISPLAY_CONFIG !== undefined) {
+  try {
+    rejectRemovedDisplayConfigurationOverride(dependencies.environment);
+  } catch (error) {
     dependencies.writeError(
-      "ROONSCAPE_DISPLAY_CONFIG is no longer supported; use --config PATH",
+      error instanceof Error ? error.message : String(error),
     );
     return 2;
   }
@@ -113,6 +118,7 @@ interface MonitoredChild {
   readonly child: RunningChild;
   readonly result: Promise<ChildResult>;
   readonly settled: boolean;
+  stopping?: Promise<void>;
 }
 
 type SessionEnding =
@@ -210,9 +216,12 @@ async function runConfiguredSession(
   }
 
   if (sessionError !== undefined) {
-    if (shutdownErrors.length > 0) {
+    const additionalShutdownErrors = shutdownErrors.filter(
+      (error) => error !== sessionError,
+    );
+    if (additionalShutdownErrors.length > 0) {
       throw new AggregateError(
-        [sessionError, ...shutdownErrors],
+        [sessionError, ...additionalShutdownErrors],
         "RoonScape session and shutdown both failed",
       );
     }
@@ -251,7 +260,14 @@ async function stopChild(
   if (child === undefined || child.settled) {
     return;
   }
+  child.stopping ??= stopChildOnce(child, dependencies);
+  return child.stopping;
+}
 
+async function stopChildOnce(
+  child: MonitoredChild,
+  dependencies: RoonScapeCommandDependencies,
+): Promise<void> {
   child.child.sendSignal("SIGTERM");
   const stopped = await Promise.race([
     child.result.then(() => true),
@@ -259,6 +275,16 @@ async function stopChild(
   ]);
   if (!stopped && !child.settled) {
     child.child.sendSignal("SIGKILL");
-    await child.result;
+    await Promise.resolve();
+    if (child.settled) {
+      return;
+    }
+    const killed = await Promise.race([
+      child.result.then(() => true),
+      dependencies.delay(1_000).then(() => false),
+    ]);
+    if (!killed) {
+      throw new Error("A RoonScape child did not report exit after SIGKILL");
+    }
   }
 }
