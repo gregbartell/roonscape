@@ -1,18 +1,18 @@
 {
   "schemaVersion": 2,
-  "revision": 20,
+  "revision": 21,
   "availability": "available",
   "playback": "playing",
   "trackedOutput": {
-    "name": "AudioDevice on the Eastern Gallery Wall Beside the Tall Windows Overlooking the Courtyard"
+    "name": "AudioDevice"
   },
   "trackedZone": {
-    "name": "Living Room, Library, Conservatory, North Hall, and the Entire Lantern-Lit Upper Floor"
+    "name": "Living Room"
   },
   "nowPlaying": {
     "title": "Last Light on Phobos",
-    "artist": "Evelyn Lark & The Orbital Choir",
-    "album": "Signals from the Quiet Sea"
+    "artist": "   ",
+    "album": "\t"
   },
   "progress": {
     "positionSeconds": 171,

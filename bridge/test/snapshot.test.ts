@@ -155,6 +155,9 @@ test("loads non-square artwork and long identity edge-case fixtures", async () =
     "fixtures/non-square-artwork.json",
   );
   const longIdentities = await loadSnapshot("fixtures/long-identities.json");
+  const blankOptionalMetadata = await loadSnapshot(
+    "fixtures/blank-optional-metadata.json",
+  );
 
   assert.deepEqual(nonSquareArtwork.artwork, {
     revision: 19,
@@ -168,6 +171,22 @@ test("loads non-square artwork and long identity edge-case fixtures", async () =
   assert.ok((longIdentities.trackedOutput?.name.length ?? 0) > 80);
   assert.ok((longIdentities.trackedZone?.name.length ?? 0) > 80);
   assert.deepEqual(longIdentities.nowPlaying, nonSquareArtwork.nowPlaying);
+  for (const snapshot of [
+    nonSquareArtwork,
+    longIdentities,
+    blankOptionalMetadata,
+  ]) {
+    assert.deepEqual(snapshot.progress, {
+      positionSeconds: 171,
+      durationSeconds: 266,
+      sampledAt: "2026-08-15T19:20:00Z",
+    });
+  }
+  assert.deepEqual(blankOptionalMetadata.nowPlaying, {
+    title: "Last Light on Phobos",
+    artist: "   ",
+    album: "\t",
+  });
 });
 
 test("loads every shared unavailable fixture without stale Now Playing", async () => {

@@ -47,6 +47,15 @@ fn independently_collapses_each_missing_optional_metadata_line() {
 }
 
 #[test]
+fn collapses_blank_optional_metadata_without_dead_spacing() {
+    let layout = metadata_layout(&now_playing("blank-optional-metadata.json"));
+
+    assert!(layout.title.is_some());
+    assert_eq!(layout.artist, None);
+    assert_eq!(layout.album, None);
+}
+
+#[test]
 fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
     let presentation = now_playing("long-metadata.json");
     let layout = metadata_layout(&presentation);

@@ -150,6 +150,19 @@ fn parses_non_square_artwork_and_long_identity_fixtures() {
 }
 
 #[test]
+fn parses_blank_optional_metadata_for_renderer_normalization() {
+    let snapshot = parse_snapshot(&support::fixture("blank-optional-metadata.json"))
+        .expect("blank optional metadata fixture should satisfy the shared contract");
+    let now_playing = snapshot
+        .now_playing
+        .expect("blank optional metadata fixture should carry Now Playing");
+
+    assert_eq!(now_playing.title.as_deref(), Some("Last Light on Phobos"));
+    assert_eq!(now_playing.artist.as_deref(), Some("   "));
+    assert_eq!(now_playing.album.as_deref(), Some("\t"));
+}
+
+#[test]
 fn rejects_the_shared_invalid_fixture() {
     let fixture = support::fixture("invalid.json");
 

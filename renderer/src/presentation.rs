@@ -392,9 +392,15 @@ fn presentation_from_snapshot_after(
     }
     let now_playing = snapshot.now_playing.as_ref();
     let now_playing = NowPlayingPresentation {
-        title: now_playing.and_then(|now_playing| now_playing.title.clone()),
-        artist: now_playing.and_then(|now_playing| now_playing.artist.clone()),
-        album: now_playing.and_then(|now_playing| now_playing.album.clone()),
+        title: usable_metadata_line(
+            now_playing.and_then(|now_playing| now_playing.title.as_deref()),
+        ),
+        artist: usable_metadata_line(
+            now_playing.and_then(|now_playing| now_playing.artist.as_deref()),
+        ),
+        album: usable_metadata_line(
+            now_playing.and_then(|now_playing| now_playing.album.as_deref()),
+        ),
         tracked_output: tracked_output.name.clone(),
         tracked_zone: tracked_zone.name.clone(),
         playback,
@@ -413,6 +419,12 @@ fn presentation_from_snapshot_after(
     }
 
     Ok(Presentation::NowPlaying(now_playing))
+}
+
+fn usable_metadata_line(value: Option<&str>) -> Option<String> {
+    value
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_owned)
 }
 
 fn available_full_field(

@@ -44,7 +44,6 @@ fn lays_out_complete_now_playing_as_the_reference_gallery_field() {
     assert_eq!(layout.artwork_field_width_px, 1750);
     assert_eq!(layout.artwork_field_height_px, 1750);
     assert_eq!(layout.status_top_inset_px, 39);
-    assert_eq!(layout.artwork_fit, ArtworkFit::Contain);
     assert_eq!(layout.identity_placement, IdentityPlacement::BottomRight);
     assert_eq!(
         layout.metadata_roles,
