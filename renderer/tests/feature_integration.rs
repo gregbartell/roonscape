@@ -140,7 +140,7 @@ fn local_disconnect_clears_a_transition_and_reconnect_keeps_resources_bounded() 
     assert_eq!(disconnected.inactivity, InactivityTransform::default());
     assert!(matches!(
         &disconnected.presentation,
-        Presentation::Unavailable(_)
+        Presentation::FullField(_)
     ));
     let (discarded_current, discarded_outgoing) =
         transition.replace_immediately(state.revision(), disconnected.presentation);

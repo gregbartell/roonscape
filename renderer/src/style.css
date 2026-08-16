@@ -16,6 +16,11 @@ window {
   border-radius: 999px;
 }
 
+.quiet-state .state-dot {
+  opacity: 0.58;
+  box-shadow: none;
+}
+
 .state-label {
   font-weight: 700;
 }
@@ -52,32 +57,16 @@ progressbar progress {
   font-weight: 600;
 }
 
-.unavailable-field {
-  border-right-width: 1px;
-  border-right-style: solid;
+.full-copy {
+  border-left-style: solid;
 }
 
-.unavailable-copy {
-  padding: 48px 132px 48px 104px;
+.full-field-heading {
+  font-weight: 400;
 }
 
-.unavailable-message {
-  padding-bottom: 46px;
-}
-
-.unavailable-state {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.unavailable-heading {
-  font-size: 78px;
-  font-weight: 500;
-}
-
-.unavailable-explanation {
-  margin-top: 30px;
-  font-size: 28px;
+.full-field-explanation {
+  line-height: 1.45;
 }
 
 .diagnostics {

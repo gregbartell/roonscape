@@ -63,7 +63,7 @@ fn report_connection(
     };
     let presentation = match presentation.presentation_at(now)? {
         Presentation::NowPlaying(_) => "nowPlaying",
-        Presentation::Unavailable(unavailable) => match unavailable.state_label {
+        Presentation::FullField(full_field) => match full_field.state_label {
             "Disconnected" => "disconnected",
             _ => "unavailable",
         },

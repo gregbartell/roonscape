@@ -29,8 +29,8 @@ pub use ipc::{
 };
 pub use keyboard::{RendererKey, should_close_renderer};
 pub use layout::{
-    ArtworkFit, GalleryField, GallerySplitLayout, GallerySplitRole, GallerySplitTypography,
-    IdentityPlacement, MetadataFontSizes, Viewport,
+    ArtworkFit, FullFieldLayout, GalleryField, GallerySplitLayout, GallerySplitRole,
+    GallerySplitTypography, IdentityPlacement, MetadataFontSizes, Viewport,
 };
 pub use metadata::{
     MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout,
@@ -38,10 +38,10 @@ pub use metadata::{
 };
 pub use palette::{PaletteError, PresentationPalette, Rgb};
 pub use presentation::{
-    INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform, LayoutOffset,
-    NowPlayingPresentation, Presentation, PresentationError, PresentationFrame,
+    FullFieldPresentation, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform,
+    LayoutOffset, NowPlayingPresentation, Presentation, PresentationError, PresentationFrame,
     PresentationProgress, PresentationState, PresentationTime, PresentationUpdate,
-    UnavailablePresentation, presentation_from_snapshot,
+    presentation_from_snapshot,
 };
 pub use style::presentation_palette_styles;
 pub use transition::{PresentationRevision, PresentationTransition};

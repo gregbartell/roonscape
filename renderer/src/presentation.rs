@@ -5,7 +5,9 @@ use std::time::{Duration, SystemTime};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-use crate::contract::{Availability, Playback, PresentationSnapshot, Progress};
+use crate::contract::{
+    Availability, Playback, PresentationSnapshot, Progress, TrackedOutput, TrackedZone,
+};
 use crate::display_configuration::InactivityConfiguration;
 
 pub const INACTIVE_HORIZONTAL_BOUND: i32 = 18;
@@ -43,7 +45,7 @@ const INACTIVE_POSITIONS: [LayoutOffset; 8] = [
 #[derive(Debug, PartialEq)]
 pub enum Presentation {
     NowPlaying(NowPlayingPresentation),
-    Unavailable(UnavailablePresentation),
+    FullField(FullFieldPresentation),
 }
 
 #[derive(Debug, PartialEq)]
@@ -60,10 +62,12 @@ pub struct NowPlayingPresentation {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct UnavailablePresentation {
+pub struct FullFieldPresentation {
     pub state_label: &'static str,
     pub heading: &'static str,
-    pub explanation: &'static str,
+    pub explanation: Option<&'static str>,
+    pub tracked_output: Option<String>,
+    pub tracked_zone: Option<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -351,7 +355,7 @@ fn presentation_from_snapshot_after(
     elapsed: Duration,
 ) -> Result<Presentation, PresentationError> {
     if snapshot.availability != Availability::Available {
-        return Ok(Presentation::Unavailable(unavailable_presentation(
+        return Ok(Presentation::FullField(unavailable_presentation(
             snapshot.availability,
         )));
     }
@@ -365,12 +369,28 @@ fn presentation_from_snapshot_after(
     let tracked_zone = snapshot.tracked_zone.as_ref().ok_or(PresentationError(
         "an available snapshot requires a Tracked Zone",
     ))?;
-    let retains_now_playing = playback != Playback::Stopped;
-    let now_playing = if retains_now_playing {
-        snapshot.now_playing.as_ref()
-    } else {
-        None
-    };
+    if playback == Playback::Stopped {
+        return Ok(Presentation::FullField(available_full_field(
+            "Idle",
+            "Nothing is playing",
+            tracked_output,
+            tracked_zone,
+        )));
+    }
+    if !has_usable_now_playing(snapshot) {
+        let heading = if playback == Playback::Loading {
+            "Loading"
+        } else {
+            "Now Playing details unavailable"
+        };
+        return Ok(Presentation::FullField(available_full_field(
+            playback_label(playback),
+            heading,
+            tracked_output,
+            tracked_zone,
+        )));
+    }
+    let now_playing = snapshot.now_playing.as_ref();
 
     Ok(Presentation::NowPlaying(NowPlayingPresentation {
         title: now_playing.and_then(|now_playing| now_playing.title.clone()),
@@ -379,46 +399,75 @@ fn presentation_from_snapshot_after(
         tracked_output: tracked_output.name.clone(),
         tracked_zone: tracked_zone.name.clone(),
         playback_state: playback_label(playback).to_owned(),
-        progress: if retains_now_playing {
-            snapshot
-                .progress
-                .as_ref()
-                .map(|progress| presentation_progress(progress, playback, elapsed))
-        } else {
-            None
-        },
-        artwork_revision: if retains_now_playing {
-            snapshot.artwork.as_ref().map(|artwork| artwork.revision)
-        } else {
-            None
-        },
-        artwork_path: if retains_now_playing {
-            snapshot
-                .artwork
-                .as_ref()
-                .map(|artwork| artwork.path.clone())
-        } else {
-            None
-        },
+        progress: snapshot
+            .progress
+            .as_ref()
+            .map(|progress| presentation_progress(progress, playback, elapsed)),
+        artwork_revision: snapshot.artwork.as_ref().map(|artwork| artwork.revision),
+        artwork_path: snapshot
+            .artwork
+            .as_ref()
+            .map(|artwork| artwork.path.clone()),
     }))
 }
 
-fn unavailable_presentation(availability: Availability) -> UnavailablePresentation {
+fn has_usable_now_playing(snapshot: &PresentationSnapshot) -> bool {
+    let has_metadata = snapshot.now_playing.as_ref().is_some_and(|now_playing| {
+        [
+            now_playing.title.as_deref(),
+            now_playing.artist.as_deref(),
+            now_playing.album.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|value| !value.trim().is_empty())
+    });
+    has_metadata || snapshot.artwork.is_some()
+}
+
+fn available_full_field(
+    state_label: &'static str,
+    heading: &'static str,
+    tracked_output: &TrackedOutput,
+    tracked_zone: &TrackedZone,
+) -> FullFieldPresentation {
+    FullFieldPresentation {
+        state_label,
+        heading,
+        explanation: None,
+        tracked_output: Some(tracked_output.name.clone()),
+        tracked_zone: Some(tracked_zone.name.clone()),
+    }
+}
+
+fn unavailable_presentation(availability: Availability) -> FullFieldPresentation {
     match availability {
-        Availability::PairingRequired => UnavailablePresentation {
+        Availability::PairingRequired => FullFieldPresentation {
             state_label: "Pairing required",
             heading: "Enable RoonScape",
-            explanation: "Open Settings → Extensions in a Roon client, then enable RoonScape.",
+            explanation: Some(
+                "Open Settings → Extensions in a Roon client, then enable RoonScape.",
+            ),
+            tracked_output: None,
+            tracked_zone: None,
         },
-        Availability::Disconnected => UnavailablePresentation {
+        Availability::Disconnected => FullFieldPresentation {
             state_label: "Disconnected",
             heading: "Waiting for Roon",
-            explanation: "Check Roon Server and the network. This display updates when Roon returns.",
+            explanation: Some(
+                "Check Roon Server and the network. This display updates when Roon returns.",
+            ),
+            tracked_output: None,
+            tracked_zone: None,
         },
-        Availability::OutputUnavailable => UnavailablePresentation {
+        Availability::OutputUnavailable => FullFieldPresentation {
             state_label: "Output unavailable",
             heading: "Tracked Output unavailable",
-            explanation: "Configure a Tracked Output on this RoonScape Host, or check that the selected output is available in Roon.",
+            explanation: Some(
+                "Configure a Tracked Output on this RoonScape Host, or check that the selected output is available in Roon.",
+            ),
+            tracked_output: None,
+            tracked_zone: None,
         },
         Availability::Available => unreachable!("available snapshots use Now Playing"),
     }

@@ -22,7 +22,7 @@ fn coordinated(fixture_name: &str) -> (u64, CoordinatedPresentation) {
         .expect("transition fixture should produce a presentation");
     let artwork_path = match &presentation {
         Presentation::NowPlaying(now_playing) => now_playing.artwork_path.clone(),
-        Presentation::Unavailable(_) => None,
+        Presentation::FullField(_) => None,
     };
     let resolved_artwork = artwork_path
         .as_deref()

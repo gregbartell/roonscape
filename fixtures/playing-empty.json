@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 2,
+  "revision": 17,
+  "availability": "available",
+  "playback": "playing",
+  "trackedOutput": {
+    "name": "AudioDevice"
+  },
+  "trackedZone": {
+    "name": "Living Room"
+  },
+  "nowPlaying": null,
+  "progress": null,
+  "artwork": null
+}

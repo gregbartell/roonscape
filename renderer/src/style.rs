@@ -1,9 +1,10 @@
-use crate::{GallerySplitLayout, PresentationPalette};
+use crate::{FullFieldLayout, GallerySplitLayout, PresentationPalette};
 
 pub fn presentation_palette_styles(
     class_name: &str,
     palette: PresentationPalette,
     layout: &GallerySplitLayout,
+    full_field_layout: &FullFieldLayout,
 ) -> String {
     let background = palette.background.to_hex();
     let artwork_field = palette.artwork_field.to_hex();
@@ -16,21 +17,21 @@ pub fn presentation_palette_styles(
     let progress_fill = palette.progress_fill.to_hex();
     let shadow_offset = layout.artwork_shadow_offset_px;
     let shadow_blur = layout.artwork_shadow_blur_px;
+    let accent_width = full_field_layout.accent_width_px;
     format!(
         ".{class_name} {{ background-color: {background}; color: {primary_text}; }}\n\
          .{class_name}.gallery-split {{ background-image: linear-gradient(118deg, {artwork_field} 0%, {background} 62%, {metadata_field} 100%); }}\n\
          .{class_name} .artwork-frame {{ box-shadow: 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.72); }}\n\
          .{class_name} .artwork {{ border-color: alpha({primary_text}, 0.16); background-color: {artwork_field}; }}\n\
          .{class_name} .artwork-missing {{ border-color: alpha({muted_text}, 0.22); background-image: linear-gradient(142deg, alpha({muted_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16); }}\n\
-         .{class_name}.unavailable .unavailable-copy {{ background-color: {metadata_field}; }}\n\
-         .{class_name} .playback-state, .{class_name} .unavailable-state {{ color: {accent}; }}\n\
+         .{class_name}.full-field .full-copy {{ border-left: {accent_width}px solid {accent}; }}\n\
+         .{class_name} .playback-state {{ color: {accent}; }}\n\
          .{class_name} .state-dot {{ background-color: {accent}; box-shadow: 0 0 18px alpha({accent}, 0.72); }}\n\
-         .{class_name} .title, .{class_name} .unavailable-heading {{ color: {primary_text}; }}\n\
-         .{class_name} .artist, .{class_name} .album, .{class_name} .time, .{class_name} .identity-name, .{class_name} .unavailable-explanation {{ color: {secondary_text}; }}\n\
+         .{class_name} .title, .{class_name} .full-field-heading {{ color: {primary_text}; }}\n\
+         .{class_name} .artist, .{class_name} .album, .{class_name} .time, .{class_name} .identity-name {{ color: {secondary_text}; }}\n\
+         .{class_name} .full-field-explanation {{ color: {muted_text}; }}\n\
          .{class_name} .identity-label {{ color: {muted_text}; }}\n\
          .{class_name} progressbar trough {{ background-color: {progress_track}; }}\n\
-         .{class_name} progressbar progress {{ background-color: {progress_fill}; }}\n\
-         .{class_name}.unavailable {{ background-color: {background}; }}\n\
-         .{class_name} .unavailable-field {{ border-color: alpha({muted_text}, 0.12); background-image: linear-gradient(142deg, {artwork_field}, {background} 72%); }}\n"
+         .{class_name} progressbar progress {{ background-color: {progress_fill}; }}\n"
     )
 }

@@ -74,6 +74,49 @@ pub struct GallerySplitTypography {
     pub identity_px: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FullFieldLayout {
+    pub outer_gutter_px: u32,
+    pub copy_width_px: u32,
+    pub accent_width_px: u32,
+    pub accent_padding_px: u32,
+    pub status_spacing_px: u32,
+    pub state_dot_size_px: u32,
+    pub status_px: u32,
+    pub status_letter_spacing_px: u32,
+    pub heading_px: u32,
+    pub explanation_spacing_px: u32,
+    pub explanation_px: u32,
+    pub identity_width_px: u32,
+    pub identity_gap_px: u32,
+    pub identity_px: u32,
+    pub identity_placement: IdentityPlacement,
+}
+
+impl FullFieldLayout {
+    pub fn for_viewport(viewport: Viewport) -> Self {
+        let status_px = scaled(viewport.width_px, 0.008, 12, 30);
+        let explanation_px = scaled(viewport.width_px, 0.0135, 16, 46);
+        Self {
+            outer_gutter_px: scaled(viewport.width_px, 0.042, 32, 160),
+            copy_width_px: ((viewport.width_px as f64) * 0.70).round().min(1088.0) as u32,
+            accent_width_px: scaled(viewport.width_px, 0.0038, 5, 15),
+            accent_padding_px: scaled(viewport.width_px, 0.04, 32, 144),
+            status_spacing_px: scaled(viewport.height_px, 0.036, 29, 80),
+            state_dot_size_px: ((status_px as f64) * 0.58).round() as u32,
+            status_px,
+            status_letter_spacing_px: ((status_px as f64) * 0.13).round() as u32,
+            heading_px: scaled(viewport.width_px, 0.062, 51, 208),
+            explanation_spacing_px: ((explanation_px as f64) * 0.9).round() as u32,
+            explanation_px,
+            identity_width_px: ((viewport.width_px as f64) * 0.38).round().min(864.0) as u32,
+            identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
+            identity_px: scaled(viewport.width_px, 0.0072, 11, 27),
+            identity_placement: IdentityPlacement::BottomRight,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GallerySplitLayout {
     pub field: GalleryField,

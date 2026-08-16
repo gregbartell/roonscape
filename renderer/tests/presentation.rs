@@ -3,7 +3,7 @@ mod support;
 use std::time::{Duration, UNIX_EPOCH};
 
 use roonscape_renderer::{
-    InactivityConfiguration, InactivityTransform, LayoutOffset, Playback, Presentation,
+    InactivityConfiguration, InactivityTransform, LayoutOffset, NowPlaying, Playback, Presentation,
     PresentationState, PresentationTime, PresentationUpdate, parse_snapshot,
     presentation_from_snapshot,
 };
@@ -113,8 +113,8 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
         let snapshot = parse_snapshot(&fixture).expect("unavailable fixture should be valid");
         let presentation = presentation_from_snapshot(&snapshot)
             .expect("unavailable snapshot should produce a presentation");
-        let Presentation::Unavailable(presentation) = presentation else {
-            panic!("unavailable snapshot must not retain Now Playing content");
+        let Presentation::FullField(presentation) = presentation else {
+            panic!("unavailable snapshot should use the full-field presentation");
         };
 
         assert_eq!(
@@ -123,9 +123,81 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
                 presentation.heading,
                 presentation.explanation,
             ),
-            (state_label, heading, explanation),
+            (state_label, heading, Some(explanation)),
         );
+        assert_eq!(presentation.tracked_output, None);
+        assert_eq!(presentation.tracked_zone, None);
     }
+}
+
+#[test]
+fn presents_stopped_playback_as_idle_full_field_copy_with_authoritative_identities() {
+    let snapshot =
+        parse_snapshot(&support::fixture("stopped.json")).expect("Stopped fixture should be valid");
+
+    let presentation = presentation_from_snapshot(&snapshot)
+        .expect("Stopped playback should produce a presentation");
+    let Presentation::FullField(presentation) = presentation else {
+        panic!("Stopped playback should use the full-field presentation");
+    };
+
+    assert_eq!(presentation.state_label, "Idle");
+    assert_eq!(presentation.heading, "Nothing is playing");
+    assert_eq!(presentation.explanation, None);
+    assert_eq!(presentation.tracked_output.as_deref(), Some("AudioDevice"));
+    assert_eq!(presentation.tracked_zone.as_deref(), Some("Living Room"));
+}
+
+#[test]
+fn presents_empty_loading_as_full_field_copy_with_authoritative_identities() {
+    let snapshot = parse_snapshot(&support::fixture("loading-empty.json"))
+        .expect("empty Loading fixture should be valid");
+
+    let presentation =
+        presentation_from_snapshot(&snapshot).expect("empty Loading should produce a presentation");
+    let Presentation::FullField(presentation) = presentation else {
+        panic!("empty Loading should use the full-field presentation");
+    };
+
+    assert_eq!(presentation.state_label, "Loading");
+    assert_eq!(presentation.heading, "Loading");
+    assert_eq!(presentation.explanation, None);
+    assert_eq!(presentation.tracked_output.as_deref(), Some("AudioDevice"));
+    assert_eq!(presentation.tracked_zone.as_deref(), Some("Living Room"));
+}
+
+#[test]
+fn presents_playing_without_usable_content_as_a_truthful_full_field() {
+    let snapshot = parse_snapshot(&support::fixture("playing-empty.json"))
+        .expect("trackless Playing fixture should be valid");
+
+    let presentation = presentation_from_snapshot(&snapshot)
+        .expect("trackless Playing should produce a presentation");
+    let Presentation::FullField(presentation) = presentation else {
+        panic!("trackless Playing should use the full-field presentation");
+    };
+
+    assert_eq!(presentation.state_label, "Playing");
+    assert_eq!(presentation.heading, "Now Playing details unavailable");
+    assert_eq!(presentation.explanation, None);
+    assert_eq!(presentation.tracked_output.as_deref(), Some("AudioDevice"));
+    assert_eq!(presentation.tracked_zone.as_deref(), Some("Living Room"));
+}
+
+#[test]
+fn treats_whitespace_only_now_playing_as_unusable_content() {
+    let mut snapshot = parse_snapshot(&support::fixture("playing-empty.json"))
+        .expect("trackless Playing fixture should be valid");
+    snapshot.now_playing = Some(NowPlaying {
+        title: Some("  ".to_owned()),
+        artist: Some("\t".to_owned()),
+        album: Some("\n".to_owned()),
+    });
+
+    let presentation = presentation_from_snapshot(&snapshot)
+        .expect("whitespace-only Now Playing should produce a presentation");
+
+    assert!(matches!(presentation, Presentation::FullField(_)));
 }
 
 #[test]
@@ -207,12 +279,14 @@ fn reanchors_playing_progress_when_a_new_source_sample_arrives() {
 
 #[test]
 fn clamps_source_and_locally_advanced_progress_at_duration() {
-    for (fixture_name, now) in [
-        ("playing-past-duration.json", Duration::ZERO),
-        ("playing.json", Duration::from_secs(1_000)),
-    ] {
-        let snapshot = parse_snapshot(&support::fixture(fixture_name))
-            .expect("clamping fixture should be valid");
+    for (source_position, now) in [(300.0, Duration::ZERO), (171.0, Duration::from_secs(1_000))] {
+        let mut snapshot = parse_snapshot(&support::fixture("playing.json"))
+            .expect("Playing fixture should be valid");
+        snapshot
+            .progress
+            .as_mut()
+            .expect("Playing fixture should have progress")
+            .position_seconds = source_position;
         let state = PresentationState::new(snapshot, presentation_time(0, PLAYING_SAMPLED_AT))
             .expect("clamping fixture should anchor a presentation");
         let presentation = state
@@ -250,8 +324,6 @@ fn presents_each_playback_state_without_inventing_now_playing() {
             Some("Last Light on Phobos"),
             Some(3),
         ),
-        ("loading-empty.json", "Loading", None, None),
-        ("stopped.json", "Stopped", None, None),
     ];
 
     for (fixture_name, state_label, title, artwork_revision) in fixtures {
@@ -266,12 +338,6 @@ fn presents_each_playback_state_without_inventing_now_playing() {
         assert_eq!(presentation.playback_state, state_label);
         assert_eq!(presentation.title.as_deref(), title);
         assert_eq!(presentation.artwork_revision, artwork_revision);
-        if state_label == "Stopped" {
-            assert_eq!(presentation.artist, None);
-            assert_eq!(presentation.album, None);
-            assert_eq!(presentation.progress, None);
-            assert_eq!(presentation.artwork_path, None);
-        }
     }
 }
 
@@ -283,17 +349,13 @@ fn clears_now_playing_from_a_stopped_presentation() {
 
     let presentation = presentation_from_snapshot(&snapshot)
         .expect("Stopped playback should produce a presentation");
-    let Presentation::NowPlaying(presentation) = presentation else {
-        panic!("available playback should produce an available presentation");
+    let Presentation::FullField(presentation) = presentation else {
+        panic!("Stopped playback should replace stale content with a full-field presentation");
     };
 
-    assert_eq!(presentation.playback_state, "Stopped");
-    assert_eq!(presentation.title, None);
-    assert_eq!(presentation.artist, None);
-    assert_eq!(presentation.album, None);
-    assert_eq!(presentation.progress, None);
-    assert_eq!(presentation.artwork_revision, None);
-    assert_eq!(presentation.artwork_path, None);
+    assert_eq!(presentation.state_label, "Idle");
+    assert_eq!(presentation.heading, "Nothing is playing");
+    assert_eq!(presentation.explanation, None);
 }
 
 #[test]
@@ -520,7 +582,7 @@ fn changing_inactive_condition_restarts_the_grace_period() {
         .frame_at(Duration::from_secs(6))
         .expect("changed presentation should render");
     assert_eq!(changed.inactivity, InactivityTransform::default());
-    assert!(matches!(changed.presentation, Presentation::Unavailable(_)));
+    assert!(matches!(changed.presentation, Presentation::FullField(_)));
     assert_eq!(
         state
             .frame_at(Duration::from_millis(10_999))
@@ -631,7 +693,7 @@ fn clears_now_playing_while_the_bridge_is_disconnected_and_recovers_after_reconn
         state.disconnect(Duration::from_secs(11)),
         PresentationUpdate::ReplaceImmediately
     );
-    let Presentation::Unavailable(disconnected) = state
+    let Presentation::FullField(disconnected) = state
         .presentation_at(Duration::from_secs(11))
         .expect("disconnection should remain presentable")
     else {

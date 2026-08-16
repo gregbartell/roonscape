@@ -159,6 +159,7 @@ fn parses_every_shared_unavailable_fixture_without_stale_content() {
 fn parses_every_shared_playback_state_with_truthful_now_playing() {
     let fixtures = [
         ("playing.json", Playback::Playing, true, true),
+        ("playing-empty.json", Playback::Playing, false, false),
         ("paused.json", Playback::Paused, true, true),
         ("loading.json", Playback::Loading, true, true),
         ("loading-empty.json", Playback::Loading, false, false),

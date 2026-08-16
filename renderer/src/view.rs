@@ -5,12 +5,12 @@ use gtk::gdk;
 use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    ArtworkFit, GalleryField, GallerySplitLayout, GallerySplitRole, INACTIVE_HORIZONTAL_BOUND,
-    INACTIVE_VERTICAL_BOUND, IdentityPlacement, InactivityTransform, MetadataFontSizes,
-    MetadataLineLayout, MetadataTypography, NowPlayingPresentation, Presentation,
-    PresentationPalette, PresentationProgress, PresentationRevision, PresentationTransition,
-    TypographyPair, UnavailablePresentation, Viewport, metadata_layout_for_viewport,
-    presentation_palette_styles,
+    ArtworkFit, FullFieldLayout, FullFieldPresentation, GalleryField, GallerySplitLayout,
+    GallerySplitRole, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, IdentityPlacement,
+    InactivityTransform, MetadataFontSizes, MetadataLineLayout, MetadataTypography,
+    NowPlayingPresentation, Presentation, PresentationPalette, PresentationProgress,
+    PresentationRevision, PresentationTransition, TypographyPair, Viewport,
+    metadata_layout_for_viewport, presentation_palette_styles,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -29,6 +29,7 @@ struct RenderedPresentation {
     progress: Option<RenderedProgress>,
     palette: PresentationPalette,
     gallery_split: Option<RenderedGallerySplit>,
+    full_field: Option<RenderedFullField>,
 }
 
 pub(crate) struct RenderedDiagnostics {
@@ -74,6 +75,15 @@ struct RenderedGallerySplit {
     artwork_frame: gtk::AspectFrame,
     metadata_slot: gtk::Box,
     metadata: RenderedMetadata,
+}
+
+struct RenderedFullField {
+    copy: gtk::Box,
+    message: gtk::Box,
+    playback_state: RenderedPlaybackState,
+    heading: gtk::Label,
+    explanation: Option<gtk::Label>,
+    identity: Option<RenderedIdentity>,
 }
 
 struct RenderedPlaybackState {
@@ -233,18 +243,21 @@ impl PresentationView {
     }
 
     fn install_palette_styles(&self) {
-        let layout =
-            GallerySplitLayout::for_viewport(self.viewport.unwrap_or(Viewport::WINDOWED_FIXTURE));
+        let viewport = self.viewport.unwrap_or(Viewport::WINDOWED_FIXTURE);
+        let layout = GallerySplitLayout::for_viewport(viewport);
+        let full_field_layout = FullFieldLayout::for_viewport(viewport);
         let mut styles = presentation_palette_styles(
             CURRENT_LAYER_CLASS,
             self.transition.current().value().palette,
             &layout,
+            &full_field_layout,
         );
         if let Some(outgoing) = self.transition.outgoing() {
             styles.push_str(&presentation_palette_styles(
                 OUTGOING_LAYER_CLASS,
                 outgoing.value().palette,
                 &layout,
+                &full_field_layout,
             ));
         }
         self.palette_provider.load_from_data(&styles);
@@ -255,6 +268,9 @@ impl RenderedPresentation {
     fn apply_viewport(&self, viewport: Viewport) {
         if let Some(gallery_split) = self.gallery_split.as_ref() {
             gallery_split.apply_layout(&GallerySplitLayout::for_viewport(viewport));
+        }
+        if let Some(full_field) = self.full_field.as_ref() {
+            full_field.apply_layout(&FullFieldLayout::for_viewport(viewport));
         }
     }
 }
@@ -275,12 +291,76 @@ fn render_presentation(
         Presentation::NowPlaying(presentation) => {
             gallery_split(presentation, repository_root, palette)
         }
-        Presentation::Unavailable(presentation) => RenderedPresentation {
-            root: unavailable(presentation).upcast(),
-            progress: None,
-            palette,
-            gallery_split: None,
-        },
+        Presentation::FullField(presentation) => full_field(presentation, palette),
+    }
+}
+
+fn full_field(
+    presentation: &FullFieldPresentation,
+    palette: PresentationPalette,
+) -> RenderedPresentation {
+    let layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
+    let root = gtk::Overlay::new();
+    root.add_css_class("full-field");
+    root.set_hexpand(true);
+    root.set_vexpand(true);
+
+    let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    copy.add_css_class("full-copy");
+    copy.set_halign(gtk::Align::Center);
+    copy.set_valign(gtk::Align::Center);
+
+    let message = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let state = playback_state(presentation.state_label);
+    if matches!(presentation.state_label, "Idle" | "Loading") {
+        state.root.add_css_class("quiet-state");
+    }
+    message.append(&state.root);
+
+    let heading = metadata_label(presentation.heading, "full-field-heading");
+    heading.add_css_class("editorial-text");
+    heading.set_lines(3);
+    heading.set_max_width_chars(13);
+    heading.set_wrap(true);
+    heading.set_wrap_mode(pango::WrapMode::WordChar);
+    message.append(&heading);
+
+    let explanation = presentation.explanation.map(|explanation| {
+        let explanation = metadata_label(explanation, "full-field-explanation");
+        explanation.add_css_class("utility-text");
+        explanation.set_max_width_chars(35);
+        explanation.set_wrap(true);
+        explanation.set_wrap_mode(pango::WrapMode::WordChar);
+        message.append(&explanation);
+        explanation
+    });
+    copy.append(&message);
+    root.set_child(Some(&copy));
+
+    let identity = if let (Some(tracked_output), Some(tracked_zone)) = (
+        presentation.tracked_output.as_deref(),
+        presentation.tracked_zone.as_deref(),
+    ) {
+        let identity = tracked_identity(tracked_output, tracked_zone, layout.identity_placement);
+        root.add_overlay(&identity.root);
+        Some(identity)
+    } else {
+        None
+    };
+
+    RenderedPresentation {
+        root: root.upcast(),
+        progress: None,
+        palette,
+        gallery_split: None,
+        full_field: Some(RenderedFullField {
+            copy,
+            message,
+            playback_state: state,
+            heading,
+            explanation,
+            identity,
+        }),
     }
 }
 
@@ -348,6 +428,7 @@ fn gallery_split(
         progress,
         palette,
         gallery_split: Some(gallery_split),
+        full_field: None,
     }
 }
 
@@ -515,6 +596,41 @@ impl RenderedGallerySplit {
     }
 }
 
+impl RenderedFullField {
+    fn apply_layout(&self, layout: &FullFieldLayout) {
+        self.copy.set_width_request(dimension(layout.copy_width_px));
+        self.message
+            .set_margin_start(dimension(layout.accent_padding_px));
+        self.playback_state
+            .root
+            .set_spacing(dimension(layout.state_dot_size_px));
+        self.playback_state
+            .root
+            .set_margin_bottom(dimension(layout.status_spacing_px));
+        let dot_size = dimension(layout.state_dot_size_px);
+        self.playback_state.dot.set_size_request(dot_size, dot_size);
+        set_status_label_typography(
+            &self.playback_state.label,
+            layout.status_px,
+            layout.status_letter_spacing_px,
+        );
+        set_label_font_size(&self.heading, layout.heading_px);
+        if let Some(explanation) = self.explanation.as_ref() {
+            explanation.set_margin_top(dimension(layout.explanation_spacing_px));
+            set_label_font_size(explanation, layout.explanation_px);
+        }
+        if let Some(identity) = self.identity.as_ref() {
+            let gutter = dimension(layout.outer_gutter_px);
+            identity.root.set_margin_end(gutter);
+            identity.root.set_margin_bottom(gutter);
+            identity
+                .root
+                .set_width_request(dimension(layout.identity_width_px));
+            identity.apply_layout(layout.identity_gap_px, layout.identity_px);
+        }
+    }
+}
+
 impl RenderedMetadata {
     fn apply_layout(&self, layout: &GallerySplitLayout) {
         self.playback_state
@@ -561,19 +677,20 @@ impl RenderedMetadata {
         }
 
         self.identity
-            .root
-            .set_column_spacing(layout.identity_gap_px);
-        let identity_label_size = ((layout.typography.identity_px as f64) * 0.84).round() as u32;
-        set_label_font_size(&self.identity.output_label, identity_label_size);
-        set_label_font_size(&self.identity.output_name, layout.typography.identity_px);
-        set_label_font_size(&self.identity.zone_label, identity_label_size);
-        set_label_font_size(&self.identity.zone_name, layout.typography.identity_px);
-        self.identity
-            .output_label
-            .set_margin_end(dimension(identity_label_size / 2));
-        self.identity
-            .zone_label
-            .set_margin_end(dimension(identity_label_size / 2));
+            .apply_layout(layout.identity_gap_px, layout.typography.identity_px);
+    }
+}
+
+impl RenderedIdentity {
+    fn apply_layout(&self, gap_px: u32, name_px: u32) {
+        self.root.set_column_spacing(gap_px);
+        let label_px = ((name_px as f64) * 0.84).round() as u32;
+        set_label_font_size(&self.output_label, label_px);
+        set_label_font_size(&self.output_name, name_px);
+        set_label_font_size(&self.zone_label, label_px);
+        set_label_font_size(&self.zone_name, name_px);
+        self.output_label.set_margin_end(dimension(label_px / 2));
+        self.zone_label.set_margin_end(dimension(label_px / 2));
     }
 }
 
@@ -597,49 +714,6 @@ fn fit_metadata_line(label: &gtk::Label, sizes: MetadataFontSizes) {
 
 fn dimension(value: u32) -> i32 {
     i32::try_from(value).expect("supported viewport dimensions fit GTK's signed sizes")
-}
-
-fn unavailable(presentation: &UnavailablePresentation) -> gtk::Box {
-    let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    root.add_css_class("unavailable");
-
-    let quiet_field = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    quiet_field.add_css_class("unavailable-field");
-    quiet_field.set_hexpand(true);
-    quiet_field.set_vexpand(true);
-    root.append(&quiet_field);
-
-    let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    copy.add_css_class("unavailable-copy");
-    copy.set_hexpand(false);
-    copy.set_vexpand(true);
-
-    let state = metadata_label(presentation.state_label, "unavailable-state");
-    copy.append(&state);
-
-    let message = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    message.add_css_class("unavailable-message");
-    message.set_valign(gtk::Align::Center);
-    message.set_vexpand(true);
-
-    let heading = metadata_label(presentation.heading, "unavailable-heading");
-    heading.set_lines(3);
-    heading.set_max_width_chars(12);
-    heading.set_wrap(true);
-    heading.set_wrap_mode(pango::WrapMode::WordChar);
-    message.append(&heading);
-
-    let explanation = metadata_label(presentation.explanation, "unavailable-explanation");
-    explanation.set_max_width_chars(26);
-    explanation.set_wrap(true);
-    explanation.set_wrap_mode(pango::WrapMode::WordChar);
-    message.append(&explanation);
-
-    copy.append(&message);
-    copy.set_width_request(672);
-
-    root.append(&copy);
-    root
 }
 
 fn playback_state(state: &str) -> RenderedPlaybackState {
@@ -782,8 +856,8 @@ pub(crate) fn install_style_providers(typography: TypographyPair) -> gtk::CssPro
 
 fn typography_styles(typography: TypographyPair) -> String {
     format!(
-        ".editorial-text, .unavailable-heading {{ font-family: \"{}\", serif; }}\n\
-         .utility-text, .state-label, .identity-label, .identity-name, .time, .unavailable-state, .unavailable-explanation {{ font-family: \"{}\", sans-serif; }}\n",
+        ".editorial-text, .full-field-heading {{ font-family: \"{}\", serif; }}\n\
+         .utility-text, .state-label, .identity-label, .identity-name, .time, .full-field-explanation {{ font-family: \"{}\", sans-serif; }}\n",
         typography.editorial_family(),
         typography.utility_family(),
     )
