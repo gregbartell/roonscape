@@ -9,14 +9,12 @@ use roonscape_renderer::{
     FullFieldPresentation, GalleryField, GallerySplitLayout, GallerySplitRole, IdentityLineLayout,
     IdentityPlacement, InactivityLayout, InactivityTransform, MetadataFontSizes,
     MetadataLineLayout, MetadataTypography, NowPlayingPresentation, Presentation,
-    PresentationPalette, PresentationProgress, PresentationRevision, PresentationTransition,
-    StatusEmphasis, TextOverflow, TypographyPair, Viewport, metadata_layout_for_viewport,
-    presentation_palette_styles, resolve_presentation,
+    PresentationPalette, PresentationProgress, PresentationRevision, PresentationStyleLayer,
+    PresentationTransition, PresentationTransitionStyles, StatusEmphasis, TextOverflow,
+    TypographyPair, Viewport, metadata_layout_for_viewport, resolve_presentation,
 };
 
 const STYLES: &str = include_str!("style.css");
-const CURRENT_LAYER_CLASS: &str = "presentation-current";
-const OUTGOING_LAYER_CLASS: &str = "presentation-outgoing";
 
 pub(crate) struct PresentationView {
     root: gtk::Overlay,
@@ -108,7 +106,9 @@ impl PresentationView {
         diagnostics_text: Option<&str>,
     ) -> Self {
         let rendered = render_presentation(presentation, repository_root, diagnostics_text);
-        rendered.root.add_css_class(CURRENT_LAYER_CLASS);
+        rendered
+            .root
+            .add_css_class(PresentationStyleLayer::Current.class_name());
         let transition = PresentationTransition::new(revision, rendered);
         let stack = gtk::Stack::new();
         stack.set_hexpand(true);
@@ -197,8 +197,14 @@ impl PresentationView {
             .transition
             .outgoing()
             .expect("a started presentation transition has an outgoing layer");
-        outgoing.value().root.remove_css_class(CURRENT_LAYER_CLASS);
-        outgoing.value().root.add_css_class(OUTGOING_LAYER_CLASS);
+        outgoing
+            .value()
+            .root
+            .remove_css_class(PresentationStyleLayer::Current.class_name());
+        outgoing
+            .value()
+            .root
+            .add_css_class(PresentationStyleLayer::Outgoing.class_name());
         self.reveal_current();
     }
 
@@ -268,21 +274,14 @@ impl PresentationView {
         let viewport = self.layout_viewport.unwrap_or(Viewport::WINDOWED_FIXTURE);
         let layout = GallerySplitLayout::for_viewport(viewport);
         let full_field_layout = FullFieldLayout::for_viewport(viewport);
-        let mut styles = presentation_palette_styles(
-            CURRENT_LAYER_CLASS,
+        let styles = PresentationTransitionStyles::new(
             self.transition.current().value().palette,
-            &layout,
-            &full_field_layout,
+            self.transition
+                .outgoing()
+                .map(|outgoing| outgoing.value().palette),
         );
-        if let Some(outgoing) = self.transition.outgoing() {
-            styles.push_str(&presentation_palette_styles(
-                OUTGOING_LAYER_CLASS,
-                outgoing.value().palette,
-                &layout,
-                &full_field_layout,
-            ));
-        }
-        self.palette_provider.load_from_data(&styles);
+        self.palette_provider
+            .load_from_data(&styles.to_css(&layout, &full_field_layout));
     }
 }
 
@@ -315,7 +314,9 @@ fn render_current(
     diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
     let rendered = render_presentation(presentation, repository_root, diagnostics_text);
-    rendered.root.add_css_class(CURRENT_LAYER_CLASS);
+    rendered
+        .root
+        .add_css_class(PresentationStyleLayer::Current.class_name());
     rendered
 }
 

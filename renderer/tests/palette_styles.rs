@@ -1,6 +1,6 @@
 use roonscape_renderer::{
-    FullFieldLayout, GallerySplitLayout, PresentationPalette, Rgb, Viewport,
-    presentation_palette_styles,
+    DiagnosticsStyle, FullFieldLayout, GallerySplitLayout, PresentationPalette,
+    PresentationStyleLayer, PresentationTransitionStyles, Rgb, Viewport,
 };
 
 #[test]
@@ -10,7 +10,7 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
     let full_field_layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
 
     let styles =
-        presentation_palette_styles("presentation-current", palette, &layout, &full_field_layout);
+        PresentationTransitionStyles::new(palette, None).to_css(&layout, &full_field_layout);
 
     for declaration in [
         "background-color: #071522; color: #F3EAD7",
@@ -34,65 +34,45 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
 #[test]
 fn semantic_palette_roles_adapt_the_diagnostics_overlay() {
     let fallback = PresentationPalette::fallback();
-    let layout = GallerySplitLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
-    let full_field_layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
-    let palettes = [
-        (
-            "presentation-current",
-            "fixed fallback",
-            fallback,
-            [
-                "color: #F3EAD7",
-                "background-color: #0A1429",
-                "border-color: #FF7051",
-            ],
-        ),
-        (
-            "presentation-outgoing",
-            "dark artwork",
-            PresentationPalette {
-                diagnostics_field: rgb(0x10, 0x10, 0x10),
-                diagnostics_text: rgb(0xfa, 0xfa, 0xfa),
-                diagnostics_border: rgb(0xff, 0xaa, 0x00),
-                ..fallback
-            },
-            [
-                "color: #FAFAFA",
-                "background-color: #101010",
-                "border-color: #FFAA00",
-            ],
-        ),
-        (
-            "presentation-current",
-            "light artwork",
-            PresentationPalette {
-                diagnostics_field: rgb(0xf6, 0xf0, 0xdc),
-                diagnostics_text: rgb(0x18, 0x14, 0x0f),
-                diagnostics_border: rgb(0x7c, 0x31, 0x0e),
-                ..fallback
-            },
-            [
-                "color: #18140F",
-                "background-color: #F6F0DC",
-                "border-color: #7C310E",
-            ],
-        ),
-    ];
+    let dark = PresentationPalette {
+        diagnostics_field: rgb(0x10, 0x10, 0x10),
+        diagnostics_text: rgb(0xfa, 0xfa, 0xfa),
+        diagnostics_border: rgb(0xff, 0xaa, 0x00),
+        ..fallback
+    };
+    let light = PresentationPalette {
+        diagnostics_field: rgb(0xf6, 0xf0, 0xdc),
+        diagnostics_text: rgb(0x18, 0x14, 0x0f),
+        diagnostics_border: rgb(0x7c, 0x31, 0x0e),
+        ..fallback
+    };
 
-    for (layer, source, palette, expected_roles) in palettes {
-        let styles = presentation_palette_styles(layer, palette, &layout, &full_field_layout);
-        let diagnostics = styles
-            .lines()
-            .find(|line| line.starts_with(&format!(".{layer} .diagnostics")))
-            .unwrap_or_else(|| panic!("{source} should style diagnostics on its own layer"));
-
-        for role in expected_roles {
-            assert!(
-                diagnostics.contains(role),
-                "{source} diagnostics should consume semantic role {role:?}"
-            );
-        }
-    }
+    assert_eq!(
+        PresentationTransitionStyles::new(fallback, None).diagnostics(),
+        vec![DiagnosticsStyle {
+            layer: PresentationStyleLayer::Current,
+            field: fallback.diagnostics_field,
+            text: fallback.diagnostics_text,
+            border: fallback.diagnostics_border,
+        }]
+    );
+    assert_eq!(
+        PresentationTransitionStyles::new(light, Some(dark)).diagnostics(),
+        vec![
+            DiagnosticsStyle {
+                layer: PresentationStyleLayer::Current,
+                field: light.diagnostics_field,
+                text: light.diagnostics_text,
+                border: light.diagnostics_border,
+            },
+            DiagnosticsStyle {
+                layer: PresentationStyleLayer::Outgoing,
+                field: dark.diagnostics_field,
+                text: dark.diagnostics_text,
+                border: dark.diagnostics_border,
+            },
+        ]
+    );
 }
 
 fn rgb(red: u8, green: u8, blue: u8) -> Rgb {

@@ -1,11 +1,95 @@
-use crate::{FullFieldLayout, GallerySplitLayout, PresentationPalette};
+use crate::{FullFieldLayout, GallerySplitLayout, PresentationPalette, Rgb};
 
-pub fn presentation_palette_styles(
-    class_name: &str,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresentationStyleLayer {
+    Current,
+    Outgoing,
+}
+
+impl PresentationStyleLayer {
+    pub const fn class_name(self) -> &'static str {
+        match self {
+            Self::Current => "presentation-current",
+            Self::Outgoing => "presentation-outgoing",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DiagnosticsStyle {
+    pub layer: PresentationStyleLayer,
+    pub field: Rgb,
+    pub text: Rgb,
+    pub border: Rgb,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PresentationTransitionStyles {
+    current: PresentationPalette,
+    outgoing: Option<PresentationPalette>,
+}
+
+impl PresentationTransitionStyles {
+    pub const fn new(current: PresentationPalette, outgoing: Option<PresentationPalette>) -> Self {
+        Self { current, outgoing }
+    }
+
+    pub fn diagnostics(self) -> Vec<DiagnosticsStyle> {
+        let mut styles = vec![diagnostics_style(
+            PresentationStyleLayer::Current,
+            self.current,
+        )];
+        if let Some(outgoing) = self.outgoing {
+            styles.push(diagnostics_style(
+                PresentationStyleLayer::Outgoing,
+                outgoing,
+            ));
+        }
+        styles
+    }
+
+    pub fn to_css(
+        self,
+        layout: &GallerySplitLayout,
+        full_field_layout: &FullFieldLayout,
+    ) -> String {
+        let mut styles = presentation_palette_styles(
+            PresentationStyleLayer::Current,
+            self.current,
+            layout,
+            full_field_layout,
+        );
+        if let Some(outgoing) = self.outgoing {
+            styles.push_str(&presentation_palette_styles(
+                PresentationStyleLayer::Outgoing,
+                outgoing,
+                layout,
+                full_field_layout,
+            ));
+        }
+        styles
+    }
+}
+
+fn diagnostics_style(
+    layer: PresentationStyleLayer,
+    palette: PresentationPalette,
+) -> DiagnosticsStyle {
+    DiagnosticsStyle {
+        layer,
+        field: palette.diagnostics_field,
+        text: palette.diagnostics_text,
+        border: palette.diagnostics_border,
+    }
+}
+
+fn presentation_palette_styles(
+    layer: PresentationStyleLayer,
     palette: PresentationPalette,
     layout: &GallerySplitLayout,
     full_field_layout: &FullFieldLayout,
 ) -> String {
+    let class_name = layer.class_name();
     let background = palette.background.to_hex();
     let artwork_field = palette.artwork_field.to_hex();
     let metadata_field = palette.metadata_field.to_hex();
@@ -15,9 +99,10 @@ pub fn presentation_palette_styles(
     let accent = palette.accent.to_hex();
     let progress_track = palette.progress_track.to_hex();
     let progress_fill = palette.progress_fill.to_hex();
-    let diagnostics_field = palette.diagnostics_field.to_hex();
-    let diagnostics_text = palette.diagnostics_text.to_hex();
-    let diagnostics_border = palette.diagnostics_border.to_hex();
+    let diagnostics = diagnostics_style(layer, palette);
+    let diagnostics_field = diagnostics.field.to_hex();
+    let diagnostics_text = diagnostics.text.to_hex();
+    let diagnostics_border = diagnostics.border.to_hex();
     let shadow_offset = layout.artwork_shadow_offset_px;
     let shadow_blur = layout.artwork_shadow_blur_px;
     let accent_width = full_field_layout.accent_width_px;
