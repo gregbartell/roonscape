@@ -346,6 +346,41 @@ test("runtime artifacts without verifiable ownership are preserved", async () =>
   });
 });
 
+test("an ownership directory without a record fails without spinning", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const runtimeRoot = path.join(taskDirectory, "runtime");
+    const ownershipDirectory = path.join(runtimeRoot, "roonscape/owner");
+    await mkdir(ownershipDirectory, { mode: 0o700, recursive: true });
+    await chmod(runtimeRoot, 0o700);
+    await chmod(path.dirname(ownershipDirectory), 0o700);
+    await writeFile(path.join(ownershipDirectory, "unknown"), "unverified");
+    const environment = { XDG_RUNTIME_DIR: runtimeRoot };
+    const errors: string[] = [];
+
+    const result = await runRoonScapeCommand(
+      [],
+      commandDependencies({
+        environment,
+        loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+        openRuntime: async () =>
+          openRuntimeSession({
+            environment,
+            processId: process.pid,
+            userId: process.getuid?.() ?? 1_000,
+          }),
+        writeError: (line) => errors.push(line),
+      }),
+    );
+
+    assert.equal(result, 1);
+    assert.match(
+      errors.join("\n"),
+      /Cannot verify existing RoonScape runtime ownership/,
+    );
+    assert.equal(await access(ownershipDirectory), undefined);
+  });
+});
+
 test("an interrupted runtime recovery is reclaimed after its owner is gone", async () => {
   await withTaskDirectory(async (taskDirectory) => {
     const runtimeRoot = path.join(taskDirectory, "runtime");

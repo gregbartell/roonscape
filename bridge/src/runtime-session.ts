@@ -302,7 +302,7 @@ function tryReadRuntimeOwner(
   try {
     return readRuntimeOwner(ownershipDirectory);
   } catch (error) {
-    if (isMissingFile(error)) {
+    if (isMissingFile(error) && !existsSync(ownershipDirectory)) {
       return undefined;
     }
     throw error;
