@@ -4,6 +4,10 @@ import {
   type DisplayConfiguration,
   rejectRemovedDisplayConfigurationOverride,
 } from "./display-configuration.js";
+import {
+  type FirstTimeSetupDependencies,
+  runFirstTimeSetup,
+} from "./first-time-setup.js";
 
 export type TerminationSignal = "SIGINT" | "SIGTERM";
 
@@ -33,22 +37,19 @@ export interface RendererLaunchOptions {
   socketPath: string;
 }
 
-export interface RoonScapeCommandDependencies {
+export interface RoonScapeCommandDependencies extends FirstTimeSetupDependencies {
   readonly version: string;
   readonly environment: NodeJS.ProcessEnv;
   readonly currentDirectory: string;
   standardConfigurationFile(): string;
-  authorizationFile(): string;
   loadConfiguration(configurationFile: string): DisplayConfiguration | null;
+  terminalIsInteractive(): boolean;
   openRuntime(): Promise<OwnedRuntime>;
   launchBridge(options: BridgeLaunchOptions): RunningChild;
   launchRenderer(options: RendererLaunchOptions): RunningChild;
   subscribeToTermination(
     handler: (signal: TerminationSignal) => void,
   ): () => void;
-  delay(milliseconds: number): Promise<void>;
-  writeOutput(line: string): void;
-  writeError(line: string): void;
 }
 
 const usage = `Usage: roonscape [--config PATH]
@@ -97,11 +98,29 @@ export async function runRoonScapeCommand(
     arguments_[0] === "--config"
       ? path.resolve(dependencies.currentDirectory, arguments_[1] as string)
       : dependencies.standardConfigurationFile();
-  if (dependencies.loadConfiguration(configurationFile) === null) {
+  const configuration = dependencies.loadConfiguration(configurationFile);
+  if (configuration === null && !dependencies.terminalIsInteractive()) {
     dependencies.writeError(
-      `Display Configuration is missing or invalid: ${configurationFile}`,
+      `Display Configuration is missing or invalid: ${configurationFile}. Run roonscape in an interactive terminal to complete setup, or supply a valid Display Configuration with --config PATH.`,
     );
     return 1;
+  }
+
+  if (configuration === null) {
+    try {
+      const completed = await runFirstTimeSetup(
+        configurationFile,
+        dependencies,
+      );
+      if (!completed) {
+        return 0;
+      }
+    } catch (error) {
+      dependencies.writeError(
+        `Could not complete setup: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
   }
 
   try {

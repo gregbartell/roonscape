@@ -67,6 +67,19 @@ test("persists inactivity calibration with Tracked Output selection", async () =
   });
 });
 
+test("rejects invalid Display Configuration before creating a file", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const configurationFile = path.join(taskDirectory, "display.json");
+    const store = new FileDisplayConfigurationStore(configurationFile);
+
+    assert.throws(
+      () => store.save({ trackedOutputId: "" }),
+      /Display Configuration is invalid/,
+    );
+    assert.equal(store.load(), null);
+  });
+});
+
 test("loads shared inactivity Display Configuration", () => {
   const store = new FileDisplayConfigurationStore(
     path.join(repositoryRoot, "fixtures/display-configuration-inactivity.json"),

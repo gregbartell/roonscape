@@ -103,3 +103,36 @@ test("discovers physical Tracked Outputs from Roon's initial full zone state", a
     },
   );
 });
+
+test("indefinite discovery can be cancelled cleanly for Retry or Quit", async () => {
+  let discoveryStopped = false;
+  let disconnected = false;
+  const controller = new AbortController();
+  const discovery = discoverTrackedOutputs({
+    authorizationStore: { load: () => ({}), save: () => undefined },
+    createRoonServices: () => ({
+      extension: {
+        init_services: () => undefined,
+        start_discovery: () => undefined,
+        stop_discovery: () => {
+          discoveryStopped = true;
+        },
+        disconnect_all: () => {
+          disconnected = true;
+        },
+      },
+      requiredServices: [{ services: [] }],
+      status: { services: [], set_status: () => undefined },
+    }),
+    timeoutMilliseconds: null,
+    signal: controller.signal,
+  });
+
+  controller.abort();
+
+  await assert.rejects(discovery, { name: "AbortError" });
+  assert.deepEqual(
+    { discoveryStopped, disconnected },
+    { discoveryStopped: true, disconnected: true },
+  );
+});

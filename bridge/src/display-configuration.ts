@@ -61,6 +61,9 @@ export class FileDisplayConfigurationStore implements DisplayConfigurationStore 
   }
 
   save(configuration: DisplayConfiguration): void {
+    if (!isDisplayConfiguration(configuration)) {
+      throw new Error("Display Configuration is invalid");
+    }
     writePrivateJsonFile(
       this.#configurationFile,
       configuration,

@@ -1,15 +1,21 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-import { authorizationFilePath } from "./authorization-store.js";
+import {
+  FileAuthorizationStore,
+  authorizationFilePath,
+} from "./authorization-store.js";
 import { launchChildProcess } from "./child-process.js";
 import {
   FileDisplayConfigurationStore,
   displayConfigurationFilePath,
 } from "./display-configuration.js";
+import { createSupportedRoonServices } from "./roon-services.js";
 import { runRoonScapeCommand } from "./roonscape-command.js";
 import { openRuntimeSession } from "./runtime-session.js";
+import { readSetupKey, terminalIsInteractive } from "./setup-terminal.js";
+import { discoverTrackedOutputs } from "./tracked-output-discovery.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const bridgeEntry = fileURLToPath(new URL("./index.js", import.meta.url));
@@ -41,6 +47,18 @@ process.exitCode = await runRoonScapeCommand(process.argv.slice(2), {
   authorizationFile: () => authorizationFilePath(process.env),
   loadConfiguration: (configurationFile) =>
     new FileDisplayConfigurationStore(configurationFile).load(),
+  configurationFileExists: existsSync,
+  terminalIsInteractive,
+  discoverTrackedOutputs: (authorizationFile, signal) =>
+    discoverTrackedOutputs({
+      authorizationStore: new FileAuthorizationStore(authorizationFile),
+      createRoonServices: createSupportedRoonServices,
+      timeoutMilliseconds: null,
+      signal,
+    }),
+  readSetupKey,
+  saveConfiguration: (configurationFile, configuration) =>
+    new FileDisplayConfigurationStore(configurationFile).save(configuration),
   openRuntime: async () =>
     openRuntimeSession({
       environment: process.env,

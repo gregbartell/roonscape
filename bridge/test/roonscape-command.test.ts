@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { access, chmod, mkdir, stat, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  mkdir,
+  readdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { statSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +17,7 @@ import {
   type RunningChild,
   runRoonScapeCommand,
 } from "../src/roonscape-command.js";
+import { FileDisplayConfigurationStore } from "../src/display-configuration.js";
 import { openRuntimeSession } from "../src/runtime-session.js";
 import { withTaskDirectory } from "./support.js";
 
@@ -133,6 +141,407 @@ test("--config takes precedence over the standard XDG path", async () => {
 
   assert.equal(result, 0);
   assert.deepEqual(loadedFiles, ["/working/settings/display.json"]);
+});
+
+test("missing Display Configuration fails promptly without an interactive terminal", async () => {
+  const errors: string[] = [];
+  const dependencies = commandDependencies({
+    writeError: (line) => errors.push(line),
+  });
+
+  const result = await runRoonScapeCommand([], dependencies);
+
+  assert.equal(result, 1);
+  assert.match(errors.join("\n"), /Display Configuration is missing/);
+  assert.match(errors.join("\n"), /interactive terminal/);
+  assert.match(errors.join("\n"), /--config PATH/);
+});
+
+test("first-time setup saves OLED defaults and continues into the presentation", async () => {
+  const output: string[] = [];
+  const events: string[] = [];
+  let savedConfiguration:
+    | Parameters<RoonScapeCommandDependencies["saveConfiguration"]>[1]
+    | undefined;
+  let keyRead = 0;
+  const bridge = pendingChild((signal) => events.push(`bridge:${signal}`));
+  const dependencies = commandDependencies({
+    terminalIsInteractive: () => true,
+    configurationFileExists: () => false,
+    discoverTrackedOutputs: async () => [
+      {
+        trackedOutputId: "output-gallery",
+        trackedOutputName: "NUC HDMI",
+        trackedZoneName: "Gallery",
+      },
+    ],
+    readSetupKey: (signal) => {
+      keyRead += 1;
+      if (keyRead === 1) {
+        return abortedKeyRead(signal);
+      }
+      return Promise.resolve("enter");
+    },
+    saveConfiguration: (configurationFile, configuration) => {
+      events.push(`configuration:save:${configurationFile}`);
+      savedConfiguration = configuration;
+    },
+    openRuntime: async () => ({
+      socketPath: "/runtime/roonscape/roonscape.sock",
+      cleanup: async () => {
+        events.push("runtime:cleanup");
+      },
+    }),
+    launchBridge: () => {
+      events.push("bridge:start");
+      return bridge;
+    },
+    launchRenderer: () => {
+      events.push("renderer:start");
+      return completedChild({ exitCode: 0, signal: null });
+    },
+    writeOutput: (line) => output.push(line),
+  });
+
+  const result = await runRoonScapeCommand([], dependencies);
+
+  assert.equal(result, 0);
+  assert.match(output.join("\n"), /official Roon client/);
+  assert.match(output.join("\n"), /Settings.*Extensions/);
+  assert.match(output.join("\n"), /NUC HDMI.*Gallery/);
+  assert.doesNotMatch(output.join("\n"), /output-gallery/);
+  assert.match(output.join("\n"), /5 minutes/);
+  assert.match(output.join("\n"), /35 percent/);
+  assert.match(output.join("\n"), /1 minute/);
+  assert.deepEqual(savedConfiguration, {
+    trackedOutputId: "output-gallery",
+    inactivity: {
+      gracePeriodSeconds: 300,
+      dimmedOpacity: 0.35,
+      repositionCadenceSeconds: 60,
+    },
+  });
+  assert.deepEqual(events, [
+    "configuration:save:/config/roonscape/display.json",
+    "bridge:start",
+    "renderer:start",
+    "bridge:SIGTERM",
+    "runtime:cleanup",
+  ]);
+});
+
+test("setup atomically publishes a private Display Configuration before launch", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const configurationFile = path.join(taskDirectory, "config/display.json");
+    const configurationStore = new FileDisplayConfigurationStore(
+      configurationFile,
+    );
+    let keyRead = 0;
+    let configurationAtLaunch:
+      ReturnType<FileDisplayConfigurationStore["load"]> | undefined;
+    const bridge = pendingChild(() => undefined);
+
+    const result = await runRoonScapeCommand(
+      [],
+      commandDependencies({
+        standardConfigurationFile: () => configurationFile,
+        terminalIsInteractive: () => true,
+        configurationFileExists: () => false,
+        discoverTrackedOutputs: async () => [
+          {
+            trackedOutputId: "output-gallery",
+            trackedOutputName: "NUC HDMI",
+            trackedZoneName: "Gallery",
+          },
+        ],
+        readSetupKey: (signal) => {
+          keyRead += 1;
+          return keyRead === 1
+            ? abortedKeyRead(signal)
+            : Promise.resolve("enter");
+        },
+        saveConfiguration: (_configurationFile, configuration) =>
+          configurationStore.save(configuration),
+        openRuntime: async () => ({
+          socketPath: "/runtime/roonscape/roonscape.sock",
+          cleanup: async () => undefined,
+        }),
+        launchBridge: () => {
+          configurationAtLaunch = configurationStore.load();
+          return bridge;
+        },
+        launchRenderer: () => completedChild({ exitCode: 0, signal: null }),
+      }),
+    );
+
+    assert.equal(result, 0);
+    assert.equal(configurationAtLaunch?.trackedOutputId, "output-gallery");
+    assert.equal((await stat(configurationFile)).mode & 0o777, 0o600);
+    assert.deepEqual(await readdir(path.dirname(configurationFile)), [
+      "display.json",
+    ]);
+  });
+});
+
+test("authorization wait shows delayed troubleshooting and supports Retry", async () => {
+  const output: string[] = [];
+  const discoveryAuthorizations: string[] = [];
+  let discoveryAttempt = 0;
+  let keyRead = 0;
+  let cancelledAttempt = false;
+  const result = await runRoonScapeCommand(
+    [],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      discoverTrackedOutputs: (authorizationFile, signal) => {
+        discoveryAuthorizations.push(authorizationFile);
+        discoveryAttempt += 1;
+        if (discoveryAttempt === 1) {
+          return new Promise((_, reject) => {
+            signal.addEventListener(
+              "abort",
+              () => {
+                cancelledAttempt = true;
+                reject(new DOMException("cancelled", "AbortError"));
+              },
+              { once: true },
+            );
+          });
+        }
+        return Promise.resolve([
+          {
+            trackedOutputId: "output-gallery",
+            trackedOutputName: "NUC HDMI",
+            trackedZoneName: "Gallery",
+          },
+        ]);
+      },
+      readSetupKey: (signal) => {
+        keyRead += 1;
+        if (keyRead === 1 || keyRead === 3) {
+          return abortedKeyRead(signal);
+        }
+        return Promise.resolve(keyRead === 2 ? "retry" : "quit");
+      },
+      delay: async () => undefined,
+      writeOutput: (line) => output.push(line),
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.equal(cancelledAttempt, true);
+  assert.deepEqual(discoveryAuthorizations, [
+    "/state/roonscape/authorization.json",
+    "/state/roonscape/authorization.json",
+  ]);
+  assert.match(output.join("\n"), /Still waiting/);
+  assert.match(output.join("\n"), /same network/);
+  assert.match(output.join("\n"), /Retrying Roon discovery/);
+});
+
+test("quitting authorization wait leaves Display Configuration untouched", async () => {
+  let discoveryCancelled = false;
+  let saved = false;
+  let launched = false;
+  const result = await runRoonScapeCommand(
+    [],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      discoverTrackedOutputs: (_authorizationFile, signal) =>
+        new Promise((_, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              discoveryCancelled = true;
+              reject(new DOMException("cancelled", "AbortError"));
+            },
+            { once: true },
+          );
+        }),
+      readSetupKey: async () => "quit",
+      delay: () => new Promise(() => undefined),
+      saveConfiguration: () => {
+        saved = true;
+      },
+      openRuntime: async () => {
+        launched = true;
+        throw new Error("runtime should not be opened");
+      },
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.equal(discoveryCancelled, true);
+  assert.equal(saved, false);
+  assert.equal(launched, false);
+});
+
+test("arrow-key selection disambiguates identical Tracked Output choices", async () => {
+  const output: string[] = [];
+  let selectedTrackedOutput = "";
+  let keyRead = 0;
+  const bridge = pendingChild(() => undefined);
+  const result = await runRoonScapeCommand(
+    [],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      discoverTrackedOutputs: async () => [
+        {
+          trackedOutputId: "output-gallery-left",
+          trackedOutputName: "USB DAC",
+          trackedZoneName: "Gallery",
+        },
+        {
+          trackedOutputId: "output-gallery-right",
+          trackedOutputName: "USB DAC",
+          trackedZoneName: "Gallery",
+        },
+      ],
+      readSetupKey: (signal) => {
+        keyRead += 1;
+        if (keyRead === 1) {
+          return abortedKeyRead(signal);
+        }
+        const keys = ["down", "enter", "enter"] as const;
+        return Promise.resolve(keys[keyRead - 2] ?? "quit");
+      },
+      saveConfiguration: (_configurationFile, configuration) => {
+        selectedTrackedOutput = configuration.trackedOutputId;
+      },
+      openRuntime: async () => ({
+        socketPath: "/runtime/roonscape/roonscape.sock",
+        cleanup: async () => undefined,
+      }),
+      launchBridge: () => bridge,
+      launchRenderer: () => completedChild({ exitCode: 0, signal: null }),
+      writeOutput: (line) => output.push(line),
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.equal(selectedTrackedOutput, "output-gallery-right");
+  assert.match(output.join("\n"), /USB DAC.*Gallery.*output-gallery-left/);
+  assert.match(output.join("\n"), /USB DAC.*Gallery.*output-gallery-right/);
+});
+
+test("OLED defaults require explicit acceptance before saving", async () => {
+  let keyRead = 0;
+  let saved = false;
+  const result = await runRoonScapeCommand(
+    [],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      discoverTrackedOutputs: async () => [
+        {
+          trackedOutputId: "output-gallery",
+          trackedOutputName: "NUC HDMI",
+          trackedZoneName: "Gallery",
+        },
+      ],
+      readSetupKey: (signal) => {
+        keyRead += 1;
+        if (keyRead === 1) {
+          return abortedKeyRead(signal);
+        }
+        const keys = ["enter", "down", "quit"] as const;
+        return Promise.resolve(keys[keyRead - 2] ?? "quit");
+      },
+      saveConfiguration: () => {
+        saved = true;
+      },
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.equal(saved, false);
+});
+
+test("empty discovery offers Refresh and Quit without guessing an output", async () => {
+  const output: string[] = [];
+  let discoveryAttempt = 0;
+  let keyRead = 0;
+  let saved = false;
+  const result = await runRoonScapeCommand(
+    [],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      discoverTrackedOutputs: async () => {
+        discoveryAttempt += 1;
+        return discoveryAttempt === 1
+          ? []
+          : [
+              {
+                trackedOutputId: "output-gallery",
+                trackedOutputName: "NUC HDMI",
+                trackedZoneName: "Gallery",
+              },
+            ];
+      },
+      readSetupKey: (signal) => {
+        keyRead += 1;
+        if (keyRead === 1 || keyRead === 3) {
+          return abortedKeyRead(signal);
+        }
+        return Promise.resolve(keyRead === 2 ? "retry" : "quit");
+      },
+      saveConfiguration: () => {
+        saved = true;
+      },
+      writeOutput: (line) => output.push(line),
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.equal(discoveryAttempt, 2);
+  assert.equal(saved, false);
+  assert.match(output.join("\n"), /No Tracked Outputs/);
+  assert.match(output.join("\n"), /Refresh/);
+  assert.match(output.join("\n"), /Quit/);
+});
+
+test("malformed interactive Display Configuration is reported before repair is offered", async () => {
+  const events: string[] = [];
+  let saved = false;
+  const result = await runRoonScapeCommand(
+    [],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      configurationFileExists: () => true,
+      readSetupKey: async () => "quit",
+      writeError: (line) => events.push(`error:${line}`),
+      writeOutput: (line) => events.push(`output:${line}`),
+      saveConfiguration: () => {
+        saved = true;
+      },
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.equal(saved, false);
+  assert.match(events[0] ?? "", /Display Configuration is invalid/);
+  assert.match(events[1] ?? "", /repair/);
+});
+
+test("malformed noninteractive Display Configuration never enters setup", async () => {
+  const errors: string[] = [];
+  let inputRead = false;
+  const result = await runRoonScapeCommand(
+    [],
+    commandDependencies({
+      configurationFileExists: () => true,
+      terminalIsInteractive: () => false,
+      readSetupKey: async () => {
+        inputRead = true;
+        return "quit";
+      },
+      writeError: (line) => errors.push(line),
+    }),
+  );
+
+  assert.equal(result, 1);
+  assert.equal(inputRead, false);
+  assert.match(errors.join("\n"), /missing or invalid/);
+  assert.match(errors.join("\n"), /interactive terminal/);
 });
 
 test("configured start owns private XDG runtime state and removes it on exit", async () => {
@@ -566,6 +975,17 @@ function commandDependencies(
     standardConfigurationFile: () => "/config/roonscape/display.json",
     authorizationFile: () => "/state/roonscape/authorization.json",
     loadConfiguration: () => null,
+    configurationFileExists: () => false,
+    terminalIsInteractive: () => false,
+    discoverTrackedOutputs: async () => {
+      throw new Error("Tracked Outputs should not be discovered");
+    },
+    readSetupKey: async () => {
+      throw new Error("setup input should not be read");
+    },
+    saveConfiguration: () => {
+      throw new Error("Display Configuration should not be saved");
+    },
     openRuntime: async () => {
       throw new Error("runtime should not be opened");
     },
@@ -588,6 +1008,18 @@ function completedChild(result: ChildResult): RunningChild {
     result: Promise.resolve(result),
     sendSignal: () => undefined,
   };
+}
+
+function abortedKeyRead(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    signal.addEventListener(
+      "abort",
+      () => {
+        reject(new DOMException("Setup key read cancelled", "AbortError"));
+      },
+      { once: true },
+    );
+  });
 }
 
 function pendingChild(
