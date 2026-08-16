@@ -19,6 +19,9 @@ target/
 # Runtime artifacts
 *.sock
 
+# Packaged releases
+/release/
+
 # Editors and operating systems
 *.swp
 .DS_Store

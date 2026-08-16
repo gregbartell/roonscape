@@ -15,12 +15,15 @@
     "format": "prettier --write bridge/src bridge/test renderer/src/style.css scripts eslint.config.js package.json bridge/package.json bridge/tsconfig.json schema fixtures .github && cargo fmt --all",
     "format:check": "prettier --check bridge/src bridge/test renderer/src/style.css scripts eslint.config.js package.json bridge/package.json bridge/tsconfig.json schema fixtures .github && cargo fmt --all -- --check",
     "lint": "eslint bridge/src bridge/test scripts eslint.config.js && cargo clippy --workspace --all-targets -- -D warnings",
-    "start": "npm run build && cargo build --package roonscape-renderer && node bridge/dist/src/roonscape.js",
+    "package": "node scripts/package-release.mjs",
+    "setup": "npm run build && ./roonscape --setup",
+    "start": "npm run build && cargo build --locked --release --package roonscape-renderer && ./roonscape",
     "start:bridge": "npm run start --workspace @roonscape/bridge",
     "smoke:ipc": "npm run build && cargo build --package roonscape-renderer --example ipc-probe && node scripts/ipc-smoke.mjs",
-    "test": "npm run test:bridge && npm run test:fixture-launcher && cargo test --workspace && npm run smoke:ipc",
+    "test": "npm run test:bridge && npm run test:fixture-launcher && npm run test:package && cargo test --workspace && npm run smoke:ipc",
     "test:bridge": "npm run test --workspace @roonscape/bridge",
     "test:fixture-launcher": "node --test scripts/run-fixture.test.mjs",
+    "test:package": "node --test scripts/package-release.test.mjs",
     "typecheck": "npm run build && cargo check --workspace --all-targets"
   },
   "devDependencies": {

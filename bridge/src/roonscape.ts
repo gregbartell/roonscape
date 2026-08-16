@@ -25,7 +25,7 @@ const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const bridgeEntry = fileURLToPath(new URL("./index.js", import.meta.url));
 const rendererExecutable = path.join(
   repositoryRoot,
-  "target/debug/roonscape-renderer",
+  "target/release/roonscape-renderer",
 );
 const packageMetadata = JSON.parse(
   readFileSync(path.join(repositoryRoot, "package.json"), "utf8"),

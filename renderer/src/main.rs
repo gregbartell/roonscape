@@ -65,10 +65,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         socket_path,
         SNAPSHOT_RETRY_DELAY,
     ));
-    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or("renderer manifest should be inside the repository")?
-        .to_path_buf();
+    let repository_root = resource_root()?;
     register_packaged_fallback_fonts(&repository_root.join("renderer"))?;
 
     let application = gtk::Application::builder()
@@ -88,6 +85,20 @@ fn run() -> Result<(), Box<dyn Error>> {
     application.run();
 
     Ok(())
+}
+
+fn resource_root() -> Result<PathBuf, io::Error> {
+    env::current_exe()?
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "renderer executable should be inside target/release",
+            )
+        })
 }
 
 fn build_window(
