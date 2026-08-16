@@ -1,6 +1,6 @@
 use roonscape_renderer::{
     FullFieldLayout, GallerySplitLayout, PresentationPalette, Rgb, Viewport,
-    diagnostics_palette_styles, presentation_palette_styles,
+    presentation_palette_styles,
 };
 
 #[test]
@@ -34,63 +34,67 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
 #[test]
 fn semantic_palette_roles_adapt_the_diagnostics_overlay() {
     let fallback = PresentationPalette::fallback();
+    let layout = GallerySplitLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
+    let full_field_layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
     let palettes = [
         (
+            "presentation-current",
             "fixed fallback",
             fallback,
-            ".diagnostics { color: #F3EAD7; background-color: #0A1429; border-color: #FF7051; }",
+            [
+                "color: #F3EAD7",
+                "background-color: #0A1429",
+                "border-color: #FF7051",
+            ],
         ),
         (
+            "presentation-outgoing",
             "dark artwork",
             PresentationPalette {
-                diagnostics_field: Rgb {
-                    red: 0x10,
-                    green: 0x10,
-                    blue: 0x10,
-                },
-                diagnostics_text: Rgb {
-                    red: 0xfa,
-                    green: 0xfa,
-                    blue: 0xfa,
-                },
-                diagnostics_border: Rgb {
-                    red: 0xff,
-                    green: 0xaa,
-                    blue: 0x00,
-                },
+                diagnostics_field: rgb(0x10, 0x10, 0x10),
+                diagnostics_text: rgb(0xfa, 0xfa, 0xfa),
+                diagnostics_border: rgb(0xff, 0xaa, 0x00),
                 ..fallback
             },
-            ".diagnostics { color: #FAFAFA; background-color: #101010; border-color: #FFAA00; }",
+            [
+                "color: #FAFAFA",
+                "background-color: #101010",
+                "border-color: #FFAA00",
+            ],
         ),
         (
+            "presentation-current",
             "light artwork",
             PresentationPalette {
-                diagnostics_field: Rgb {
-                    red: 0xf6,
-                    green: 0xf0,
-                    blue: 0xdc,
-                },
-                diagnostics_text: Rgb {
-                    red: 0x18,
-                    green: 0x14,
-                    blue: 0x0f,
-                },
-                diagnostics_border: Rgb {
-                    red: 0x7c,
-                    green: 0x31,
-                    blue: 0x0e,
-                },
+                diagnostics_field: rgb(0xf6, 0xf0, 0xdc),
+                diagnostics_text: rgb(0x18, 0x14, 0x0f),
+                diagnostics_border: rgb(0x7c, 0x31, 0x0e),
                 ..fallback
             },
-            ".diagnostics { color: #18140F; background-color: #F6F0DC; border-color: #7C310E; }",
+            [
+                "color: #18140F",
+                "background-color: #F6F0DC",
+                "border-color: #7C310E",
+            ],
         ),
     ];
 
-    for (source, palette, expected) in palettes {
-        assert_eq!(
-            diagnostics_palette_styles(palette).trim(),
-            expected,
-            "diagnostics should consume the {source} semantic roles"
-        );
+    for (layer, source, palette, expected_roles) in palettes {
+        let styles = presentation_palette_styles(layer, palette, &layout, &full_field_layout);
+        let diagnostics = styles
+            .lines()
+            .find(|line| line.starts_with(&format!(".{layer} .diagnostics")))
+            .unwrap_or_else(|| panic!("{source} should style diagnostics on its own layer"));
+
+        for role in expected_roles {
+            assert!(
+                diagnostics.contains(role),
+                "{source} diagnostics should consume semantic role {role:?}"
+            );
+        }
     }
+}
+
+fn rgb(red: u8, green: u8, blue: u8) -> Rgb {
+    Rgb { red, green, blue }
 }

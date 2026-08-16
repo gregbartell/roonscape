@@ -20,7 +20,7 @@ use roonscape_renderer::{
     should_close_renderer,
 };
 
-use view::{PresentationView, RenderedDiagnostics, diagnostics_view, install_style_providers};
+use view::{PresentationView, install_style_providers};
 
 const APPLICATION_ID: &str = "io.roonscape.Renderer";
 const SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(250);
@@ -122,28 +122,23 @@ fn build_window(
         .borrow()
         .frame_at(progress_clock.elapsed())
         .expect("the initial presentation was validated before GTK started");
+    let initial_diagnostics = diagnostics.as_ref().map(|diagnostics| {
+        diagnostics
+            .borrow()
+            .overlay_text(current_process_memory_bytes())
+    });
     let presentation_view = Rc::new(RefCell::new(PresentationView::new(
         presentation.borrow().revision(),
         &initial_frame.presentation,
         repository_root,
         palette_provider,
+        initial_diagnostics.as_deref(),
     )));
     presentation_view
         .borrow_mut()
         .apply_inactivity(initial_frame.inactivity);
     let display = gtk::Overlay::new();
     display.set_child(Some(&presentation_view.borrow().root()));
-    let rendered_diagnostics = diagnostics.as_ref().map(|diagnostics| {
-        let rendered = diagnostics_view(
-            &diagnostics
-                .borrow()
-                .overlay_text(current_process_memory_bytes()),
-        );
-        presentation_view
-            .borrow()
-            .add_diagnostics(rendered.widget());
-        rendered
-    });
     window.set_child(Some(&display));
 
     let key_controller = gtk::EventControllerKey::new();
@@ -165,7 +160,7 @@ fn build_window(
 
     let runtime = PresentationRuntime {
         presentation,
-        presentation_view,
+        presentation_view: presentation_view.clone(),
         updates,
         diagnostics: diagnostics.clone(),
         display: display.clone(),
@@ -177,7 +172,7 @@ fn build_window(
         glib::ControlFlow::Continue
     });
 
-    install_diagnostics_updates(&window, diagnostics, rendered_diagnostics);
+    install_diagnostics_updates(&window, diagnostics, presentation_view);
 
     if env::var_os("ROONSCAPE_WINDOWED").is_none() {
         window.fullscreen();
@@ -301,10 +296,9 @@ impl PresentationRuntime {
 fn install_diagnostics_updates(
     window: &gtk::ApplicationWindow,
     diagnostics: Option<Rc<RefCell<Diagnostics>>>,
-    rendered_diagnostics: Option<RenderedDiagnostics>,
+    presentation_view: Rc<RefCell<PresentationView>>,
 ) {
-    let (Some(diagnostics), Some(rendered_diagnostics)) = (diagnostics, rendered_diagnostics)
-    else {
+    let Some(diagnostics) = diagnostics else {
         return;
     };
 
@@ -318,11 +312,10 @@ fn install_diagnostics_updates(
         glib::ControlFlow::Continue
     });
     glib::timeout_add_local(Duration::from_millis(500), move || {
-        rendered_diagnostics.update(
-            &diagnostics
-                .borrow()
-                .overlay_text(current_process_memory_bytes()),
-        );
+        let text = diagnostics
+            .borrow()
+            .overlay_text(current_process_memory_bytes());
+        presentation_view.borrow().update_diagnostics(&text);
         glib::ControlFlow::Continue
     });
 }

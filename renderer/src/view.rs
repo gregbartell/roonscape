@@ -10,8 +10,8 @@ use roonscape_renderer::{
     IdentityPlacement, InactivityLayout, InactivityTransform, MetadataFontSizes,
     MetadataLineLayout, MetadataTypography, NowPlayingPresentation, Presentation,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationTransition,
-    StatusEmphasis, TextOverflow, TypographyPair, Viewport, diagnostics_palette_styles,
-    metadata_layout_for_viewport, presentation_palette_styles, resolve_presentation,
+    StatusEmphasis, TextOverflow, TypographyPair, Viewport, metadata_layout_for_viewport,
+    presentation_palette_styles, resolve_presentation,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -34,16 +34,7 @@ struct RenderedPresentation {
     palette: PresentationPalette,
     gallery_split: Option<RenderedGallerySplit>,
     full_field: Option<RenderedFullField>,
-}
-
-pub(crate) struct RenderedDiagnostics {
-    label: gtk::Label,
-}
-
-impl RenderedDiagnostics {
-    pub(crate) fn update(&self, text: &str) {
-        self.label.set_text(text);
-    }
+    diagnostics: Option<gtk::Label>,
 }
 
 #[derive(Clone)]
@@ -114,8 +105,9 @@ impl PresentationView {
         presentation: &Presentation,
         repository_root: &Path,
         palette_provider: gtk::CssProvider,
+        diagnostics_text: Option<&str>,
     ) -> Self {
-        let rendered = render_presentation(presentation, repository_root);
+        let rendered = render_presentation(presentation, repository_root, diagnostics_text);
         rendered.root.add_css_class(CURRENT_LAYER_CLASS);
         let transition = PresentationTransition::new(revision, rendered);
         let stack = gtk::Stack::new();
@@ -144,10 +136,6 @@ impl PresentationView {
 
     pub(crate) fn root(&self) -> gtk::Widget {
         self.root.clone().upcast()
-    }
-
-    pub(crate) fn add_diagnostics(&self, diagnostics: &gtk::Widget) {
-        self.root.add_overlay(diagnostics);
     }
 
     pub(crate) fn apply_inactivity(&mut self, transform: InactivityTransform) {
@@ -245,6 +233,13 @@ impl PresentationView {
         }
     }
 
+    pub(crate) fn update_diagnostics(&self, text: &str) {
+        self.transition.current().value().update_diagnostics(text);
+        if let Some(outgoing) = self.transition.outgoing() {
+            outgoing.value().update_diagnostics(text);
+        }
+    }
+
     fn remove_layer(&self, layer: PresentationRevision<RenderedPresentation>) {
         self.stack.remove(&layer.value().root);
     }
@@ -254,7 +249,8 @@ impl PresentationView {
         presentation: &Presentation,
         repository_root: &Path,
     ) -> RenderedPresentation {
-        let rendered = render_current(presentation, repository_root);
+        let diagnostics_text = self.transition.current().value().diagnostics_text();
+        let rendered = render_current(presentation, repository_root, diagnostics_text.as_deref());
         if let Some(viewport) = self.layout_viewport {
             rendered.apply_viewport(viewport);
         }
@@ -286,9 +282,6 @@ impl PresentationView {
                 &full_field_layout,
             ));
         }
-        styles.push_str(&diagnostics_palette_styles(
-            self.transition.current().value().palette,
-        ));
         self.palette_provider.load_from_data(&styles);
     }
 }
@@ -302,10 +295,26 @@ impl RenderedPresentation {
             full_field.apply_layout(&FullFieldLayout::for_viewport(viewport));
         }
     }
+
+    fn update_diagnostics(&self, text: &str) {
+        if let Some(diagnostics) = self.diagnostics.as_ref() {
+            diagnostics.set_text(text);
+        }
+    }
+
+    fn diagnostics_text(&self) -> Option<String> {
+        self.diagnostics
+            .as_ref()
+            .map(|diagnostics| diagnostics.text().to_string())
+    }
 }
 
-fn render_current(presentation: &Presentation, repository_root: &Path) -> RenderedPresentation {
-    let rendered = render_presentation(presentation, repository_root);
+fn render_current(
+    presentation: &Presentation,
+    repository_root: &Path,
+    diagnostics_text: Option<&str>,
+) -> RenderedPresentation {
+    let rendered = render_presentation(presentation, repository_root, diagnostics_text);
     rendered.root.add_css_class(CURRENT_LAYER_CLASS);
     rendered
 }
@@ -313,26 +322,32 @@ fn render_current(presentation: &Presentation, repository_root: &Path) -> Render
 fn render_presentation(
     presentation: &Presentation,
     repository_root: &Path,
+    diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
     let resolved = resolve_presentation(presentation, repository_root);
 
     match &resolved.presentation {
-        Presentation::NowPlaying(presentation) => {
-            gallery_split(presentation, repository_root, resolved.palette)
+        Presentation::NowPlaying(presentation) => gallery_split(
+            presentation,
+            repository_root,
+            resolved.palette,
+            diagnostics_text,
+        ),
+        Presentation::FullField(presentation) => {
+            full_field(presentation, resolved.palette, diagnostics_text)
         }
-        Presentation::FullField(presentation) => full_field(presentation, resolved.palette),
     }
 }
 
 fn full_field(
     presentation: &FullFieldPresentation,
     palette: PresentationPalette,
+    diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
     let layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
-    let root = gtk::Overlay::new();
-    root.add_css_class("full-field");
-    root.set_hexpand(true);
-    root.set_vexpand(true);
+    let content = gtk::Overlay::new();
+    content.set_hexpand(true);
+    content.set_vexpand(true);
 
     let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
     copy.add_css_class("full-copy");
@@ -364,7 +379,7 @@ fn full_field(
         explanation
     });
     copy.append(&message);
-    root.set_child(Some(&copy));
+    content.set_child(Some(&copy));
 
     let identity = if let Some(presentation_identity) = presentation.identity.as_ref() {
         let identity = tracked_identity(
@@ -373,12 +388,13 @@ fn full_field(
             layout.identity_placement,
             layout.identity_line,
         );
-        root.add_overlay(&identity.root);
+        content.add_overlay(&identity.root);
         Some(identity)
     } else {
         None
     };
 
+    let (root, diagnostics) = presentation_layer(&content, "full-field", diagnostics_text);
     RenderedPresentation {
         root: root.upcast(),
         progress: None,
@@ -392,43 +408,36 @@ fn full_field(
             explanation,
             identity,
         }),
+        diagnostics,
     }
 }
 
-pub(crate) fn diagnostics_view(text: &str) -> RenderedDiagnostics {
+fn diagnostics_view(text: &str) -> gtk::Label {
     let label = gtk::Label::new(Some(text));
     label.add_css_class("diagnostics");
     label.set_halign(gtk::Align::End);
     label.set_valign(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_selectable(false);
-    RenderedDiagnostics { label }
-}
-
-impl RenderedDiagnostics {
-    pub(crate) fn widget(&self) -> &gtk::Widget {
-        self.label.upcast_ref()
-    }
+    label
 }
 
 fn gallery_split(
     presentation: &NowPlayingPresentation,
     repository_root: &Path,
     palette: PresentationPalette,
+    diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
     let layout = GallerySplitLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE);
-    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    match layout.field {
-        GalleryField::Cohesive => root.add_css_class("gallery-split"),
-    }
-    root.set_hexpand(true);
-    root.set_vexpand(true);
+    let surface = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    surface.set_hexpand(true);
+    surface.set_vexpand(true);
 
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     content.add_css_class("gallery-content");
     content.set_hexpand(true);
     content.set_vexpand(true);
-    root.append(&content);
+    surface.append(&content);
 
     let artwork_column = gtk::Box::new(gtk::Orientation::Vertical, 0);
     artwork_column.add_css_class("artwork-column");
@@ -458,13 +467,36 @@ fn gallery_split(
         metadata_slot,
         metadata,
     };
+    let class_name = match layout.field {
+        GalleryField::Cohesive => "gallery-split",
+    };
+    let (root, diagnostics) = presentation_layer(&surface, class_name, diagnostics_text);
     RenderedPresentation {
         root: root.upcast(),
         progress,
         palette,
         gallery_split: Some(gallery_split),
         full_field: None,
+        diagnostics,
     }
+}
+
+fn presentation_layer(
+    content: &impl IsA<gtk::Widget>,
+    class_name: &str,
+    diagnostics_text: Option<&str>,
+) -> (gtk::Overlay, Option<gtk::Label>) {
+    let root = gtk::Overlay::new();
+    root.add_css_class(class_name);
+    root.set_hexpand(true);
+    root.set_vexpand(true);
+    root.set_child(Some(content));
+    let diagnostics = diagnostics_text.map(|text| {
+        let diagnostics = diagnostics_view(text);
+        root.add_overlay(&diagnostics);
+        diagnostics
+    });
+    (root, diagnostics)
 }
 
 fn artwork(

@@ -15,6 +15,9 @@ pub fn presentation_palette_styles(
     let accent = palette.accent.to_hex();
     let progress_track = palette.progress_track.to_hex();
     let progress_fill = palette.progress_fill.to_hex();
+    let diagnostics_field = palette.diagnostics_field.to_hex();
+    let diagnostics_text = palette.diagnostics_text.to_hex();
+    let diagnostics_border = palette.diagnostics_border.to_hex();
     let shadow_offset = layout.artwork_shadow_offset_px;
     let shadow_blur = layout.artwork_shadow_blur_px;
     let accent_width = full_field_layout.accent_width_px;
@@ -32,15 +35,7 @@ pub fn presentation_palette_styles(
          .{class_name} .full-field-explanation {{ color: {muted_text}; }}\n\
          .{class_name} .identity-label {{ color: {muted_text}; }}\n\
          .{class_name} progressbar trough {{ background-color: {progress_track}; }}\n\
-         .{class_name} progressbar progress {{ background-color: {progress_fill}; }}\n"
-    )
-}
-
-pub fn diagnostics_palette_styles(palette: PresentationPalette) -> String {
-    format!(
-        ".diagnostics {{ color: {}; background-color: {}; border-color: {}; }}\n",
-        palette.diagnostics_text.to_hex(),
-        palette.diagnostics_field.to_hex(),
-        palette.diagnostics_border.to_hex(),
+         .{class_name} progressbar progress {{ background-color: {progress_fill}; }}\n\
+         .{class_name} .diagnostics {{ color: {diagnostics_text}; background-color: {diagnostics_field}; border-color: {diagnostics_border}; }}\n"
     )
 }
