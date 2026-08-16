@@ -29,7 +29,7 @@ identity and its co-located Roon Server are not product requirements.
 - [Implementation tickets](.scratch/roonscape/issues/)
 - [Domain language](CONTEXT.md)
 - [Architecture decisions](docs/adr/)
-- [Selected visual direction](docs/design/gallery-split.md)
+- [Presentation design](docs/design/presentation.md)
 
 ## Install a Linux release
 
@@ -152,10 +152,10 @@ For focused bridge work, `npm run start:bridge` remains available when
 `npm run configure -- ...` commands remain available for discovery and
 configuration diagnostics, but are not the ordinary owner setup path.
 
-For repeatable native-renderer captures at the three accepted viewports, use
-the [Gallery split visual acceptance workflow](docs/visual-acceptance/gallery-split.md).
-It covers the complete fixture matrix, typography and diagnostics
-representatives, the decision checklist, and the physical-display handoff.
+For repeatable native-renderer captures at the five representative viewports,
+use the [presentation visual-acceptance workflow](docs/visual-acceptance/presentation.md).
+It covers the complete Fixture Scenario matrix, typography and diagnostics
+representatives, and the decision checklist.
 
 The renderer uses the host-provided Palatino Linotype and Segoe UI families
 only when both are available. Otherwise it atomically selects the packaged

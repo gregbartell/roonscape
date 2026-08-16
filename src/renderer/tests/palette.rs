@@ -23,7 +23,7 @@ fn assert_color_near(role: &str, actual: Rgb, expected: Rgb, maximum_channel_del
     ] {
         assert!(
             actual.abs_diff(expected) <= maximum_channel_delta,
-            "prototype {role} {channel} channel should stay within {maximum_channel_delta} of the visual reference; expected {expected}, got {actual}"
+            "{role} {channel} channel should stay within {maximum_channel_delta} of the visual direction; expected {expected}, got {actual}"
         );
     }
 }
@@ -44,7 +44,7 @@ fn synthetic_artwork(directory: &TempDir, file_name: &str, field: &str, accent: 
 }
 
 #[test]
-fn keeps_the_prototype_artworks_navy_coral_and_cream_direction() {
+fn keeps_the_representative_artworks_navy_coral_and_cream_direction() {
     let artwork_path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/playing.svg");
 
@@ -94,7 +94,7 @@ fn keeps_the_prototype_artworks_navy_coral_and_cream_direction() {
 }
 
 #[test]
-fn uses_the_fixed_prototype_palette_without_artwork() {
+fn uses_the_fixed_no_art_palette_without_artwork() {
     let palette = PresentationPalette::for_artwork(None);
 
     assert_eq!(palette.background.to_hex(), "#071522");
@@ -170,7 +170,7 @@ fn every_semantic_text_and_accent_role_meets_its_field_contrast() {
     let directory = tempdir().expect("a temporary artwork directory should be available");
     let dark_artwork_path = synthetic_artwork(&directory, "dark.svg", "#08172d", "#db674f");
     let light_artwork_path = synthetic_artwork(&directory, "light.svg", "#f4e7c5", "#e59a73");
-    let prototype_artwork_path =
+    let representative_artwork_path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/playing.svg");
     let palettes = [
         ("fallback", PresentationPalette::fallback()),
@@ -185,9 +185,9 @@ fn every_semantic_text_and_accent_role_meets_its_field_contrast() {
                 .expect("light artwork should produce a palette"),
         ),
         (
-            "prototype artwork",
-            PresentationPalette::from_artwork(&prototype_artwork_path)
-                .expect("prototype artwork should produce a palette"),
+            "representative artwork",
+            PresentationPalette::from_artwork(&representative_artwork_path)
+                .expect("representative artwork should produce a palette"),
         ),
     ];
 
