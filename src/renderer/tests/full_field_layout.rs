@@ -45,3 +45,18 @@ fn bounds_full_field_states_and_identities_at_representative_landscape_viewports
         );
     }
 }
+
+#[test]
+fn reserves_a_complete_long_heading_word_at_representative_landscape_viewports() {
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = FullFieldLayout::for_viewport(viewport);
+        let heading_width = layout
+            .copy_width_px
+            .saturating_sub(layout.accent_padding_px);
+
+        assert!(
+            heading_width * 5 >= layout.heading_px * 27,
+            "full-field copy should reserve 5.4 em for a complete heading word at {viewport:?}"
+        );
+    }
+}

@@ -192,6 +192,7 @@ test("capture command orchestrates one native fixture capture and records its ma
   const outputDirectory = path.join(taskDirectory, "captures");
   const fakePng = path.join(taskDirectory, "fake.png");
   const rendererEnvironment = path.join(taskDirectory, "renderer-environment");
+  const rendererArguments = path.join(taskDirectory, "renderer-arguments");
   const displayConfiguration = path.join(
     taskDirectory,
     "display-configuration",
@@ -204,7 +205,7 @@ test("capture command orchestrates one native fixture capture and records its ma
   );
   await executable(
     path.join(binDirectory, "cargo"),
-    '#!/bin/sh\nprintf "%s|%s|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "$ROONSCAPE_CAPTURE_TYPOGRAPHY" "$ROONSCAPE_DIAGNOSTICS" > "$ROONSCAPE_CAPTURE_TEST_RENDERER_ENVIRONMENT"\ncp "$ROONSCAPE_DISPLAY_CONFIG" "$ROONSCAPE_CAPTURE_TEST_DISPLAY_CONFIGURATION"\ntrap \'exit 0\' TERM INT\nwhile :; do /usr/bin/sleep 1; done\n',
+    '#!/bin/sh\nconfiguration_file="$7"\nprintf "%s|%s|%s|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "$ROONSCAPE_CAPTURE_TYPOGRAPHY" "$ROONSCAPE_DIAGNOSTICS" "${ROONSCAPE_DISPLAY_CONFIG-unset}" > "$ROONSCAPE_CAPTURE_TEST_RENDERER_ENVIRONMENT"\nprintf "%s\\n" "$@" > "$ROONSCAPE_CAPTURE_TEST_RENDERER_ARGUMENTS"\ncp "$configuration_file" "$ROONSCAPE_CAPTURE_TEST_DISPLAY_CONFIGURATION"\ntrap \'exit 0\' TERM INT\nwhile :; do /usr/bin/sleep 1; done\n',
   );
   await executable(
     path.join(binDirectory, "xwininfo"),
@@ -236,6 +237,7 @@ test("capture command orchestrates one native fixture capture and records its ma
           PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
           ROONSCAPE_CAPTURE_TEST_PNG: fakePng,
           ROONSCAPE_CAPTURE_TEST_DISPLAY_CONFIGURATION: displayConfiguration,
+          ROONSCAPE_CAPTURE_TEST_RENDERER_ARGUMENTS: rendererArguments,
           ROONSCAPE_CAPTURE_TEST_RENDERER_ENVIRONMENT: rendererEnvironment,
           ROONSCAPE_CAPTURE_TEST_WINDOW_ID: "4242",
         },
@@ -261,7 +263,22 @@ test("capture command orchestrates one native fixture capture and records its ma
       await readFile(path.join(outputDirectory, manifest.captures[0].fileName)),
       await readFile(fakePng),
     );
-    assert.equal(await readFile(rendererEnvironment, "utf8"), "1280x720||0\n");
+    assert.equal(
+      await readFile(rendererEnvironment, "utf8"),
+      "1280x720||0|unset\n",
+    );
+    const rendererArgumentList = (await readFile(rendererArguments, "utf8"))
+      .trimEnd()
+      .split("\n");
+    assert.deepEqual(rendererArgumentList.slice(0, 6), [
+      "run",
+      "--quiet",
+      "--package",
+      "roonscape-renderer",
+      "--",
+      "--config",
+    ]);
+    assert.equal(path.basename(rendererArgumentList[6]), "display.json");
     assert.deepEqual(JSON.parse(await readFile(displayConfiguration, "utf8")), {
       trackedOutputId: "visual-acceptance-capture",
       inactivity: {

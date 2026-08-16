@@ -111,7 +111,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             application.quit();
         }
     });
-    application.run();
+    application.run_with_args(&["roonscape-renderer"]);
 
     if let Some(error) = activation_error.borrow_mut().take() {
         return Err(error);

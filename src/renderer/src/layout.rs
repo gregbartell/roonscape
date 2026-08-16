@@ -206,7 +206,7 @@ impl FullFieldLayout {
         let explanation_px = scaled(viewport.width_px, 0.0135, 16, 46);
         Self {
             outer_gutter_px: scaled(viewport.width_px, 0.042, 32, 160),
-            copy_width_px: ((viewport.width_px as f64) * 0.70).round().min(1088.0) as u32,
+            copy_width_px: ((viewport.width_px as f64) * 0.70).round().min(1280.0) as u32,
             accent_width_px: scaled(viewport.width_px, 0.0038, 5, 15),
             accent_padding_px: scaled(viewport.width_px, 0.04, 32, 144),
             status_spacing_px: scaled(viewport.height_px, 0.036, 29, 80),

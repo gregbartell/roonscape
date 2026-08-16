@@ -124,7 +124,6 @@ async function captureFixture(
     NO_AT_BRIDGE: "1",
     ROONSCAPE_CAPTURE_VIEWPORT: capture.viewport,
     ROONSCAPE_DIAGNOSTICS: capture.diagnostics ? "1" : "0",
-    ROONSCAPE_DISPLAY_CONFIG: displayConfigurationPath,
     ROONSCAPE_FIXTURE: capture.fixture,
     ROONSCAPE_SOCKET: socketPath,
   };
@@ -140,7 +139,15 @@ async function captureFixture(
   try {
     renderer = startLongRunning(
       "cargo",
-      ["run", "--quiet", "--package", "roonscape-renderer"],
+      [
+        "run",
+        "--quiet",
+        "--package",
+        "roonscape-renderer",
+        "--",
+        "--config",
+        displayConfigurationPath,
+      ],
       environment,
     );
     await renderer.spawned;
