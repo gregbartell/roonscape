@@ -144,10 +144,11 @@ Current artwork is requested from Roon as a bounded JPEG derivative and staged
 atomically in an `artwork` directory beside the socket. Each complete snapshot
 identifies artwork by its presentation revision. Superseded files are removed;
 the renderer derives a readable presentation palette from the current file and
-uses a neutral palette when no artwork is present. Metadata wraps within fixed
-line counts, reduces to readable minimum sizes, and ellipsizes only when it
-still cannot fit. Visual revision changes crossfade artwork, metadata, and both
-layers' full palettes together while progress-only samples update in place.
+uses the fixed navy, coral, and cream fallback when artwork is absent or
+unusable. Metadata wraps within fixed line counts, reduces to readable minimum
+sizes, and ellipsizes only when it still cannot fit. Visual revision changes
+crossfade artwork, metadata, and both layers' full palettes together while
+progress-only samples update in place.
 
 Roon authorization is stored separately at
 `$XDG_STATE_HOME/roonscape/authorization.json`, falling back to
