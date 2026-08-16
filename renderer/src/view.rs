@@ -445,19 +445,24 @@ fn artwork(
     layout: ArtworkLayout,
 ) -> gtk::AspectFrame {
     let picture = match layout.content {
-        ArtworkContent::Supplied => gtk::Picture::for_filename(
-            repository_root.join(
-                presentation
-                    .artwork_path
-                    .as_deref()
-                    .expect("supplied artwork layout requires an artwork path"),
-            ),
-        ),
-        ArtworkContent::QuietField => gtk::Picture::new(),
+        ArtworkContent::Supplied => {
+            let picture = gtk::Picture::for_filename(
+                repository_root.join(
+                    presentation
+                        .artwork_path
+                        .as_deref()
+                        .expect("supplied artwork layout requires an artwork path"),
+                ),
+            );
+            picture.set_alternative_text(Some("Current album artwork"));
+            picture
+        }
+        ArtworkContent::QuietField => {
+            let picture = gtk::Picture::new();
+            picture.add_css_class("artwork-missing");
+            picture
+        }
     };
-    if layout.content == ArtworkContent::Supplied {
-        picture.set_alternative_text(Some("Current album artwork"));
-    }
     picture.add_css_class("artwork");
     picture.set_can_shrink(true);
     match layout.fit {
@@ -465,9 +470,6 @@ fn artwork(
     }
     picture.set_hexpand(true);
     picture.set_vexpand(true);
-    if layout.content == ArtworkContent::QuietField {
-        picture.add_css_class("artwork-missing");
-    }
 
     let (horizontal_alignment, vertical_alignment) = match layout.alignment {
         ArtworkAlignment::Center => (0.5, 0.5),

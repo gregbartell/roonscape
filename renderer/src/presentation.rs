@@ -423,8 +423,12 @@ fn presentation_from_snapshot_after(
 
 fn usable_metadata_line(value: Option<&str>) -> Option<String> {
     value
-        .filter(|value| !value.trim().is_empty())
+        .filter(|value| is_usable_metadata_line(value))
         .map(str::to_owned)
+}
+
+fn is_usable_metadata_line(value: &str) -> bool {
+    !value.trim().is_empty()
 }
 
 fn available_full_field(
@@ -459,7 +463,7 @@ impl NowPlayingPresentation {
         ]
         .into_iter()
         .flatten()
-        .any(|value| !value.trim().is_empty())
+        .any(is_usable_metadata_line)
     }
 }
 
