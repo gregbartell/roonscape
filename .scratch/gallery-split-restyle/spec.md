@@ -1,6 +1,6 @@
 # Restyle Gallery split from the selected prototype
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 

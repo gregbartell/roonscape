@@ -7,24 +7,24 @@ with a decision-focused checklist rather than brittle screenshot equality.
 **Blocked by:** 08 — Preserve transitions and OLED protection; 09 — Keep
 diagnostics legible on every palette.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One documented workflow generates native-renderer captures at
+- [x] One documented workflow generates native-renderer captures at
       3840×2160, 3840×2400, and 1600×900 without introducing a browser engine
       into the runtime.
-- [ ] The capture matrix covers Playing, Paused, Loading with and without
+- [x] The capture matrix covers Playing, Paused, Loading with and without
       content, Idle, every unavailable state, missing metadata, missing
       artwork, long and extreme metadata, determinate and indeterminate
       progress, and non-square artwork.
-- [ ] Representative captures cover the preferred and forced fallback font
+- [x] Representative captures cover the preferred and forced fallback font
       pairs plus dark, light, and fixed no-art palettes.
-- [ ] The checklist compares composition, negative space, hierarchy, artwork
+- [x] The checklist compares composition, negative space, hierarchy, artwork
       fit, palette, footer position, full-field grammar, transition boundaries,
       and diagnostics with the selected prototype and specification.
-- [ ] Automated coverage remains focused on fixture content, layout policy,
+- [x] Automated coverage remains focused on fixture content, layout policy,
       palette contrast, and preserved behavior; no pixel-golden or screenshot
       difference gate is added.
-- [ ] The handoff points to the existing human Reference Deployment acceptance
+- [x] The handoff points to the existing human Reference Deployment acceptance
       work for physical 4K OLED legibility, luminance, transition, and
       burn-in-protection judgment rather than claiming those checks were
       automated.
@@ -65,18 +65,40 @@ Reference Deployment acceptance work.
 
 **Acceptance criteria:**
 
-- [ ] One documented command or workflow generates the three required native
+- [x] One documented command or workflow generates the three required native
       dimensions without introducing a browser engine into the runtime.
-- [ ] The matrix covers every specified playback, availability, metadata,
+- [x] The matrix covers every specified playback, availability, metadata,
       artwork, progress, palette, typography, and diagnostics case.
-- [ ] The checklist evaluates composition, spacing, hierarchy, artwork fit,
+- [x] The checklist evaluates composition, spacing, hierarchy, artwork fit,
       palette, footer, full-field grammar, transition boundaries, and
       diagnostics against the selected reference.
-- [ ] No pixel-golden or screenshot-difference test becomes a CI gate.
-- [ ] The handoff explicitly reserves physical 4K OLED and burn-in-protection
+- [x] No pixel-golden or screenshot-difference test becomes a CI gate.
+- [x] The handoff explicitly reserves physical 4K OLED and burn-in-protection
       judgment for the human acceptance ticket.
 
 **Out of scope:**
 
 - Automating subjective physical-display acceptance.
 - Reimplementing any presentation in HTML or browser-based capture tooling.
+
+### Implementation Result — 2026-08-16
+
+Implemented in `4c1dc83`, with review corrections in `2894d50`. The
+`npm run capture:gallery` workflow now drives the production GTK 4/Pango
+renderer under exact-size Xvfb displays, waits for the mapped RoonScape window,
+captures it with predictable names, validates every PNG dimension, and records
+the selected fixture, viewport, typography, palette, diagnostics, and native
+renderer in a manifest.
+
+The durable matrix covers all requested states at 3840×2160, 3840×2400, and
+1600×900. Reference Deployment representatives cover both complete font pairs,
+readable Pango substitution for `月`, and diagnostics over dark, light, and
+fixed no-art palettes. A dedicated capture Display Configuration prevents host
+OLED dimming or repositioning from changing the evidence.
+
+The documented checklist compares the native output with the selected
+prototype and specification without making pixels an automated contract, then
+hands viewing-distance, luminance, transition, and burn-in-protection judgment
+to the existing human Reference Deployment ticket. A complete 59-artifact
+native run succeeded, both corrected typography captures were inspected, and
+`npm run check` passed. Final Standards and Spec reviews reported no findings.
