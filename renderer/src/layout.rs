@@ -51,6 +51,18 @@ pub struct MetadataFontSizes {
     pub minimum_px: u32,
 }
 
+impl MetadataFontSizes {
+    pub fn fitting_font_size(&self, mut fits: impl FnMut(u32) -> bool) -> u32 {
+        for font_size_px in [self.preferred_px, self.reduced_px, self.minimum_px] {
+            if fits(font_size_px) || font_size_px == self.minimum_px {
+                return font_size_px;
+            }
+        }
+
+        unreachable!("the minimum metadata font size is always selected")
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GallerySplitTypography {
     pub title: MetadataFontSizes,

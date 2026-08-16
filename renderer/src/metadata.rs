@@ -18,18 +18,13 @@ pub struct MetadataLineLayout {
 }
 
 impl MetadataLineLayout {
-    pub fn fitting_font_size(&self, mut fits: impl FnMut(u32) -> bool) -> u32 {
-        for font_size_px in [
-            self.preferred_font_size_px,
-            self.reduced_font_size_px,
-            self.minimum_font_size_px,
-        ] {
-            if fits(font_size_px) || font_size_px == self.minimum_font_size_px {
-                return font_size_px;
-            }
+    pub fn fitting_font_size(&self, fits: impl FnMut(u32) -> bool) -> u32 {
+        MetadataFontSizes {
+            preferred_px: self.preferred_font_size_px,
+            reduced_px: self.reduced_font_size_px,
+            minimum_px: self.minimum_font_size_px,
         }
-
-        unreachable!("the minimum metadata font size is always selected")
+        .fitting_font_size(fits)
     }
 }
 

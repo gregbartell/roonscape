@@ -5,11 +5,11 @@ use gtk::gdk;
 use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    GallerySplitLayout, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform,
-    MetadataFontSizes, MetadataLineLayout, MetadataTypography, NowPlayingPresentation,
-    Presentation, PresentationPalette, PresentationProgress, PresentationRevision,
-    PresentationTransition, TypographyPair, UnavailablePresentation, Viewport,
-    metadata_layout_for_viewport,
+    ArtworkFit, GalleryField, GallerySplitLayout, GallerySplitRole, INACTIVE_HORIZONTAL_BOUND,
+    INACTIVE_VERTICAL_BOUND, IdentityPlacement, InactivityTransform, MetadataFontSizes,
+    MetadataLineLayout, MetadataTypography, NowPlayingPresentation, Presentation,
+    PresentationPalette, PresentationProgress, PresentationRevision, PresentationTransition,
+    TypographyPair, UnavailablePresentation, Viewport, metadata_layout_for_viewport,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -164,10 +164,7 @@ impl PresentationView {
         if let Some(discarded) = self.transition.discard_outgoing() {
             self.remove_layer(discarded);
         }
-        let rendered = render_current(presentation, repository_root);
-        if let Some(viewport) = self.viewport {
-            rendered.apply_viewport(viewport);
-        }
+        let rendered = self.render_current_at_viewport(presentation, repository_root);
         let discarded = self.transition.begin(revision, rendered, started_at);
         debug_assert!(discarded.is_none());
 
@@ -186,10 +183,7 @@ impl PresentationView {
         presentation: &Presentation,
         repository_root: &Path,
     ) {
-        let rendered = render_current(presentation, repository_root);
-        if let Some(viewport) = self.viewport {
-            rendered.apply_viewport(viewport);
-        }
+        let rendered = self.render_current_at_viewport(presentation, repository_root);
         let (discarded_current, discarded_outgoing) =
             self.transition.replace_immediately(revision, rendered);
         self.remove_layer(discarded_current);
@@ -216,6 +210,18 @@ impl PresentationView {
 
     fn remove_layer(&self, layer: PresentationRevision<RenderedPresentation>) {
         self.stack.remove(&layer.value().root);
+    }
+
+    fn render_current_at_viewport(
+        &self,
+        presentation: &Presentation,
+        repository_root: &Path,
+    ) -> RenderedPresentation {
+        let rendered = render_current(presentation, repository_root);
+        if let Some(viewport) = self.viewport {
+            rendered.apply_viewport(viewport);
+        }
+        rendered
     }
 
     fn reveal_current(&self) {
@@ -298,8 +304,11 @@ fn gallery_split(
     repository_root: &Path,
     palette: PresentationPalette,
 ) -> RenderedPresentation {
+    let layout = GallerySplitLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE);
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    root.add_css_class("gallery-split");
+    match layout.field {
+        GalleryField::Cohesive => root.add_css_class("gallery-split"),
+    }
     root.set_hexpand(true);
     root.set_vexpand(true);
 
@@ -313,10 +322,10 @@ fn gallery_split(
     artwork_column.add_css_class("artwork-column");
     artwork_column.set_hexpand(false);
     artwork_column.set_vexpand(true);
-    let artwork_frame = artwork(presentation, repository_root);
+    let artwork_frame = artwork(presentation, repository_root, layout.artwork_fit);
     artwork_column.append(&artwork_frame);
 
-    let metadata = metadata(presentation);
+    let metadata = metadata(presentation, &layout);
     let metadata_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
     metadata_slot.add_css_class("metadata-slot");
     metadata_slot.set_hexpand(false);
@@ -341,7 +350,11 @@ fn gallery_split(
     }
 }
 
-fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk::AspectFrame {
+fn artwork(
+    presentation: &NowPlayingPresentation,
+    repository_root: &Path,
+    fit: ArtworkFit,
+) -> gtk::AspectFrame {
     let picture = match presentation.artwork_path.as_deref() {
         Some(path) => gtk::Picture::for_filename(repository_root.join(path)),
         None => gtk::Picture::new(),
@@ -349,7 +362,9 @@ fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk
     picture.set_alternative_text(Some("Current album artwork"));
     picture.add_css_class("artwork");
     picture.set_can_shrink(true);
-    picture.set_keep_aspect_ratio(true);
+    match fit {
+        ArtworkFit::Contain => picture.set_keep_aspect_ratio(true),
+    }
     picture.set_hexpand(true);
     picture.set_vexpand(true);
     if presentation.artwork_path.is_none() {
@@ -366,7 +381,10 @@ fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk
     frame
 }
 
-fn metadata(presentation: &NowPlayingPresentation) -> RenderedMetadata {
+fn metadata(
+    presentation: &NowPlayingPresentation,
+    gallery_layout: &GallerySplitLayout,
+) -> RenderedMetadata {
     let column = gtk::Box::new(gtk::Orientation::Vertical, 0);
     column.add_css_class("metadata-column");
     column.set_hexpand(true);
@@ -378,32 +396,49 @@ fn metadata(presentation: &NowPlayingPresentation) -> RenderedMetadata {
     copy.set_vexpand(true);
 
     let playback_state = playback_state(&presentation.playback_state);
-    copy.append(&playback_state.root);
 
     let layout = metadata_layout_for_viewport(presentation, Viewport::WINDOWED_FIXTURE);
-    let title = layout.title.as_ref().map(|layout| {
-        let line = metadata_line(layout, "title");
-        copy.append(&line.label);
-        line
-    });
-    let artist = layout.artist.as_ref().map(|layout| {
-        let line = metadata_line(layout, "artist");
-        copy.append(&line.label);
-        line
-    });
-    let album = layout.album.as_ref().map(|layout| {
-        let line = metadata_line(layout, "album");
-        copy.append(&line.label);
-        line
-    });
-    let progress = presentation.progress.as_ref().map(|progress| {
-        let rendered_progress = progress_view(progress);
-        copy.append(&rendered_progress.root);
-        rendered_progress
-    });
+    let title = layout
+        .title
+        .as_ref()
+        .map(|layout| metadata_line(layout, "title"));
+    let artist = layout
+        .artist
+        .as_ref()
+        .map(|layout| metadata_line(layout, "artist"));
+    let album = layout
+        .album
+        .as_ref()
+        .map(|layout| metadata_line(layout, "album"));
+    let progress = presentation.progress.as_ref().map(progress_view);
+
+    for role in &gallery_layout.metadata_roles {
+        match role {
+            GallerySplitRole::PlaybackStatus => copy.append(&playback_state.root),
+            GallerySplitRole::Title => {
+                copy.append(&title.as_ref().expect("Title role requires a label").label)
+            }
+            GallerySplitRole::Artist => {
+                copy.append(&artist.as_ref().expect("Artist role requires a label").label)
+            }
+            GallerySplitRole::Album => {
+                copy.append(&album.as_ref().expect("Album role requires a label").label)
+            }
+            GallerySplitRole::Progress => copy.append(
+                &progress
+                    .as_ref()
+                    .expect("progress role requires a timeline")
+                    .root,
+            ),
+        }
+    }
 
     column.append(&copy);
-    let identity = tracked_identity(&presentation.tracked_output, &presentation.tracked_zone);
+    let identity = tracked_identity(
+        &presentation.tracked_output,
+        &presentation.tracked_zone,
+        gallery_layout.identity_placement,
+    );
     column.append(&identity.root);
     RenderedMetadata {
         root: column,
@@ -533,12 +568,10 @@ impl RenderedMetadataLine {
 }
 
 fn fit_metadata_line(label: &gtk::Label, sizes: MetadataFontSizes) {
-    for font_size_px in [sizes.preferred_px, sizes.reduced_px, sizes.minimum_px] {
+    let _ = sizes.fitting_font_size(|font_size_px| {
         set_label_font_size(label, font_size_px);
-        if !label.layout().is_ellipsized() || font_size_px == sizes.minimum_px {
-            break;
-        }
-    }
+        !label.layout().is_ellipsized()
+    });
 }
 
 fn dimension(value: u32) -> i32 {
@@ -634,12 +667,21 @@ fn progress_view(progress: &PresentationProgress) -> RenderedProgress {
     }
 }
 
-fn tracked_identity(tracked_output: &str, tracked_zone: &str) -> RenderedIdentity {
+fn tracked_identity(
+    tracked_output: &str,
+    tracked_zone: &str,
+    placement: IdentityPlacement,
+) -> RenderedIdentity {
     let row = gtk::Grid::new();
     row.add_css_class("tracked-identity");
     row.set_column_homogeneous(true);
     row.set_hexpand(true);
-    row.set_halign(gtk::Align::Fill);
+    match placement {
+        IdentityPlacement::BottomRight => {
+            row.set_halign(gtk::Align::Fill);
+            row.set_valign(gtk::Align::End);
+        }
+    }
 
     let output = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     output.set_hexpand(true);
