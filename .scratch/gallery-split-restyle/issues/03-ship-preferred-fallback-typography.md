@@ -7,20 +7,20 @@ Libre Baskerville and IBM Plex Sans pair.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Title and Album use Palatino Linotype while Artist and utility text use
+- [x] Title and Album use Palatino Linotype while Artist and utility text use
       Segoe UI when both preferred faces are installed and resolvable.
-- [ ] If either preferred face is unavailable, Title and Album use Libre
+- [x] If either preferred face is unavailable, Title and Album use Libre
       Baskerville and Artist and utility text use IBM Plex Sans; preferred and
       fallback faces are never mixed into a partial pair.
-- [ ] The open fallback fonts and required license notices ship with the
+- [x] The open fallback fonts and required license notices ship with the
       supported deployment and load without network access.
-- [ ] Palatino Linotype and Segoe UI remain host-provided and are not copied,
+- [x] Palatino Linotype and Segoe UI remain host-provided and are not copied,
       downloaded, or redistributed by RoonScape.
-- [ ] Characters outside the selected faces' coverage receive readable Pango
+- [x] Characters outside the selected faces' coverage receive readable Pango
       glyph substitution instead of missing-glyph boxes.
-- [ ] Automated checks can force preferred-present, partially present, and
+- [x] Automated checks can force preferred-present, partially present, and
       preferred-absent conditions and verify deterministic atomic selection;
       representative manual captures cover both complete pairs.
 
@@ -59,16 +59,33 @@ glyph-level substitution outside the selected pair's coverage.
 
 **Acceptance criteria:**
 
-- [ ] Preferred-present selects Palatino Linotype and Segoe UI together.
-- [ ] Preferred-partial and preferred-absent both select Libre Baskerville and
+- [x] Preferred-present selects Palatino Linotype and Segoe UI together.
+- [x] Preferred-partial and preferred-absent both select Libre Baskerville and
       IBM Plex Sans together, with no mixed pair.
-- [ ] The fallback faces and licenses ship and load without network or global
+- [x] The fallback faces and licenses ship and load without network or global
       host installation.
-- [ ] Missing glyphs remain readable through Pango substitution.
-- [ ] Automated selection checks and representative captures cover both
+- [x] Missing glyphs remain readable through Pango substitution.
+- [x] Automated selection checks and representative captures cover both
       complete pairs.
 
 **Out of scope:**
 
 - Redistributing or downloading Palatino Linotype or Segoe UI.
 - User-selectable font themes or disabling Pango glyph substitution.
+
+### Implementation Result — 2026-08-15
+
+Implemented in `f5ed5c0` with a standards-review simplification in `ea492dd`.
+The renderer registers packaged Libre Baskerville and IBM Plex Sans variable
+fonts as private Fontconfig application fonts, selects Palatino Linotype and
+Segoe UI only when both host faces resolve, and otherwise selects the complete
+open fallback pair. Both OFL notices ship beside the fallback files; no
+preferred proprietary font is included.
+
+Native preferred and forced-fallback captures were inspected, and a separate
+capture confirmed that Pango substituted a readable glyph for `月`, which is
+outside the selected preferred editorial face. The final standards review
+reported no hard violations, and the specification review reported no
+remaining findings. `npm run check` passed with formatting, type checking,
+linting, the complete TypeScript and Rust test suites, and the
+two-startup-order IPC restart smoke check.
