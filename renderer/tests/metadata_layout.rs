@@ -1,8 +1,8 @@
 mod support;
 
 use roonscape_renderer::{
-    MetadataTypography, Presentation, Viewport, metadata_layout, metadata_layout_for_viewport,
-    parse_snapshot, presentation_from_snapshot,
+    MetadataFontSizes, MetadataTypography, Presentation, Viewport, metadata_layout,
+    metadata_layout_for_viewport, parse_snapshot, presentation_from_snapshot,
 };
 
 fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation {
@@ -54,30 +54,9 @@ fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
     let artist = layout.artist.expect("long fixture should have an Artist");
     let album = layout.album.expect("long fixture should have an Album");
 
-    assert_eq!(
-        (
-            title.preferred_font_size_px,
-            title.reduced_font_size_px,
-            title.minimum_font_size_px,
-        ),
-        (168, 128, 96)
-    );
-    assert_eq!(
-        (
-            artist.preferred_font_size_px,
-            artist.reduced_font_size_px,
-            artist.minimum_font_size_px,
-        ),
-        (64, 56, 48)
-    );
-    assert_eq!(
-        (
-            album.preferred_font_size_px,
-            album.reduced_font_size_px,
-            album.minimum_font_size_px,
-        ),
-        (45, 40, 35)
-    );
+    assert_eq!(title.font_sizes, font_sizes(168, 128, 96));
+    assert_eq!(artist.font_sizes, font_sizes(64, 56, 48));
+    assert_eq!(album.font_sizes, font_sizes(45, 40, 35));
     assert_eq!(
         (
             title.maximum_lines,
@@ -100,15 +79,15 @@ fn extreme_metadata_stops_reducing_at_readable_minimum_sizes() {
 
     assert_eq!(
         title.fitting_font_size(|_| false),
-        title.minimum_font_size_px
+        title.font_sizes.minimum_px
     );
     assert_eq!(
         artist.fitting_font_size(|_| false),
-        artist.minimum_font_size_px
+        artist.font_sizes.minimum_px
     );
     assert_eq!(
         album.fitting_font_size(|_| false),
-        album.minimum_font_size_px
+        album.font_sizes.minimum_px
     );
 }
 
@@ -120,13 +99,13 @@ fn selects_the_first_font_size_that_fits_the_allocated_pango_layout() {
 
     let selected = title.fitting_font_size(|font_size_px| {
         attempted_sizes.push(font_size_px);
-        font_size_px <= title.reduced_font_size_px
+        font_size_px <= title.font_sizes.reduced_px
     });
 
-    assert_eq!(selected, title.reduced_font_size_px);
+    assert_eq!(selected, title.font_sizes.reduced_px);
     assert_eq!(
         attempted_sizes,
-        vec![title.preferred_font_size_px, title.reduced_font_size_px]
+        vec![title.font_sizes.preferred_px, title.font_sizes.reduced_px]
     );
 }
 
@@ -160,20 +139,14 @@ fn scales_metadata_typography_with_the_gallery_viewport() {
     let windowed_title = windowed
         .title
         .expect("windowed fixture should have a Title");
-    assert_eq!(
-        (
-            reference_title.preferred_font_size_px,
-            reference_title.reduced_font_size_px,
-            reference_title.minimum_font_size_px,
-        ),
-        (168, 128, 96)
-    );
-    assert_eq!(
-        (
-            windowed_title.preferred_font_size_px,
-            windowed_title.reduced_font_size_px,
-            windowed_title.minimum_font_size_px,
-        ),
-        (74, 58, 45)
-    );
+    assert_eq!(reference_title.font_sizes, font_sizes(168, 128, 96));
+    assert_eq!(windowed_title.font_sizes, font_sizes(74, 58, 45));
+}
+
+fn font_sizes(preferred_px: u32, reduced_px: u32, minimum_px: u32) -> MetadataFontSizes {
+    MetadataFontSizes {
+        preferred_px,
+        reduced_px,
+        minimum_px,
+    }
 }

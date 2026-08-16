@@ -11,20 +11,13 @@ pub enum MetadataTypography {
 pub struct MetadataLineLayout {
     pub text: String,
     pub typography: MetadataTypography,
-    pub preferred_font_size_px: u32,
-    pub reduced_font_size_px: u32,
-    pub minimum_font_size_px: u32,
+    pub font_sizes: MetadataFontSizes,
     pub maximum_lines: u32,
 }
 
 impl MetadataLineLayout {
     pub fn fitting_font_size(&self, fits: impl FnMut(u32) -> bool) -> u32 {
-        MetadataFontSizes {
-            preferred_px: self.preferred_font_size_px,
-            reduced_px: self.reduced_font_size_px,
-            minimum_px: self.minimum_font_size_px,
-        }
-        .fitting_font_size(fits)
+        self.font_sizes.fitting_font_size(fits)
     }
 }
 
@@ -77,9 +70,7 @@ fn line_layout(
     MetadataLineLayout {
         text: text.to_owned(),
         typography,
-        preferred_font_size_px: sizes.preferred_px,
-        reduced_font_size_px: sizes.reduced_px,
-        minimum_font_size_px: sizes.minimum_px,
+        font_sizes: sizes,
         maximum_lines,
     }
 }

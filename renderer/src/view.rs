@@ -461,7 +461,7 @@ fn metadata_line(layout: &MetadataLineLayout, class_name: &str) -> RenderedMetad
     label.set_ellipsize(pango::EllipsizeMode::End);
     label.set_wrap(true);
     label.set_wrap_mode(pango::WrapMode::WordChar);
-    set_label_font_size(&label, layout.preferred_font_size_px);
+    set_label_font_size(&label, layout.font_sizes.preferred_px);
 
     RenderedMetadataLine { label }
 }
