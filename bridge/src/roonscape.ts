@@ -38,10 +38,14 @@ if (getUserId === undefined) {
   throw new Error("RoonScape requires a Linux user identity");
 }
 
-const childEnvironment = (socketPath: string): NodeJS.ProcessEnv => ({
-  ...process.env,
-  ROONSCAPE_SOCKET: socketPath,
-});
+const liveChildEnvironment = (socketPath: string): NodeJS.ProcessEnv => {
+  const environment: NodeJS.ProcessEnv = {
+    ...process.env,
+    ROONSCAPE_SOCKET: socketPath,
+  };
+  delete environment.ROONSCAPE_FIXTURE_CONTROL;
+  return environment;
+};
 
 process.exitCode = await runRoonScapeCommand(process.argv.slice(2), {
   version: packageMetadata.version,
@@ -80,13 +84,13 @@ process.exitCode = await runRoonScapeCommand(process.argv.slice(2), {
         "--authorization",
         authorizationFile,
       ],
-      childEnvironment(socketPath),
+      liveChildEnvironment(socketPath),
     ),
   launchRenderer: ({ configurationFile, socketPath }) =>
     launchChildProcess(
       rendererExecutable,
       ["--config", configurationFile],
-      childEnvironment(socketPath),
+      liveChildEnvironment(socketPath),
     ),
   subscribeToTermination: (handler) => {
     const handleInterrupt = (): void => handler("SIGINT");

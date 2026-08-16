@@ -734,6 +734,59 @@ fn changing_inactive_condition_restarts_the_grace_period() {
 }
 
 #[test]
+fn fixture_selection_restarts_inactivity_without_changing_live_mode_updates() {
+    let paused =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
+    let mut live_paused =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
+    live_paused.revision += 1;
+    let mut fixture_paused =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
+    fixture_paused.revision += 1;
+    let mut live = PresentationState::new_with_inactivity(
+        paused,
+        presentation_time(0, PLAYING_SAMPLED_AT),
+        inactivity_configuration(),
+    )
+    .expect("Live Mode Paused state should be presentable");
+    let mut fixture = PresentationState::new_with_inactivity(
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid"),
+        presentation_time(0, PLAYING_SAMPLED_AT),
+        inactivity_configuration(),
+    )
+    .expect("Fixture Mode Paused state should be presentable");
+
+    live.update(live_paused, presentation_time(6, PLAYING_SAMPLED_AT + 6))
+        .expect("Live Mode update should remain valid");
+    fixture
+        .update_for_fixture_selection(fixture_paused, presentation_time(6, PLAYING_SAMPLED_AT + 6))
+        .expect("Fixture Scenario selection should remain valid");
+
+    assert_eq!(
+        live.frame_at(Duration::from_secs(6))
+            .expect("Live Mode frame should render")
+            .inactivity
+            .opacity,
+        0.3
+    );
+    assert_eq!(
+        fixture
+            .frame_at(Duration::from_secs(6))
+            .expect("Fixture Mode frame should render")
+            .inactivity,
+        InactivityTransform::default()
+    );
+    assert_eq!(
+        fixture
+            .frame_at(Duration::from_secs(11))
+            .expect("fresh Fixture Mode grace period should expire")
+            .inactivity
+            .opacity,
+        0.3
+    );
+}
+
+#[test]
 fn playing_cancels_a_stale_inactivity_deadline_before_it_fires() {
     let paused =
         parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");

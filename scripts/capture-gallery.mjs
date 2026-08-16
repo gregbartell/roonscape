@@ -123,6 +123,7 @@ async function captureFixture(
     ROONSCAPE_FIXTURE: capture.fixture,
     ROONSCAPE_SOCKET: socketPath,
   };
+  delete environment.ROONSCAPE_FIXTURE_CONTROL;
   if (capture.typography !== "automatic") {
     environment.ROONSCAPE_CAPTURE_TYPOGRAPHY = capture.typography;
   } else {

@@ -1,6 +1,7 @@
 mod contract;
 mod diagnostics;
 mod display_configuration;
+mod fixture_navigation;
 mod ipc;
 mod keyboard;
 mod layout;
@@ -25,11 +26,12 @@ pub use display_configuration::{
     inactivity_configuration_from_display_configuration, load_inactivity_configuration,
     reject_removed_display_configuration_override,
 };
+pub use fixture_navigation::FixtureNavigation;
 pub use ipc::{
     ConnectionState, SnapshotEvent, SnapshotReader, SnapshotSocketError, SnapshotSubscription,
     read_snapshot_from_socket,
 };
-pub use keyboard::{RendererKey, should_close_renderer};
+pub use keyboard::{NavigationIntent, RendererAction, RendererKey, RendererKeyboard};
 pub use layout::{
     ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, FullFieldLayout, GalleryField,
     GallerySplitLayout, GallerySplitRole, GallerySplitTypography, IdentityLineLayout,

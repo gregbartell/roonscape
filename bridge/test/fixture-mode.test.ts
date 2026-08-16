@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, readFile, stat, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -31,12 +31,8 @@ interface CatalogFile {
 
 test("ordinary Fixture Mode starts predictably at Playing", async () => {
   await withTaskDirectory(async (taskDirectory) => {
-    const socketPath = path.join(taskDirectory, "roonscape.sock");
-    const fixture = startFixture({
-      ROONSCAPE_SOCKET: socketPath,
-      ROONSCAPE_FIXTURE: undefined,
-      ROONSCAPE_FIXTURE_CATALOG: undefined,
-    });
+    const { socketPath, controlSocketPath, fixture } =
+      startOrdinaryFixture(taskDirectory);
 
     try {
       const published = await readPublishedSnapshot(fixture.child, socketPath);
@@ -44,6 +40,7 @@ test("ordinary Fixture Mode starts predictably at Playing", async () => {
 
       assert.deepEqual(published, {
         ...expected,
+        revision: 1,
         progress: {
           ...expected.progress,
           sampledAt: published.progress?.sampledAt,
@@ -52,6 +49,125 @@ test("ordinary Fixture Mode starts predictably at Playing", async () => {
       assert.notEqual(
         published.progress?.sampledAt,
         expected.progress?.sampledAt,
+      );
+      assert.equal((await stat(controlSocketPath)).mode & 0o777, 0o600);
+    } finally {
+      await stop(fixture.child);
+    }
+  });
+});
+
+test("Next publishes the next Fixture Scenario as a complete snapshot", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const { socketPath, controlSocketPath, fixture } =
+      startOrdinaryFixture(taskDirectory);
+
+    try {
+      const snapshots = await publishedSnapshots(fixture.child, socketPath);
+      const initial = await snapshots.read();
+
+      await sendNavigationIntent(fixture.child, controlSocketPath, "Next");
+      const selected = await snapshots.read();
+      const expected = await loadSnapshot("fixtures/paused.json");
+
+      assert.equal(initial.revision, 1);
+      assert.deepEqual(selected, { ...expected, revision: 2 });
+      snapshots.close();
+    } finally {
+      await stop(fixture.child);
+    }
+  });
+});
+
+test("navigation publishes all Fixture Scenarios in order with wraparound revisions", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const { socketPath, controlSocketPath, fixture } =
+      startOrdinaryFixture(taskDirectory);
+
+    try {
+      const catalog = JSON.parse(
+        await readFile(catalogFixture, "utf8"),
+      ) as CatalogFile;
+      const snapshots = await publishedSnapshots(fixture.child, socketPath);
+      const observed = [await snapshots.read()];
+
+      for (let index = 1; index < catalog.scenarios.length; index += 1) {
+        await sendNavigationIntent(fixture.child, controlSocketPath, "Next");
+        observed.push(await snapshots.read());
+      }
+
+      for (const [index, scenario] of catalog.scenarios.entries()) {
+        const expected = await loadSnapshot(scenario.fixture);
+        assertSelectedSnapshot(observed[index], expected, index + 1);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await sendNavigationIntent(fixture.child, controlSocketPath, "Next");
+      const wrappedPlaying = await snapshots.read();
+      const expectedPlaying = await loadSnapshot("fixtures/playing.json");
+      assertSelectedSnapshot(wrappedPlaying, expectedPlaying, 19);
+      assert.notEqual(
+        wrappedPlaying.progress?.sampledAt,
+        observed[0]?.progress?.sampledAt,
+      );
+
+      await sendNavigationIntent(fixture.child, controlSocketPath, "Previous");
+      assertSelectedSnapshot(
+        await snapshots.read(),
+        await loadSnapshot("fixtures/light-artwork.json"),
+        20,
+      );
+      snapshots.close();
+    } finally {
+      await stop(fixture.child);
+    }
+  });
+});
+
+test("rapid distinct navigation publishes the latest deliberate selection", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const { socketPath, controlSocketPath, fixture } =
+      startOrdinaryFixture(taskDirectory);
+
+    try {
+      const snapshots = await publishedSnapshots(fixture.child, socketPath);
+      await snapshots.read();
+      await sendNavigationIntents(fixture.child, controlSocketPath, [
+        "Next",
+        "Next",
+        "Previous",
+        "Next",
+      ]);
+
+      let latest = await snapshots.read();
+      while (latest.revision < 5) {
+        latest = await snapshots.read();
+      }
+      assertSelectedSnapshot(
+        latest,
+        await loadSnapshot("fixtures/loading.json"),
+        5,
+      );
+      snapshots.close();
+    } finally {
+      await stop(fixture.child);
+    }
+  });
+});
+
+test("ordinary Fixture Mode logs initial and selected Scenario names", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const { socketPath, controlSocketPath, fixture } =
+      startOrdinaryFixture(taskDirectory);
+
+    try {
+      await readPublishedSnapshot(fixture.child, socketPath);
+      await sendNavigationIntent(fixture.child, controlSocketPath, "Next");
+      await waitForOutput(fixture.standardOutput, "Fixture Scenario: Paused");
+
+      assert.match(
+        fixture.standardOutput(),
+        /Fixture Scenario: Playing.*Fixture Scenario: Paused/s,
       );
     } finally {
       await stop(fixture.child);
@@ -94,11 +210,7 @@ test("ordinary Fixture Mode validates the complete catalog before becoming avail
     finalScenario.fixture = "fixtures/invalid.json";
     await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
 
-    const fixture = startFixture({
-      ROONSCAPE_SOCKET: socketPath,
-      ROONSCAPE_FIXTURE: undefined,
-      ROONSCAPE_FIXTURE_CATALOG: catalogPath,
-    });
+    const { fixture } = startOrdinaryFixture(taskDirectory, catalogPath);
 
     try {
       const result = await closeWithin(fixture.child, 1_000);
@@ -115,9 +227,58 @@ test("ordinary Fixture Mode validates the complete catalog before becoming avail
   });
 });
 
+test("ordinary Fixture Mode preflights every catalog snapshot against the publisher limit", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const socketPath = path.join(taskDirectory, "roonscape.sock");
+    const oversizedFixturePath = path.join(
+      taskDirectory,
+      "oversized-fixture.json",
+    );
+    const oversized = await loadSnapshot("fixtures/playing.json");
+    assert.ok(oversized.nowPlaying);
+    oversized.nowPlaying.title = "x".repeat(64 * 1024);
+    await writeFile(
+      oversizedFixturePath,
+      `${JSON.stringify(oversized, null, 2)}\n`,
+    );
+
+    const catalogPath = path.join(
+      taskDirectory,
+      "fixture-scenario-catalog.json",
+    );
+    const catalog = JSON.parse(
+      await readFile(catalogFixture, "utf8"),
+    ) as CatalogFile;
+    const finalScenario = catalog.scenarios.at(-1);
+    assert.ok(finalScenario);
+    finalScenario.fixture = oversizedFixturePath;
+    await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+
+    const { fixture, controlSocketPath } = startOrdinaryFixture(
+      taskDirectory,
+      catalogPath,
+    );
+    try {
+      assert.deepEqual(await closeWithin(fixture.child, 1_000), {
+        exitCode: 1,
+        signal: null,
+      });
+      assert.match(
+        fixture.standardError(),
+        /Light artwork.*Snapshot exceeds 64 KiB/s,
+      );
+      await assert.rejects(access(socketPath), { code: "ENOENT" });
+      await assert.rejects(access(controlSocketPath), { code: "ENOENT" });
+    } finally {
+      await stop(fixture.child);
+    }
+  });
+});
+
 function startFixture(
   environmentOverrides: Record<string, string | undefined>,
 ) {
+  let standardOutput = "";
   let standardError = "";
   const environment = { ...process.env, ...environmentOverrides };
   for (const [name, value] of Object.entries(environment)) {
@@ -127,14 +288,34 @@ function startFixture(
   }
   const child = spawn(process.execPath, [fixtureEntry], {
     env: environment,
-    stdio: ["ignore", "ignore", "pipe"],
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout?.setEncoding("utf8");
+  child.stdout?.on("data", (chunk: string) => {
+    standardOutput += chunk;
   });
   child.stderr?.setEncoding("utf8");
   child.stderr?.on("data", (chunk: string) => {
     standardError += chunk;
   });
 
-  return { child, standardError: () => standardError };
+  return {
+    child,
+    standardOutput: () => standardOutput,
+    standardError: () => standardError,
+  };
+}
+
+function startOrdinaryFixture(taskDirectory: string, catalogPath?: string) {
+  const socketPath = path.join(taskDirectory, "roonscape.sock");
+  const controlSocketPath = path.join(taskDirectory, "fixture-navigation.sock");
+  const fixture = startFixture({
+    ROONSCAPE_SOCKET: socketPath,
+    ROONSCAPE_FIXTURE_CONTROL: controlSocketPath,
+    ROONSCAPE_FIXTURE: undefined,
+    ROONSCAPE_FIXTURE_CATALOG: catalogPath,
+  });
+  return { socketPath, controlSocketPath, fixture };
 }
 
 async function readPublishedSnapshot(
@@ -150,6 +331,75 @@ async function readPublishedSnapshot(
   } finally {
     client.destroy();
   }
+}
+
+async function publishedSnapshots(child: ChildProcess, socketPath: string) {
+  await waitForSocket(child, socketPath);
+  const client = createConnection(socketPath);
+  const lines = createInterface({ input: client });
+  const snapshots = lines[Symbol.asyncIterator]();
+
+  return {
+    read: async (): Promise<PresentationSnapshot> => {
+      const next = await snapshots.next();
+      assert.equal(next.done, false);
+      return JSON.parse(next.value ?? "null") as PresentationSnapshot;
+    },
+    close: () => client.destroy(),
+  };
+}
+
+async function sendNavigationIntent(
+  child: ChildProcess,
+  controlSocketPath: string,
+  intent: "Previous" | "Next",
+): Promise<void> {
+  await sendNavigationIntents(child, controlSocketPath, [intent]);
+}
+
+async function sendNavigationIntents(
+  child: ChildProcess,
+  controlSocketPath: string,
+  intents: Array<"Previous" | "Next">,
+): Promise<void> {
+  await waitForSocket(child, controlSocketPath);
+  const control = createConnection(controlSocketPath);
+  await once(control, "connect");
+  const closed = once(control, "close");
+  control.end(`${intents.join("\n")}\n`);
+  await closed;
+}
+
+function assertSelectedSnapshot(
+  actual: PresentationSnapshot | undefined,
+  expected: PresentationSnapshot,
+  revision: number,
+): void {
+  assert.ok(actual);
+  assert.deepEqual(actual, {
+    ...expected,
+    revision,
+    progress:
+      expected.playback === "playing" && expected.progress !== null
+        ? { ...expected.progress, sampledAt: actual.progress?.sampledAt }
+        : expected.progress,
+  });
+  if (expected.playback === "playing" && expected.progress !== null) {
+    assert.notEqual(actual.progress?.sampledAt, expected.progress.sampledAt);
+  }
+}
+
+async function waitForOutput(
+  output: () => string,
+  expected: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (output().includes(expected)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`Timed out waiting for output: ${expected}`);
 }
 
 async function waitForSocket(

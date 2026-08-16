@@ -213,6 +213,23 @@ impl PresentationState {
         snapshot: PresentationSnapshot,
         anchored_at: PresentationTime,
     ) -> Result<PresentationUpdate, PresentationError> {
+        self.update_snapshot(snapshot, anchored_at, false)
+    }
+
+    pub fn update_for_fixture_selection(
+        &mut self,
+        snapshot: PresentationSnapshot,
+        anchored_at: PresentationTime,
+    ) -> Result<PresentationUpdate, PresentationError> {
+        self.update_snapshot(snapshot, anchored_at, true)
+    }
+
+    fn update_snapshot(
+        &mut self,
+        snapshot: PresentationSnapshot,
+        anchored_at: PresentationTime,
+        restart_inactivity: bool,
+    ) -> Result<PresentationUpdate, PresentationError> {
         presentation_from_snapshot(&snapshot)?;
         let update = if !transition_content_changed(&self.snapshot, &snapshot) {
             PresentationUpdate::ProgressOnly
@@ -230,7 +247,9 @@ impl PresentationState {
             self.source_sample_age = source_sample_age(&snapshot, anchored_at.utc)?;
             self.progress_anchored_at = anchored_at.monotonic;
         }
-        if self.inactivity_condition != next_inactivity_condition {
+        if self.inactivity_condition != next_inactivity_condition
+            || (restart_inactivity && next_inactivity_condition.is_some())
+        {
             self.inactivity_condition = next_inactivity_condition;
             self.inactivity_anchored_at = anchored_at.monotonic;
         }

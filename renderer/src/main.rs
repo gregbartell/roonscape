@@ -14,12 +14,12 @@ use std::time::{Duration, Instant, SystemTime};
 use gtk::glib;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    ConnectionState, Diagnostics, DiagnosticsConfiguration, InactivityConfiguration, Presentation,
-    PresentationState, PresentationTime, PresentationUpdate, RendererKey, SnapshotEvent,
-    SnapshotSubscription, TypographyPair, Viewport, current_process_memory_bytes,
-    display_configuration_file_path, load_inactivity_configuration,
-    register_packaged_fallback_fonts, reject_removed_display_configuration_override,
-    select_capture_typography, select_typography, should_close_renderer,
+    ConnectionState, Diagnostics, DiagnosticsConfiguration, FixtureNavigation,
+    InactivityConfiguration, Presentation, PresentationState, PresentationTime, PresentationUpdate,
+    RendererAction, RendererKey, RendererKeyboard, SnapshotEvent, SnapshotSubscription,
+    TypographyPair, Viewport, current_process_memory_bytes, display_configuration_file_path,
+    load_inactivity_configuration, register_packaged_fallback_fonts,
+    reject_removed_display_configuration_override, select_capture_typography, select_typography,
 };
 
 use view::{PresentationView, install_style_providers};
@@ -33,6 +33,12 @@ struct CaptureConfiguration {
     typography: Option<TypographyPair>,
 }
 
+#[derive(Clone)]
+struct RendererConnections {
+    snapshots: Rc<SnapshotSubscription>,
+    fixture_navigation: Option<Rc<RefCell<FixtureNavigation>>>,
+}
+
 struct PresentationRuntime {
     presentation: Rc<RefCell<PresentationState>>,
     presentation_view: Rc<RefCell<PresentationView>>,
@@ -41,6 +47,7 @@ struct PresentationRuntime {
     display: gtk::Overlay,
     repository_root: PathBuf,
     progress_clock: Instant,
+    fixture_navigation_enabled: bool,
 }
 
 fn main() -> ExitCode {
@@ -70,10 +77,17 @@ fn run() -> Result<(), Box<dyn Error>> {
     let diagnostics = DiagnosticsConfiguration::from_environment()?
         .enabled()
         .then(|| Rc::new(RefCell::new(Diagnostics::default())));
-    let updates = Rc::new(SnapshotSubscription::start(
-        socket_path,
-        SNAPSHOT_RETRY_DELAY,
-    ));
+    let connections = RendererConnections {
+        snapshots: Rc::new(SnapshotSubscription::start(
+            socket_path,
+            SNAPSHOT_RETRY_DELAY,
+        )),
+        fixture_navigation: env::var_os("ROONSCAPE_FIXTURE_CONTROL")
+            .map(PathBuf::from)
+            .map(|control_socket_path| FixtureNavigation::connect(&control_socket_path))
+            .transpose()?
+            .map(|navigation| Rc::new(RefCell::new(navigation))),
+    };
     let repository_root = resource_root()?;
     register_packaged_fallback_fonts(&repository_root.join("renderer"))?;
 
@@ -87,7 +101,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         if let Err(error) = build_window(
             application,
             presentation.clone(),
-            updates.clone(),
+            connections.clone(),
             diagnostics.clone(),
             &repository_root,
             progress_clock,
@@ -123,7 +137,7 @@ fn resource_root() -> Result<PathBuf, io::Error> {
 fn build_window(
     application: &gtk::Application,
     presentation: Rc<RefCell<PresentationState>>,
-    updates: Rc<SnapshotSubscription>,
+    connections: RendererConnections,
     diagnostics: Option<Rc<RefCell<Diagnostics>>>,
     repository_root: &Path,
     progress_clock: Instant,
@@ -180,30 +194,49 @@ fn build_window(
     window.set_child(Some(&display));
 
     let key_controller = gtk::EventControllerKey::new();
+    let keyboard = Rc::new(RefCell::new(RendererKeyboard::new(
+        connections.fixture_navigation.is_some(),
+    )));
+    keyboard.borrow_mut().set_focused(window.is_active());
     let controlled_window = window.clone();
+    let pressed_keyboard = keyboard.clone();
+    let navigation = connections.fixture_navigation.clone();
     key_controller.connect_key_pressed(move |_, key, _, _| {
-        let key = if key == gtk::gdk::Key::Escape {
-            RendererKey::Escape
-        } else {
-            RendererKey::Other
-        };
-        if should_close_renderer(key) {
-            controlled_window.close();
-            glib::Propagation::Stop
-        } else {
-            glib::Propagation::Proceed
+        let action = pressed_keyboard.borrow_mut().press(renderer_key(key));
+        match action {
+            RendererAction::Close => {
+                controlled_window.close();
+                glib::Propagation::Stop
+            }
+            RendererAction::Navigate(intent) => {
+                if let Some(navigation) = navigation.as_ref()
+                    && let Err(error) = navigation.borrow_mut().send(intent)
+                {
+                    eprintln!("RoonScape renderer: could not navigate Fixture Mode: {error}");
+                }
+                glib::Propagation::Stop
+            }
+            RendererAction::None => glib::Propagation::Proceed,
         }
     });
+    let released_keyboard = keyboard.clone();
+    key_controller.connect_key_released(move |_, key, _, _| {
+        released_keyboard.borrow_mut().release(renderer_key(key));
+    });
     window.add_controller(key_controller);
+    window.connect_is_active_notify(move |window| {
+        keyboard.borrow_mut().set_focused(window.is_active());
+    });
 
     let runtime = PresentationRuntime {
         presentation,
         presentation_view: presentation_view.clone(),
-        updates,
+        updates: connections.snapshots,
         diagnostics: diagnostics.clone(),
         display: display.clone(),
         repository_root: repository_root.to_path_buf(),
         progress_clock,
+        fixture_navigation_enabled: connections.fixture_navigation.is_some(),
     };
     glib::timeout_add_local(Duration::from_millis(50), move || {
         runtime.tick();
@@ -228,6 +261,18 @@ fn build_window(
 
     window.present();
     Ok(())
+}
+
+fn renderer_key(key: gtk::gdk::Key) -> RendererKey {
+    if key == gtk::gdk::Key::Escape {
+        RendererKey::Escape
+    } else if key == gtk::gdk::Key::Left {
+        RendererKey::Left
+    } else if key == gtk::gdk::Key::Right {
+        RendererKey::Right
+    } else {
+        RendererKey::Other
+    }
 }
 
 fn capture_configuration_from_environment() -> Result<CaptureConfiguration, Box<dyn Error>> {
@@ -301,11 +346,17 @@ impl PresentationRuntime {
                             .borrow_mut()
                             .observe_snapshot(&snapshot, &self.repository_root);
                     }
-                    match self
-                        .presentation
-                        .borrow_mut()
-                        .update(*snapshot, PresentationTime::new(now, SystemTime::now()))
-                    {
+                    let anchored_at = PresentationTime::new(now, SystemTime::now());
+                    let update = if self.fixture_navigation_enabled {
+                        self.presentation
+                            .borrow_mut()
+                            .update_for_fixture_selection(*snapshot, anchored_at)
+                    } else {
+                        self.presentation
+                            .borrow_mut()
+                            .update(*snapshot, anchored_at)
+                    };
+                    match update {
                         Ok(update) => Some(update),
                         Err(error) => {
                             eprintln!("RoonScape renderer: {error}");
@@ -327,7 +378,11 @@ impl PresentationRuntime {
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             };
             if let Some(update) = update {
-                presentation_update = combine_presentation_update(presentation_update, update);
+                presentation_update = combine_presentation_update(
+                    presentation_update,
+                    update,
+                    self.fixture_navigation_enabled,
+                );
             }
         }
         presentation_update
@@ -372,6 +427,25 @@ impl PresentationRuntime {
     }
 }
 
+fn combine_presentation_update(
+    current: Option<PresentationUpdate>,
+    next: PresentationUpdate,
+    fixture_navigation_enabled: bool,
+) -> Option<PresentationUpdate> {
+    if fixture_navigation_enabled {
+        // Rapid navigation renders only its final selection.
+        return Some(next);
+    }
+
+    Some(match (current, next) {
+        (Some(PresentationUpdate::ReplaceImmediately), _)
+        | (_, PresentationUpdate::ReplaceImmediately) => PresentationUpdate::ReplaceImmediately,
+        (Some(PresentationUpdate::TransitionRequired), _)
+        | (_, PresentationUpdate::TransitionRequired) => PresentationUpdate::TransitionRequired,
+        _ => PresentationUpdate::ProgressOnly,
+    })
+}
+
 fn install_diagnostics_updates(
     window: &gtk::ApplicationWindow,
     diagnostics: Option<Rc<RefCell<Diagnostics>>>,
@@ -397,19 +471,6 @@ fn install_diagnostics_updates(
         presentation_view.borrow().update_diagnostics(&text);
         glib::ControlFlow::Continue
     });
-}
-
-fn combine_presentation_update(
-    current: Option<PresentationUpdate>,
-    next: PresentationUpdate,
-) -> Option<PresentationUpdate> {
-    Some(match (current, next) {
-        (Some(PresentationUpdate::ReplaceImmediately), _)
-        | (_, PresentationUpdate::ReplaceImmediately) => PresentationUpdate::ReplaceImmediately,
-        (Some(PresentationUpdate::TransitionRequired), _)
-        | (_, PresentationUpdate::TransitionRequired) => PresentationUpdate::TransitionRequired,
-        _ => PresentationUpdate::ProgressOnly,
-    })
 }
 
 fn configuration_file_from_arguments() -> Result<PathBuf, Box<dyn Error>> {
@@ -438,5 +499,34 @@ fn host_inactivity_configuration(configuration_file: &Path) -> InactivityConfigu
             eprintln!("RoonScape renderer: {error}; using default OLED inactivity calibration");
             InactivityConfiguration::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PresentationUpdate, combine_presentation_update};
+
+    #[test]
+    fn fixture_navigation_uses_the_final_selections_update() {
+        assert_eq!(
+            combine_presentation_update(
+                Some(PresentationUpdate::ReplaceImmediately),
+                PresentationUpdate::TransitionRequired,
+                true,
+            ),
+            Some(PresentationUpdate::TransitionRequired)
+        );
+    }
+
+    #[test]
+    fn live_mode_retains_the_strongest_update_in_a_batch() {
+        assert_eq!(
+            combine_presentation_update(
+                Some(PresentationUpdate::ReplaceImmediately),
+                PresentationUpdate::TransitionRequired,
+                false,
+            ),
+            Some(PresentationUpdate::ReplaceImmediately)
+        );
     }
 }

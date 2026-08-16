@@ -132,12 +132,25 @@ sole release-packaging implementation and writes the versioned archive and
 checksum under `release/`.
 
 For focused presentation work, `npm run fixture` launches the TypeScript
-fixture publisher and native renderer together. Set `ROONSCAPE_WINDOWED=1` when
-a window is more convenient than fullscreen. For focused bridge work,
-`npm run start:bridge` remains available when `ROONSCAPE_SOCKET` names a
-developer-managed private socket. The lower-level `npm run configure -- ...`
-commands remain available for discovery and configuration diagnostics, but are
-not the ordinary owner setup path.
+fixture publisher and native renderer together. An ordinary Fixture Mode
+session starts at Playing. With the renderer window focused, Right selects the
+next Fixture Scenario and Left selects the previous one; both directions wrap,
+and holding an arrow advances only once until it is released. The terminal
+names the initial and subsequently selected Fixture Scenarios without adding
+anything onscreen.
+
+The catalog order is Playing, Paused, Loading with content, Loading without
+content, Idle, pairing required, disconnected, output unavailable, Playing
+without content, missing metadata, missing Artist, missing Album, missing
+artwork, long metadata, extreme metadata, indeterminate progress, non-square
+artwork, and light artwork. Set `ROONSCAPE_WINDOWED=1` when a window is more
+convenient than fullscreen. Setting `ROONSCAPE_FIXTURE` retains the focused
+single-fixture workflow and intentionally disables arrow navigation.
+
+For focused bridge work, `npm run start:bridge` remains available when
+`ROONSCAPE_SOCKET` names a developer-managed private socket. The lower-level
+`npm run configure -- ...` commands remain available for discovery and
+configuration diagnostics, but are not the ordinary owner setup path.
 
 For repeatable native-renderer captures at the three accepted viewports, use
 the [Gallery split visual acceptance workflow](docs/visual-acceptance/gallery-split.md).

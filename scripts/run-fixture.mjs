@@ -7,7 +7,17 @@ const scratchRoot = "/tmp/codex/roonscape";
 await mkdir(scratchRoot, { recursive: true });
 const runtimeDirectory = await mkdtemp(path.join(scratchRoot, "fixture."));
 const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+const controlSocketPath = path.join(
+  runtimeDirectory,
+  "fixture-navigation.sock",
+);
 const environment = { ...process.env, ROONSCAPE_SOCKET: socketPath };
+const explicitFixture = environment.ROONSCAPE_FIXTURE !== undefined;
+if (explicitFixture) {
+  delete environment.ROONSCAPE_FIXTURE_CONTROL;
+} else {
+  environment.ROONSCAPE_FIXTURE_CONTROL = controlSocketPath;
+}
 
 const publisher = spawn(process.execPath, ["bridge/dist/src/fixture.js"], {
   env: environment,
@@ -50,7 +60,10 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 }
 
 try {
-  await waitForSocket();
+  await waitForSocket(socketPath, "fixture publisher");
+  if (!explicitFixture) {
+    await waitForSocket(controlSocketPath, "Fixture Mode navigation");
+  }
   renderer = spawn(
     "cargo",
     ["run", "--quiet", "--package", "roonscape-renderer"],
@@ -63,7 +76,7 @@ try {
   await shutdown(1);
 }
 
-async function waitForSocket() {
+async function waitForSocket(expectedPath, label) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     if (publisher.exitCode !== null || publisher.signalCode !== null) {
       throw new Error(
@@ -72,12 +85,12 @@ async function waitForSocket() {
     }
 
     try {
-      await access(socketPath);
+      await access(expectedPath);
       return;
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }
 
-  throw new Error("Timed out waiting for the fixture publisher");
+  throw new Error(`Timed out waiting for ${label}`);
 }

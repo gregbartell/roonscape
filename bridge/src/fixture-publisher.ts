@@ -77,6 +77,12 @@ export function startFixturePublisher(
   );
 }
 
+export function assertSnapshotPublishable(
+  snapshot: PresentationSnapshot,
+): void {
+  serializeSnapshot(snapshot);
+}
+
 function reanchorPlayingFixture(
   snapshot: PresentationSnapshot,
   launchedAt: Date,
