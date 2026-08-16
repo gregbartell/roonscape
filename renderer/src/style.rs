@@ -34,12 +34,3 @@ pub fn presentation_palette_styles(
          .{class_name} .unavailable-field {{ border-color: alpha({muted_text}, 0.12); background-image: linear-gradient(142deg, {artwork_field}, {background} 72%); }}\n"
     )
 }
-
-pub fn diagnostics_palette_styles(palette: PresentationPalette) -> String {
-    format!(
-        ".diagnostics {{ color: {}; background-color: {}; border-color: {}; }}\n",
-        palette.diagnostics_text.to_hex(),
-        palette.diagnostics_field.to_hex(),
-        palette.diagnostics_border.to_hex(),
-    )
-}

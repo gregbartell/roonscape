@@ -1,6 +1,5 @@
 use roonscape_renderer::{
-    GallerySplitLayout, PresentationPalette, Viewport, diagnostics_palette_styles,
-    presentation_palette_styles,
+    GallerySplitLayout, PresentationPalette, Viewport, presentation_palette_styles,
 };
 
 #[test]
@@ -24,13 +23,4 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
             "presentation styles should contain {declaration:?}"
         );
     }
-}
-
-#[test]
-fn semantic_palette_roles_drive_the_diagnostics_overlay() {
-    let styles = diagnostics_palette_styles(PresentationPalette::fallback());
-
-    assert!(styles.contains("color: #F3EAD7;"));
-    assert!(styles.contains("background-color: #0A1429;"));
-    assert!(styles.contains("border-color: #FF7051;"));
 }

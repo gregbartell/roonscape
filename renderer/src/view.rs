@@ -9,8 +9,8 @@ use roonscape_renderer::{
     INACTIVE_VERTICAL_BOUND, IdentityPlacement, InactivityTransform, MetadataFontSizes,
     MetadataLineLayout, MetadataTypography, NowPlayingPresentation, Presentation,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationTransition,
-    TypographyPair, UnavailablePresentation, Viewport, diagnostics_palette_styles,
-    metadata_layout_for_viewport, presentation_palette_styles,
+    TypographyPair, UnavailablePresentation, Viewport, metadata_layout_for_viewport,
+    presentation_palette_styles,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -247,9 +247,6 @@ impl PresentationView {
                 &layout,
             ));
         }
-        styles.push_str(&diagnostics_palette_styles(
-            self.transition.current().value().palette,
-        ));
         self.palette_provider.load_from_data(&styles);
     }
 }
