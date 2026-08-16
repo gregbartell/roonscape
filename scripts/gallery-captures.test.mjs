@@ -41,6 +41,19 @@ const REQUIRED_SCENARIOS = [
 
 test("plans every visual acceptance scenario at every supported viewport", () => {
   const plan = buildGalleryCapturePlan();
+  const referenceMatrix = plan.filter(
+    (capture) =>
+      capture.variant === "matrix" && capture.viewport === "3840x2160",
+  );
+
+  assert.deepEqual(
+    referenceMatrix.map((capture) => capture.scenario),
+    REQUIRED_SCENARIOS,
+  );
+  assert.deepEqual(
+    referenceMatrix.map((capture) => capture.fileName),
+    REQUIRED_SCENARIOS.map((scenario) => `3840x2160--${scenario}.png`),
+  );
 
   for (const scenario of REQUIRED_SCENARIOS) {
     const captures = plan.filter(
@@ -59,6 +72,40 @@ test("plans every visual acceptance scenario at every supported viewport", () =>
     plan.length,
     "capture artifact names should be unique",
   );
+});
+
+test("derives the visual acceptance matrix from the Fixture Scenario catalog", async () => {
+  await mkdir(scratchRoot, { recursive: true });
+  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const catalogPath = path.join(taskDirectory, "fixture-scenario-catalog.json");
+
+  try {
+    const catalog = JSON.parse(
+      await readFile(
+        new URL("../fixtures/fixture-scenario-catalog.json", import.meta.url),
+        "utf8",
+      ),
+    );
+    [catalog.scenarios[1], catalog.scenarios[2]] = [
+      catalog.scenarios[2],
+      catalog.scenarios[1],
+    ];
+    await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+
+    const matrixScenarios = buildGalleryCapturePlan({ catalogPath })
+      .filter(
+        (capture) =>
+          capture.variant === "matrix" && capture.viewport === "3840x2160",
+      )
+      .map((capture) => capture.scenario);
+
+    assert.deepEqual(
+      matrixScenarios,
+      catalog.scenarios.map((scenario) => scenario.scenario),
+    );
+  } finally {
+    await rm(taskDirectory, { force: true, recursive: true });
+  }
 });
 
 test("plans explicit typography and adaptive diagnostics representatives", () => {

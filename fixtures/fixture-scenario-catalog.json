@@ -1,0 +1,113 @@
+{
+  "formatVersion": 1,
+  "scenarios": [
+    {
+      "scenario": "playing",
+      "label": "Playing",
+      "fixture": "fixtures/playing.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "paused",
+      "label": "Paused",
+      "fixture": "fixtures/paused.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "loading-with-content",
+      "label": "Loading with content",
+      "fixture": "fixtures/loading.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "loading-without-content",
+      "label": "Loading without content",
+      "fixture": "fixtures/loading-empty.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "idle",
+      "label": "Idle",
+      "fixture": "fixtures/stopped.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "pairing-required",
+      "label": "Pairing required",
+      "fixture": "fixtures/pairing-required.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "disconnected",
+      "label": "Disconnected",
+      "fixture": "fixtures/disconnected.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "output-unavailable",
+      "label": "Output unavailable",
+      "fixture": "fixtures/output-unavailable.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "playing-without-content",
+      "label": "Playing without content",
+      "fixture": "fixtures/playing-empty.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "missing-metadata",
+      "label": "Missing metadata",
+      "fixture": "fixtures/missing-metadata.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "missing-artist",
+      "label": "Missing Artist",
+      "fixture": "fixtures/missing-artist.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "missing-album",
+      "label": "Missing Album",
+      "fixture": "fixtures/missing-album.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "missing-artwork",
+      "label": "Missing artwork",
+      "fixture": "fixtures/missing-artwork.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "long-metadata",
+      "label": "Long metadata",
+      "fixture": "fixtures/long-metadata.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "extreme-metadata",
+      "label": "Extreme metadata",
+      "fixture": "fixtures/extreme-metadata.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "indeterminate-progress",
+      "label": "Indeterminate progress",
+      "fixture": "fixtures/indeterminate-progress.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "non-square-artwork",
+      "label": "Non-square artwork",
+      "fixture": "fixtures/non-square-artwork.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "light-artwork",
+      "label": "Light artwork",
+      "fixture": "fixtures/light-artwork.json",
+      "palette": "light"
+    }
+  ]
+}

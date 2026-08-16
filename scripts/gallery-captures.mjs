@@ -1,3 +1,7 @@
+import { fileURLToPath } from "node:url";
+
+import { readFixtureScenarioCatalog } from "../bridge/dist/src/fixture-scenario-catalog.js";
+
 const REFERENCE_VIEWPORT = {
   key: "3840x2160",
   width: 3840,
@@ -10,42 +14,9 @@ const VIEWPORTS = [
   { key: "1600x900", width: 1600, height: 900 },
 ];
 
-const SCENARIOS = [
-  fixtureScenario("playing", "playing.json", "dark"),
-  fixtureScenario("paused", "paused.json", "dark"),
-  fixtureScenario("loading-with-content", "loading.json", "dark"),
-  fixtureScenario(
-    "loading-without-content",
-    "loading-empty.json",
-    "fixed-no-art",
-  ),
-  fixtureScenario("idle", "stopped.json", "fixed-no-art"),
-  fixtureScenario("pairing-required", "pairing-required.json", "fixed-no-art"),
-  fixtureScenario("disconnected", "disconnected.json", "fixed-no-art"),
-  fixtureScenario(
-    "output-unavailable",
-    "output-unavailable.json",
-    "fixed-no-art",
-  ),
-  fixtureScenario(
-    "playing-without-content",
-    "playing-empty.json",
-    "fixed-no-art",
-  ),
-  fixtureScenario("missing-metadata", "missing-metadata.json", "dark"),
-  fixtureScenario("missing-artist", "missing-artist.json", "dark"),
-  fixtureScenario("missing-album", "missing-album.json", "dark"),
-  fixtureScenario("missing-artwork", "missing-artwork.json", "fixed-no-art"),
-  fixtureScenario("long-metadata", "long-metadata.json", "dark"),
-  fixtureScenario("extreme-metadata", "extreme-metadata.json", "dark"),
-  fixtureScenario(
-    "indeterminate-progress",
-    "indeterminate-progress.json",
-    "dark",
-  ),
-  fixtureScenario("non-square-artwork", "non-square-artwork.json", "dark"),
-  fixtureScenario("light-artwork", "light-artwork.json", "light"),
-];
+const defaultCatalogPath = fileURLToPath(
+  new URL("../fixtures/fixture-scenario-catalog.json", import.meta.url),
+);
 
 const REPRESENTATIVES = [
   representative(
@@ -79,9 +50,14 @@ const REPRESENTATIVES = [
   ),
 ];
 
-export function buildGalleryCapturePlan() {
+export function buildGalleryCapturePlan({
+  catalogPath = defaultCatalogPath,
+} = {}) {
+  const scenarios = readFixtureScenarioCatalog(catalogPath).map(
+    ({ scenario, fixture, palette }) => ({ scenario, fixture, palette }),
+  );
   const matrix = VIEWPORTS.flatMap((viewport) =>
-    SCENARIOS.map((scenario) => ({
+    scenarios.map((scenario) => ({
       variant: "matrix",
       ...scenario,
       ...viewportFields(viewport),
