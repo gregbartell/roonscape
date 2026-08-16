@@ -6,21 +6,21 @@ using the same snapshot and renderer path as live Roon operation.
 
 **Blocked by:** 01 — Adopt Tracked Output and Tracked Zone.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The default Playing fixture uses Title Last Light on Phobos, Artist
+- [x] The default Playing fixture uses Title Last Light on Phobos, Artist
       Evelyn Lark & The Orbital Choir, Album Signals from the Quiet Sea,
       Output AudioDevice, and Zone Living Room.
-- [ ] The fixture uses a byte-for-byte copy of the selected prototype SVG
+- [x] The fixture uses a byte-for-byte copy of the selected prototype SVG
       rather than a reconstruction or screenshot-derived replacement.
-- [ ] Playing opens at 171 seconds of 266 seconds, showing 2:51 elapsed and
+- [x] Playing opens at 171 seconds of 266 seconds, showing 2:51 elapsed and
       −1:35 remaining before advancing from a launch-time sample.
-- [ ] Paused and Loading fixtures freeze supplied progress, while Playing
+- [x] Paused and Loading fixtures freeze supplied progress, while Playing
       advances and clamps through the same presentation behavior as live
       snapshots.
-- [ ] Related fixture states inherit the fictional release and identities
+- [x] Related fixture states inherit the fictional release and identities
       unless the named edge case deliberately removes or replaces a value.
-- [ ] Automated checks verify the fixture family, launch-time re-anchoring,
+- [x] Automated checks verify the fixture family, launch-time re-anchoring,
       exact artwork identity, and continued use of the shared publisher and
       native renderer.
 
@@ -59,16 +59,30 @@ truthful semantics of Paused, Loading, and deliberate edge cases.
 
 **Acceptance criteria:**
 
-- [ ] The default Playing fixture opens with the exact agreed metadata,
+- [x] The default Playing fixture opens with the exact agreed metadata,
       identities, artwork, and 2:51/−1:35 timing.
-- [ ] Playing advances from the launch-time anchor and clamps at duration;
+- [x] Playing advances from the launch-time anchor and clamps at duration;
       Paused and Loading remain frozen.
-- [ ] Edge-case fixtures inherit the reference release except where the named
+- [x] Edge-case fixtures inherit the reference release except where the named
       case intentionally removes or replaces a value.
-- [ ] Automated checks compare the artwork bytes, fixture contents, and
+- [x] Automated checks compare the artwork bytes, fixture contents, and
       re-anchoring behavior while exercising the shared publisher.
 
 **Out of scope:**
 
 - A fixture-only renderer, palette, or presentation path.
 - Reconstructing or modifying the selected prototype artwork.
+
+### Implementation Result — 2026-08-15
+
+Implemented in `3e4996d` with review corrections in `ea492dd`. The shared
+fixture family now uses the selected fictional release, AudioDevice/Living
+Room identities, the exact prototype SVG, and the 171-of-266-second reference
+sample. Fixture publishing re-anchors Playing at launch while Paused and
+Loading remain frozen on the same baseline through the existing publisher and
+native renderer path.
+
+The final standards review reported no hard violations, and the specification
+review reported no remaining findings. `npm run check` passed with formatting,
+type checking, linting, the complete TypeScript and Rust test suites, and the
+two-startup-order IPC restart smoke check.
