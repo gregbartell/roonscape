@@ -675,7 +675,7 @@ test("setup atomically publishes a private Display Configuration before launch",
   });
 });
 
-test("authorization wait shows delayed troubleshooting and supports Retry", async () => {
+test("waiting for Roon Authorization shows delayed troubleshooting and supports Retry", async () => {
   const output: string[] = [];
   const discoveryAuthorizations: string[] = [];
   let discoveryAttempt = 0;
@@ -731,7 +731,7 @@ test("authorization wait shows delayed troubleshooting and supports Retry", asyn
   assert.match(output.join("\n"), /Retrying Roon discovery/);
 });
 
-test("quitting authorization wait leaves Display Configuration untouched", async () => {
+test("quitting while waiting for Roon Authorization leaves Display Configuration untouched", async () => {
   let discoveryCancelled = false;
   let saved = false;
   let launched = false;

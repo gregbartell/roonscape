@@ -30,7 +30,7 @@ release workflow.
 - [ ] A bridge or renderer failure makes the foreground RoonScape session fail,
       and deployment-specific recovery restarts the complete command without
       treating a successful intentional exit as a failure.
-- [ ] Roon authorization and Display Configuration survive ordinary RoonScape
+- [ ] Roon Authorization and Display Configuration survive ordinary RoonScape
       session and RoonScape Host restarts while remaining separate from each
       other.
 - [ ] The bridge discovers and connects to Roon without requiring Roon Server
@@ -72,8 +72,8 @@ profile or installed graphical session.
 **Desired behavior:** A compatible Linux RoonScape Host boots into the current
 truthful presentation without routine local interaction. The deployment
 profile launches and, after failure, may restart the complete foreground
-RoonScape session, while authorization and Display Configuration persist with
-appropriately restricted access.
+RoonScape session, while Roon Authorization and Display Configuration persist
+with appropriately restricted access.
 
 **Key interfaces:**
 
@@ -95,7 +95,7 @@ appropriately restricted access.
       the deployment profile restarts the complete command without restarting
       after a successful intentional exit or disrupting remote administration,
       Roon Server, or unrelated host workloads.
-- [ ] Roon authorization and Display Configuration survive an ordinary reboot
+- [ ] Roon Authorization and Display Configuration survive an ordinary reboot
       while remaining separate and access-restricted.
 - [ ] The installed system opens no network listener and does not control
       television power or input selection.
