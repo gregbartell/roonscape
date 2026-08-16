@@ -62,7 +62,7 @@ fn revisions_transition_artwork_metadata_and_the_complete_palette_together() {
     assert_eq!((current.revision(), outgoing.revision()), (8, 7));
     assert_eq!(title(current.value()), Some("Last Light on Phobos"));
     assert_eq!(current.value().artwork_path, None);
-    assert_eq!(current.value().palette, PresentationPalette::neutral());
+    assert_eq!(current.value().palette, PresentationPalette::fallback());
     assert_eq!(title(outgoing.value()), Some("Last Light on Phobos"));
     assert_eq!(
         outgoing.value().artwork_path.as_deref(),

@@ -9,7 +9,8 @@ use roonscape_renderer::{
     INACTIVE_VERTICAL_BOUND, IdentityPlacement, InactivityTransform, MetadataFontSizes,
     MetadataLineLayout, MetadataTypography, NowPlayingPresentation, Presentation,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationTransition,
-    TypographyPair, UnavailablePresentation, Viewport, metadata_layout_for_viewport,
+    TypographyPair, UnavailablePresentation, Viewport, diagnostics_palette_styles,
+    metadata_layout_for_viewport, presentation_palette_styles,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -234,18 +235,21 @@ impl PresentationView {
     fn install_palette_styles(&self) {
         let layout =
             GallerySplitLayout::for_viewport(self.viewport.unwrap_or(Viewport::WINDOWED_FIXTURE));
-        let mut styles = palette_styles(
+        let mut styles = presentation_palette_styles(
             CURRENT_LAYER_CLASS,
             self.transition.current().value().palette,
             &layout,
         );
         if let Some(outgoing) = self.transition.outgoing() {
-            styles.push_str(&palette_styles(
+            styles.push_str(&presentation_palette_styles(
                 OUTGOING_LAYER_CLASS,
                 outgoing.value().palette,
                 &layout,
             ));
         }
+        styles.push_str(&diagnostics_palette_styles(
+            self.transition.current().value().palette,
+        ));
         self.palette_provider.load_from_data(&styles);
     }
 }
@@ -751,7 +755,7 @@ fn palette_for_presentation(
     repository_root: &Path,
 ) -> PresentationPalette {
     let Presentation::NowPlaying(presentation) = presentation else {
-        return PresentationPalette::neutral();
+        return PresentationPalette::fallback();
     };
     let artwork_path = presentation
         .artwork_path
@@ -762,7 +766,7 @@ fn palette_for_presentation(
         Ok(palette) => palette,
         Err(error) => {
             eprintln!("RoonScape renderer: {error}");
-            PresentationPalette::neutral()
+            PresentationPalette::fallback()
         }
     }
 }
@@ -791,37 +795,5 @@ fn typography_styles(typography: TypographyPair) -> String {
          .utility-text, .state-label, .identity-label, .identity-name, .time, .unavailable-state, .unavailable-explanation {{ font-family: \"{}\", sans-serif; }}\n",
         typography.editorial_family(),
         typography.utility_family(),
-    )
-}
-
-fn palette_styles(
-    class_name: &str,
-    palette: PresentationPalette,
-    layout: &GallerySplitLayout,
-) -> String {
-    let background = palette.background.to_hex();
-    let artwork_field = palette.artwork_field.to_hex();
-    let metadata_field = palette.metadata_field.to_hex();
-    let primary_text = palette.primary_text.to_hex();
-    let secondary_text = palette.secondary_text.to_hex();
-    let accent = palette.accent.to_hex();
-    let shadow_offset = layout.artwork_shadow_offset_px;
-    let shadow_blur = layout.artwork_shadow_blur_px;
-    format!(
-        ".{class_name} {{ background-color: {background}; color: {primary_text}; }}\n\
-         .{class_name}.gallery-split {{ background-image: linear-gradient(118deg, {artwork_field} 0%, {background} 62%, {metadata_field} 100%); }}\n\
-         .{class_name} .artwork-frame {{ box-shadow: 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.72); }}\n\
-         .{class_name} .artwork {{ border-color: alpha({primary_text}, 0.16); background-color: {artwork_field}; }}\n\
-         .{class_name} .artwork-missing {{ border-color: alpha({secondary_text}, 0.22); background-image: linear-gradient(142deg, alpha({secondary_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16); }}\n\
-         .{class_name}.unavailable .unavailable-copy {{ background-color: {metadata_field}; }}\n\
-         .{class_name} .playback-state, .{class_name} .unavailable-state {{ color: {accent}; }}\n\
-         .{class_name} .state-dot {{ background-color: {accent}; box-shadow: 0 0 18px alpha({accent}, 0.72); }}\n\
-         .{class_name} .title, .{class_name} .unavailable-heading {{ color: {primary_text}; }}\n\
-         .{class_name} .artist, .{class_name} .album, .{class_name} .time, .{class_name} .tracked-identity, .{class_name} .unavailable-explanation {{ color: {secondary_text}; }}\n\
-         .{class_name} .identity-label {{ color: alpha({secondary_text}, 0.68); }}\n\
-         .{class_name} progressbar trough {{ background-color: alpha({secondary_text}, 0.22); }}\n\
-         .{class_name} progressbar progress {{ background-color: {accent}; }}\n\
-         .{class_name}.unavailable {{ background-color: {background}; }}\n\
-         .{class_name} .unavailable-field {{ border-color: alpha({secondary_text}, 0.12); background-image: linear-gradient(142deg, {artwork_field}, {background} 72%); }}\n"
     )
 }

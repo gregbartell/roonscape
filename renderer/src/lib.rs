@@ -7,6 +7,7 @@ mod layout;
 mod metadata;
 mod palette;
 mod presentation;
+mod style;
 mod transition;
 mod typography;
 
@@ -42,6 +43,7 @@ pub use presentation::{
     PresentationProgress, PresentationState, PresentationTime, PresentationUpdate,
     UnavailablePresentation, presentation_from_snapshot,
 };
+pub use style::{diagnostics_palette_styles, presentation_palette_styles};
 pub use transition::{PresentationRevision, PresentationTransition};
 pub use typography::{
     FALLBACK_FONT_FILES, FALLBACK_FONT_LICENSES, TypographyError, TypographyPair,
