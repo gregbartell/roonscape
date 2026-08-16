@@ -88,7 +88,7 @@ export async function runSetup(
     `  Dim after ${formatDuration(inactivity.gracePeriodSeconds)}`,
   );
   dependencies.writeOutput(
-    `  Use ${inactivity.dimmedOpacity * 100} percent dimmed opacity`,
+    `  Use ${formatPercentage(inactivity.dimmedOpacity)} percent dimmed opacity`,
   );
   dependencies.writeOutput(
     `  Reposition every ${formatDuration(inactivity.repositionCadenceSeconds)}`,
@@ -291,6 +291,10 @@ function formatDuration(seconds: number): string {
   return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
 }
 
+function formatPercentage(opacity: number): string {
+  return String(Number((opacity * 100).toPrecision(15)));
+}
+
 async function customizeInactivity(
   inactivity: InactivityConfiguration,
   dependencies: SetupDependencies,
@@ -309,7 +313,7 @@ async function customizeInactivity(
   const dimmedOpacity = await readValidatedSetupValue(
     dependencies,
     "Dimmed opacity in percent:",
-    String(inactivity.dimmedOpacity * 100),
+    formatPercentage(inactivity.dimmedOpacity),
     parsePercentageAsOpacity,
     "Dimmed opacity must be greater than 0 and less than 100 percent.",
   );

@@ -365,6 +365,46 @@ test("--setup prefills OLED values and corrects invalid custom entries", async (
   });
 });
 
+test("--setup presents saved opacity in familiar percentage units", async () => {
+  const output: string[] = [];
+  let opacityInitialValue: string | undefined;
+  const result = await runRoonScapeCommand(
+    ["--setup"],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      loadConfiguration: () => ({
+        trackedOutputId: "output-study",
+        inactivity: {
+          gracePeriodSeconds: 240,
+          dimmedOpacity: 0.29,
+          repositionCadenceSeconds: 45,
+        },
+      }),
+      configurationFileExists: () => true,
+      discoverTrackedOutputs: async () => [
+        {
+          trackedOutputId: "output-study",
+          trackedOutputName: "USB DAC",
+          trackedZoneName: "Study",
+        },
+      ],
+      readSetupKey: scriptedSetupKeys("enter", "customize"),
+      readSetupValue: async (prompt, initialValue) => {
+        if (prompt === "Dimmed opacity in percent:") {
+          opacityInitialValue = initialValue;
+        }
+        return initialValue;
+      },
+      saveConfiguration: () => undefined,
+      writeOutput: (line) => output.push(line),
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.match(output.join("\n"), /Use 29 percent dimmed opacity/);
+  assert.equal(opacityInitialValue, "29");
+});
+
 test("--setup --config changes only the Tracked Output with a private atomic replacement", async () => {
   await withTaskDirectory(async (taskDirectory) => {
     const configurationFile = path.join(taskDirectory, "settings/display.json");
