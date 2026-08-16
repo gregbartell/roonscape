@@ -343,7 +343,6 @@ fn full_field(
             &presentation_identity.tracked_zone,
             layout.identity_placement,
         );
-        identity.root.set_halign(gtk::Align::End);
         root.add_overlay(&identity.root);
         Some(identity)
     } else {

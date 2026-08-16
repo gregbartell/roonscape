@@ -96,6 +96,7 @@ pub struct FullFieldLayout {
 
 impl FullFieldLayout {
     pub fn for_viewport(viewport: Viewport) -> Self {
+        let gallery_layout = GallerySplitLayout::for_viewport(viewport);
         let status_px = scaled(viewport.width_px, 0.008, 12, 30);
         let explanation_px = scaled(viewport.width_px, 0.0135, 16, 46);
         Self {
@@ -110,8 +111,10 @@ impl FullFieldLayout {
             heading_px: scaled(viewport.width_px, 0.062, 51, 208),
             explanation_spacing_px: ((explanation_px as f64) * 0.9).round() as u32,
             explanation_px,
-            identity_width_px: ((viewport.width_px as f64) * 0.38).round().min(864.0) as u32,
-            identity_right_inset_px: scaled(viewport.width_px, 0.02, 24, 77),
+            identity_width_px: gallery_layout
+                .metadata_column_width_px
+                .saturating_sub(gallery_layout.metadata_right_inset_px),
+            identity_right_inset_px: gallery_layout.metadata_right_inset_px,
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
             identity_px: scaled(viewport.width_px, 0.0072, 11, 27),
             identity_placement: IdentityPlacement::BottomRight,

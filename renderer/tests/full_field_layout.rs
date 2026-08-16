@@ -1,8 +1,9 @@
-use roonscape_renderer::{FullFieldLayout, IdentityPlacement, Viewport};
+use roonscape_renderer::{FullFieldLayout, GallerySplitLayout, IdentityPlacement, Viewport};
 
 #[test]
 fn scales_the_shared_full_field_accent_composition_from_reference_to_fixture() {
     let reference = FullFieldLayout::for_viewport(Viewport::REFERENCE);
+    let reference_gallery = GallerySplitLayout::for_viewport(Viewport::REFERENCE);
     let tall = FullFieldLayout::for_viewport(Viewport::new(3840, 2400));
     let windowed = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
 
@@ -12,7 +13,7 @@ fn scales_the_shared_full_field_accent_composition_from_reference_to_fixture() {
     assert_eq!(reference.accent_padding_px, 144);
     assert_eq!(reference.heading_px, 208);
     assert_eq!(reference.explanation_px, 46);
-    assert_eq!(reference.identity_width_px, 864);
+    assert_eq!(reference.identity_width_px, 1287);
     assert_eq!(reference.identity_right_inset_px, 77);
     assert_eq!(reference.identity_placement, IdentityPlacement::BottomRight);
 
@@ -27,7 +28,13 @@ fn scales_the_shared_full_field_accent_composition_from_reference_to_fixture() {
     assert_eq!(windowed.accent_padding_px, 64);
     assert_eq!(windowed.heading_px, 99);
     assert_eq!(windowed.explanation_px, 22);
-    assert_eq!(windowed.identity_width_px, 608);
+    assert_eq!(windowed.identity_width_px, 536);
     assert_eq!(windowed.identity_right_inset_px, 32);
     assert_eq!(windowed.identity_placement, IdentityPlacement::BottomRight);
+
+    assert_eq!(
+        reference.identity_width_px,
+        reference_gallery.metadata_column_width_px - reference_gallery.metadata_right_inset_px,
+        "the full-field identity row should share the Gallery split footer geometry"
+    );
 }
