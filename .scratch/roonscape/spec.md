@@ -127,11 +127,12 @@ reposition to protect the OLED.
 40. As the owner, I want RoonScape to remain current while the television is
     off or showing another input, so that returning to the display input is
     immediate.
-41. As the owner, I want the bridge and renderer to restart independently, so
-    that one process failure does not collapse the other process or the whole
-    graphical session.
-42. As the owner, I want the renderer to reconnect and receive current state,
-    so that process order and ordinary restarts require no intervention.
+41. As the owner, I want the bridge and renderer managed as one foreground
+    RoonScape session, so that a child failure is visible without leaving half
+    of the application running.
+42. As the owner, I want unattended recovery to restart the complete RoonScape
+    session, so that the deployment does not supervise private runtime
+    processes independently.
 43. As the owner, I want RoonScape to recover after Roon or the network returns,
     so that temporary availability problems do not require an SSH session.
 44. As the owner, I want display failure to leave Roon Server, other RoonScape
@@ -209,10 +210,11 @@ reposition to protect the OLED.
   switch to another output.
 - Leave the exact one-time selection workflow and Display Configuration format
   to implementation judgment.
-- Treat the service account, runtime locations, graphical session command, and
-  display mode as deployment configuration. Keep host variation in
-  configuration and deployment templates rather than product identifiers,
-  host-identity branches, or a speculative host-adapter framework.
+- Treat the service account, release location, persistent XDG locations,
+  graphical session command, recovery policy, and display mode as deployment
+  configuration. Keep host variation in configuration and deployment templates
+  rather than product identifiers, host-identity branches, or a speculative
+  host-adapter framework.
 - Register a new RoonScape extension identity and store its authorization state
   separately from ordinary Display Configuration.
 - Exchange the latest complete state snapshot over a private Unix-domain
@@ -248,10 +250,11 @@ reposition to protect the OLED.
 - For stopped, disconnected, pairing-required, and output-unavailable states,
   clear stale track-specific content rather than leaving the prior selection
   visible.
-- Ship an initial Linux deployment profile that runs the bridge as an
-  independently supervised system service and the renderer as an independently
-  supervised user service tied to the graphical session. Each process
-  reconnects rather than requiring the other to start first.
+- Ship an initial Linux deployment profile that launches one foreground
+  `roonscape` command in the graphical session. The launcher manages the bridge
+  and renderer as one runtime session; the deployment profile may restart the
+  complete command after failure but must respect a successful intentional
+  exit. RoonScape does not daemonize or restart itself.
 - On the Reference Deployment, use tty1 autologin with a guarded `startx`
   session instead of a display manager and use the standard Xorg modesetting
   driver instead of the obsolete Intel DDX. Prefer 4K60 RGB/4:4:4 when
@@ -301,8 +304,10 @@ reposition to protect the OLED.
 - Treat the selected Gallery split prototype and its verdict as prior visual
   art. Reimplement the decision in GTK rather than comparing production code
   to prototype DOM or CSS details.
-- Perform a small local IPC smoke check: connect, receive current state,
-  restart each process once, and confirm reconnection without stale content.
+- Perform a small local IPC smoke check of the focused bridge and renderer:
+  connect, receive current state, restart each process once, and confirm
+  reconnection without stale content. Deployment acceptance separately verifies
+  recovery of the complete foreground RoonScape session.
 - On the Reference Deployment, exercise ordinary playing, paused, loading,
   stopped, missing artwork, and unavailable states; confirm the normal boot and
   return-to-input workflow.

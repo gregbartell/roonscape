@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::env;
 use std::error::Error;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::rc::Rc;
@@ -17,8 +18,8 @@ use roonscape_renderer::{
     PresentationState, PresentationTime, PresentationUpdate, RendererKey, SnapshotEvent,
     SnapshotSubscription, TypographyPair, Viewport, current_process_memory_bytes,
     display_configuration_file_path, load_inactivity_configuration,
-    register_packaged_fallback_fonts, select_capture_typography, select_typography,
-    should_close_renderer,
+    register_packaged_fallback_fonts, reject_removed_display_configuration_override,
+    select_capture_typography, select_typography, should_close_renderer,
 };
 
 use view::{PresentationView, install_style_providers};
@@ -56,7 +57,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let socket_path = env::var_os("ROONSCAPE_SOCKET")
         .map(PathBuf::from)
         .ok_or("ROONSCAPE_SOCKET must name the private Unix socket")?;
-    let inactivity_configuration = host_inactivity_configuration();
+    let configuration_file = configuration_file_from_arguments()?;
+    let inactivity_configuration = host_inactivity_configuration(&configuration_file);
     let capture_configuration = capture_configuration_from_environment()?;
     let progress_clock = Instant::now();
     let presentation = Rc::new(RefCell::new(
@@ -72,10 +74,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         socket_path,
         SNAPSHOT_RETRY_DELAY,
     ));
-    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or("renderer manifest should be inside the repository")?
-        .to_path_buf();
+    let repository_root = resource_root()?;
     register_packaged_fallback_fonts(&repository_root.join("renderer"))?;
 
     let application = gtk::Application::builder()
@@ -105,6 +104,20 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+fn resource_root() -> Result<PathBuf, io::Error> {
+    env::current_exe()?
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "renderer executable should be inside target/release",
+            )
+        })
 }
 
 fn build_window(
@@ -399,9 +412,26 @@ fn combine_presentation_update(
     })
 }
 
-fn host_inactivity_configuration() -> InactivityConfiguration {
-    let configuration =
-        display_configuration_file_path().and_then(|path| load_inactivity_configuration(&path));
+fn configuration_file_from_arguments() -> Result<PathBuf, Box<dyn Error>> {
+    reject_removed_display_configuration_override()?;
+    let mut arguments = env::args_os().skip(1);
+    match (arguments.next(), arguments.next(), arguments.next()) {
+        (None, None, None) => Ok(display_configuration_file_path()?),
+        (Some(option), Some(configuration_file), None)
+            if option == "--config" && !configuration_file.is_empty() =>
+        {
+            Ok(PathBuf::from(configuration_file))
+        }
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "RoonScape renderer accepts only a launcher-provided --config PATH",
+        )
+        .into()),
+    }
+}
+
+fn host_inactivity_configuration(configuration_file: &Path) -> InactivityConfiguration {
+    let configuration = load_inactivity_configuration(configuration_file);
     match configuration {
         Ok(configuration) => configuration,
         Err(error) => {

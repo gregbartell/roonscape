@@ -1,0 +1,32 @@
+#!/bin/sh
+
+set -eu
+
+roonscape_script=$0
+case "$roonscape_script" in
+  /*) ;;
+  */*) roonscape_script=$PWD/$roonscape_script ;;
+  *) roonscape_script=$(command -v "$roonscape_script") ;;
+esac
+
+while [ -L "$roonscape_script" ]; do
+  roonscape_script_directory=$(CDPATH= cd -- "$(dirname -- "$roonscape_script")" && pwd)
+  roonscape_link=$(readlink "$roonscape_script")
+  case "$roonscape_link" in
+    /*) roonscape_script=$roonscape_link ;;
+    *) roonscape_script=$roonscape_script_directory/$roonscape_link ;;
+  esac
+done
+
+roonscape_root=$(CDPATH= cd -- "$(dirname -- "$roonscape_script")" && pwd)
+roonscape_node=$roonscape_root/runtime/node/bin/node
+if [ ! -x "$roonscape_node" ]; then
+  if [ -f "$roonscape_root/package-lock.json" ] && [ -d "$roonscape_root/bridge/src" ]; then
+    roonscape_node=$(command -v node)
+  else
+    echo "RoonScape: bundled Node runtime is missing" >&2
+    exit 1
+  fi
+fi
+
+exec "$roonscape_node" "$roonscape_root/bridge/dist/src/roonscape.js" "$@"

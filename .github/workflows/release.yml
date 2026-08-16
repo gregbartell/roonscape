@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Validate release tag
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          expected_tag="v${package_version}"
+          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            echo "::error title=Release tag mismatch::Expected ${expected_tag}, received ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+      - name: Install GTK development libraries
+        run: sudo apt-get update && sudo apt-get install --yes libgtk-4-dev
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Build release artifacts
+        run: npm run package
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            release/*.tar.gz \
+            release/*.tar.gz.sha256 \
+            --generate-notes \
+            --verify-tag

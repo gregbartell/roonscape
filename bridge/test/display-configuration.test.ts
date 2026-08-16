@@ -67,6 +67,19 @@ test("persists inactivity calibration with Tracked Output selection", async () =
   });
 });
 
+test("rejects invalid Display Configuration before creating a file", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const configurationFile = path.join(taskDirectory, "display.json");
+    const store = new FileDisplayConfigurationStore(configurationFile);
+
+    assert.throws(
+      () => store.save({ trackedOutputId: "" }),
+      /Display Configuration is invalid/,
+    );
+    assert.equal(store.load(), null);
+  });
+});
+
 test("loads shared inactivity Display Configuration", () => {
   const store = new FileDisplayConfigurationStore(
     path.join(repositoryRoot, "fixtures/display-configuration-inactivity.json"),
@@ -107,6 +120,17 @@ test("uses a Display Configuration path separate from Roon authorization", () =>
       XDG_STATE_HOME: "/var/state",
     }),
     "/var/config/roonscape/display.json",
+  );
+});
+
+test("rejects the removed Display Configuration environment override", () => {
+  assert.throws(
+    () =>
+      displayConfigurationFilePath({
+        ROONSCAPE_DISPLAY_CONFIG: "/legacy/display.json",
+        XDG_CONFIG_HOME: "/var/config",
+      }),
+    /ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH/,
   );
 });
 

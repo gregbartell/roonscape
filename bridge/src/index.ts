@@ -8,6 +8,7 @@ import {
 import {
   FileDisplayConfigurationStore,
   displayConfigurationFilePath,
+  rejectRemovedDisplayConfigurationOverride,
 } from "./display-configuration.js";
 import { startSnapshotPublisher } from "./fixture-publisher.js";
 import { initialAvailabilitySnapshot, startRoonBridge } from "./roon-bridge.js";
@@ -19,9 +20,15 @@ if (socketPath === undefined || socketPath.length === 0) {
   throw new Error("ROONSCAPE_SOCKET must name the private Unix socket");
 }
 
-const authorizationStore = new FileAuthorizationStore(authorizationFilePath());
+rejectRemovedDisplayConfigurationOverride(process.env);
+
+const bridgeOptions = bridgeFileOptions(process.argv.slice(2));
+
+const authorizationStore = new FileAuthorizationStore(
+  bridgeOptions.authorizationFile ?? authorizationFilePath(),
+);
 const displayConfigurationStore = new FileDisplayConfigurationStore(
-  displayConfigurationFilePath(),
+  bridgeOptions.configurationFile ?? displayConfigurationFilePath(),
 );
 const artworkFiles = await ArtworkFileStore.open(
   path.join(path.dirname(socketPath), "artwork"),
@@ -47,4 +54,28 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       .then(() => publisher.close())
       .finally(() => process.exit(0));
   });
+}
+
+function bridgeFileOptions(arguments_: string[]): {
+  authorizationFile?: string;
+  configurationFile?: string;
+} {
+  if (arguments_.length === 0) {
+    return {};
+  }
+  if (
+    arguments_.length === 4 &&
+    arguments_[0] === "--config" &&
+    arguments_[1] &&
+    arguments_[2] === "--authorization" &&
+    arguments_[3]
+  ) {
+    return {
+      authorizationFile: path.resolve(arguments_[3]),
+      configurationFile: path.resolve(arguments_[1]),
+    };
+  }
+  throw new Error(
+    "RoonScape bridge accepts only launcher-provided --config and --authorization paths",
+  );
 }

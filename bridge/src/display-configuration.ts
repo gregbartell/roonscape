@@ -7,6 +7,9 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 
 import { isMissingFile, writePrivateJsonFile } from "./private-json-file.js";
 
+export const removedDisplayConfigurationOverrideMessage =
+  "ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH";
+
 export interface DisplayConfiguration {
   trackedOutputId: string;
   inactivity?: InactivityConfiguration;
@@ -58,6 +61,9 @@ export class FileDisplayConfigurationStore implements DisplayConfigurationStore 
   }
 
   save(configuration: DisplayConfiguration): void {
+    if (!isDisplayConfiguration(configuration)) {
+      throw new Error("Display Configuration is invalid");
+    }
     writePrivateJsonFile(
       this.#configurationFile,
       configuration,
@@ -69,13 +75,19 @@ export class FileDisplayConfigurationStore implements DisplayConfigurationStore 
 export function displayConfigurationFilePath(
   environment: NodeJS.ProcessEnv = process.env,
 ): string {
-  if (environment.ROONSCAPE_DISPLAY_CONFIG) {
-    return path.resolve(environment.ROONSCAPE_DISPLAY_CONFIG);
-  }
+  rejectRemovedDisplayConfigurationOverride(environment);
 
   const configRoot =
     environment.XDG_CONFIG_HOME ?? path.join(homedir(), ".config");
   return path.join(configRoot, "roonscape", "display.json");
+}
+
+export function rejectRemovedDisplayConfigurationOverride(
+  environment: NodeJS.ProcessEnv,
+): void {
+  if (environment.ROONSCAPE_DISPLAY_CONFIG !== undefined) {
+    throw new Error(removedDisplayConfigurationOverrideMessage);
+  }
 }
 
 function isDisplayConfiguration(
