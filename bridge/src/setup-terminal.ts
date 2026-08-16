@@ -68,20 +68,13 @@ export function readSetupKey(
 export function readSetupValue(
   prompt: string,
   initialValue: string,
-  signal: AbortSignal,
   input: ReadStream = process.stdin,
   output: NodeJS.WriteStream = process.stdout,
 ): Promise<string | null> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(abortError());
-      return;
-    }
-
+  return new Promise((resolve) => {
     const terminal = createInterface({ input, output, terminal: true });
     let settled = false;
     const cleanup = (): void => {
-      signal.removeEventListener("abort", handleAbort);
       terminal.off("SIGINT", handleInterrupt);
       terminal.close();
     };
@@ -93,17 +86,8 @@ export function readSetupValue(
       cleanup();
       resolve(value);
     };
-    const handleAbort = (): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      reject(abortError());
-    };
     const handleInterrupt = (): void => finish(null);
 
-    signal.addEventListener("abort", handleAbort, { once: true });
     terminal.on("SIGINT", handleInterrupt);
     terminal.question(`${prompt} `, finish);
     terminal.write(initialValue);

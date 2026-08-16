@@ -19,6 +19,7 @@ import {
   runRoonScapeCommand,
 } from "../src/roonscape-command.js";
 import { FileDisplayConfigurationStore } from "../src/display-configuration.js";
+import type { SetupKey } from "../src/first-time-setup.js";
 import { openRuntimeSession } from "../src/runtime-session.js";
 import { withTaskDirectory } from "./support.js";
 
@@ -245,7 +246,6 @@ test("--setup preserves the saved choices and exits without launching", async ()
       repositionCadenceSeconds: 45,
     },
   };
-  let keyRead = 0;
   let saved: typeof savedConfiguration | undefined;
   const result = await runRoonScapeCommand(
     ["--setup"],
@@ -265,12 +265,7 @@ test("--setup preserves the saved choices and exits without launching", async ()
           trackedZoneName: "Study",
         },
       ],
-      readSetupKey: (signal) => {
-        keyRead += 1;
-        return keyRead === 1
-          ? abortedKeyRead(signal)
-          : Promise.resolve("enter");
-      },
+      readSetupKey: scriptedSetupKeys("enter", "enter"),
       saveConfiguration: (_configurationFile, configuration) => {
         saved = configuration as typeof savedConfiguration;
       },
@@ -313,7 +308,6 @@ test("--setup prefills OLED values and corrects invalid custom entries", async (
   const errors: string[] = [];
   const prompts: Array<{ prompt: string; initialValue: string }> = [];
   const answers = ["0", "6.5", "100", "25", "1.5", "90"];
-  let keyRead = 0;
   let savedConfiguration:
     | Parameters<RoonScapeCommandDependencies["saveConfiguration"]>[1]
     | undefined;
@@ -337,13 +331,7 @@ test("--setup prefills OLED values and corrects invalid custom entries", async (
           trackedZoneName: "Study",
         },
       ],
-      readSetupKey: (signal) => {
-        keyRead += 1;
-        if (keyRead === 1) {
-          return abortedKeyRead(signal);
-        }
-        return Promise.resolve(keyRead === 2 ? "enter" : "customize");
-      },
+      readSetupKey: scriptedSetupKeys("enter", "customize"),
       readSetupValue: async (prompt, initialValue) => {
         prompts.push({ prompt, initialValue });
         return answers.shift() ?? null;
@@ -389,8 +377,6 @@ test("--setup --config changes only the Tracked Output with a private atomic rep
     const configurationStore = new FileDisplayConfigurationStore(
       configurationFile,
     );
-    let keyRead = 0;
-
     const result = await runRoonScapeCommand(
       ["--setup", "--config", "settings/display.json"],
       commandDependencies({
@@ -417,14 +403,7 @@ test("--setup --config changes only the Tracked Output with a private atomic rep
             trackedZoneName: "Study",
           },
         ],
-        readSetupKey: (signal) => {
-          keyRead += 1;
-          if (keyRead === 1) {
-            return abortedKeyRead(signal);
-          }
-          const keys = ["down", "enter", "enter"] as const;
-          return Promise.resolve(keys[keyRead - 2] ?? "quit");
-        },
+        readSetupKey: scriptedSetupKeys("down", "enter", "enter"),
         saveConfiguration: (selectedFile, configuration) => {
           assert.equal(selectedFile, configurationFile);
           configurationStore.save(configuration);
@@ -465,8 +444,6 @@ test("cancelling reconfiguration leaves the Display Configuration byte-for-byte 
     const configurationStore = new FileDisplayConfigurationStore(
       configurationFile,
     );
-    let keyRead = 0;
-
     const result = await runRoonScapeCommand(
       ["--setup", "--config", configurationFile],
       commandDependencies({
@@ -480,13 +457,7 @@ test("cancelling reconfiguration leaves the Display Configuration byte-for-byte 
             trackedZoneName: "Study",
           },
         ],
-        readSetupKey: (signal) => {
-          keyRead += 1;
-          if (keyRead === 1) {
-            return abortedKeyRead(signal);
-          }
-          return Promise.resolve(keyRead === 2 ? "enter" : "customize");
-        },
+        readSetupKey: scriptedSetupKeys("enter", "customize"),
         readSetupValue: async () => null,
         saveConfiguration: (_selectedFile, configuration) =>
           configurationStore.save(configuration),
@@ -508,7 +479,6 @@ test("failed reconfiguration leaves the Display Configuration byte-for-byte inta
     const configurationStore = new FileDisplayConfigurationStore(
       configurationFile,
     );
-    let keyRead = 0;
     const errors: string[] = [];
     await chmod(path.dirname(configurationFile), 0o500);
 
@@ -526,12 +496,7 @@ test("failed reconfiguration leaves the Display Configuration byte-for-byte inta
               trackedZoneName: "Study",
             },
           ],
-          readSetupKey: (signal) => {
-            keyRead += 1;
-            return keyRead === 1
-              ? abortedKeyRead(signal)
-              : Promise.resolve("enter");
-          },
+          readSetupKey: scriptedSetupKeys("enter", "enter"),
           saveConfiguration: (_selectedFile, configuration) =>
             configurationStore.save(configuration),
           writeError: (line) => errors.push(line),
@@ -1340,6 +1305,18 @@ function abortedKeyRead(signal: AbortSignal): Promise<never> {
       { once: true },
     );
   });
+}
+
+function scriptedSetupKeys(
+  ...keys: SetupKey[]
+): RoonScapeCommandDependencies["readSetupKey"] {
+  let keyRead = 0;
+  return (signal) => {
+    keyRead += 1;
+    return keyRead === 1
+      ? abortedKeyRead(signal)
+      : Promise.resolve(keys[keyRead - 2] ?? "quit");
+  };
 }
 
 function pendingChild(

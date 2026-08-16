@@ -14,11 +14,7 @@ export interface SetupDependencies {
     signal: AbortSignal,
   ): Promise<DiscoverableTrackedOutput[]>;
   readSetupKey(signal: AbortSignal): Promise<SetupKey>;
-  readSetupValue(
-    prompt: string,
-    initialValue: string,
-    signal: AbortSignal,
-  ): Promise<string | null>;
+  readSetupValue(prompt: string, initialValue: string): Promise<string | null>;
   saveConfiguration(
     configurationFile: string,
     configuration: DisplayConfiguration,
@@ -347,11 +343,7 @@ async function readValidatedSetupValue(
   validationMessage: string,
 ): Promise<number | null> {
   while (true) {
-    const value = await dependencies.readSetupValue(
-      prompt,
-      initialValue,
-      new AbortController().signal,
-    );
+    const value = await dependencies.readSetupValue(prompt, initialValue);
     if (value === null) {
       return null;
     }
