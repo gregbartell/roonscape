@@ -63,9 +63,15 @@ export async function runFirstTimeSetup(
   }
 
   dependencies.writeOutput("OLED protection defaults:");
-  dependencies.writeOutput("  Dim after 5 minutes");
-  dependencies.writeOutput("  Use 35 percent dimmed opacity");
-  dependencies.writeOutput("  Reposition every 1 minute");
+  dependencies.writeOutput(
+    `  Dim after ${formatDuration(defaultInactivity.gracePeriodSeconds)}`,
+  );
+  dependencies.writeOutput(
+    `  Use ${defaultInactivity.dimmedOpacity * 100} percent dimmed opacity`,
+  );
+  dependencies.writeOutput(
+    `  Reposition every ${formatDuration(defaultInactivity.repositionCadenceSeconds)}`,
+  );
   dependencies.writeOutput("Press Enter to accept all defaults, or Q to quit.");
   if ((await readAllowedSetupKey(dependencies, ["enter", "quit"])) === "quit") {
     return false;
@@ -187,7 +193,7 @@ async function chooseTrackedOutput(
   while (true) {
     dependencies.writeOutput("Choose the Tracked Output with ↑/↓ and Enter:");
     for (const [index, output] of outputs.entries()) {
-      const baseLabel = `${output.trackedOutputName} — ${output.trackedZoneName}`;
+      const baseLabel = trackedOutputLabel(output);
       const label = duplicateLabels.has(baseLabel)
         ? `${baseLabel} (${output.trackedOutputId})`
         : baseLabel;
@@ -222,7 +228,7 @@ function duplicateOutputLabels(
 ): ReadonlySet<string> {
   const counts = new Map<string, number>();
   for (const output of outputs) {
-    const label = `${output.trackedOutputName} — ${output.trackedZoneName}`;
+    const label = trackedOutputLabel(output);
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
   return new Set(
@@ -230,6 +236,18 @@ function duplicateOutputLabels(
       .filter(([, count]) => count > 1)
       .map(([label]) => label),
   );
+}
+
+function trackedOutputLabel(output: DiscoverableTrackedOutput): string {
+  return `${output.trackedOutputName} — ${output.trackedZoneName}`;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds % 60 !== 0) {
+    return `${seconds} ${seconds === 1 ? "second" : "seconds"}`;
+  }
+  const minutes = seconds / 60;
+  return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
 }
 
 async function readAllowedSetupKey(
