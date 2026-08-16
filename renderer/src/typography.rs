@@ -30,16 +30,17 @@ pub enum TypographyPair {
 
 impl TypographyPair {
     pub const fn editorial_family(self) -> &'static str {
-        match self {
-            Self::Preferred => PREFERRED_EDITORIAL_FAMILY,
-            Self::Fallback => FALLBACK_EDITORIAL_FAMILY,
-        }
+        self.families().0
     }
 
     pub const fn utility_family(self) -> &'static str {
+        self.families().1
+    }
+
+    const fn families(self) -> (&'static str, &'static str) {
         match self {
-            Self::Preferred => PREFERRED_UTILITY_FAMILY,
-            Self::Fallback => FALLBACK_UTILITY_FAMILY,
+            Self::Preferred => (PREFERRED_EDITORIAL_FAMILY, PREFERRED_UTILITY_FAMILY),
+            Self::Fallback => (FALLBACK_EDITORIAL_FAMILY, FALLBACK_UTILITY_FAMILY),
         }
     }
 }

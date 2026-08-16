@@ -95,6 +95,22 @@ test("keeps the selected fictional release coherent across related fixtures", as
   });
 });
 
+test("uses the reference progress sample across playback fixtures", async () => {
+  for (const fixtureName of ["playing.json", "paused.json", "loading.json"]) {
+    const snapshot = await loadSnapshot(`fixtures/${fixtureName}`);
+
+    assert.deepEqual(
+      snapshot.progress === null
+        ? null
+        : {
+            positionSeconds: snapshot.progress.positionSeconds,
+            durationSeconds: snapshot.progress.durationSeconds,
+          },
+      { positionSeconds: 171, durationSeconds: 266 },
+    );
+  }
+});
+
 test("loads missing artwork and artwork revision fixtures", async () => {
   const missingArtwork = await loadSnapshot("fixtures/missing-artwork.json");
   const revisedArtwork = await loadSnapshot(

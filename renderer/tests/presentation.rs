@@ -152,7 +152,7 @@ fn advances_playing_progress_from_the_latest_local_anchor() {
 
 #[test]
 fn freezes_paused_and_loading_progress_at_the_source_sample() {
-    for (fixture_name, elapsed) in [("paused.json", "1:30"), ("loading.json", "1:31")] {
+    for fixture_name in ["paused.json", "loading.json"] {
         let snapshot = parse_snapshot(&support::fixture(fixture_name))
             .expect("inactive playback fixture should be valid");
         let state =
@@ -168,7 +168,7 @@ fn freezes_paused_and_loading_progress_at_the_source_sample() {
 
         assert_eq!(
             presentation.progress.map(|progress| progress.elapsed),
-            Some(elapsed.to_owned())
+            Some("2:51".to_owned())
         );
     }
 }
