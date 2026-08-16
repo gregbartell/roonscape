@@ -11,26 +11,28 @@ release workflow.
 
 **Status:** ready-for-human
 
-- [ ] The included Linux deployment profile runs the bridge as an independently
-      supervised system service and the renderer as an independently supervised
-      user service tied to the graphical session.
+- [ ] The included Linux deployment profile launches and supervises one
+      foreground `roonscape` command in the graphical session rather than
+      supervising its bridge and renderer independently.
 - [ ] The deployment profile can start a guarded Xorg session from tty1
       autologin without a display manager while allowing the graphical session and
       driver settings to be overridden for another host.
-- [ ] The service account, runtime locations, graphical session command, and
-      display mode enter through deployment configuration or overrides; changing a
-      hostname requires no code edit or rebuild.
+- [ ] The service account, release and persistent XDG locations, graphical
+      session command, recovery policy, and display mode enter through deployment
+      configuration or overrides; changing a hostname requires no code edit or
+      rebuild.
 - [ ] Host variation remains in configuration and deployment templates rather
       than product identifiers, host-identity branches, or a speculative
       host-adapter framework.
 - [ ] Runtime directories, artwork files, and the Unix-domain socket have
       permissions restricted to the display account, and no network listener is
       introduced.
-- [ ] Service startup order is irrelevant: either process reconnects when its
-      counterpart appears, and a failure or restart does not tear down the other
-      service or graphical session.
-- [ ] Roon authorization and Display Configuration survive ordinary service
-      and RoonScape Host restarts while remaining separate from each other.
+- [ ] A bridge or renderer failure makes the foreground RoonScape session fail,
+      and deployment-specific recovery restarts the complete command without
+      treating a successful intentional exit as a failure.
+- [ ] Roon authorization and Display Configuration survive ordinary RoonScape
+      session and RoonScape Host restarts while remaining separate from each
+      other.
 - [ ] The bridge discovers and connects to Roon without requiring Roon Server
       to run on the RoonScape Host.
 - [ ] Disabling or failing RoonScape leaves Roon Server, other RoonScape Host
@@ -57,29 +59,31 @@ release workflow.
 compatible Linux RoonScape Host.
 
 **Why this requires a human:** Completing this ticket requires privileged
-changes to system and user services, tty1 autologin, and the graphical session,
-followed by a real boot and failure-isolation check on a host whose other
-workloads and remote administration must remain available. An agent can build
-the repository-owned deployment artifacts, but it cannot safely complete the
-ticket's host-level acceptance without an authorized operator.
+changes to boot integration, the display account, tty1 autologin, and the
+graphical session, followed by a real boot and failure-isolation check on a host
+whose other workloads and remote administration must remain available. An
+agent can build the repository-owned deployment artifacts, but it cannot safely
+complete the ticket's host-level acceptance without an authorized operator.
 
 **Current behavior:** RoonScape has a shared snapshot contract, fixture bridge,
 native renderer, and repository checks, but it has no unattended deployment
 profile or installed graphical session.
 
 **Desired behavior:** A compatible Linux RoonScape Host boots into the current
-truthful presentation without routine local interaction. The bridge, renderer,
-and graphical session remain independently recoverable, while authorization
-and Display Configuration persist with appropriately restricted access.
+truthful presentation without routine local interaction. The deployment
+profile launches and, after failure, may restart the complete foreground
+RoonScape session, while authorization and Display Configuration persist with
+appropriately restricted access.
 
 **Key interfaces:**
 
-- The bridge system service and renderer user service must be supervised
-  independently and tolerate either startup order.
-- Graphical-session startup must support the Reference Deployment's guarded
-  tty1 `startx` flow while allowing host-specific overrides.
-- Deployment configuration must own service identity, runtime locations,
-  graphical-session command, and display mode without embedding host identity.
+- The deployment profile supervises one foreground `roonscape` command and
+  leaves bridge-and-renderer lifecycle management to its launcher.
+- Graphical-session startup must have the Reference Deployment's guarded tty1
+  `startx` flow launch that command while allowing host-specific overrides.
+- Deployment configuration must own service identity, release and persistent
+  XDG locations, graphical-session command, recovery policy, and display mode
+  without embedding host identity.
 - Runtime state, artwork, and the Unix-domain socket must remain private to the
   display account.
 
@@ -87,9 +91,10 @@ and Display Configuration persist with appropriately restricted access.
 
 - [ ] An authorized operator installs the deployment profile on a compatible
       Linux RoonScape Host and verifies normal boot reaches current state.
-- [ ] Restarting or failing either process does not tear down its counterpart,
-      the graphical session, remote administration, Roon Server, or unrelated
-      host workloads.
+- [ ] Failing either child ends the complete RoonScape session with failure;
+      the deployment profile restarts the complete command without restarting
+      after a successful intentional exit or disrupting remote administration,
+      Roon Server, or unrelated host workloads.
 - [ ] Roon authorization and Display Configuration survive an ordinary reboot
       while remaining separate and access-restricted.
 - [ ] The installed system opens no network listener and does not control
