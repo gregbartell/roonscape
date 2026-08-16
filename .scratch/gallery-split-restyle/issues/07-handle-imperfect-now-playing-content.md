@@ -6,23 +6,23 @@ reference fixture.
 
 **Blocked by:** 05 — Derive the complete presentation palette from artwork.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Metadata without usable artwork retains the Gallery split with a quiet
+- [x] Metadata without usable artwork retains the Gallery split with a quiet
       square artwork field and no placeholder label or icon.
-- [ ] Non-square artwork is displayed completely and centered within the
+- [x] Non-square artwork is displayed completely and centered within the
       square field without cropping or changing the composition geometry.
-- [ ] Missing Artist or Album values disappear cleanly without placeholders or
+- [x] Missing Artist or Album values disappear cleanly without placeholders or
       dead spacing.
-- [ ] Long values wrap and reduce through viewport-scaled readable sizes before
+- [x] Long values wrap and reduce through viewport-scaled readable sizes before
       ellipsizing at maximums of three Title lines, two Artist lines, and two
       Album lines; no marquee or indefinite shrinking is introduced.
-- [ ] Ordinary Output and Zone names remain comfortably within the footer,
+- [x] Ordinary Output and Zone names remain comfortably within the footer,
       while unexpectedly long names defensively ellipsize on one line without
       moving the row.
-- [ ] Indeterminate or live content omits the complete timeline, while valid
+- [x] Indeterminate or live content omits the complete timeline, while valid
       determinate content retains both elapsed and negative remaining time.
-- [ ] Shared edge-case fixtures and layout-policy tests cover missing fields,
+- [x] Shared edge-case fixtures and layout-policy tests cover missing fields,
       missing and non-square artwork, long and extreme metadata, long
       identities, and determinate versus indeterminate progress.
 
@@ -61,17 +61,32 @@ indeterminate timing at every supported size.
 
 **Acceptance criteria:**
 
-- [ ] Missing Artist and Album values collapse cleanly, and missing artwork
+- [x] Missing Artist and Album values collapse cleanly, and missing artwork
       retains a quiet square field without a placeholder label or icon.
-- [ ] Non-square artwork is visible in full, centered, and uncropped.
-- [ ] Metadata scales and wraps before ellipsizing at the specified line and
+- [x] Non-square artwork is visible in full, centered, and uncropped.
+- [x] Metadata scales and wraps before ellipsizing at the specified line and
       readable-size bounds; no marquee or indefinite shrinking is added.
-- [ ] Output/Zone remain stable on one line, with defensive ellipsis for
+- [x] Output/Zone remain stable on one line, with defensive ellipsis for
       unexpectedly long values.
-- [ ] Determinate content shows elapsed and negative remaining time;
+- [x] Determinate content shows elapsed and negative remaining time;
       indeterminate content omits the complete timeline.
 
 **Out of scope:**
 
 - Cropping artwork to fill its field or inventing missing metadata.
 - Scrolling text, perpetual motion, or layout changes based on fixture mode.
+
+### Implementation Result — 2026-08-15
+
+Implemented in `d81c5e9`, with review corrections in `b496d68` and
+`23f48d3`. Gallery split now exposes and consumes explicit contained,
+centered artwork behavior; quiet missing/unusable artwork treatment; bounded
+metadata and identity overflow; and truthful determinate/indeterminate
+timeline roles. Blank optional metadata collapses with absent values.
+
+Added shared non-square artwork, long-identity, and blank-optional-metadata
+fixtures while preserving the fictional release and reference timing wherever
+the named edge case does not replace them. `npm run check` passed after the
+review corrections, including formatting, typechecks, lint, all automated
+tests, the fixture launcher, and IPC smoke recovery. Final two-axis review
+reported zero Standards findings and zero Spec findings.
