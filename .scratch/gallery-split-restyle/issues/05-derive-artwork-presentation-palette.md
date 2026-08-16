@@ -6,21 +6,21 @@ remaining readable, including when the artwork produces a light composition.
 
 **Blocked by:** 04 — Restyle complete Now Playing in Gallery split.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Usable artwork derives backgrounds, artwork surroundings, primary and
+- [x] Usable artwork derives backgrounds, artwork surroundings, primary and
       secondary text, muted text, progress, and accents through the shared
       presentation path.
-- [ ] Light artwork may produce a readable light presentation; palette
+- [x] Light artwork may produce a readable light presentation; palette
       selection does not force every release into a dark theme.
-- [ ] The selected prototype artwork produces a result close to its navy,
+- [x] The selected prototype artwork produces a result close to its navy,
       coral, cream, and muted visual direction without fixture-only colors or
       artwork-specific branching.
-- [ ] Missing or unreadable artwork selects one fixed navy, coral, cream, and
+- [x] Missing or unreadable artwork selects one fixed navy, coral, cream, and
       muted fallback palette derived from the prototype.
-- [ ] Primary text maintains at least 7:1 contrast and secondary text and
+- [x] Primary text maintains at least 7:1 contrast and secondary text and
       accents maintain at least 4.5:1 contrast against their fields.
-- [ ] Palette tests cover dark artwork, light artwork, prototype artwork,
+- [x] Palette tests cover dark artwork, light artwork, prototype artwork,
       missing artwork, unreadable artwork, and every exported presentation
       color role.
 
@@ -61,16 +61,31 @@ appear.
 
 **Acceptance criteria:**
 
-- [ ] Dark, light, and selected-prototype artwork produce complete readable
+- [x] Dark, light, and selected-prototype artwork produce complete readable
       palettes through the same derivation path.
-- [ ] The prototype artwork approaches its navy/coral/cream character without
+- [x] The prototype artwork approaches its navy/coral/cream character without
       a hard-coded exception.
-- [ ] Missing, corrupt, or otherwise unreadable artwork uses the fixed
+- [x] Missing, corrupt, or otherwise unreadable artwork uses the fixed
       prototype-derived fallback.
-- [ ] Tests enumerate every semantic role and prove the required contrast on
+- [x] Tests enumerate every semantic role and prove the required contrast on
       every field where that role is used.
 
 **Out of scope:**
 
 - User-selectable themes, a forced dark theme, or fixture-only colors.
 - Retaining an extra full-resolution artwork decode for palette analysis.
+
+### Implementation Result — 2026-08-15
+
+Implemented in `3e329db`, with review corrections in `20c42e6` and
+`e5d97aa`. The bounded artwork sample now selects a readable light or dark
+tone, derives the complete semantic palette, and falls back to the fixed
+prototype navy, coral, cream, and muted direction for missing or unreadable
+artwork. Shared renderer styles consume the field, text, progress, and accent
+roles without fixture-specific branches; contrast is enforced across every
+Gallery split field. Diagnostics roles are exported for the separately
+tracked adaptive-overlay work.
+
+Final Standards and Spec reviews reported no findings. `npm run check` passed
+formatting, typechecking, linting, all TypeScript and Rust tests, and the IPC
+smoke check for both startup and restart orders.
