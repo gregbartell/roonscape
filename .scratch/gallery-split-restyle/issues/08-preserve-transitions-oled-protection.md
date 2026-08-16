@@ -7,23 +7,23 @@ without stale content, resource growth, or new perpetual motion.
 **Blocked by:** 06 — Restyle trackless states as full-field presentations; 07
 — Keep Gallery split truthful under imperfect content.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Changes to availability, playback, identities, metadata, progress
+- [x] Changes to availability, playback, identities, metadata, progress
       presence, artwork, or palette replace the presentation through one
       coordinated crossfade of artwork, text, and the complete color system.
-- [ ] Progress-value-only updates remain in place and same-track Roon updates
+- [x] Progress-value-only updates remain in place and same-track Roon updates
       do not refresh artwork, flicker, or trigger unnecessary transitions.
-- [ ] Disconnection and unavailable snapshots clear stale Now Playing content
+- [x] Disconnection and unavailable snapshots clear stale Now Playing content
       immediately rather than preserving it for visual continuity.
-- [ ] Rapid revisions retain only the current and one outgoing presentation,
+- [x] Rapid revisions retain only the current and one outgoing presentation,
       then release the outgoing view and artwork after the bounded transition.
-- [ ] Paused, Idle, and unavailable states preserve configured grace, dimming,
+- [x] Paused, Idle, and unavailable states preserve configured grace, dimming,
       and periodic repositioning; Loading remains active and Playing restores
       full opacity and normal position immediately.
-- [ ] The larger artwork field, shadows, full-field copy, footer, and
+- [x] The larger artwork field, shadows, full-field copy, footer, and
       diagnostics remain within safe bounds at every configured OLED offset.
-- [ ] Existing transition and inactivity tests are extended across Gallery
+- [x] Existing transition and inactivity tests are extended across Gallery
       split, full-field, light-palette, and missing-content presentations, with
       no new motion beyond progress, crossfade, and OLED protection.
 
@@ -64,18 +64,38 @@ composition or diagnostics.
 
 **Acceptance criteria:**
 
-- [ ] Every visual-content or palette change crossfades the whole presentation
+- [x] Every visual-content or palette change crossfades the whole presentation
       once, while progress-value-only updates and same-track updates do not.
-- [ ] Disconnect and unavailable updates immediately remove stale Now Playing
+- [x] Disconnect and unavailable updates immediately remove stale Now Playing
       content.
-- [ ] Rapid revisions remain bounded to current plus one outgoing view and
+- [x] Rapid revisions remain bounded to current plus one outgoing view and
       artwork resource.
-- [ ] Existing inactivity semantics remain intact, Playing restores
+- [x] Existing inactivity semantics remain intact, Playing restores
       immediately, and every restyled element stays within safe offset bounds.
-- [ ] Tests exercise these guarantees for Gallery split, full-field, light,
+- [x] Tests exercise these guarantees for Gallery split, full-field, light,
       and missing-content states without adding motion categories.
 
 **Out of scope:**
 
 - New ambient animation or changes to the configured inactivity policy.
 - Preserving stale content for visual continuity.
+
+### Implementation Result — 2026-08-15
+
+Implemented in `76914ff`, with the diagnostics review correction in `d68d7d5`.
+Available-to-unavailable snapshots now replace the complete presentation
+immediately, while progress-only updates remain in place and every other
+visual revision crossfades one coordinated presentation layer. Rapid revisions
+remain bounded to current plus one outgoing layer.
+
+The native view now lays out both transition layers inside one explicit OLED
+movement envelope and applies opacity and repositioning to a protected root
+that also contains opt-in diagnostics. Gallery split artwork and shadows,
+full-field copy, the Output/Zone footer, and diagnostics therefore remain
+inside the supported display at every configured offset. Playing restores the
+full viewport immediately; Loading remains active.
+
+`npm run check` passed formatting, TypeScript and Rust typechecking, linting,
+all bridge and renderer tests, the fixture launcher, and the IPC recovery smoke
+check after the review correction. Final Standards and Spec reviews reported
+no findings.
