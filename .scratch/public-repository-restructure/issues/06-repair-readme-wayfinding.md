@@ -9,26 +9,47 @@ getting-started improvements to their own effort.
 **Blocked by:** 02 — License RoonScape and minimize personal metadata; 05 —
 Publish self-contained presentation guidance.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The README contains no Reference Deployment, Intel NUC, personal-host
+- [x] The README contains no Reference Deployment, Intel NUC, personal-host
       launch policy, Gallery design name, current-tree prototype link, or link
       to local specs and tickets.
-- [ ] Links to the domain context, architecture decision, presentation design,
+- [x] Links to the domain context, architecture decision, presentation design,
       visual acceptance, and MIT license resolve to their current locations.
-- [ ] Source-development commands and prose use the relocated modules and
+- [x] Source-development commands and prose use the relocated modules and
       renamed visual-capture workflow accurately.
-- [ ] Existing owner-facing CLI, setup, Fixture Mode, runtime, diagnostics, and
+- [x] Existing owner-facing CLI, setup, Fixture Mode, runtime, diagnostics, and
       release descriptions remain behaviorally accurate after mechanical path
       and terminology changes.
-- [ ] The README does not claim that one display resolution or the former
+- [x] The README does not claim that one display resolution or the former
       personal installation defines product compatibility.
-- [ ] The README does not receive the separately planned screenshot layout,
+- [x] The README does not receive the separately planned screenshot layout,
       stable latest-release installation flow, full getting-started guide, or
       `.xinitrc` example.
-- [ ] No new contribution, security, community-governance, or support-response
+- [x] No new contribution, security, community-governance, or support-response
       commitment is introduced.
-- [ ] All retained README links and command names are verified.
-- [ ] Formatting and relevant documentation checks pass.
-- [ ] No `.scratch` content outside this ticket's normal status and comments is
+- [x] All retained README links and command names are verified.
+- [x] Formatting and relevant documentation checks pass.
+- [x] No `.scratch` content outside this ticket's normal status and comments is
       deleted, moved, migrated, or rewritten.
+
+## Comments
+
+### Implementation Result — 2026-08-16
+
+Repaired the README without expanding it into the separately planned owner
+rewrite. The public overview now describes fluid support for common landscape
+displays without treating a personal host or resolution as canonical. Removed
+the obsolete private deployment and guarded-tty launch policy, replaced local
+tracker and directory-level architecture links with current durable targets,
+added direct visual-acceptance and MIT-license wayfinding, and named the
+`capture:presentations` source workflow.
+
+All retained local documentation links exist, the canonical GitHub Releases
+destination returned HTTP 200, every documented npm command is present in the
+root manifest, and the launcher reported the documented public flags and
+version behavior. The README formatting check and complete `npm run check`
+suite passed, including formatting, type checking, linting, bridge and renderer
+tests, launcher and capture tests, release packaging, and the IPC restart smoke
+exercise. No `.scratch` content outside this ticket's lifecycle fields and
+implementation comment changed.

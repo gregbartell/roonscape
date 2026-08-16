@@ -19,17 +19,17 @@ One foreground RoonScape command supervises them as a single session. They
 exchange complete, versioned state snapshots over a private Unix-domain socket
 and pass artwork through bounded local files.
 
-RoonScape is intended for compatible Linux/GTK hosts. Its initial Reference
-Deployment is an Intel NUC driving a 4K OLED television, but that machine's
-identity and its co-located Roon Server are not product requirements.
+RoonScape is intended for compatible Linux/GTK hosts and common landscape
+displays. Its presentation scales fluidly rather than treating a particular
+host, aspect ratio, or resolution as canonical.
 
 ## Project documentation
 
-- [Specification](.scratch/roonscape/spec.md)
-- [Implementation tickets](.scratch/roonscape/issues/)
 - [Domain language](CONTEXT.md)
-- [Architecture decisions](docs/adr/)
+- [Architecture decision](docs/adr/0001-use-a-native-renderer-behind-the-roon-bridge.md)
 - [Presentation design](docs/design/presentation.md)
+- [Presentation visual acceptance](docs/visual-acceptance/presentation.md)
+- [MIT license](LICENSE)
 
 ## Install a Linux release
 
@@ -103,10 +103,6 @@ one runtime session. It does not daemonize, restart itself, know about `startx`,
 or require a particular service manager. An owner may launch or supervise that
 one command with the boot integration appropriate to the RoonScape Host.
 
-The Reference Deployment uses a guarded tty1 `startx` graphical session to
-launch the command. Its deployment profile—not the RoonScape runtime—owns any
-failure-recovery policy and must respect a successful intentional exit.
-
 ## Source development
 
 Source workflows need Node.js 24.19.0, npm 11.17.0, Rust 1.97.1, and the GTK 4
@@ -152,9 +148,10 @@ For focused bridge work, `npm run start:bridge` remains available when
 `npm run configure -- ...` commands remain available for discovery and
 configuration diagnostics, but are not the ordinary owner setup path.
 
-For repeatable native-renderer captures at the five representative viewports,
-use the [presentation visual-acceptance workflow](docs/visual-acceptance/presentation.md).
-It covers the complete Fixture Scenario matrix, typography and diagnostics
+For repeatable native-renderer captures at the representative landscape
+viewports, run `npm run capture:presentations` and follow the [presentation
+visual-acceptance workflow](docs/visual-acceptance/presentation.md). It covers
+the complete Fixture Scenario matrix, typography and diagnostics
 representatives, and the decision checklist.
 
 The renderer uses the host-provided Palatino Linotype and Segoe UI families
