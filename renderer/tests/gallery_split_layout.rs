@@ -40,6 +40,7 @@ fn lays_out_complete_now_playing_as_the_reference_gallery_field() {
     assert_eq!(layout.metadata_column_width_px, 1364);
     assert_eq!(layout.artwork_field_width_px, 1750);
     assert_eq!(layout.artwork_field_height_px, 1750);
+    assert_eq!(layout.status_top_inset_px, 39);
     assert_eq!(layout.artwork_fit, ArtworkFit::Contain);
     assert_eq!(layout.identity_placement, IdentityPlacement::BottomRight);
     assert_eq!(
@@ -55,6 +56,8 @@ fn lays_out_complete_now_playing_as_the_reference_gallery_field() {
     assert_eq!(layout.typography.title.preferred_px, 168);
     assert_eq!(layout.typography.artist.preferred_px, 64);
     assert_eq!(layout.typography.album.preferred_px, 45);
+    assert_eq!(layout.typography.status_px, 30);
+    assert_eq!(layout.typography.status_letter_spacing_px, 4);
 }
 
 #[test]
@@ -65,6 +68,7 @@ fn scales_the_gallery_composition_at_the_tall_and_windowed_viewports() {
 
     assert_eq!(tall.artwork_field_width_px, 1944);
     assert_eq!(tall.artwork_field_height_px, 1944);
+    assert_eq!(tall.status_top_inset_px, 43);
     assert_eq!(tall.typography.title.preferred_px, 168);
 
     assert_eq!(windowed.outer_gutter_px, 67);
@@ -72,9 +76,12 @@ fn scales_the_gallery_composition_at_the_tall_and_windowed_viewports() {
     assert_eq!(windowed.artwork_column_width_px, 818);
     assert_eq!(windowed.metadata_column_width_px, 568);
     assert_eq!(windowed.artwork_field_width_px, 729);
+    assert_eq!(windowed.status_top_inset_px, 16);
     assert_eq!(windowed.typography.title.preferred_px, 74);
     assert_eq!(windowed.typography.artist.preferred_px, 28);
     assert_eq!(windowed.typography.album.preferred_px, 20);
+    assert_eq!(windowed.typography.status_px, 13);
+    assert_eq!(windowed.typography.status_letter_spacing_px, 2);
 
     for (viewport, layout) in [
         (Viewport::new(3840, 2400), tall),

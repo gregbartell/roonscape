@@ -58,7 +58,7 @@ impl RenderedProgress {
 }
 
 struct RenderedMetadata {
-    root: gtk::Box,
+    root: gtk::Overlay,
     playback_state: RenderedPlaybackState,
     title: Option<RenderedMetadataLine>,
     artist: Option<RenderedMetadataLine>,
@@ -385,10 +385,15 @@ fn metadata(
     presentation: &NowPlayingPresentation,
     gallery_layout: &GallerySplitLayout,
 ) -> RenderedMetadata {
+    let root = gtk::Overlay::new();
+    root.add_css_class("metadata-column");
+    root.set_hexpand(true);
+    root.set_vexpand(true);
+
     let column = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    column.add_css_class("metadata-column");
     column.set_hexpand(true);
     column.set_vexpand(true);
+    root.set_child(Some(&column));
 
     let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
     copy.add_css_class("metadata-copy");
@@ -414,7 +419,7 @@ fn metadata(
 
     for role in &gallery_layout.metadata_roles {
         match role {
-            GallerySplitRole::PlaybackStatus => copy.append(&playback_state.root),
+            GallerySplitRole::PlaybackStatus => root.add_overlay(&playback_state.root),
             GallerySplitRole::Title => {
                 copy.append(&title.as_ref().expect("Title role requires a label").label)
             }
@@ -441,7 +446,7 @@ fn metadata(
     );
     column.append(&identity.root);
     RenderedMetadata {
-        root: column,
+        root,
         playback_state,
         title,
         artist,
@@ -470,6 +475,17 @@ fn set_label_font_size(label: &gtk::Label, font_size_px: u32) {
     let attributes = pango::AttrList::new();
     attributes.insert(pango::AttrSize::new_size_absolute(
         font_size_px as i32 * pango::SCALE,
+    ));
+    label.set_attributes(Some(&attributes));
+}
+
+fn set_status_label_typography(label: &gtk::Label, font_size_px: u32, letter_spacing_px: u32) {
+    let attributes = pango::AttrList::new();
+    attributes.insert(pango::AttrSize::new_size_absolute(
+        font_size_px as i32 * pango::SCALE,
+    ));
+    attributes.insert(pango::AttrInt::new_letter_spacing(
+        letter_spacing_px as i32 * pango::SCALE,
     ));
     label.set_attributes(Some(&attributes));
 }
@@ -505,10 +521,14 @@ impl RenderedMetadata {
             .set_spacing(dimension(layout.state_dot_size_px));
         self.playback_state
             .root
-            .set_margin_bottom(dimension(layout.status_to_title_spacing_px));
+            .set_margin_top(dimension(layout.status_top_inset_px));
         let dot_size = dimension(layout.state_dot_size_px);
         self.playback_state.dot.set_size_request(dot_size, dot_size);
-        set_label_font_size(&self.playback_state.label, layout.typography.status_px);
+        set_status_label_typography(
+            &self.playback_state.label,
+            layout.typography.status_px,
+            layout.typography.status_letter_spacing_px,
+        );
 
         if let Some(title) = self.title.as_ref() {
             title.apply_font_sizes(layout.typography.title);
@@ -625,13 +645,14 @@ fn playback_state(state: &str) -> RenderedPlaybackState {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 14);
     row.add_css_class("playback-state");
     row.set_halign(gtk::Align::Start);
+    row.set_valign(gtk::Align::Start);
 
     let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     dot.add_css_class("state-dot");
     dot.set_halign(gtk::Align::Center);
     dot.set_valign(gtk::Align::Center);
     row.append(&dot);
-    let label = metadata_label(state, "state-label");
+    let label = metadata_label(&state.to_uppercase(), "state-label");
     row.append(&label);
     RenderedPlaybackState {
         root: row,
@@ -793,10 +814,11 @@ fn palette_styles(
          .{class_name} .artwork {{ border-color: alpha({primary_text}, 0.16); background-color: {artwork_field}; }}\n\
          .{class_name} .artwork-missing {{ border-color: alpha({secondary_text}, 0.22); background-image: linear-gradient(142deg, alpha({secondary_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16); }}\n\
          .{class_name}.unavailable .unavailable-copy {{ background-color: {metadata_field}; }}\n\
-         .{class_name} .playback-state, .{class_name} .identity-label, .{class_name} .unavailable-state {{ color: {accent}; }}\n\
+         .{class_name} .playback-state, .{class_name} .unavailable-state {{ color: {accent}; }}\n\
          .{class_name} .state-dot {{ background-color: {accent}; box-shadow: 0 0 18px alpha({accent}, 0.72); }}\n\
          .{class_name} .title, .{class_name} .unavailable-heading {{ color: {primary_text}; }}\n\
          .{class_name} .artist, .{class_name} .album, .{class_name} .time, .{class_name} .tracked-identity, .{class_name} .unavailable-explanation {{ color: {secondary_text}; }}\n\
+         .{class_name} .identity-label {{ color: alpha({secondary_text}, 0.68); }}\n\
          .{class_name} progressbar trough {{ background-color: alpha({secondary_text}, 0.22); }}\n\
          .{class_name} progressbar progress {{ background-color: {accent}; }}\n\
          .{class_name}.unavailable {{ background-color: {background}; }}\n\

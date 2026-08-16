@@ -69,6 +69,7 @@ pub struct GallerySplitTypography {
     pub artist: MetadataFontSizes,
     pub album: MetadataFontSizes,
     pub status_px: u32,
+    pub status_letter_spacing_px: u32,
     pub time_px: u32,
     pub identity_px: u32,
 }
@@ -86,7 +87,7 @@ pub struct GallerySplitLayout {
     pub identity_placement: IdentityPlacement,
     pub metadata_roles: Vec<GallerySplitRole>,
     pub metadata_right_inset_px: u32,
-    pub status_to_title_spacing_px: u32,
+    pub status_top_inset_px: u32,
     pub artist_spacing_px: u32,
     pub album_spacing_px: u32,
     pub progress_spacing_px: u32,
@@ -117,6 +118,7 @@ impl GallerySplitLayout {
         let metadata_column_width_px = content_width_px - artwork_column_width_px;
         let artwork_field_size_px =
             artwork_column_width_px.min(((viewport.height_px as f64) * 0.81).round() as u32);
+        let status_px = scaled(viewport.width_px, 0.008, 12, 30);
         let typography = GallerySplitTypography {
             title: MetadataFontSizes {
                 preferred_px: scaled(viewport.width_px, 0.046, 53, 168),
@@ -133,7 +135,8 @@ impl GallerySplitLayout {
                 reduced_px: scaled(viewport.width_px, 0.0106, 16, 40),
                 minimum_px: scaled(viewport.width_px, 0.0094, 15, 35),
             },
-            status_px: scaled(viewport.width_px, 0.008, 12, 30),
+            status_px,
+            status_letter_spacing_px: ((status_px as f64) * 0.13).round() as u32,
             time_px: scaled(viewport.width_px, 0.0072, 11, 26),
             identity_px: scaled(viewport.width_px, 0.0072, 11, 27),
         };
@@ -150,7 +153,7 @@ impl GallerySplitLayout {
             identity_placement: IdentityPlacement::BottomRight,
             metadata_roles: Vec::new(),
             metadata_right_inset_px: scaled(viewport.width_px, 0.02, 24, 77),
-            status_to_title_spacing_px: scaled(viewport.height_px, 0.046, 32, 96),
+            status_top_inset_px: scaled(viewport.height_px, 0.018, 16, 44),
             artist_spacing_px: scaled(viewport.height_px, 0.032, 26, 72),
             album_spacing_px: ((typography.album.preferred_px as f64) * 0.48).round() as u32,
             progress_spacing_px: scaled(viewport.height_px, 0.065, 45, 128),
