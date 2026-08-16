@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import {
   access,
   chmod,
@@ -9,9 +10,13 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { statSync } from "node:fs";
+import { createConnection } from "node:net";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
+import { launchChildProcess } from "../src/child-process.js";
 import {
   type ChildResult,
   type RoonScapeCommandDependencies,
@@ -21,7 +26,10 @@ import {
 import { FileDisplayConfigurationStore } from "../src/display-configuration.js";
 import type { SetupKey } from "../src/first-time-setup.js";
 import { openRuntimeSession } from "../src/runtime-session.js";
+import type { PresentationSnapshot } from "../src/snapshot.js";
 import { withTaskDirectory } from "./support.js";
+
+const bridgeEntry = fileURLToPath(new URL("../src/index.js", import.meta.url));
 
 test("help describes the owner-facing command", async () => {
   const output: string[] = [];
@@ -147,6 +155,68 @@ test("--config takes precedence over the standard XDG path", async () => {
 
   assert.equal(result, 0);
   assert.deepEqual(loadedFiles, ["/working/settings/display.json"]);
+});
+
+test("valid --config without Roon Authorization presents pairing required", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const configurationFile = path.join(taskDirectory, "display.json");
+    const authorizationFile = path.join(taskDirectory, "authorization.json");
+    const socketPath = path.join(taskDirectory, "roonscape.sock");
+    await writeFile(
+      configurationFile,
+      '{"trackedOutputId":"output-gallery"}\n',
+    );
+    let finishRenderer: ((result: ChildResult) => void) | undefined;
+    const renderer: RunningChild = {
+      result: new Promise((resolve) => {
+        finishRenderer = resolve;
+      }),
+      sendSignal: () => undefined,
+    };
+    const commandResult = runRoonScapeCommand(
+      ["--config", configurationFile],
+      commandDependencies({
+        currentDirectory: taskDirectory,
+        authorizationFile: () => authorizationFile,
+        loadConfiguration: (file) =>
+          new FileDisplayConfigurationStore(file).load(),
+        openRuntime: async () => ({
+          socketPath,
+          cleanup: async () => undefined,
+        }),
+        launchBridge: (options) =>
+          launchChildProcess(
+            process.execPath,
+            [
+              bridgeEntry,
+              "--config",
+              options.configurationFile,
+              "--authorization",
+              options.authorizationFile,
+            ],
+            { ...process.env, ROONSCAPE_SOCKET: options.socketPath },
+          ),
+        launchRenderer: () => renderer,
+        delay: (milliseconds) =>
+          new Promise((resolve) => {
+            const timer = setTimeout(resolve, milliseconds);
+            timer.unref();
+          }),
+      }),
+    );
+
+    let commandExit: number;
+    let snapshot: PresentationSnapshot;
+    try {
+      snapshot = await readFirstSnapshot(socketPath);
+    } finally {
+      finishRenderer?.({ exitCode: 0, signal: null });
+      commandExit = await commandResult;
+    }
+
+    assert.equal(commandExit, 0);
+    assert.equal(snapshot.availability, "pairingRequired");
+  });
 });
 
 test("missing Display Configuration fails promptly without an interactive terminal", async () => {
@@ -1326,6 +1396,35 @@ function commandDependencies(
     writeError: () => undefined,
     ...overrides,
   };
+}
+
+async function readFirstSnapshot(
+  socketPath: string,
+): Promise<PresentationSnapshot> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      await access(socketPath);
+      const client = createConnection(socketPath);
+      const lines = createInterface({ input: client });
+      try {
+        const [line] = (await once(lines, "line")) as [string];
+        return JSON.parse(line) as PresentationSnapshot;
+      } finally {
+        client.destroy();
+      }
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !("code" in error) ||
+        (error as NodeJS.ErrnoException).code !== "ENOENT" ||
+        attempt === 99
+      ) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw new Error(`Timed out waiting for RoonScape bridge at ${socketPath}`);
 }
 
 function completedChild(result: ChildResult): RunningChild {
