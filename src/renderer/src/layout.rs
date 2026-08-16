@@ -76,7 +76,7 @@ impl Viewport {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GalleryField {
+pub enum NowPlayingField {
     Cohesive,
 }
 
@@ -141,7 +141,7 @@ impl IdentityLineLayout {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GallerySplitRole {
+pub enum NowPlayingRole {
     PlaybackStatus,
     Title,
     Artist,
@@ -169,7 +169,7 @@ impl MetadataFontSizes {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct GallerySplitTypography {
+pub struct NowPlayingTypography {
     pub title: MetadataFontSizes,
     pub artist: MetadataFontSizes,
     pub album: MetadataFontSizes,
@@ -202,7 +202,7 @@ pub struct FullFieldLayout {
 
 impl FullFieldLayout {
     pub fn for_viewport(viewport: Viewport) -> Self {
-        let gallery_layout = GallerySplitLayout::for_viewport(viewport);
+        let now_playing_layout = NowPlayingLayout::for_viewport(viewport);
         let status_px = scaled(viewport.width_px, 0.008, 12, 30);
         let explanation_px = scaled(viewport.width_px, 0.0135, 16, 46);
         Self {
@@ -217,10 +217,10 @@ impl FullFieldLayout {
             heading_px: scaled(viewport.width_px, 0.062, 51, 208),
             explanation_spacing_px: ((explanation_px as f64) * 0.9).round() as u32,
             explanation_px,
-            identity_width_px: gallery_layout
+            identity_width_px: now_playing_layout
                 .metadata_column_width_px
-                .saturating_sub(gallery_layout.metadata_right_inset_px),
-            identity_right_inset_px: gallery_layout.metadata_right_inset_px,
+                .saturating_sub(now_playing_layout.metadata_right_inset_px),
+            identity_right_inset_px: now_playing_layout.metadata_right_inset_px,
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
             identity_px: scaled(viewport.width_px, 0.0072, 11, 27),
             identity_placement: IdentityPlacement::BottomRight,
@@ -230,8 +230,8 @@ impl FullFieldLayout {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GallerySplitLayout {
-    pub field: GalleryField,
+pub struct NowPlayingLayout {
+    pub field: NowPlayingField,
     pub outer_gutter_px: u32,
     pub column_gap_px: u32,
     pub artwork_column_width_px: u32,
@@ -240,7 +240,7 @@ pub struct GallerySplitLayout {
     pub artwork_field_height_px: u32,
     pub identity_placement: IdentityPlacement,
     pub identity_line: IdentityLineLayout,
-    pub metadata_roles: Vec<GallerySplitRole>,
+    pub metadata_roles: Vec<NowPlayingRole>,
     pub metadata_right_inset_px: u32,
     pub status_top_inset_px: u32,
     pub artist_spacing_px: u32,
@@ -252,10 +252,10 @@ pub struct GallerySplitLayout {
     pub progress_height_px: u32,
     pub artwork_shadow_offset_px: u32,
     pub artwork_shadow_blur_px: u32,
-    pub typography: GallerySplitTypography,
+    pub typography: NowPlayingTypography,
 }
 
-impl GallerySplitLayout {
+impl NowPlayingLayout {
     pub fn for_presentation(presentation: &NowPlayingPresentation, viewport: Viewport) -> Self {
         let mut layout = Self::for_viewport(viewport);
         layout.metadata_roles = metadata_roles(presentation);
@@ -274,7 +274,7 @@ impl GallerySplitLayout {
         let artwork_field_size_px =
             artwork_column_width_px.min(((viewport.height_px as f64) * 0.81).round() as u32);
         let status_px = scaled(viewport.width_px, 0.008, 12, 30);
-        let typography = GallerySplitTypography {
+        let typography = NowPlayingTypography {
             title: MetadataFontSizes {
                 preferred_px: scaled(viewport.width_px, 0.046, 53, 168),
                 reduced_px: scaled(viewport.width_px, 0.0365, 40, 128),
@@ -297,7 +297,7 @@ impl GallerySplitLayout {
         };
 
         Self {
-            field: GalleryField::Cohesive,
+            field: NowPlayingField::Cohesive,
             outer_gutter_px,
             column_gap_px,
             artwork_column_width_px,
@@ -323,19 +323,19 @@ impl GallerySplitLayout {
     }
 }
 
-fn metadata_roles(presentation: &NowPlayingPresentation) -> Vec<GallerySplitRole> {
-    let mut roles = vec![GallerySplitRole::PlaybackStatus];
+fn metadata_roles(presentation: &NowPlayingPresentation) -> Vec<NowPlayingRole> {
+    let mut roles = vec![NowPlayingRole::PlaybackStatus];
     if presentation.title.is_some() {
-        roles.push(GallerySplitRole::Title);
+        roles.push(NowPlayingRole::Title);
     }
     if presentation.artist.is_some() {
-        roles.push(GallerySplitRole::Artist);
+        roles.push(NowPlayingRole::Artist);
     }
     if presentation.album.is_some() {
-        roles.push(GallerySplitRole::Album);
+        roles.push(NowPlayingRole::Album);
     }
     if presentation.progress.is_some() {
-        roles.push(GallerySplitRole::Progress);
+        roles.push(NowPlayingRole::Progress);
     }
     roles
 }

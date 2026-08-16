@@ -1,4 +1,4 @@
-use crate::{FullFieldLayout, GallerySplitLayout, PresentationPalette, Rgb, TypographyPair};
+use crate::{FullFieldLayout, NowPlayingLayout, PresentationPalette, Rgb, TypographyPair};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PresentationStyleLayer {
@@ -60,11 +60,7 @@ impl PresentationTransitionStyles {
             .collect()
     }
 
-    pub fn to_css(
-        self,
-        layout: &GallerySplitLayout,
-        full_field_layout: &FullFieldLayout,
-    ) -> String {
+    pub fn to_css(self, layout: &NowPlayingLayout, full_field_layout: &FullFieldLayout) -> String {
         let mut styles = String::new();
         for (layer, palette) in self.layers() {
             styles.push_str(&presentation_palette_styles(
@@ -103,7 +99,7 @@ fn diagnostics_style(
 fn presentation_palette_styles(
     layer: PresentationStyleLayer,
     palette: PresentationPalette,
-    layout: &GallerySplitLayout,
+    layout: &NowPlayingLayout,
     full_field_layout: &FullFieldLayout,
 ) -> String {
     let class_name = layer.class_name();
@@ -121,7 +117,7 @@ fn presentation_palette_styles(
     let accent_width = full_field_layout.accent_width_px;
     format!(
         ".{class_name} {{ background-color: {background}; color: {primary_text}; }}\n\
-         .{class_name}.gallery-split {{ background-image: linear-gradient(118deg, {artwork_field} 0%, {background} 62%, {metadata_field} 100%); }}\n\
+         .{class_name}.now-playing {{ background-image: linear-gradient(118deg, {artwork_field} 0%, {background} 62%, {metadata_field} 100%); }}\n\
          .{class_name} .artwork-frame {{ box-shadow: 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.72); }}\n\
          .{class_name} .artwork {{ border-color: alpha({primary_text}, 0.16); background-color: {artwork_field}; }}\n\
          .{class_name} .artwork-missing {{ border-color: alpha({muted_text}, 0.22); background-image: linear-gradient(142deg, alpha({muted_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16); }}\n\

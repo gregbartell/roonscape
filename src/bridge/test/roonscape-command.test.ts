@@ -81,7 +81,7 @@ test("configured start launches bridge then renderer as one session", async () =
   const dependencies = commandDependencies({
     loadConfiguration: (configurationFile) => {
       events.push(`configuration:${configurationFile}`);
-      return { trackedOutputId: "output-gallery" };
+      return { trackedOutputId: "output-speaker-system" };
     },
     openRuntime: async () => ({
       socketPath: "/runtime/roonscape/roonscape.sock",
@@ -138,7 +138,7 @@ test("--config takes precedence over the standard XDG path", async () => {
     },
     loadConfiguration: (configurationFile) => {
       loadedFiles.push(configurationFile);
-      return { trackedOutputId: "output-gallery" };
+      return { trackedOutputId: "output-speaker-system" };
     },
     openRuntime: async () => ({
       socketPath: "/runtime/roonscape/roonscape.sock",
@@ -164,7 +164,7 @@ test("valid --config without Roon Authorization presents pairing required", asyn
     const socketPath = path.join(taskDirectory, "roonscape.sock");
     await writeFile(
       configurationFile,
-      '{"trackedOutputId":"output-gallery"}\n',
+      '{"trackedOutputId":"output-speaker-system"}\n',
     );
     let finishRenderer: ((result: ChildResult) => void) | undefined;
     const renderer: RunningChild = {
@@ -246,9 +246,9 @@ test("first-time setup saves OLED defaults and continues into the presentation",
     configurationFileExists: () => false,
     discoverTrackedOutputs: async () => [
       {
-        trackedOutputId: "output-gallery",
-        trackedOutputName: "NUC HDMI",
-        trackedZoneName: "Gallery",
+        trackedOutputId: "output-speaker-system",
+        trackedOutputName: "Speaker System",
+        trackedZoneName: "Living Room",
       },
     ],
     readSetupKey: (signal) => {
@@ -284,13 +284,13 @@ test("first-time setup saves OLED defaults and continues into the presentation",
   assert.equal(result, 0);
   assert.match(output.join("\n"), /official Roon client/);
   assert.match(output.join("\n"), /Settings.*Extensions/);
-  assert.match(output.join("\n"), /NUC HDMI.*Gallery/);
-  assert.doesNotMatch(output.join("\n"), /output-gallery/);
+  assert.match(output.join("\n"), /Speaker System.*Living Room/);
+  assert.doesNotMatch(output.join("\n"), /output-speaker-system/);
   assert.match(output.join("\n"), /5 minutes/);
   assert.match(output.join("\n"), /35 percent/);
   assert.match(output.join("\n"), /1 minute/);
   assert.deepEqual(savedConfiguration, {
-    trackedOutputId: "output-gallery",
+    trackedOutputId: "output-speaker-system",
     inactivity: {
       gracePeriodSeconds: 300,
       dimmedOpacity: 0.35,
@@ -325,9 +325,9 @@ test("--setup preserves the saved choices and exits without launching", async ()
       configurationFileExists: () => true,
       discoverTrackedOutputs: async () => [
         {
-          trackedOutputId: "output-gallery",
-          trackedOutputName: "NUC HDMI",
-          trackedZoneName: "Gallery",
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+          trackedZoneName: "Living Room",
         },
         {
           trackedOutputId: "output-study",
@@ -481,7 +481,7 @@ test("--setup --config changes only the Tracked Output with a private atomic rep
     await mkdir(path.dirname(configurationFile), { recursive: true });
     await writeFile(
       configurationFile,
-      '{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n',
+      '{"trackedOutputId":"output-speaker-system","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n',
       { mode: 0o644 },
     );
     const configurationStore = new FileDisplayConfigurationStore(
@@ -503,9 +503,9 @@ test("--setup --config changes only the Tracked Output with a private atomic rep
           selectedFile === configurationFile,
         discoverTrackedOutputs: async () => [
           {
-            trackedOutputId: "output-gallery",
-            trackedOutputName: "NUC HDMI",
-            trackedZoneName: "Gallery",
+            trackedOutputId: "output-speaker-system",
+            trackedOutputName: "Speaker System",
+            trackedZoneName: "Living Room",
           },
           {
             trackedOutputId: "output-study",
@@ -641,9 +641,9 @@ test("setup atomically publishes a private Display Configuration before launch",
         configurationFileExists: () => false,
         discoverTrackedOutputs: async () => [
           {
-            trackedOutputId: "output-gallery",
-            trackedOutputName: "NUC HDMI",
-            trackedZoneName: "Gallery",
+            trackedOutputId: "output-speaker-system",
+            trackedOutputName: "Speaker System",
+            trackedZoneName: "Living Room",
           },
         ],
         readSetupKey: (signal) => {
@@ -667,7 +667,10 @@ test("setup atomically publishes a private Display Configuration before launch",
     );
 
     assert.equal(result, 0);
-    assert.equal(configurationAtLaunch?.trackedOutputId, "output-gallery");
+    assert.equal(
+      configurationAtLaunch?.trackedOutputId,
+      "output-speaker-system",
+    );
     assert.equal((await stat(configurationFile)).mode & 0o777, 0o600);
     assert.deepEqual(await readdir(path.dirname(configurationFile)), [
       "display.json",
@@ -702,9 +705,9 @@ test("waiting for Roon Authorization shows delayed troubleshooting and supports 
         }
         return Promise.resolve([
           {
-            trackedOutputId: "output-gallery",
-            trackedOutputName: "NUC HDMI",
-            trackedZoneName: "Gallery",
+            trackedOutputId: "output-speaker-system",
+            trackedOutputName: "Speaker System",
+            trackedZoneName: "Living Room",
           },
         ]);
       },
@@ -779,14 +782,14 @@ test("arrow-key selection disambiguates identical Tracked Output choices", async
       terminalIsInteractive: () => true,
       discoverTrackedOutputs: async () => [
         {
-          trackedOutputId: "output-gallery-left",
+          trackedOutputId: "output-usb-dac-left",
           trackedOutputName: "USB DAC",
-          trackedZoneName: "Gallery",
+          trackedZoneName: "Living Room",
         },
         {
-          trackedOutputId: "output-gallery-right",
+          trackedOutputId: "output-usb-dac-right",
           trackedOutputName: "USB DAC",
-          trackedZoneName: "Gallery",
+          trackedZoneName: "Living Room",
         },
       ],
       readSetupKey: (signal) => {
@@ -811,9 +814,9 @@ test("arrow-key selection disambiguates identical Tracked Output choices", async
   );
 
   assert.equal(result, 0);
-  assert.equal(selectedTrackedOutput, "output-gallery-right");
-  assert.match(output.join("\n"), /USB DAC.*Gallery.*output-gallery-left/);
-  assert.match(output.join("\n"), /USB DAC.*Gallery.*output-gallery-right/);
+  assert.equal(selectedTrackedOutput, "output-usb-dac-right");
+  assert.match(output.join("\n"), /USB DAC.*Living Room.*output-usb-dac-left/);
+  assert.match(output.join("\n"), /USB DAC.*Living Room.*output-usb-dac-right/);
 });
 
 test("OLED defaults require explicit acceptance before saving", async () => {
@@ -825,9 +828,9 @@ test("OLED defaults require explicit acceptance before saving", async () => {
       terminalIsInteractive: () => true,
       discoverTrackedOutputs: async () => [
         {
-          trackedOutputId: "output-gallery",
-          trackedOutputName: "NUC HDMI",
-          trackedZoneName: "Gallery",
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+          trackedZoneName: "Living Room",
         },
       ],
       readSetupKey: (signal) => {
@@ -863,9 +866,9 @@ test("empty discovery offers Refresh and Quit without guessing an output", async
           ? []
           : [
               {
-                trackedOutputId: "output-gallery",
-                trackedOutputName: "NUC HDMI",
-                trackedZoneName: "Gallery",
+                trackedOutputId: "output-speaker-system",
+                trackedOutputName: "Speaker System",
+                trackedZoneName: "Living Room",
               },
             ];
       },
@@ -946,7 +949,7 @@ test("configured start owns private XDG runtime state and removes it on exit", a
     const environment = { XDG_RUNTIME_DIR: runtimeRoot };
     const dependencies = commandDependencies({
       environment,
-      loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
       openRuntime: async () =>
         openRuntimeSession({
           environment,
@@ -983,7 +986,7 @@ test("uses a validated per-user runtime directory when XDG_RUNTIME_DIR is absent
       [],
       commandDependencies({
         environment: {},
-        loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
         openRuntime: async () =>
           openRuntimeSession({
             environment: {},
@@ -1016,7 +1019,7 @@ test("fails with remediation when no safe runtime directory is available", async
       [],
       commandDependencies({
         environment,
-        loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
         openRuntime: async () =>
           openRuntimeSession({
             environment,
@@ -1054,7 +1057,9 @@ test("a live RoonScape session excludes a second invocation", async () => {
         [],
         commandDependencies({
           environment,
-          loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+          loadConfiguration: () => ({
+            trackedOutputId: "output-speaker-system",
+          }),
           openRuntime: async () => openRuntimeSession(runtimeOptions),
           writeError: (line) => errors.push(line),
         }),
@@ -1087,7 +1092,7 @@ test("stale runtime artifacts are reclaimed only after their owner is gone", asy
       [],
       commandDependencies({
         environment,
-        loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
         openRuntime: async () =>
           openRuntimeSession({
             environment,
@@ -1130,7 +1135,7 @@ test("runtime artifacts without verifiable ownership are preserved", async () =>
       [],
       commandDependencies({
         environment,
-        loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
         openRuntime: async () =>
           openRuntimeSession({
             environment,
@@ -1162,7 +1167,7 @@ test("an ownership directory without a record fails without spinning", async () 
       [],
       commandDependencies({
         environment,
-        loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
         openRuntime: async () =>
           openRuntimeSession({
             environment,
@@ -1203,7 +1208,7 @@ test("an interrupted runtime recovery is reclaimed after its owner is gone", asy
       [],
       commandDependencies({
         environment,
-        loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
         openRuntime: async () =>
           openRuntimeSession({
             environment,
@@ -1230,7 +1235,7 @@ test("a child failure determines the session result and stops its peer", async (
   const result = await runRoonScapeCommand(
     [],
     commandDependencies({
-      loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
         cleanup: async () => {
@@ -1252,7 +1257,7 @@ test("a child signal remains observable as a launcher failure", async () => {
   const result = await runRoonScapeCommand(
     [],
     commandDependencies({
-      loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
         cleanup: async () => undefined,
@@ -1275,7 +1280,7 @@ test("launcher termination stops both children and cleans runtime state", async 
   const result = await runRoonScapeCommand(
     [],
     commandDependencies({
-      loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
         cleanup: async () => {
@@ -1306,7 +1311,7 @@ test("a child still running after five seconds is forcibly terminated", async ()
   const result = await runRoonScapeCommand(
     [],
     commandDependencies({
-      loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
         cleanup: async () => undefined,
@@ -1329,7 +1334,7 @@ test("shutdown remains bounded when a child never reports exit", async () => {
   const result = await runRoonScapeCommand(
     [],
     commandDependencies({
-      loadConfiguration: () => ({ trackedOutputId: "output-gallery" }),
+      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
         cleanup: async () => {

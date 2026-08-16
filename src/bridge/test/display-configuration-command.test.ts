@@ -14,9 +14,9 @@ test("lists discoverable Tracked Outputs with the IDs needed for host selection"
   const lines: string[] = [];
   const outputs: DiscoverableTrackedOutput[] = [
     {
-      trackedOutputId: "output-gallery",
-      trackedOutputName: "NUC HDMI",
-      trackedZoneName: "Gallery",
+      trackedOutputId: "output-speaker-system",
+      trackedOutputName: "Speaker System",
+      trackedZoneName: "Living Room",
     },
     {
       trackedOutputId: "output-kitchen",
@@ -34,7 +34,7 @@ test("lists discoverable Tracked Outputs with the IDs needed for host selection"
   assert.equal(exitCode, 0);
   assert.deepEqual(lines, [
     "TRACKED OUTPUT ID\tTRACKED OUTPUT\tTRACKED ZONE",
-    "output-gallery\tNUC HDMI\tGallery",
+    "output-speaker-system\tSpeaker System\tLiving Room",
     "output-kitchen\tKitchen Speaker\tKitchen",
   ]);
 });
@@ -50,7 +50,7 @@ test("saves the selected Tracked Output without changing Roon", async () => {
   };
 
   const exitCode = await runDisplayConfigurationCommand(
-    ["select", "output-gallery"],
+    ["select", "output-speaker-system"],
     {
       configurationStore,
       discoverTrackedOutputs: async () => {
@@ -61,8 +61,8 @@ test("saves the selected Tracked Output without changing Roon", async () => {
   );
 
   assert.equal(exitCode, 0);
-  assert.deepEqual(saved, { trackedOutputId: "output-gallery" });
-  assert.deepEqual(lines, ["Selected Tracked Output: output-gallery"]);
+  assert.deepEqual(saved, { trackedOutputId: "output-speaker-system" });
+  assert.deepEqual(lines, ["Selected Tracked Output: output-speaker-system"]);
 });
 
 test("preserves inactivity calibration when changing the Tracked Output", async () => {
@@ -77,7 +77,7 @@ test("preserves inactivity calibration when changing the Tracked Output", async 
     ["select", "output-library"],
     {
       configurationStore: {
-        load: () => ({ trackedOutputId: "output-gallery", inactivity }),
+        load: () => ({ trackedOutputId: "output-speaker-system", inactivity }),
         save: (configuration) => {
           saved = configuration;
         },
@@ -102,7 +102,7 @@ test("configures OLED inactivity without changing the Tracked Output", async () 
     ["inactivity", "240", "0.3", "45"],
     {
       configurationStore: {
-        load: () => ({ trackedOutputId: "output-gallery" }),
+        load: () => ({ trackedOutputId: "output-speaker-system" }),
         save: (configuration) => {
           saved = configuration;
         },
@@ -114,7 +114,7 @@ test("configures OLED inactivity without changing the Tracked Output", async () 
 
   assert.equal(exitCode, 0);
   assert.deepEqual(saved, {
-    trackedOutputId: "output-gallery",
+    trackedOutputId: "output-speaker-system",
     inactivity: {
       gracePeriodSeconds: 240,
       dimmedOpacity: 0.3,

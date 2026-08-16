@@ -1,12 +1,12 @@
 use roonscape_renderer::{
-    FullFieldLayout, GallerySplitLayout, IdentityLineLayout, IdentityPlacement, TextOverflow,
+    FullFieldLayout, IdentityLineLayout, IdentityPlacement, NowPlayingLayout, TextOverflow,
     Viewport,
 };
 
 #[test]
 fn scales_the_shared_full_field_accent_composition_from_reference_to_fixture() {
     let reference = FullFieldLayout::for_viewport(Viewport::REFERENCE);
-    let reference_gallery = GallerySplitLayout::for_viewport(Viewport::REFERENCE);
+    let reference_now_playing = NowPlayingLayout::for_viewport(Viewport::REFERENCE);
     let tall = FullFieldLayout::for_viewport(Viewport::new(3840, 2400));
     let windowed = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
 
@@ -44,7 +44,8 @@ fn scales_the_shared_full_field_accent_composition_from_reference_to_fixture() {
 
     assert_eq!(
         reference.identity_width_px,
-        reference_gallery.metadata_column_width_px - reference_gallery.metadata_right_inset_px,
-        "the full-field identity row should share the Gallery split footer geometry"
+        reference_now_playing.metadata_column_width_px
+            - reference_now_playing.metadata_right_inset_px,
+        "the full-field identity row should share the Now Playing layout footer geometry"
     );
 }

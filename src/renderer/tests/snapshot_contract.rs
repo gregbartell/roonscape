@@ -16,7 +16,7 @@ fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
             .tracked_output
             .as_ref()
             .map(|output| output.name.as_str()),
-        Some("AudioDevice")
+        Some("Speaker System")
     );
     assert_eq!(
         snapshot
@@ -283,7 +283,7 @@ fn rejects_invalid_timing_and_stopped_snapshots_with_stale_now_playing() {
 #[test]
 fn rejects_the_removed_display_zone_snapshot_field() {
     let error = parse_snapshot(
-        r#"{"schemaVersion":2,"revision":1,"availability":"available","playback":"playing","trackedOutput":{"name":"NUC HDMI"},"trackedZone":{"name":"Gallery"},"displayZone":{"name":"Gallery"},"nowPlaying":null,"progress":null,"artwork":null}"#,
+        r#"{"schemaVersion":2,"revision":1,"availability":"available","playback":"playing","trackedOutput":{"name":"Speaker System"},"trackedZone":{"name":"Living Room"},"displayZone":{"name":"Living Room"},"nowPlaying":null,"progress":null,"artwork":null}"#,
     )
     .expect_err("the removed displayZone field should be rejected");
 

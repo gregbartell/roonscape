@@ -12,7 +12,7 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildGalleryCapturePlan } from "./gallery-captures.mjs";
+import { buildPresentationCapturePlan } from "./presentation-captures.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const scratchRoot = "/tmp/codex/roonscape";
@@ -29,14 +29,19 @@ const options = parseArguments(process.argv.slice(2));
 
 if (options.list) {
   process.stdout.write(
-    `${JSON.stringify(buildGalleryCapturePlan(), null, 2)}\n`,
+    `${JSON.stringify(buildPresentationCapturePlan(), null, 2)}\n`,
   );
 } else {
-  await captureGallery(options);
+  await capturePresentations(options);
 }
 
-async function captureGallery({ output, only, viewport, settleMilliseconds }) {
-  const plan = buildGalleryCapturePlan().filter(
+async function capturePresentations({
+  output,
+  only,
+  viewport,
+  settleMilliseconds,
+}) {
+  const plan = buildPresentationCapturePlan().filter(
     (capture) =>
       (only === undefined || capture.scenario === only) &&
       (viewport === undefined || capture.viewport === viewport),
@@ -94,7 +99,7 @@ async function captureGallery({ output, only, viewport, settleMilliseconds }) {
     path.join(outputDirectory, "manifest.json"),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
-  process.stdout.write(`Gallery captures written to ${outputDirectory}\n`);
+  process.stdout.write(`Presentation captures written to ${outputDirectory}\n`);
 }
 
 async function captureFixture(
@@ -104,7 +109,7 @@ async function captureFixture(
   settleMilliseconds,
 ) {
   const runtimeDirectory = await mkdtemp(
-    path.join(scratchRoot, "gallery-capture."),
+    path.join(scratchRoot, "presentation-capture."),
   );
   const socketPath = path.join(runtimeDirectory, "roonscape.sock");
   const displayConfigurationPath = path.join(runtimeDirectory, "display.json");
@@ -348,7 +353,7 @@ async function verifyPngDimensions(filePath, expectedWidth, expectedHeight) {
 async function prepareOutputDirectory(requestedOutput) {
   await mkdir(scratchRoot, { recursive: true });
   if (requestedOutput === undefined) {
-    return mkdtemp(path.join(scratchRoot, "gallery-captures."));
+    return mkdtemp(path.join(scratchRoot, "presentation-captures."));
   }
 
   const outputDirectory = path.resolve(repositoryRoot, requestedOutput);

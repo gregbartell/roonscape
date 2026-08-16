@@ -140,7 +140,7 @@ fn assigns_editorial_and_utility_typography_roles() {
 }
 
 #[test]
-fn scales_metadata_typography_with_the_gallery_viewport() {
+fn scales_metadata_typography_with_the_now_playing_viewport() {
     let presentation = now_playing("playing.json");
     let reference = metadata_layout_for_viewport(&presentation, Viewport::new(3840, 2160));
     let windowed = metadata_layout_for_viewport(&presentation, Viewport::new(1600, 900));

@@ -165,7 +165,10 @@ async function prepareArtworkTestContext({
   image = "stable artwork",
   imageKey = "same-track-artwork",
   now,
-  output = { output_id: "output-gallery", display_name: "NUC HDMI" },
+  output = {
+    output_id: "output-speaker-system",
+    display_name: "Speaker System",
+  },
 }: {
   image?: string;
   imageKey?: string;
@@ -177,10 +180,14 @@ async function prepareArtworkTestContext({
   const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
   const artworkDirectory = path.join(taskDirectory, "artwork");
   const artworkFiles = await ArtworkFileStore.open(artworkDirectory);
-  const boundary = createRoonBoundary("output-gallery", artworkFiles, now);
+  const boundary = createRoonBoundary(
+    "output-speaker-system",
+    artworkFiles,
+    now,
+  );
   const zone: RoonZone = {
-    zone_id: "zone-gallery",
-    display_name: "Gallery",
+    zone_id: "zone-living-room",
+    display_name: "Living Room",
     state: "playing",
     outputs: [output],
     now_playing: {
@@ -250,7 +257,7 @@ test("publishes truthful availability across authorization and connection events
 });
 
 test("resolves the configured Tracked Output from the initial full zone state", async () => {
-  const boundary = createRoonBoundary("output-gallery");
+  const boundary = createRoonBoundary("output-speaker-system");
   const extensionOptions = boundary.extensionOptions();
   const core = boundary.core();
 
@@ -266,8 +273,8 @@ test("resolves the configured Tracked Output from the initial full zone state", 
         ],
       },
       {
-        zone_id: "zone-gallery",
-        display_name: "Gallery",
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
         state: "paused",
         now_playing: {
           three_line: {
@@ -276,7 +283,12 @@ test("resolves the configured Tracked Output from the initial full zone state", 
             line3: "A Moment Apart",
           },
         },
-        outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
+        ],
       },
     ],
   });
@@ -286,8 +298,8 @@ test("resolves the configured Tracked Output from the initial full zone state", 
     revision: 2,
     availability: "available",
     playback: "paused",
-    trackedOutput: { name: "NUC HDMI" },
-    trackedZone: { name: "Gallery" },
+    trackedOutput: { name: "Speaker System" },
+    trackedZone: { name: "Living Room" },
     nowPlaying: {
       title: "A Moment Apart",
       artist: "ODESZA",
@@ -305,15 +317,15 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
   const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
   const artworkDirectory = path.join(taskDirectory, "artwork");
   const artworkFiles = await ArtworkFileStore.open(artworkDirectory);
-  const boundary = createRoonBoundary("output-gallery", artworkFiles);
+  const boundary = createRoonBoundary("output-speaker-system", artworkFiles);
 
   try {
     boundary.extensionOptions().core_paired(boundary.core());
     boundary.emitZones("Subscribed", {
       zones: [
         {
-          zone_id: "zone-gallery",
-          display_name: "Gallery",
+          zone_id: "zone-living-room",
+          display_name: "Living Room",
           state: "playing",
           now_playing: {
             image_key: "opaque-roon-image-key",
@@ -325,7 +337,12 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
               line3: "A Moment Apart",
             },
           },
-          outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+          outputs: [
+            {
+              output_id: "output-speaker-system",
+              display_name: "Speaker System",
+            },
+          ],
         },
       ],
     });
@@ -344,7 +361,7 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
     assert.equal(boundary.snapshots.at(-1)?.artwork, null);
 
     boundary.emitZones("Changed", {
-      zones_seek_changed: [{ zone_id: "zone-gallery", seek_position: 30 }],
+      zones_seek_changed: [{ zone_id: "zone-living-room", seek_position: 30 }],
     });
     assert.equal(boundary.imageRequests.length, 1);
 
@@ -367,8 +384,8 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
         revision: 4,
         availability: "available",
         playback: "playing",
-        trackedOutput: { name: "NUC HDMI" },
-        trackedZone: { name: "Gallery" },
+        trackedOutput: { name: "Speaker System" },
+        trackedZone: { name: "Living Room" },
         nowPlaying: {
           title: "A Moment Apart",
           artist: "ODESZA",
@@ -396,8 +413,8 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
     boundary.emitZones("Changed", {
       zones_changed: [
         {
-          zone_id: "zone-gallery",
-          display_name: "Gallery",
+          zone_id: "zone-living-room",
+          display_name: "Living Room",
           state: "loading",
           now_playing: {
             image_key: "loading-artwork-key",
@@ -409,7 +426,12 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
               line3: "A Moment Apart",
             },
           },
-          outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+          outputs: [
+            {
+              output_id: "output-speaker-system",
+              display_name: "Speaker System",
+            },
+          ],
         },
       ],
     });
@@ -425,8 +447,8 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
     boundary.emitZones("Changed", {
       zones_changed: [
         {
-          zone_id: "zone-gallery",
-          display_name: "Gallery",
+          zone_id: "zone-living-room",
+          display_name: "Living Room",
           state: "playing",
           now_playing: {
             image_key: "revised-artwork-key",
@@ -438,7 +460,12 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
               line3: "A Moment Apart",
             },
           },
-          outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+          outputs: [
+            {
+              output_id: "output-speaker-system",
+              display_name: "Speaker System",
+            },
+          ],
         },
       ],
     });
@@ -461,8 +488,8 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
     boundary.emitZones("Changed", {
       zones_changed: [
         {
-          zone_id: "zone-gallery",
-          display_name: "Gallery",
+          zone_id: "zone-living-room",
+          display_name: "Living Room",
           state: "stopped",
           now_playing: {
             image_key: "opaque-roon-image-key",
@@ -470,7 +497,12 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
             length: 234,
             three_line: { line1: "Across the Room" },
           },
-          outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+          outputs: [
+            {
+              output_id: "output-speaker-system",
+              display_name: "Speaker System",
+            },
+          ],
         },
       ],
     });
@@ -480,8 +512,8 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
       revision: 9,
       availability: "available",
       playback: "stopped",
-      trackedOutput: { name: "NUC HDMI" },
-      trackedZone: { name: "Gallery" },
+      trackedOutput: { name: "Speaker System" },
+      trackedZone: { name: "Living Room" },
       nowPlaying: null,
       progress: null,
       artwork: null,
@@ -614,8 +646,8 @@ test("ignores a volume-only Tracked Zone update", async () => {
     new Date("2026-08-15T19:20:05Z"),
   ];
   const output = {
-    output_id: "output-gallery",
-    display_name: "NUC HDMI",
+    output_id: "output-speaker-system",
+    display_name: "Speaker System",
     volume: { type: "number", min: 0, max: 100, value: 30, step: 1 },
   };
   const context = await prepareArtworkTestContext({
@@ -699,17 +731,22 @@ test("transitions once and cleans up when artwork identity changes", async () =>
 });
 
 test("leaves absent prepared display lines absent without inventing fallbacks", () => {
-  const boundary = createRoonBoundary("output-gallery");
+  const boundary = createRoonBoundary("output-speaker-system");
 
   boundary.extensionOptions().core_paired(boundary.core());
   boundary.emitZones("Subscribed", {
     zones: [
       {
-        zone_id: "zone-gallery",
-        display_name: "Gallery",
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
         state: "playing",
         now_playing: { three_line: {} },
-        outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
+        ],
       },
     ],
   });
@@ -727,16 +764,18 @@ test("a stale artwork response cannot delete a newer presentation file", async (
   const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
   const artworkDirectory = path.join(taskDirectory, "artwork");
   const artworkFiles = await ArtworkFileStore.open(artworkDirectory);
-  const boundary = createRoonBoundary("output-gallery", artworkFiles);
+  const boundary = createRoonBoundary("output-speaker-system", artworkFiles);
   const trackedZone = {
-    zone_id: "zone-gallery",
-    display_name: "Gallery",
+    zone_id: "zone-living-room",
+    display_name: "Living Room",
     state: "playing" as const,
     now_playing: {
       image_key: "stale-artwork-key",
       three_line: { line1: "A Moment Apart", line2: "ODESZA" },
     },
-    outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+    outputs: [
+      { output_id: "output-speaker-system", display_name: "Speaker System" },
+    ],
   };
   const updatedTrackedZone = {
     ...trackedZone,
@@ -784,16 +823,21 @@ async function waitFor(
 }
 
 test("publishes meaningful progress from the Tracked Zone timing sample", async () => {
-  const boundary = createRoonBoundary("output-gallery");
+  const boundary = createRoonBoundary("output-speaker-system");
 
   boundary.extensionOptions().core_paired(boundary.core());
   boundary.emitZones("Subscribed", {
     zones: [
       {
-        zone_id: "zone-gallery",
-        display_name: "Gallery",
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
         state: "playing",
-        outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
+        ],
         now_playing: {
           seek_position: 82,
           length: 234,
@@ -811,16 +855,21 @@ test("publishes meaningful progress from the Tracked Zone timing sample", async 
 });
 
 test("clamps source progress at duration", () => {
-  const boundary = createRoonBoundary("output-gallery");
+  const boundary = createRoonBoundary("output-speaker-system");
 
   boundary.extensionOptions().core_paired(boundary.core());
   boundary.emitZones("Subscribed", {
     zones: [
       {
-        zone_id: "zone-gallery",
-        display_name: "Gallery",
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
         state: "playing",
-        outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
+        ],
         now_playing: { seek_position: 300, length: 234 },
       },
     ],
@@ -842,15 +891,20 @@ test("omits progress when Roon timing is not meaningful", () => {
   ];
 
   for (const nowPlaying of invalidTiming) {
-    const boundary = createRoonBoundary("output-gallery");
+    const boundary = createRoonBoundary("output-speaker-system");
     boundary.extensionOptions().core_paired(boundary.core());
     boundary.emitZones("Subscribed", {
       zones: [
         {
-          zone_id: "zone-gallery",
-          display_name: "Gallery",
+          zone_id: "zone-living-room",
+          display_name: "Living Room",
           state: "playing",
-          outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+          outputs: [
+            {
+              output_id: "output-speaker-system",
+              display_name: "Speaker System",
+            },
+          ],
           now_playing: nowPlaying,
         },
       ],
@@ -861,12 +915,14 @@ test("omits progress when Roon timing is not meaningful", () => {
 });
 
 test("publishes each playback state and clears timing when stopped", () => {
-  const boundary = createRoonBoundary("output-gallery");
+  const boundary = createRoonBoundary("output-speaker-system");
   boundary.extensionOptions().core_paired(boundary.core());
   const zone: Omit<RoonZone, "state"> = {
-    zone_id: "zone-gallery",
-    display_name: "Gallery",
-    outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+    zone_id: "zone-living-room",
+    display_name: "Living Room",
+    outputs: [
+      { output_id: "output-speaker-system", display_name: "Speaker System" },
+    ],
     now_playing: {
       seek_position: 82,
       length: 234,
@@ -908,7 +964,7 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
     new Date("2026-08-15T19:20:05Z"),
   ];
   const boundary = createRoonBoundary(
-    "output-gallery",
+    "output-speaker-system",
     undefined,
     () => sampleTimes.shift() ?? new Date("2026-08-15T19:20:05Z"),
   );
@@ -916,10 +972,15 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
   boundary.emitZones("Subscribed", {
     zones: [
       {
-        zone_id: "zone-gallery",
-        display_name: "Gallery",
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
         state: "playing",
-        outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
+        ],
         now_playing: {
           seek_position: 82,
           length: 234,
@@ -934,7 +995,7 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
   });
 
   boundary.emitZones("Changed", {
-    zones_seek_changed: [{ zone_id: "zone-gallery", seek_position: 30 }],
+    zones_seek_changed: [{ zone_id: "zone-living-room", seek_position: 30 }],
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
@@ -942,8 +1003,8 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
     revision: 3,
     availability: "available",
     playback: "playing",
-    trackedOutput: { name: "NUC HDMI" },
-    trackedZone: { name: "Gallery" },
+    trackedOutput: { name: "Speaker System" },
+    trackedZone: { name: "Living Room" },
     nowPlaying: {
       title: "A Moment Apart",
       artist: "ODESZA",
@@ -960,17 +1021,22 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
 });
 
 test("follows the configured Tracked Output through grouping and ungrouping", () => {
-  const boundary = createRoonBoundary("output-gallery");
+  const boundary = createRoonBoundary("output-speaker-system");
   const extensionOptions = boundary.extensionOptions();
 
   extensionOptions.core_paired(boundary.core());
   boundary.emitZones("Subscribed", {
     zones: [
       {
-        zone_id: "zone-gallery",
-        display_name: "Gallery",
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
         state: "playing",
-        outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
+        ],
       },
       {
         zone_id: "zone-kitchen",
@@ -984,14 +1050,17 @@ test("follows the configured Tracked Output through grouping and ungrouping", ()
   });
 
   boundary.emitZones("Changed", {
-    zones_removed: ["zone-gallery", "zone-kitchen"],
+    zones_removed: ["zone-living-room", "zone-kitchen"],
     zones_added: [
       {
         zone_id: "zone-whole-home",
         display_name: "Whole Home",
         state: "playing",
         outputs: [
-          { output_id: "output-gallery", display_name: "NUC HDMI" },
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
           { output_id: "output-kitchen", display_name: "Kitchen Speaker" },
         ],
       },
@@ -1001,17 +1070,22 @@ test("follows the configured Tracked Output through grouping and ungrouping", ()
     name: "Whole Home",
   });
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedOutput, {
-    name: "NUC HDMI",
+    name: "Speaker System",
   });
 
   boundary.emitZones("Changed", {
     zones_removed: ["zone-whole-home"],
     zones_added: [
       {
-        zone_id: "zone-gallery-new",
-        display_name: "Gallery",
+        zone_id: "zone-living-room-new",
+        display_name: "Living Room",
         state: "paused",
-        outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
+        ],
       },
       {
         zone_id: "zone-kitchen-new",
@@ -1035,14 +1109,14 @@ test("follows the configured Tracked Output through grouping and ungrouping", ()
       {
         revision: 3,
         playback: "playing",
-        trackedOutput: { name: "NUC HDMI" },
+        trackedOutput: { name: "Speaker System" },
         trackedZone: { name: "Whole Home" },
       },
       {
         revision: 4,
         playback: "paused",
-        trackedOutput: { name: "NUC HDMI" },
-        trackedZone: { name: "Gallery" },
+        trackedOutput: { name: "Speaker System" },
+        trackedZone: { name: "Living Room" },
       },
     ],
   );
@@ -1051,7 +1125,7 @@ test("follows the configured Tracked Output through grouping and ungrouping", ()
 test("publishes Tracked Output and Zone renames but ignores unrelated zones", () => {
   let sampledSecond = 0;
   const boundary = createRoonBoundary(
-    "output-gallery",
+    "output-speaker-system",
     undefined,
     () =>
       new Date(`2026-08-15T19:20:${String(sampledSecond++).padStart(2, "0")}Z`),
@@ -1062,10 +1136,15 @@ test("publishes Tracked Output and Zone renames but ignores unrelated zones", ()
   boundary.emitZones("Subscribed", {
     zones: [
       {
-        zone_id: "zone-gallery",
-        display_name: "Gallery",
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
         state: "paused",
-        outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
+        ],
         now_playing: { seek_position: 82, length: 234 },
       },
       {
@@ -1095,19 +1174,21 @@ test("publishes Tracked Output and Zone renames but ignores unrelated zones", ()
 
   assert.equal(boundary.snapshots.length, snapshotCount);
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedZone, {
-    name: "Gallery",
+    name: "Living Room",
   });
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedOutput, {
-    name: "NUC HDMI",
+    name: "Speaker System",
   });
 
   boundary.emitZones("Changed", {
     zones_changed: [
       {
-        zone_id: "zone-gallery",
+        zone_id: "zone-living-room",
         display_name: "Listening Room",
         state: "paused",
-        outputs: [{ output_id: "output-gallery", display_name: "USB DAC" }],
+        outputs: [
+          { output_id: "output-speaker-system", display_name: "USB DAC" },
+        ],
       },
     ],
   });
@@ -1122,17 +1203,22 @@ test("publishes Tracked Output and Zone renames but ignores unrelated zones", ()
 });
 
 test("clears presentation state when the configured Tracked Output is removed", async () => {
-  const boundary = createRoonBoundary("output-gallery");
+  const boundary = createRoonBoundary("output-speaker-system");
   const extensionOptions = boundary.extensionOptions();
 
   extensionOptions.core_paired(boundary.core());
   boundary.emitZones("Subscribed", {
     zones: [
       {
-        zone_id: "zone-gallery",
-        display_name: "Gallery",
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
         state: "playing",
-        outputs: [{ output_id: "output-gallery", display_name: "NUC HDMI" }],
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
+        ],
       },
       {
         zone_id: "zone-office",
@@ -1145,7 +1231,7 @@ test("clears presentation state when the configured Tracked Output is removed", 
     ],
   });
   boundary.emitZones("Changed", {
-    zones_removed: ["zone-gallery"],
+    zones_removed: ["zone-living-room"],
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {

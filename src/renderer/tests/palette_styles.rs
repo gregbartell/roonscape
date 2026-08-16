@@ -1,12 +1,12 @@
 use roonscape_renderer::{
-    DiagnosticsStyle, FullFieldLayout, GallerySplitLayout, PresentationPalette,
+    DiagnosticsStyle, FullFieldLayout, NowPlayingLayout, PresentationPalette,
     PresentationStyleLayer, PresentationTransitionStyles, Rgb, Viewport,
 };
 
 #[test]
 fn semantic_palette_roles_drive_every_presentation_surface() {
     let palette = PresentationPalette::fallback();
-    let layout = GallerySplitLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
+    let layout = NowPlayingLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
     let full_field_layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
 
     let styles =

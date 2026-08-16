@@ -53,7 +53,7 @@ const REPRESENTATIVES = [
   ),
 ];
 
-export function buildGalleryCapturePlan({
+export function buildPresentationCapturePlan({
   catalogPath = defaultCatalogPath,
 } = {}) {
   const scenarios = readFixtureScenarioCatalog(catalogPath).map(

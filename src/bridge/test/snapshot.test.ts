@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadSnapshot, validateSnapshot } from "../src/snapshot.js";
@@ -12,7 +11,7 @@ test("loads the shared Playing fixture as a complete snapshot", async () => {
     revision: 7,
     availability: "available",
     playback: "playing",
-    trackedOutput: { name: "AudioDevice" },
+    trackedOutput: { name: "Speaker System" },
     trackedZone: { name: "Living Room" },
     nowPlaying: {
       title: "Last Light on Phobos",
@@ -31,31 +30,12 @@ test("loads the shared Playing fixture as a complete snapshot", async () => {
   });
 });
 
-test("ships the selected prototype artwork byte for byte", async () => {
-  const [fixtureArtwork, prototypeArtwork] = await Promise.all([
-    readFile(
-      new URL(
-        "../../../../src/shared/fixtures/artwork/playing.svg",
-        import.meta.url,
-      ),
-    ),
-    readFile(
-      new URL(
-        "../../../../prototype/gallery-split-font-study/album-art.svg",
-        import.meta.url,
-      ),
-    ),
-  ]);
-
-  assert.deepEqual(fixtureArtwork, prototypeArtwork);
-});
-
 test("keeps the selected fictional release coherent across related fixtures", async () => {
   const expected = {
     title: "Last Light on Phobos",
     artist: "Evelyn Lark & The Orbital Choir",
     album: "Signals from the Quiet Sea",
-    trackedOutput: { name: "AudioDevice" },
+    trackedOutput: { name: "Speaker System" },
     trackedZone: { name: "Living Room" },
   };
   const relatedFixtures = [
@@ -347,9 +327,9 @@ test("rejects the removed displayZone snapshot field", async () => {
       revision: 1,
       availability: "available",
       playback: "playing",
-      trackedOutput: { name: "NUC HDMI" },
-      trackedZone: { name: "Gallery" },
-      displayZone: { name: "Gallery" },
+      trackedOutput: { name: "Speaker System" },
+      trackedZone: { name: "Living Room" },
+      displayZone: { name: "Living Room" },
       nowPlaying: null,
       progress: null,
       artwork: null,

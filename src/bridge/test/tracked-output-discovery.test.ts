@@ -46,13 +46,13 @@ test("discovers physical Tracked Outputs from Roon's initial full zone state", a
           listener("Subscribed", {
             zones: [
               {
-                zone_id: "zone-gallery",
-                display_name: "Gallery",
+                zone_id: "zone-living-room",
+                display_name: "Living Room",
                 state: "paused",
                 outputs: [
                   {
-                    output_id: "output-gallery",
-                    display_name: "NUC HDMI",
+                    output_id: "output-speaker-system",
+                    display_name: "Speaker System",
                   },
                 ],
               },
@@ -80,9 +80,9 @@ test("discovers physical Tracked Outputs from Roon's initial full zone state", a
   assert.equal(discoveryStarted, true);
   assert.deepEqual(await discovery, [
     {
-      trackedOutputId: "output-gallery",
-      trackedOutputName: "NUC HDMI",
-      trackedZoneName: "Gallery",
+      trackedOutputId: "output-speaker-system",
+      trackedOutputName: "Speaker System",
+      trackedZoneName: "Living Room",
     },
     {
       trackedOutputId: "output-kitchen",

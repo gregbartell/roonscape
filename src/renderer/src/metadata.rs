@@ -1,5 +1,5 @@
 use crate::presentation::NowPlayingPresentation;
-use crate::{GallerySplitLayout, MetadataFontSizes, TextOverflow, Viewport};
+use crate::{MetadataFontSizes, NowPlayingLayout, TextOverflow, Viewport};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MetadataTypography {
@@ -37,7 +37,7 @@ pub fn metadata_layout_for_viewport(
     presentation: &NowPlayingPresentation,
     viewport: Viewport,
 ) -> MetadataLayout {
-    let typography = GallerySplitLayout::for_viewport(viewport).typography;
+    let typography = NowPlayingLayout::for_viewport(viewport).typography;
     MetadataLayout {
         title: presentation.title.as_deref().map(|text| {
             line_layout(

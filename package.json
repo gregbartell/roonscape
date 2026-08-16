@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspace @roonscape/bridge",
-    "capture:gallery": "npm run build && node scripts/capture-gallery.mjs",
+    "capture:presentations": "npm run build && node scripts/capture-presentations.mjs",
     "check": "npm run format:check && npm run typecheck && npm run lint && npm test",
     "configure": "npm run build --workspace @roonscape/bridge && node src/bridge/dist/src/configure.js",
     "fixture": "npm run build && node scripts/run-fixture.mjs",
@@ -22,10 +22,10 @@
     "start": "npm run build && cargo build --locked --release --package roonscape-renderer && ./src/launcher/roonscape",
     "start:bridge": "npm run start --workspace @roonscape/bridge",
     "smoke:ipc": "npm run build && cargo build --package roonscape-renderer --example ipc-probe && node scripts/ipc-smoke.mjs",
-    "test": "npm run test:bridge && npm run test:source-launcher && npm run test:fixture-launcher && npm run test:gallery-captures && npm run test:package && cargo test --workspace && npm run smoke:ipc",
+    "test": "npm run test:bridge && npm run test:source-launcher && npm run test:fixture-launcher && npm run test:presentation-captures && npm run test:package && cargo test --workspace && npm run smoke:ipc",
     "test:bridge": "npm run test --workspace @roonscape/bridge",
     "test:fixture-launcher": "node --test scripts/run-fixture.test.mjs",
-    "test:gallery-captures": "npm run build && node --test scripts/gallery-captures.test.mjs",
+    "test:presentation-captures": "npm run build && node --test scripts/presentation-captures.test.mjs",
     "test:package": "node --test scripts/package-release.test.mjs",
     "test:source-launcher": "npm run build && node --test scripts/source-launcher.test.mjs",
     "typecheck": "npm run build && cargo check --workspace --all-targets"

@@ -135,7 +135,7 @@ fn completed_transition_releases_the_outgoing_presentation_and_becomes_stable() 
 }
 
 #[test]
-fn crossfades_light_gallery_split_into_missing_content_as_complete_layers() {
+fn crossfades_light_now_playing_into_missing_content_as_complete_layers() {
     let artwork_directory = tempdir().expect("temporary artwork directory should be available");
     let light_artwork = artwork_directory.path().join("light.svg");
     fs::write(
@@ -158,7 +158,7 @@ fn crossfades_light_gallery_split_into_missing_content_as_complete_layers() {
     let resolved = resolve_presentation(&presentation, Path::new(""));
     let artwork_path = match &resolved.presentation {
         Presentation::NowPlaying(now_playing) => now_playing.artwork_path.clone(),
-        Presentation::FullField(_) => panic!("light artwork should retain Gallery split"),
+        Presentation::FullField(_) => panic!("light artwork should retain Now Playing layout"),
     };
     let light = CoordinatedPresentation {
         presentation: resolved.presentation,
@@ -188,7 +188,7 @@ fn crossfades_light_gallery_split_into_missing_content_as_complete_layers() {
     );
     let outgoing = transition
         .outgoing()
-        .expect("the complete light Gallery split should remain as the outgoing layer");
+        .expect("the complete light Now Playing layout should remain as the outgoing layer");
     assert!(matches!(
         outgoing.value().presentation,
         Presentation::NowPlaying(_)

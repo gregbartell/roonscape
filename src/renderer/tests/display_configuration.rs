@@ -34,11 +34,11 @@ fn reads_host_inactivity_calibration_from_display_configuration() {
 #[test]
 fn rejects_invalid_host_inactivity_calibration() {
     for contents in [
-        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":0,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
-        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0,"repositionCadenceSeconds":45}}"#,
-        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1,"repositionCadenceSeconds":45}}"#,
-        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1.1,"repositionCadenceSeconds":45}}"#,
-        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":0}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","inactivity":{"gracePeriodSeconds":0,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1.1,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":0}}"#,
     ] {
         assert!(inactivity_configuration_from_display_configuration(contents).is_err());
     }
@@ -48,8 +48,8 @@ fn rejects_invalid_host_inactivity_calibration() {
 fn rejects_display_configuration_outside_the_shared_contract() {
     for contents in [
         r#"{"inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
-        r#"{"trackedOutputId":"output-gallery","fallback":"output-kitchen"}"#,
-        r#"{"trackedOutputId":"output-gallery","displayOutputId":"output-gallery"}"#,
+        r#"{"trackedOutputId":"output-speaker-system","fallback":"output-kitchen"}"#,
+        r#"{"trackedOutputId":"output-speaker-system","displayOutputId":"output-speaker-system"}"#,
     ] {
         assert!(inactivity_configuration_from_display_configuration(contents).is_err());
     }
@@ -70,7 +70,7 @@ fn loads_inactivity_calibration_from_the_host_file() {
     let configuration_file = task_directory.path().join("display.json");
     fs::write(
         &configuration_file,
-        r#"{"trackedOutputId":"output-gallery","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
     )
     .expect("test Display Configuration should be writable");
 

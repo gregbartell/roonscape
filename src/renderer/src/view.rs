@@ -6,9 +6,9 @@ use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
     ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, FullFieldLayout,
-    FullFieldPresentation, GalleryField, GallerySplitLayout, GallerySplitRole, IdentityLineLayout,
-    IdentityPlacement, InactivityLayout, InactivityTransform, MetadataFontSizes,
-    MetadataLineLayout, MetadataTypography, NowPlayingPresentation, Presentation,
+    FullFieldPresentation, IdentityLineLayout, IdentityPlacement, InactivityLayout,
+    InactivityTransform, MetadataFontSizes, MetadataLineLayout, MetadataTypography,
+    NowPlayingField, NowPlayingLayout, NowPlayingPresentation, NowPlayingRole, Presentation,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationStyleLayer,
     PresentationTransition, PresentationTransitionStyles, StatusEmphasis, TextOverflow,
     TypographyPair, TypographyStyles, Viewport, metadata_layout_for_viewport, resolve_presentation,
@@ -30,7 +30,7 @@ struct RenderedPresentation {
     root: gtk::Widget,
     progress: Option<RenderedProgress>,
     palette: PresentationPalette,
-    gallery_split: Option<RenderedGallerySplit>,
+    now_playing: Option<RenderedNowPlaying>,
     full_field: Option<RenderedFullField>,
     diagnostics: Option<gtk::Label>,
 }
@@ -62,7 +62,7 @@ struct RenderedMetadata {
     identity: RenderedIdentity,
 }
 
-struct RenderedGallerySplit {
+struct RenderedNowPlaying {
     content: gtk::Box,
     artwork_column: gtk::Box,
     artwork_frame: gtk::AspectFrame,
@@ -272,7 +272,7 @@ impl PresentationView {
 
     fn install_palette_styles(&self) {
         let viewport = self.layout_viewport.unwrap_or(Viewport::WINDOWED_FIXTURE);
-        let layout = GallerySplitLayout::for_viewport(viewport);
+        let layout = NowPlayingLayout::for_viewport(viewport);
         let full_field_layout = FullFieldLayout::for_viewport(viewport);
         let styles = PresentationTransitionStyles::new(
             self.transition.current().value().palette,
@@ -287,8 +287,8 @@ impl PresentationView {
 
 impl RenderedPresentation {
     fn apply_viewport(&self, viewport: Viewport) {
-        if let Some(gallery_split) = self.gallery_split.as_ref() {
-            gallery_split.apply_layout(&GallerySplitLayout::for_viewport(viewport));
+        if let Some(now_playing) = self.now_playing.as_ref() {
+            now_playing.apply_layout(&NowPlayingLayout::for_viewport(viewport));
         }
         if let Some(full_field) = self.full_field.as_ref() {
             full_field.apply_layout(&FullFieldLayout::for_viewport(viewport));
@@ -328,7 +328,7 @@ fn render_presentation(
     let resolved = resolve_presentation(presentation, repository_root);
 
     match &resolved.presentation {
-        Presentation::NowPlaying(presentation) => gallery_split(
+        Presentation::NowPlaying(presentation) => now_playing(
             presentation,
             repository_root,
             resolved.palette,
@@ -400,7 +400,7 @@ fn full_field(
         root: root.upcast(),
         progress: None,
         palette,
-        gallery_split: None,
+        now_playing: None,
         full_field: Some(RenderedFullField {
             copy,
             message,
@@ -423,19 +423,19 @@ fn diagnostics_view(text: &str) -> gtk::Label {
     label
 }
 
-fn gallery_split(
+fn now_playing(
     presentation: &NowPlayingPresentation,
     repository_root: &Path,
     palette: PresentationPalette,
     diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
-    let layout = GallerySplitLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE);
+    let layout = NowPlayingLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE);
     let surface = gtk::Box::new(gtk::Orientation::Vertical, 0);
     surface.set_hexpand(true);
     surface.set_vexpand(true);
 
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    content.add_css_class("gallery-content");
+    content.add_css_class("now-playing-content");
     content.set_hexpand(true);
     content.set_vexpand(true);
     surface.append(&content);
@@ -461,7 +461,7 @@ fn gallery_split(
     content.append(&artwork_column);
     content.append(&metadata_slot);
     let progress = metadata.progress.clone();
-    let gallery_split = RenderedGallerySplit {
+    let now_playing = RenderedNowPlaying {
         content,
         artwork_column,
         artwork_frame,
@@ -469,14 +469,14 @@ fn gallery_split(
         metadata,
     };
     let class_name = match layout.field {
-        GalleryField::Cohesive => "gallery-split",
+        NowPlayingField::Cohesive => "now-playing",
     };
     let (root, diagnostics) = presentation_layer(&surface, class_name, diagnostics_text);
     RenderedPresentation {
         root: root.upcast(),
         progress,
         palette,
-        gallery_split: Some(gallery_split),
+        now_playing: Some(now_playing),
         full_field: None,
         diagnostics,
     }
@@ -547,7 +547,7 @@ fn artwork(
 
 fn metadata(
     presentation: &NowPlayingPresentation,
-    gallery_layout: &GallerySplitLayout,
+    now_playing_layout: &NowPlayingLayout,
 ) -> RenderedMetadata {
     let root = gtk::Overlay::new();
     root.add_css_class("metadata-column");
@@ -581,19 +581,19 @@ fn metadata(
         .map(|layout| metadata_line(layout, "album"));
     let progress = presentation.progress.as_ref().map(progress_view);
 
-    for role in &gallery_layout.metadata_roles {
+    for role in &now_playing_layout.metadata_roles {
         match role {
-            GallerySplitRole::PlaybackStatus => root.add_overlay(&playback_state.root),
-            GallerySplitRole::Title => {
+            NowPlayingRole::PlaybackStatus => root.add_overlay(&playback_state.root),
+            NowPlayingRole::Title => {
                 copy.append(&title.as_ref().expect("Title role requires a label").label)
             }
-            GallerySplitRole::Artist => {
+            NowPlayingRole::Artist => {
                 copy.append(&artist.as_ref().expect("Artist role requires a label").label)
             }
-            GallerySplitRole::Album => {
+            NowPlayingRole::Album => {
                 copy.append(&album.as_ref().expect("Album role requires a label").label)
             }
-            GallerySplitRole::Progress => copy.append(
+            NowPlayingRole::Progress => copy.append(
                 &progress
                     .as_ref()
                     .expect("progress role requires a timeline")
@@ -606,8 +606,8 @@ fn metadata(
     let identity = tracked_identity(
         &presentation.tracked_output,
         &presentation.tracked_zone,
-        gallery_layout.identity_placement,
-        gallery_layout.identity_line,
+        now_playing_layout.identity_placement,
+        now_playing_layout.identity_line,
     );
     identity.root.set_halign(gtk::Align::Fill);
     column.append(&identity.root);
@@ -662,8 +662,8 @@ fn set_status_label_typography(label: &gtk::Label, font_size_px: u32, letter_spa
     label.set_attributes(Some(&attributes));
 }
 
-impl RenderedGallerySplit {
-    fn apply_layout(&self, layout: &GallerySplitLayout) {
+impl RenderedNowPlaying {
+    fn apply_layout(&self, layout: &NowPlayingLayout) {
         let gutter = dimension(layout.outer_gutter_px);
         self.content.set_margin_start(gutter);
         self.content.set_margin_end(gutter);
@@ -724,7 +724,7 @@ impl RenderedFullField {
 }
 
 impl RenderedMetadata {
-    fn apply_layout(&self, layout: &GallerySplitLayout) {
+    fn apply_layout(&self, layout: &NowPlayingLayout) {
         self.playback_state
             .root
             .set_spacing(dimension(layout.state_dot_size_px));

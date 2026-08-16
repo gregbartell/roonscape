@@ -1,6 +1,6 @@
 use roonscape_renderer::{
-    FullFieldLayout, GallerySplitLayout, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND,
-    InactivityLayout, InactivityTransform, LayoutOffset, Viewport,
+    FullFieldLayout, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityLayout,
+    InactivityTransform, LayoutOffset, NowPlayingLayout, Viewport,
 };
 
 #[test]
@@ -43,22 +43,22 @@ fn reserves_the_complete_oled_movement_envelope_around_restyled_layouts() {
                 display_viewport.height_px - 2 * INACTIVE_VERTICAL_BOUND as u32
             );
 
-            let gallery = GallerySplitLayout::for_viewport(safe.content_viewport);
+            let now_playing = NowPlayingLayout::for_viewport(safe.content_viewport);
             assert_eq!(
-                gallery.outer_gutter_px * 2
-                    + gallery.artwork_column_width_px
-                    + gallery.column_gap_px
-                    + gallery.metadata_column_width_px,
+                now_playing.outer_gutter_px * 2
+                    + now_playing.artwork_column_width_px
+                    + now_playing.column_gap_px
+                    + now_playing.metadata_column_width_px,
                 safe.content_viewport.width_px,
-                "Gallery split should fit the viewport left inside the OLED envelope"
+                "Now Playing layout should fit the viewport left inside the OLED envelope"
             );
             let artwork_bottom_clearance =
-                (safe.content_viewport.height_px - gallery.artwork_field_height_px) / 2;
-            let shadow_bottom_extent =
-                gallery.artwork_shadow_offset_px + gallery.artwork_shadow_blur_px.div_ceil(2);
+                (safe.content_viewport.height_px - now_playing.artwork_field_height_px) / 2;
+            let shadow_bottom_extent = now_playing.artwork_shadow_offset_px
+                + now_playing.artwork_shadow_blur_px.div_ceil(2);
             assert!(
                 shadow_bottom_extent <= artwork_bottom_clearance,
-                "the artwork shadow should remain inside the OLED-safe Gallery split"
+                "the artwork shadow should remain inside the OLED-safe Now Playing layout"
             );
 
             let full_field = FullFieldLayout::for_viewport(safe.content_viewport);
@@ -79,7 +79,7 @@ fn reserves_the_complete_oled_movement_envelope_around_restyled_layouts() {
 }
 
 #[test]
-fn leaves_the_active_gallery_viewport_uninset() {
+fn leaves_the_active_now_playing_viewport_uninset() {
     let active =
         InactivityLayout::for_viewport(Viewport::WINDOWED_FIXTURE, InactivityTransform::default());
 

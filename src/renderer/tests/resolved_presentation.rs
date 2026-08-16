@@ -100,7 +100,7 @@ fn unreadable_artwork_without_metadata_resolves_to_details_unavailable() {
 
     let resolved = resolve_presentation(&presentation, repository_root.path());
     let Presentation::FullField(full_field) = resolved.presentation else {
-        panic!("unreadable artwork without metadata should not retain Gallery split");
+        panic!("unreadable artwork without metadata should not retain Now Playing layout");
     };
 
     assert_eq!(full_field.state_label, "Playing");
@@ -125,7 +125,7 @@ fn metadata_with_unreadable_artwork_resolves_to_the_quiet_artwork_field() {
 
     let resolved = resolve_presentation(&presentation, repository_root.path());
     let Presentation::NowPlaying(now_playing) = resolved.presentation else {
-        panic!("usable metadata should retain Gallery split");
+        panic!("usable metadata should retain Now Playing layout");
     };
 
     assert_eq!(now_playing.artwork_revision, None);

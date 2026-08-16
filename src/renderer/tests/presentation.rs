@@ -36,7 +36,7 @@ fn assert_full_field_identity(
 }
 
 #[test]
-fn maps_the_playing_snapshot_to_gallery_split_content() {
+fn maps_the_playing_snapshot_to_now_playing_content() {
     let fixture = support::fixture("playing.json");
     let snapshot = parse_snapshot(&fixture).expect("shared Playing fixture should be valid");
 
@@ -55,7 +55,7 @@ fn maps_the_playing_snapshot_to_gallery_split_content() {
         presentation.album.as_deref(),
         Some("Signals from the Quiet Sea")
     );
-    assert_eq!(presentation.tracked_output, "AudioDevice");
+    assert_eq!(presentation.tracked_output, "Speaker System");
     assert_eq!(presentation.tracked_zone, "Living Room");
     assert_eq!(presentation.playback_state(), "Playing");
     assert_eq!(presentation.artwork_revision, Some(3));
@@ -73,7 +73,7 @@ fn maps_the_playing_snapshot_to_gallery_split_content() {
 }
 
 #[test]
-fn carries_artwork_presence_and_presentation_revision_into_gallery_split() {
+fn carries_artwork_presence_and_presentation_revision_into_now_playing() {
     let missing_fixture = support::fixture("missing-artwork.json");
     let missing_snapshot =
         parse_snapshot(&missing_fixture).expect("missing artwork fixture should be valid");
@@ -156,7 +156,7 @@ fn presents_stopped_playback_as_idle_full_field_copy_with_authoritative_identiti
     assert_eq!(presentation.state_label, "Idle");
     assert_eq!(presentation.heading, "Nothing is playing");
     assert_eq!(presentation.explanation, None);
-    assert_full_field_identity(&presentation, "AudioDevice", "Living Room");
+    assert_full_field_identity(&presentation, "Speaker System", "Living Room");
 }
 
 #[test]
@@ -173,7 +173,7 @@ fn presents_empty_loading_as_full_field_copy_with_authoritative_identities() {
     assert_eq!(presentation.state_label, "Loading");
     assert_eq!(presentation.heading, "Loading");
     assert_eq!(presentation.explanation, None);
-    assert_full_field_identity(&presentation, "AudioDevice", "Living Room");
+    assert_full_field_identity(&presentation, "Speaker System", "Living Room");
 }
 
 #[test]
@@ -190,7 +190,7 @@ fn presents_playing_without_usable_content_as_a_truthful_full_field() {
     assert_eq!(presentation.state_label, "Playing");
     assert_eq!(presentation.heading, "Now Playing details unavailable");
     assert_eq!(presentation.explanation, None);
-    assert_full_field_identity(&presentation, "AudioDevice", "Living Room");
+    assert_full_field_identity(&presentation, "Speaker System", "Living Room");
 }
 
 #[test]
@@ -626,7 +626,7 @@ fn inactive_conditions_remain_fully_legible_until_the_grace_period_ends() {
 }
 
 #[test]
-fn loading_and_playing_stay_active_with_gallery_or_missing_content() {
+fn loading_and_playing_stay_active_with_now_playing_or_missing_content() {
     for fixture_name in [
         "playing.json",
         "loading.json",
@@ -654,7 +654,7 @@ fn loading_and_playing_stay_active_with_gallery_or_missing_content() {
 }
 
 #[test]
-fn repeatedly_repositions_inactive_content_within_gallery_split_bounds() {
+fn repeatedly_repositions_inactive_content_within_now_playing_bounds() {
     let snapshot =
         parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
     let state = PresentationState::new_with_inactivity(

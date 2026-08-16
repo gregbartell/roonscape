@@ -12,7 +12,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { buildGalleryCapturePlan } from "./gallery-captures.mjs";
+import { buildPresentationCapturePlan } from "./presentation-captures.mjs";
 
 const execFileAsync = promisify(execFile);
 const scratchRoot = "/tmp/codex/roonscape";
@@ -40,7 +40,7 @@ const REQUIRED_SCENARIOS = [
 ];
 
 test("plans every visual acceptance scenario at every supported viewport", () => {
-  const plan = buildGalleryCapturePlan();
+  const plan = buildPresentationCapturePlan();
   const referenceMatrix = plan.filter(
     (capture) =>
       capture.variant === "matrix" && capture.viewport === "3840x2160",
@@ -95,7 +95,7 @@ test("derives the visual acceptance matrix from the Fixture Scenario catalog", a
     ];
     await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
 
-    const matrixScenarios = buildGalleryCapturePlan({ catalogPath })
+    const matrixScenarios = buildPresentationCapturePlan({ catalogPath })
       .filter(
         (capture) =>
           capture.variant === "matrix" && capture.viewport === "3840x2160",
@@ -112,7 +112,7 @@ test("derives the visual acceptance matrix from the Fixture Scenario catalog", a
 });
 
 test("plans explicit typography and adaptive diagnostics representatives", () => {
-  const representatives = buildGalleryCapturePlan().filter(
+  const representatives = buildPresentationCapturePlan().filter(
     (capture) => capture.variant === "representative",
   );
 
@@ -148,13 +148,13 @@ test("plans explicit typography and adaptive diagnostics representatives", () =>
 test("capture command lists the durable plan without launching the renderer", async () => {
   const { stdout, stderr } = await execFileAsync(
     process.execPath,
-    ["scripts/capture-gallery.mjs", "--list"],
+    ["scripts/capture-presentations.mjs", "--list"],
     { cwd: new URL("..", import.meta.url) },
   );
   const plan = JSON.parse(stdout);
 
   assert.equal(stderr, "");
-  assert.deepEqual(plan, buildGalleryCapturePlan());
+  assert.deepEqual(plan, buildPresentationCapturePlan());
 });
 
 test("capture command orchestrates one native fixture capture and records its manifest", async () => {
@@ -191,7 +191,7 @@ test("capture command orchestrates one native fixture capture and records its ma
     const { stderr } = await execFileAsync(
       process.execPath,
       [
-        "scripts/capture-gallery.mjs",
+        "scripts/capture-presentations.mjs",
         "--output",
         outputDirectory,
         "--only",
@@ -220,7 +220,7 @@ test("capture command orchestrates one native fixture capture and records its ma
     assert.equal(stderr, "");
     assert.deepEqual(manifest.captures, [
       {
-        ...buildGalleryCapturePlan().find(
+        ...buildPresentationCapturePlan().find(
           (capture) =>
             capture.scenario === "playing" &&
             capture.viewport === "1600x900" &&

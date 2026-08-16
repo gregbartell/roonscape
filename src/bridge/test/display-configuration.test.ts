@@ -17,7 +17,7 @@ test("persists Display Configuration in a private dedicated file", async () => {
     const configDirectory = path.join(taskDirectory, "config");
     const configurationFile = path.join(configDirectory, "display.json");
     const store = new FileDisplayConfigurationStore(configurationFile);
-    const configuration = { trackedOutputId: "output-gallery" };
+    const configuration = { trackedOutputId: "output-speaker-system" };
 
     assert.equal(store.load(), null);
     store.save(configuration);
@@ -45,7 +45,7 @@ test("loads existing Display Configuration without inactivity calibration", asyn
     ),
   );
 
-  assert.deepEqual(store.load(), { trackedOutputId: "output-gallery" });
+  assert.deepEqual(store.load(), { trackedOutputId: "output-speaker-system" });
 });
 
 test("persists inactivity calibration with Tracked Output selection", async () => {
@@ -53,7 +53,7 @@ test("persists inactivity calibration with Tracked Output selection", async () =
     const configurationFile = path.join(taskDirectory, "display.json");
     const store = new FileDisplayConfigurationStore(configurationFile);
     const configuration = {
-      trackedOutputId: "output-gallery",
+      trackedOutputId: "output-speaker-system",
       inactivity: {
         gracePeriodSeconds: 240,
         dimmedOpacity: 0.3,
@@ -89,7 +89,7 @@ test("loads shared inactivity Display Configuration", () => {
   );
 
   assert.deepEqual(store.load(), {
-    trackedOutputId: "output-gallery",
+    trackedOutputId: "output-speaker-system",
     inactivity: {
       gracePeriodSeconds: 240,
       dimmedOpacity: 0.3,
@@ -106,8 +106,8 @@ test("rejects the removed displayOutputId field", async () => {
     await writeFile(
       configurationFile,
       JSON.stringify({
-        trackedOutputId: "output-gallery",
-        displayOutputId: "output-gallery",
+        trackedOutputId: "output-speaker-system",
+        displayOutputId: "output-speaker-system",
       }),
     );
 
