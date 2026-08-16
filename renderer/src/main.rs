@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::env;
 use std::error::Error;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::rc::Rc;
@@ -48,7 +49,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let socket_path = env::var_os("ROONSCAPE_SOCKET")
         .map(PathBuf::from)
         .ok_or("ROONSCAPE_SOCKET must name the private Unix socket")?;
-    let inactivity_configuration = host_inactivity_configuration();
+    let configuration_file = configuration_file_from_arguments()?;
+    let inactivity_configuration = host_inactivity_configuration(&configuration_file);
     let progress_clock = Instant::now();
     let presentation = Rc::new(RefCell::new(
         PresentationState::disconnected_with_inactivity(
@@ -323,9 +325,32 @@ fn combine_presentation_update(
     })
 }
 
-fn host_inactivity_configuration() -> InactivityConfiguration {
-    let configuration =
-        display_configuration_file_path().and_then(|path| load_inactivity_configuration(&path));
+fn configuration_file_from_arguments() -> Result<PathBuf, Box<dyn Error>> {
+    if env::var_os("ROONSCAPE_DISPLAY_CONFIG").is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH",
+        )
+        .into());
+    }
+    let mut arguments = env::args_os().skip(1);
+    match (arguments.next(), arguments.next(), arguments.next()) {
+        (None, None, None) => Ok(display_configuration_file_path()?),
+        (Some(option), Some(configuration_file), None)
+            if option == "--config" && !configuration_file.is_empty() =>
+        {
+            Ok(PathBuf::from(configuration_file))
+        }
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "RoonScape renderer accepts only a launcher-provided --config PATH",
+        )
+        .into()),
+    }
+}
+
+fn host_inactivity_configuration(configuration_file: &Path) -> InactivityConfiguration {
+    let configuration = load_inactivity_configuration(configuration_file);
     match configuration {
         Ok(configuration) => configuration,
         Err(error) => {

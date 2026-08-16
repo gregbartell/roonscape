@@ -110,6 +110,17 @@ test("uses a Display Configuration path separate from Roon authorization", () =>
   );
 });
 
+test("rejects the removed Display Configuration environment override", () => {
+  assert.throws(
+    () =>
+      displayConfigurationFilePath({
+        ROONSCAPE_DISPLAY_CONFIG: "/legacy/display.json",
+        XDG_CONFIG_HOME: "/var/config",
+      }),
+    /ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH/,
+  );
+});
+
 test("treats malformed or invalid Display Configuration as unavailable", async () => {
   await withTaskDirectory(async (taskDirectory) => {
     const configurationFile = path.join(taskDirectory, "display.json");

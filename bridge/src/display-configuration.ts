@@ -69,8 +69,10 @@ export class FileDisplayConfigurationStore implements DisplayConfigurationStore 
 export function displayConfigurationFilePath(
   environment: NodeJS.ProcessEnv = process.env,
 ): string {
-  if (environment.ROONSCAPE_DISPLAY_CONFIG) {
-    return path.resolve(environment.ROONSCAPE_DISPLAY_CONFIG);
+  if (environment.ROONSCAPE_DISPLAY_CONFIG !== undefined) {
+    throw new Error(
+      "ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH",
+    );
   }
 
   const configRoot =

@@ -30,6 +30,7 @@ pub enum DisplayConfigurationError {
     Schema(String),
     Invalid(&'static str),
     MissingHome,
+    RemovedEnvironmentOverride,
 }
 
 #[derive(Deserialize)]
@@ -110,8 +111,11 @@ impl fmt::Display for DisplayConfigurationError {
                 "Display Configuration violates the schema: {error}"
             ),
             Self::Invalid(message) => formatter.write_str(message),
-            Self::MissingHome => formatter.write_str(
-                "HOME must be set when XDG_CONFIG_HOME and ROONSCAPE_DISPLAY_CONFIG are absent",
+            Self::MissingHome => {
+                formatter.write_str("HOME must be set when XDG_CONFIG_HOME is absent")
+            }
+            Self::RemovedEnvironmentOverride => formatter.write_str(
+                "ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH",
             ),
         }
     }
@@ -122,7 +126,10 @@ impl Error for DisplayConfigurationError {
         match self {
             Self::Io(error) => Some(error),
             Self::Json(error) => Some(error),
-            Self::Schema(_) | Self::Invalid(_) | Self::MissingHome => None,
+            Self::Schema(_)
+            | Self::Invalid(_)
+            | Self::MissingHome
+            | Self::RemovedEnvironmentOverride => None,
         }
     }
 }
@@ -166,8 +173,8 @@ pub fn load_inactivity_configuration(
 }
 
 pub fn display_configuration_file_path() -> Result<PathBuf, DisplayConfigurationError> {
-    if let Some(path) = env::var_os("ROONSCAPE_DISPLAY_CONFIG") {
-        return Ok(PathBuf::from(path));
+    if env::var_os("ROONSCAPE_DISPLAY_CONFIG").is_some() {
+        return Err(DisplayConfigurationError::RemovedEnvironmentOverride);
     }
     if let Some(config_root) = env::var_os("XDG_CONFIG_HOME") {
         return Ok(PathBuf::from(config_root).join("roonscape/display.json"));

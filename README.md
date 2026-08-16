@@ -13,11 +13,11 @@ Zone that currently contains it, and presents current artwork, metadata,
 playback state, and progress on an attached display. It deliberately provides
 no Roon Control, browser interface, or network command surface.
 
-The planned runtime has two independently supervised processes: a small
-TypeScript/Node.js bridge using Roon's supported JavaScript extension API and a
-native Rust renderer using GTK 4 and Pango. They exchange complete, versioned
-state snapshots over a private Unix-domain socket and pass artwork through
-bounded local files.
+The runtime uses a small TypeScript/Node.js bridge for Roon's supported
+JavaScript extension API and a native Rust renderer built with GTK 4 and Pango.
+One foreground RoonScape command supervises them as a single session. They
+exchange complete, versioned state snapshots over a private Unix-domain socket
+and pass artwork through bounded local files.
 
 RoonScape is intended for compatible Linux/GTK hosts. Its initial Reference
 Deployment is an Intel NUC driving a 4K OLED television, but that machine's
@@ -108,27 +108,22 @@ calibration.
 
 Display Configuration is stored at
 `$XDG_CONFIG_HOME/roonscape/display.json`, falling back to
-`~/.config/roonscape/display.json`. Set `ROONSCAPE_DISPLAY_CONFIG` to choose
-another dedicated file. Start or restart the bridge after changing the
-selection. Restart both the bridge and renderer after changing inactivity
-calibration. The renderer reads inactivity calibration from the same file and
-falls back to the defaults when it is absent or invalid.
+`~/.config/roonscape/display.json`. The foreground command accepts
+`--config PATH` as the sole nonstandard Display Configuration location. The
+renderer reads inactivity calibration from the selected file and falls back to
+the defaults when it is absent or invalid.
 
-Start the bridge with a private runtime directory and local socket:
+Build and launch the configured source checkout as one foreground session:
 
 ```sh
-mkdir -p "$XDG_RUNTIME_DIR/roonscape"
-chmod 700 "$XDG_RUNTIME_DIR/roonscape"
-export ROONSCAPE_SOCKET="$XDG_RUNTIME_DIR/roonscape/roonscape.sock"
-npm run start:bridge
+npm start
 ```
 
-Start the renderer with the same `ROONSCAPE_SOCKET` value in the graphical
-session. Either process may start first: the renderer keeps its graphical
-session open, presents Disconnected without stale Now Playing content, and
-retries the local socket until the bridge is available. A replacement bridge
-reclaims a stale socket left by an abruptly terminated predecessor, and every
-renderer connection receives its current complete snapshot immediately.
+Use `npm start -- --config PATH` with a prepared Display Configuration outside
+the standard location. The launcher privately owns the socket, singleton lock,
+runtime cleanup, and both child lifetimes. The existing `npm run start:bridge`
+command remains available for focused bridge development when
+`ROONSCAPE_SOCKET` names a developer-managed private socket.
 
 The bridge follows the selected physical Tracked Output when Roon groups,
 ungroups, or renames its Tracked Zone. If the configuration is absent or
