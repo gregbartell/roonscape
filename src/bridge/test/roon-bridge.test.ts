@@ -1162,7 +1162,7 @@ test("clears presentation state when the configured Tracked Output is removed", 
   await validateSnapshot(boundary.snapshots.at(-1));
 });
 
-test("registers only observer services and extension Status", () => {
+test("registers the public extension identity and only observer services", () => {
   const boundary = createRoonBoundary();
   let extensionOptions: RoonExtensionOptions | undefined;
   let initializedServices: unknown;
@@ -1209,6 +1209,9 @@ test("registers only observer services and extension Status", () => {
       identity: {
         extension_id: extensionOptions?.extension_id,
         display_name: extensionOptions?.display_name,
+        publisher: extensionOptions?.publisher,
+        email: extensionOptions?.email,
+        website: extensionOptions?.website,
       },
       initializedServices,
       discoveryStarted,
@@ -1217,6 +1220,9 @@ test("registers only observer services and extension Status", () => {
       identity: {
         extension_id: "io.roonscape.bridge",
         display_name: "RoonScape",
+        publisher: "Gregory Bartell",
+        email: "5353310+gregbartell@users.noreply.github.com",
+        website: "https://github.com/gregbartell/roonscape",
       },
       initializedServices: {
         keys: ["required_services", "provided_services"],

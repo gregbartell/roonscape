@@ -10,7 +10,7 @@ export const roonScapeExtensionIdentity = {
   display_name: "RoonScape",
   display_version: "0.1.0",
   publisher: "Gregory Bartell",
-  email: "gregorybartell@gmail.com",
+  email: "5353310+gregbartell@users.noreply.github.com",
   website: "https://github.com/gregbartell/roonscape",
   log_level: "none",
 } as const;
