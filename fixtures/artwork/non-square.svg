@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-labelledby="title">
+  <title id="title">Synthetic non-square artwork fixture</title>
+  <rect width="960" height="540" fill="#10244d" />
+  <circle cx="690" cy="170" r="126" fill="#ff7051" />
+  <path d="M0 455 210 245l132 126 114-104 188 171 110-93 206 169v26H0Z" fill="#f6ebd4" />
+  <path d="M0 486 214 298l134 119 110-90 184 153 118-91 200 135v16H0Z" fill="#3f628d" opacity="0.72" />
+</svg>

@@ -5,12 +5,13 @@ use gtk::gdk;
 use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    ArtworkFit, FullFieldLayout, FullFieldPresentation, GalleryField, GallerySplitLayout,
-    GallerySplitRole, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, IdentityPlacement,
+    ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, FullFieldLayout,
+    FullFieldPresentation, GalleryField, GallerySplitLayout, GallerySplitRole,
+    INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, IdentityLineLayout, IdentityPlacement,
     InactivityTransform, MetadataFontSizes, MetadataLineLayout, MetadataTypography,
     NowPlayingPresentation, Presentation, PresentationPalette, PresentationProgress,
-    PresentationRevision, PresentationTransition, StatusEmphasis, TypographyPair, Viewport,
-    metadata_layout_for_viewport, presentation_palette_styles, resolve_presentation,
+    PresentationRevision, PresentationTransition, StatusEmphasis, TextOverflow, TypographyPair,
+    Viewport, metadata_layout_for_viewport, presentation_palette_styles, resolve_presentation,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -342,6 +343,7 @@ fn full_field(
             &presentation_identity.tracked_output,
             &presentation_identity.tracked_zone,
             layout.identity_placement,
+            layout.identity_line,
         );
         root.add_overlay(&identity.root);
         Some(identity)
@@ -404,7 +406,11 @@ fn gallery_split(
     artwork_column.add_css_class("artwork-column");
     artwork_column.set_hexpand(false);
     artwork_column.set_vexpand(true);
-    let artwork_frame = artwork(presentation, repository_root, layout.artwork_fit);
+    let artwork_frame = artwork(
+        presentation,
+        repository_root,
+        ArtworkLayout::for_presentation(presentation),
+    );
     artwork_column.append(&artwork_frame);
 
     let metadata = metadata(presentation, &layout);
@@ -436,25 +442,37 @@ fn gallery_split(
 fn artwork(
     presentation: &NowPlayingPresentation,
     repository_root: &Path,
-    fit: ArtworkFit,
+    layout: ArtworkLayout,
 ) -> gtk::AspectFrame {
-    let picture = match presentation.artwork_path.as_deref() {
-        Some(path) => gtk::Picture::for_filename(repository_root.join(path)),
-        None => gtk::Picture::new(),
+    let picture = match layout.content {
+        ArtworkContent::Supplied => gtk::Picture::for_filename(
+            repository_root.join(
+                presentation
+                    .artwork_path
+                    .as_deref()
+                    .expect("supplied artwork layout requires an artwork path"),
+            ),
+        ),
+        ArtworkContent::QuietField => gtk::Picture::new(),
     };
-    picture.set_alternative_text(Some("Current album artwork"));
+    if layout.content == ArtworkContent::Supplied {
+        picture.set_alternative_text(Some("Current album artwork"));
+    }
     picture.add_css_class("artwork");
     picture.set_can_shrink(true);
-    match fit {
+    match layout.fit {
         ArtworkFit::Contain => picture.set_keep_aspect_ratio(true),
     }
     picture.set_hexpand(true);
     picture.set_vexpand(true);
-    if presentation.artwork_path.is_none() {
+    if layout.content == ArtworkContent::QuietField {
         picture.add_css_class("artwork-missing");
     }
 
-    let frame = gtk::AspectFrame::new(0.5, 0.5, 1.0, false);
+    let (horizontal_alignment, vertical_alignment) = match layout.alignment {
+        ArtworkAlignment::Center => (0.5, 0.5),
+    };
+    let frame = gtk::AspectFrame::new(horizontal_alignment, vertical_alignment, 1.0, false);
     frame.add_css_class("artwork-frame");
     frame.set_halign(gtk::Align::Start);
     frame.set_valign(gtk::Align::Center);
@@ -526,6 +544,7 @@ fn metadata(
         &presentation.tracked_output,
         &presentation.tracked_zone,
         gallery_layout.identity_placement,
+        gallery_layout.identity_line,
     );
     identity.root.set_halign(gtk::Align::Fill);
     column.append(&identity.root);
@@ -547,12 +566,18 @@ fn metadata_line(layout: &MetadataLineLayout, class_name: &str) -> RenderedMetad
         MetadataTypography::UtilitySans => "utility-text",
     });
     label.set_lines(layout.maximum_lines as i32);
-    label.set_ellipsize(pango::EllipsizeMode::End);
+    apply_text_overflow(&label, layout.overflow);
     label.set_wrap(true);
     label.set_wrap_mode(pango::WrapMode::WordChar);
     set_label_font_size(&label, layout.font_sizes.preferred_px);
 
     RenderedMetadataLine { label }
+}
+
+fn apply_text_overflow(label: &gtk::Label, overflow: TextOverflow) {
+    match overflow {
+        TextOverflow::EllipsizeEnd => label.set_ellipsize(pango::EllipsizeMode::End),
+    }
 }
 
 fn set_label_font_size(label: &gtk::Label, font_size_px: u32) {
@@ -771,6 +796,7 @@ fn tracked_identity(
     tracked_output: &str,
     tracked_zone: &str,
     placement: IdentityPlacement,
+    line_layout: IdentityLineLayout,
 ) -> RenderedIdentity {
     let row = gtk::Grid::new();
     row.add_css_class("tracked-identity");
@@ -787,14 +813,14 @@ fn tracked_identity(
     output.set_hexpand(true);
     output.set_halign(gtk::Align::Fill);
     let output_label = metadata_label("OUTPUT", "identity-label");
-    let output_name = identity_name(tracked_output);
+    let output_name = identity_name(tracked_output, line_layout);
     output.append(&output_label);
     output.append(&output_name);
 
     let zone = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     zone.set_halign(gtk::Align::End);
     let zone_label = metadata_label("ZONE", "identity-label");
-    let zone_name = identity_name(tracked_zone);
+    let zone_name = identity_name(tracked_zone, line_layout);
     zone_name.set_xalign(1.0);
     zone.append(&zone_label);
     zone.append(&zone_name);
@@ -810,11 +836,11 @@ fn tracked_identity(
     }
 }
 
-fn identity_name(text: &str) -> gtk::Label {
+fn identity_name(text: &str, layout: IdentityLineLayout) -> gtk::Label {
     let label = metadata_label(text, "identity-name");
-    label.set_ellipsize(pango::EllipsizeMode::End);
-    label.set_lines(1);
-    label.set_single_line_mode(true);
+    apply_text_overflow(&label, layout.overflow);
+    label.set_lines(layout.maximum_lines as i32);
+    label.set_single_line_mode(layout.maximum_lines == 1);
     label
 }
 

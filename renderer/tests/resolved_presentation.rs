@@ -3,8 +3,8 @@ mod support;
 use std::fs;
 
 use roonscape_renderer::{
-    ArtworkReference, Presentation, PresentationPalette, StatusEmphasis, parse_snapshot,
-    presentation_from_snapshot, resolve_presentation,
+    ArtworkContent, ArtworkLayout, ArtworkReference, Presentation, PresentationPalette,
+    StatusEmphasis, parse_snapshot, presentation_from_snapshot, resolve_presentation,
 };
 
 #[test]
@@ -106,5 +106,33 @@ fn unreadable_artwork_without_metadata_resolves_to_details_unavailable() {
     assert_eq!(full_field.state_label, "Playing");
     assert_eq!(full_field.heading, "Now Playing details unavailable");
     assert!(full_field.identity.is_some());
+    assert_eq!(resolved.palette, PresentationPalette::fallback());
+}
+
+#[test]
+fn metadata_with_unreadable_artwork_resolves_to_the_quiet_artwork_field() {
+    let repository_root = tempfile::tempdir().expect("temporary repository root should be created");
+    fs::write(repository_root.path().join("broken.jpg"), b"not an image")
+        .expect("unreadable artwork fixture should be written");
+    let mut snapshot =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    snapshot.artwork = Some(ArtworkReference {
+        revision: 21,
+        path: "broken.jpg".to_owned(),
+    });
+    let presentation = presentation_from_snapshot(&snapshot)
+        .expect("artwork-referencing snapshot should produce a presentation");
+
+    let resolved = resolve_presentation(&presentation, repository_root.path());
+    let Presentation::NowPlaying(now_playing) = resolved.presentation else {
+        panic!("usable metadata should retain Gallery split");
+    };
+
+    assert_eq!(now_playing.artwork_revision, None);
+    assert_eq!(now_playing.artwork_path, None);
+    assert_eq!(
+        ArtworkLayout::for_presentation(&now_playing).content,
+        ArtworkContent::QuietField,
+    );
     assert_eq!(resolved.palette, PresentationPalette::fallback());
 }

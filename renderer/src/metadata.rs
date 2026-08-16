@@ -1,5 +1,5 @@
 use crate::presentation::NowPlayingPresentation;
-use crate::{GallerySplitLayout, MetadataFontSizes, Viewport};
+use crate::{GallerySplitLayout, MetadataFontSizes, TextOverflow, Viewport};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MetadataTypography {
@@ -13,6 +13,7 @@ pub struct MetadataLineLayout {
     pub typography: MetadataTypography,
     pub font_sizes: MetadataFontSizes,
     pub maximum_lines: u32,
+    pub overflow: TextOverflow,
 }
 
 impl MetadataLineLayout {
@@ -72,5 +73,6 @@ fn line_layout(
         typography,
         font_sizes: sizes,
         maximum_lines,
+        overflow: TextOverflow::EllipsizeEnd,
     }
 }

@@ -150,6 +150,26 @@ test("loads missing, long, and extreme metadata fixtures without inventing value
   assert.ok((extreme.nowPlaying?.title?.length ?? 0) > 250);
 });
 
+test("loads non-square artwork and long identity edge-case fixtures", async () => {
+  const nonSquareArtwork = await loadSnapshot(
+    "fixtures/non-square-artwork.json",
+  );
+  const longIdentities = await loadSnapshot("fixtures/long-identities.json");
+
+  assert.deepEqual(nonSquareArtwork.artwork, {
+    revision: 19,
+    path: "fixtures/artwork/non-square.svg",
+  });
+  assert.deepEqual(nonSquareArtwork.nowPlaying, {
+    title: "Last Light on Phobos",
+    artist: "Evelyn Lark & The Orbital Choir",
+    album: "Signals from the Quiet Sea",
+  });
+  assert.ok((longIdentities.trackedOutput?.name.length ?? 0) > 80);
+  assert.ok((longIdentities.trackedZone?.name.length ?? 0) > 80);
+  assert.deepEqual(longIdentities.nowPlaying, nonSquareArtwork.nowPlaying);
+});
+
 test("loads every shared unavailable fixture without stale Now Playing", async () => {
   const fixtures = [
     ["pairing-required.json", "pairingRequired"],

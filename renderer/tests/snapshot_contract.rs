@@ -125,6 +125,31 @@ fn parses_missing_long_and_extreme_metadata_fixtures() {
 }
 
 #[test]
+fn parses_non_square_artwork_and_long_identity_fixtures() {
+    let non_square = parse_snapshot(&support::fixture("non-square-artwork.json"))
+        .expect("non-square artwork fixture should be valid");
+    let long_identities = parse_snapshot(&support::fixture("long-identities.json"))
+        .expect("long identity fixture should be valid");
+
+    assert_eq!(
+        non_square
+            .artwork
+            .map(|artwork| (artwork.revision, artwork.path)),
+        Some((19, "fixtures/artwork/non-square.svg".to_owned()))
+    );
+    assert!(
+        long_identities
+            .tracked_output
+            .is_some_and(|output| output.name.len() > 80)
+    );
+    assert!(
+        long_identities
+            .tracked_zone
+            .is_some_and(|zone| zone.name.len() > 80)
+    );
+}
+
+#[test]
 fn rejects_the_shared_invalid_fixture() {
     let fixture = support::fixture("invalid.json");
 

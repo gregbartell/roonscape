@@ -1,7 +1,7 @@
 mod support;
 
 use roonscape_renderer::{
-    MetadataFontSizes, MetadataTypography, Presentation, Viewport, metadata_layout,
+    MetadataFontSizes, MetadataTypography, Presentation, TextOverflow, Viewport, metadata_layout,
     metadata_layout_for_viewport, parse_snapshot, presentation_from_snapshot,
 };
 
@@ -65,6 +65,9 @@ fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
         ),
         (3, 2, 2)
     );
+    assert_eq!(title.overflow, TextOverflow::EllipsizeEnd);
+    assert_eq!(artist.overflow, TextOverflow::EllipsizeEnd);
+    assert_eq!(album.overflow, TextOverflow::EllipsizeEnd);
 }
 
 #[test]

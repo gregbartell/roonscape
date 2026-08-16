@@ -1,8 +1,11 @@
 mod support;
 
+use std::path::Path;
+
 use roonscape_renderer::{
-    ArtworkFit, GalleryField, GallerySplitLayout, GallerySplitRole, IdentityPlacement,
-    Presentation, Viewport, parse_snapshot, presentation_from_snapshot,
+    ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, GalleryField, GallerySplitLayout,
+    GallerySplitRole, IdentityLineLayout, IdentityPlacement, Presentation, TextOverflow, Viewport,
+    parse_snapshot, presentation_from_snapshot,
 };
 
 fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation {
@@ -96,6 +99,102 @@ fn scales_the_gallery_composition_at_the_tall_and_windowed_viewports() {
             "the composition should use the complete viewport without letterboxing"
         );
     }
+}
+
+#[test]
+fn keeps_imperfect_artwork_inside_the_stable_square_field() {
+    let missing = now_playing("missing-artwork.json");
+    let non_square = now_playing("non-square-artwork.json");
+    let viewport = Viewport::WINDOWED_FIXTURE;
+    let artwork_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/artwork/non-square.svg");
+    let artwork = gdk_pixbuf::Pixbuf::from_file(artwork_path)
+        .expect("the non-square artwork fixture should be decodable");
+
+    assert_ne!(artwork.width(), artwork.height());
+
+    assert_eq!(
+        ArtworkLayout::for_presentation(&missing),
+        ArtworkLayout {
+            content: ArtworkContent::QuietField,
+            fit: ArtworkFit::Contain,
+            alignment: ArtworkAlignment::Center,
+        }
+    );
+    assert_eq!(
+        ArtworkLayout::for_presentation(&non_square),
+        ArtworkLayout {
+            content: ArtworkContent::Supplied,
+            fit: ArtworkFit::Contain,
+            alignment: ArtworkAlignment::Center,
+        }
+    );
+
+    let missing_geometry = GallerySplitLayout::for_presentation(&missing, viewport);
+    let non_square_geometry = GallerySplitLayout::for_presentation(&non_square, viewport);
+    assert_eq!(
+        (
+            missing_geometry.artwork_field_width_px,
+            missing_geometry.artwork_field_height_px,
+        ),
+        (
+            non_square_geometry.artwork_field_width_px,
+            non_square_geometry.artwork_field_height_px,
+        ),
+        "imperfect artwork must not change the Gallery split geometry"
+    );
+}
+
+#[test]
+fn omits_the_complete_timeline_for_indeterminate_content() {
+    let determinate = GallerySplitLayout::for_presentation(
+        &now_playing("playing.json"),
+        Viewport::WINDOWED_FIXTURE,
+    );
+    let indeterminate = GallerySplitLayout::for_presentation(
+        &now_playing("indeterminate-progress.json"),
+        Viewport::WINDOWED_FIXTURE,
+    );
+
+    assert!(
+        determinate
+            .metadata_roles
+            .contains(&GallerySplitRole::Progress)
+    );
+    assert!(
+        !indeterminate
+            .metadata_roles
+            .contains(&GallerySplitRole::Progress)
+    );
+}
+
+#[test]
+fn defensively_ellipsizes_long_identities_without_moving_the_footer() {
+    let viewport = Viewport::WINDOWED_FIXTURE;
+    let ordinary = GallerySplitLayout::for_presentation(&now_playing("playing.json"), viewport);
+    let long = GallerySplitLayout::for_presentation(&now_playing("long-identities.json"), viewport);
+
+    assert_eq!(
+        long.identity_line,
+        IdentityLineLayout {
+            maximum_lines: 1,
+            overflow: TextOverflow::EllipsizeEnd,
+        }
+    );
+    assert_eq!(long.identity_placement, IdentityPlacement::BottomRight);
+    assert_eq!(
+        (
+            long.metadata_column_width_px,
+            long.metadata_right_inset_px,
+            long.identity_gap_px,
+        ),
+        (
+            ordinary.metadata_column_width_px,
+            ordinary.metadata_right_inset_px,
+            ordinary.identity_gap_px,
+        ),
+        "identity content must not move or resize the footer"
+    );
 }
 
 #[test]

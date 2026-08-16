@@ -26,15 +26,25 @@ pub fn resolve_presentation(
     let palette = artwork_path
         .as_deref()
         .and_then(|path| PresentationPalette::from_artwork(path).ok());
-    if palette.is_none() && !now_playing.has_usable_metadata() {
+    if let Some(palette) = palette {
+        return ResolvedPresentation {
+            presentation: presentation.clone(),
+            palette,
+        };
+    }
+    if !now_playing.has_usable_metadata() {
         return ResolvedPresentation {
             presentation: Presentation::FullField(trackless_full_field(now_playing)),
             palette: PresentationPalette::fallback(),
         };
     }
 
+    let mut now_playing = now_playing.clone();
+    now_playing.artwork_revision = None;
+    now_playing.artwork_path = None;
+
     ResolvedPresentation {
-        presentation: presentation.clone(),
-        palette: palette.unwrap_or_else(PresentationPalette::fallback),
+        presentation: Presentation::NowPlaying(now_playing),
+        palette: PresentationPalette::fallback(),
     }
 }

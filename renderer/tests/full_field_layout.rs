@@ -1,4 +1,7 @@
-use roonscape_renderer::{FullFieldLayout, GallerySplitLayout, IdentityPlacement, Viewport};
+use roonscape_renderer::{
+    FullFieldLayout, GallerySplitLayout, IdentityLineLayout, IdentityPlacement, TextOverflow,
+    Viewport,
+};
 
 #[test]
 fn scales_the_shared_full_field_accent_composition_from_reference_to_fixture() {
@@ -16,6 +19,13 @@ fn scales_the_shared_full_field_accent_composition_from_reference_to_fixture() {
     assert_eq!(reference.identity_width_px, 1287);
     assert_eq!(reference.identity_right_inset_px, 77);
     assert_eq!(reference.identity_placement, IdentityPlacement::BottomRight);
+    assert_eq!(
+        reference.identity_line,
+        IdentityLineLayout {
+            maximum_lines: 1,
+            overflow: TextOverflow::EllipsizeEnd,
+        }
+    );
 
     assert_eq!(tall.outer_gutter_px, reference.outer_gutter_px);
     assert_eq!(tall.copy_width_px, reference.copy_width_px);

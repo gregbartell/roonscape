@@ -31,8 +31,58 @@ pub enum ArtworkFit {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArtworkAlignment {
+    Center,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArtworkContent {
+    Supplied,
+    QuietField,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArtworkLayout {
+    pub content: ArtworkContent,
+    pub fit: ArtworkFit,
+    pub alignment: ArtworkAlignment,
+}
+
+impl ArtworkLayout {
+    pub fn for_presentation(presentation: &NowPlayingPresentation) -> Self {
+        Self {
+            content: if presentation.artwork_path.is_some() {
+                ArtworkContent::Supplied
+            } else {
+                ArtworkContent::QuietField
+            },
+            fit: ArtworkFit::Contain,
+            alignment: ArtworkAlignment::Center,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IdentityPlacement {
     BottomRight,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextOverflow {
+    EllipsizeEnd,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IdentityLineLayout {
+    pub maximum_lines: u32,
+    pub overflow: TextOverflow,
+}
+
+impl IdentityLineLayout {
+    const DEFENSIVE: Self = Self {
+        maximum_lines: 1,
+        overflow: TextOverflow::EllipsizeEnd,
+    };
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +142,7 @@ pub struct FullFieldLayout {
     pub identity_gap_px: u32,
     pub identity_px: u32,
     pub identity_placement: IdentityPlacement,
+    pub identity_line: IdentityLineLayout,
 }
 
 impl FullFieldLayout {
@@ -118,6 +169,7 @@ impl FullFieldLayout {
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
             identity_px: scaled(viewport.width_px, 0.0072, 11, 27),
             identity_placement: IdentityPlacement::BottomRight,
+            identity_line: IdentityLineLayout::DEFENSIVE,
         }
     }
 }
@@ -133,6 +185,7 @@ pub struct GallerySplitLayout {
     pub artwork_field_height_px: u32,
     pub artwork_fit: ArtworkFit,
     pub identity_placement: IdentityPlacement,
+    pub identity_line: IdentityLineLayout,
     pub metadata_roles: Vec<GallerySplitRole>,
     pub metadata_right_inset_px: u32,
     pub status_top_inset_px: u32,
@@ -199,6 +252,7 @@ impl GallerySplitLayout {
             artwork_field_height_px: artwork_field_size_px,
             artwork_fit: ArtworkFit::Contain,
             identity_placement: IdentityPlacement::BottomRight,
+            identity_line: IdentityLineLayout::DEFENSIVE,
             metadata_roles: Vec::new(),
             metadata_right_inset_px: scaled(viewport.width_px, 0.02, 24, 77),
             status_top_inset_px: scaled(viewport.height_px, 0.018, 16, 44),
