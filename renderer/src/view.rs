@@ -19,6 +19,7 @@ const CURRENT_LAYER_CLASS: &str = "presentation-current";
 const OUTGOING_LAYER_CLASS: &str = "presentation-outgoing";
 
 pub(crate) struct PresentationView {
+    root: gtk::Overlay,
     stack: gtk::Stack,
     transition: PresentationTransition<RenderedPresentation>,
     palette_provider: gtk::CssProvider,
@@ -123,8 +124,13 @@ impl PresentationView {
         stack.set_transition_type(gtk::StackTransitionType::Crossfade);
         stack.set_transition_duration(transition.duration().as_millis() as u32);
         stack.add_child(&transition.current().value().root);
+        let root = gtk::Overlay::new();
+        root.set_hexpand(true);
+        root.set_vexpand(true);
+        root.set_child(Some(&stack));
 
         let mut view = Self {
+            root,
             stack,
             transition,
             palette_provider,
@@ -137,7 +143,11 @@ impl PresentationView {
     }
 
     pub(crate) fn root(&self) -> gtk::Widget {
-        self.stack.clone().upcast()
+        self.root.clone().upcast()
+    }
+
+    pub(crate) fn add_diagnostics(&self, diagnostics: &gtk::Widget) {
+        self.root.add_overlay(diagnostics);
     }
 
     pub(crate) fn apply_inactivity(&mut self, transform: InactivityTransform) {
@@ -150,12 +160,12 @@ impl PresentationView {
 
     fn apply_layout(&mut self) {
         let layout = InactivityLayout::for_viewport(self.display_viewport, self.inactivity);
-        self.stack.set_opacity(self.inactivity.opacity);
-        self.stack
+        self.root.set_opacity(self.inactivity.opacity);
+        self.root
             .set_margin_start(dimension(layout.margin_start_px));
-        self.stack.set_margin_end(dimension(layout.margin_end_px));
-        self.stack.set_margin_top(dimension(layout.margin_top_px));
-        self.stack
+        self.root.set_margin_end(dimension(layout.margin_end_px));
+        self.root.set_margin_top(dimension(layout.margin_top_px));
+        self.root
             .set_margin_bottom(dimension(layout.margin_bottom_px));
 
         if self.layout_viewport == Some(layout.content_viewport) {

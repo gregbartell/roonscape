@@ -139,7 +139,9 @@ fn build_window(
                 .borrow()
                 .overlay_text(current_process_memory_bytes()),
         );
-        display.add_overlay(rendered.widget());
+        presentation_view
+            .borrow()
+            .add_diagnostics(rendered.widget());
         rendered
     });
     window.set_child(Some(&display));
