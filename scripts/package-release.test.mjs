@@ -9,6 +9,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -31,7 +32,15 @@ const checksumFile = `${archiveFile}.sha256`;
 test(
   "the Linux release is complete, relocatable, and uses its private Node runtime",
   { timeout: 300_000 },
-  () => {
+  (context) => {
+    const staleBuildOutput = path.join(
+      repositoryRoot,
+      "bridge/dist/src/stale-package-output.js",
+    );
+    mkdirSync(path.dirname(staleBuildOutput), { recursive: true });
+    writeFileSync(staleBuildOutput, "throw new Error('stale build output');\n");
+    context.after(() => rmSync(staleBuildOutput, { force: true }));
+
     const packaging = run(process.execPath, ["scripts/package-release.mjs"], {
       cwd: repositoryRoot,
     });
@@ -56,6 +65,13 @@ test(
       const releaseRoot = path.join(extractionRoot, releaseName);
       const relocatedRoot = path.join(extractionRoot, "relocated-roonscape");
       renameSync(releaseRoot, relocatedRoot);
+      assert.throws(
+        () =>
+          statSync(
+            path.join(relocatedRoot, "bridge/dist/src/stale-package-output.js"),
+          ),
+        { code: "ENOENT" },
+      );
 
       for (const relativePath of [
         "bridge/dist/src/index.js",
@@ -116,6 +132,33 @@ test(
     } finally {
       rmSync(extractionRoot, { force: true, recursive: true });
     }
+  },
+);
+
+test(
+  "packaging rejects a renderer that does not target glibc",
+  { timeout: 300_000 },
+  (context) => {
+    const fakeCommandDirectory = mkdtempSync(
+      path.join(tmpdir(), "roonscape-package-commands."),
+    );
+    context.after(() =>
+      rmSync(fakeCommandDirectory, { force: true, recursive: true }),
+    );
+    const fakeReadelf = path.join(fakeCommandDirectory, "readelf");
+    writeFileSync(fakeReadelf, "#!/bin/sh\nexit 0\n");
+    chmodSync(fakeReadelf, 0o755);
+
+    const packaging = run(process.execPath, ["scripts/package-release.mjs"], {
+      cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        PATH: `${fakeCommandDirectory}:${process.env.PATH ?? ""}`,
+      },
+    });
+
+    assert.notEqual(packaging.status, 0, packagingOutput(packaging));
+    assert.match(packaging.stderr, /is not linked against glibc/);
   },
 );
 

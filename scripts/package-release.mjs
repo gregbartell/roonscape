@@ -42,6 +42,10 @@ if (process.platform !== "linux" || process.arch !== "x64") {
 
 try {
   run("pkg-config", ["--atleast-version=4.6", "gtk4"]);
+  rmSync(path.join(repositoryRoot, "bridge/dist"), {
+    force: true,
+    recursive: true,
+  });
   run("npm", ["run", "build", "--workspace", "@roonscape/bridge"]);
   run("cargo", [
     "build",
@@ -236,6 +240,11 @@ function assertGlibcBaseline(executable) {
       /GLIBC_(\d+)\.(\d+)/g,
     ),
   ].map((match) => [Number(match[1]), Number(match[2])]);
+  if (versions.length === 0) {
+    throw new Error(
+      `${path.basename(executable)} is not linked against glibc; the release target is x86-64 glibc-based Linux`,
+    );
+  }
   const unsupported = versions.find(
     ([major, minor]) => major > 2 || (major === 2 && minor > 35),
   );
