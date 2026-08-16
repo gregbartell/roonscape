@@ -6,17 +6,17 @@ without becoming part of the normal unattended display.
 
 **Blocked by:** 05 — Derive the complete presentation palette from artwork.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Diagnostics remain absent by default and appear only through the existing
+- [x] Diagnostics remain absent by default and appear only through the existing
       explicit environment opt-in.
-- [ ] The overlay retains memory, frame time, artwork dimensions, connection
+- [x] The overlay retains memory, frame time, artwork dimensions, connection
       state, and presentation revision information.
-- [ ] Its text, field, and border remain readable over both light and dark
+- [x] Its text, field, and border remain readable over both light and dark
       artwork-derived palettes and the fixed no-art fallback.
-- [ ] The overlay remains unobtrusive and does not displace Gallery split,
+- [x] The overlay remains unobtrusive and does not displace Gallery split,
       full-field copy, the Output/Zone row, or OLED-safe bounds.
-- [ ] Automated checks cover opt-in parsing, complete diagnostic content, and
+- [x] Automated checks cover opt-in parsing, complete diagnostic content, and
       adaptive style roles without asserting incidental GTK widget structure.
 
 ## Comments
@@ -52,16 +52,33 @@ content or leaving safe bounds.
 
 **Acceptance criteria:**
 
-- [ ] Diagnostics remain absent unless explicitly enabled and retain all five
+- [x] Diagnostics remain absent unless explicitly enabled and retain all five
       existing observations.
-- [ ] Text, field, and border are readable on light, dark, and fixed no-art
+- [x] Text, field, and border are readable on light, dark, and fixed no-art
       palettes.
-- [ ] The overlay remains quiet, non-displacing, and inside OLED-safe bounds
+- [x] The overlay remains quiet, non-displacing, and inside OLED-safe bounds
       for both Gallery split and full-field presentations.
-- [ ] Tests cover opt-in parsing, content, and adaptive style roles without
+- [x] Tests cover opt-in parsing, content, and adaptive style roles without
       asserting private GTK structure.
 
 **Out of scope:**
 
 - Showing diagnostics by default or adding a network diagnostics surface.
 - Expanding the diagnostic data set beyond the observations already present.
+
+### Implementation Result — 2026-08-15
+
+Implemented in `c64655e`, with coordinated crossfade and review corrections in
+`a4237f1`, `3b9096a`, and `dddd1b9`. The opt-in diagnostics overlay now uses
+the current presentation layer's semantic field, text, and border roles. Each
+current and outgoing presentation owns its overlay, so diagnostics crossfade
+with Gallery split or full-field content and remain inside the existing
+OLED-safe, non-displacing layer.
+
+The shared transition style plan drives both runtime CSS and semantic adaptive
+role coverage without exposing GTK widget structure or testing CSS
+serialization. Existing checks continue to cover strict opt-in parsing and all
+five diagnostic observations. `npm run check` passed formatting, TypeScript
+and Rust typechecking, linting, all bridge and renderer tests, the fixture
+launcher, and the IPC recovery smoke check. Final Standards and Spec reviews
+reported no findings.
