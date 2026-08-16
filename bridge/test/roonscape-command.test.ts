@@ -346,16 +346,16 @@ test("runtime artifacts without verifiable ownership are preserved", async () =>
   });
 });
 
-test("an interrupted runtime acquisition is reclaimed after its owner is gone", async () => {
+test("an interrupted runtime recovery is reclaimed after its owner is gone", async () => {
   await withTaskDirectory(async (taskDirectory) => {
     const runtimeRoot = path.join(taskDirectory, "runtime");
     const runtimeDirectory = path.join(runtimeRoot, "roonscape");
-    const interruptedAcquisition = path.join(runtimeDirectory, ".acquiring");
-    await mkdir(interruptedAcquisition, { mode: 0o700, recursive: true });
+    const interruptedRecovery = path.join(runtimeDirectory, ".recovering");
+    await mkdir(interruptedRecovery, { mode: 0o700, recursive: true });
     await chmod(runtimeRoot, 0o700);
     await chmod(runtimeDirectory, 0o700);
     await writeFile(
-      path.join(interruptedAcquisition, "session.json"),
+      path.join(interruptedRecovery, "session.json"),
       '{"processId":424242,"token":"interrupted"}\n',
       { mode: 0o600 },
     );
