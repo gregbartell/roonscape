@@ -11,7 +11,7 @@ use roonscape_renderer::{
     MetadataLineLayout, MetadataTypography, NowPlayingPresentation, Presentation,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationStyleLayer,
     PresentationTransition, PresentationTransitionStyles, StatusEmphasis, TextOverflow,
-    TypographyPair, Viewport, metadata_layout_for_viewport, resolve_presentation,
+    TypographyPair, TypographyStyles, Viewport, metadata_layout_for_viewport, resolve_presentation,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -916,7 +916,10 @@ fn metadata_label(text: &str, class_name: &str) -> gtk::Label {
 
 pub(crate) fn install_style_providers(typography: TypographyPair) -> gtk::CssProvider {
     let static_provider = gtk::CssProvider::new();
-    static_provider.load_from_data(&format!("{STYLES}\n{}", typography_styles(typography)));
+    static_provider.load_from_data(&format!(
+        "{STYLES}\n{}",
+        TypographyStyles::new(typography).to_css()
+    ));
     let palette_provider = gtk::CssProvider::new();
     let display = gdk::Display::default().expect("GTK should have a display");
     gtk::style_context_add_provider_for_display(
@@ -930,13 +933,4 @@ pub(crate) fn install_style_providers(typography: TypographyPair) -> gtk::CssPro
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 1,
     );
     palette_provider
-}
-
-fn typography_styles(typography: TypographyPair) -> String {
-    format!(
-        ".editorial-text, .full-field-heading {{ font-family: \"{}\", serif; }}\n\
-         .utility-text, .state-label, .identity-label, .identity-name, .time, .full-field-explanation {{ font-family: \"{}\", sans-serif; }}\n",
-        typography.editorial_family(),
-        typography.utility_family(),
-    )
 }

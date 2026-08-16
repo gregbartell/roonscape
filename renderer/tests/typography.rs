@@ -3,8 +3,8 @@ use std::fs;
 use std::path::Path;
 
 use roonscape_renderer::{
-    FALLBACK_FONT_FILES, FALLBACK_FONT_LICENSES, TypographyPair, register_packaged_fallback_fonts,
-    select_capture_typography, select_typography,
+    FALLBACK_FONT_FILES, FALLBACK_FONT_LICENSES, TypographyPair, TypographyStyles,
+    register_packaged_fallback_fonts, select_capture_typography, select_typography,
 };
 
 #[test]
@@ -36,6 +36,25 @@ fn exposes_complete_editorial_and_utility_pairs_without_mixing() {
         ),
         ("Libre Baskerville", "IBM Plex Sans")
     );
+}
+
+#[test]
+fn applies_the_selected_utility_family_to_diagnostics() {
+    for (typography, utility_family) in [
+        (TypographyPair::Preferred, "Segoe UI"),
+        (TypographyPair::Fallback, "IBM Plex Sans"),
+    ] {
+        let styles = TypographyStyles::new(typography).to_css();
+        let diagnostics_rule = styles
+            .lines()
+            .find(|rule| rule.contains(".diagnostics"))
+            .expect("diagnostics should have a selected typography role");
+
+        assert!(
+            diagnostics_rule.contains(&format!("font-family: \"{utility_family}\"")),
+            "diagnostics should use {utility_family}: {diagnostics_rule}"
+        );
+    }
 }
 
 #[test]

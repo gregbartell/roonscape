@@ -46,7 +46,9 @@ pub use presentation::{
     PresentationUpdate, StatusEmphasis, presentation_from_snapshot,
 };
 pub use resolution::{ResolvedPresentation, resolve_presentation};
-pub use style::{DiagnosticsStyle, PresentationStyleLayer, PresentationTransitionStyles};
+pub use style::{
+    DiagnosticsStyle, PresentationStyleLayer, PresentationTransitionStyles, TypographyStyles,
+};
 pub use transition::{PresentationRevision, PresentationTransition};
 pub use typography::{
     FALLBACK_FONT_FILES, FALLBACK_FONT_LICENSES, TypographyError, TypographyPair,

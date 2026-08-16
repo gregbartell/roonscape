@@ -1,4 +1,4 @@
-use crate::{FullFieldLayout, GallerySplitLayout, PresentationPalette, Rgb};
+use crate::{FullFieldLayout, GallerySplitLayout, PresentationPalette, Rgb, TypographyPair};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PresentationStyleLayer {
@@ -27,6 +27,26 @@ pub struct DiagnosticsStyle {
 pub struct PresentationTransitionStyles {
     current: PresentationPalette,
     outgoing: Option<PresentationPalette>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TypographyStyles {
+    typography: TypographyPair,
+}
+
+impl TypographyStyles {
+    pub const fn new(typography: TypographyPair) -> Self {
+        Self { typography }
+    }
+
+    pub fn to_css(self) -> String {
+        format!(
+            ".editorial-text, .full-field-heading {{ font-family: \"{}\", serif; }}\n\
+             .utility-text, .state-label, .identity-label, .identity-name, .time, .full-field-explanation, .diagnostics {{ font-family: \"{}\", sans-serif; }}\n",
+            self.typography.editorial_family(),
+            self.typography.utility_family(),
+        )
+    }
 }
 
 impl PresentationTransitionStyles {

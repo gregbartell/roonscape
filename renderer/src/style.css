@@ -75,6 +75,5 @@ progressbar progress {
   border-width: 1px;
   border-style: solid;
   border-radius: 4px;
-  font-family: "Noto Sans Mono", "DejaVu Sans Mono", monospace;
   font-size: 15px;
 }
