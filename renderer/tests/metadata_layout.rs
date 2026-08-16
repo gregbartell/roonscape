@@ -1,7 +1,8 @@
 mod support;
 
 use roonscape_renderer::{
-    MetadataTypography, Presentation, metadata_layout, parse_snapshot, presentation_from_snapshot,
+    MetadataTypography, Presentation, Viewport, metadata_layout, metadata_layout_for_viewport,
+    parse_snapshot, presentation_from_snapshot,
 };
 
 fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation {
@@ -59,7 +60,7 @@ fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
             title.reduced_font_size_px,
             title.minimum_font_size_px,
         ),
-        (108, 84, 64)
+        (168, 128, 96)
     );
     assert_eq!(
         (
@@ -67,7 +68,7 @@ fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
             artist.reduced_font_size_px,
             artist.minimum_font_size_px,
         ),
-        (38, 32, 28)
+        (64, 56, 48)
     );
     assert_eq!(
         (
@@ -75,7 +76,7 @@ fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
             album.reduced_font_size_px,
             album.minimum_font_size_px,
         ),
-        (31, 27, 24)
+        (45, 40, 35)
     );
     assert_eq!(
         (
@@ -144,5 +145,35 @@ fn assigns_editorial_and_utility_typography_roles() {
     assert_eq!(
         layout.album.map(|line| line.typography),
         Some(MetadataTypography::EditorialSerif)
+    );
+}
+
+#[test]
+fn scales_metadata_typography_with_the_gallery_viewport() {
+    let presentation = now_playing("playing.json");
+    let reference = metadata_layout_for_viewport(&presentation, Viewport::new(3840, 2160));
+    let windowed = metadata_layout_for_viewport(&presentation, Viewport::new(1600, 900));
+
+    let reference_title = reference
+        .title
+        .expect("reference fixture should have a Title");
+    let windowed_title = windowed
+        .title
+        .expect("windowed fixture should have a Title");
+    assert_eq!(
+        (
+            reference_title.preferred_font_size_px,
+            reference_title.reduced_font_size_px,
+            reference_title.minimum_font_size_px,
+        ),
+        (168, 128, 96)
+    );
+    assert_eq!(
+        (
+            windowed_title.preferred_font_size_px,
+            windowed_title.reduced_font_size_px,
+            windowed_title.minimum_font_size_px,
+        ),
+        (74, 58, 45)
     );
 }

@@ -1,4 +1,5 @@
 use crate::presentation::NowPlayingPresentation;
+use crate::{GallerySplitLayout, MetadataFontSizes, Viewport};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MetadataTypography {
@@ -39,63 +40,51 @@ pub struct MetadataLayout {
     pub album: Option<MetadataLineLayout>,
 }
 
-#[derive(Clone, Copy)]
-struct LayoutBounds {
-    typography: MetadataTypography,
-    preferred_size_px: u32,
-    reduced_size_px: u32,
-    minimum_size_px: u32,
-    maximum_lines: u32,
+pub fn metadata_layout(presentation: &NowPlayingPresentation) -> MetadataLayout {
+    metadata_layout_for_viewport(presentation, Viewport::REFERENCE)
 }
 
-const TITLE_BOUNDS: LayoutBounds = LayoutBounds {
-    typography: MetadataTypography::EditorialSerif,
-    preferred_size_px: 108,
-    reduced_size_px: 84,
-    minimum_size_px: 64,
-    maximum_lines: 3,
-};
-
-const ARTIST_BOUNDS: LayoutBounds = LayoutBounds {
-    typography: MetadataTypography::UtilitySans,
-    preferred_size_px: 38,
-    reduced_size_px: 32,
-    minimum_size_px: 28,
-    maximum_lines: 2,
-};
-
-const ALBUM_BOUNDS: LayoutBounds = LayoutBounds {
-    typography: MetadataTypography::EditorialSerif,
-    preferred_size_px: 31,
-    reduced_size_px: 27,
-    minimum_size_px: 24,
-    maximum_lines: 2,
-};
-
-pub fn metadata_layout(presentation: &NowPlayingPresentation) -> MetadataLayout {
+pub fn metadata_layout_for_viewport(
+    presentation: &NowPlayingPresentation,
+    viewport: Viewport,
+) -> MetadataLayout {
+    let typography = GallerySplitLayout::for_viewport(viewport).typography;
     MetadataLayout {
-        title: presentation
-            .title
-            .as_deref()
-            .map(|text| line_layout(text, TITLE_BOUNDS)),
+        title: presentation.title.as_deref().map(|text| {
+            line_layout(
+                text,
+                MetadataTypography::EditorialSerif,
+                typography.title,
+                3,
+            )
+        }),
         artist: presentation
             .artist
             .as_deref()
-            .map(|text| line_layout(text, ARTIST_BOUNDS)),
-        album: presentation
-            .album
-            .as_deref()
-            .map(|text| line_layout(text, ALBUM_BOUNDS)),
+            .map(|text| line_layout(text, MetadataTypography::UtilitySans, typography.artist, 2)),
+        album: presentation.album.as_deref().map(|text| {
+            line_layout(
+                text,
+                MetadataTypography::EditorialSerif,
+                typography.album,
+                2,
+            )
+        }),
     }
 }
 
-fn line_layout(text: &str, bounds: LayoutBounds) -> MetadataLineLayout {
+fn line_layout(
+    text: &str,
+    typography: MetadataTypography,
+    sizes: MetadataFontSizes,
+    maximum_lines: u32,
+) -> MetadataLineLayout {
     MetadataLineLayout {
         text: text.to_owned(),
-        typography: bounds.typography,
-        preferred_font_size_px: bounds.preferred_size_px,
-        reduced_font_size_px: bounds.reduced_size_px,
-        minimum_font_size_px: bounds.minimum_size_px,
-        maximum_lines: bounds.maximum_lines,
+        typography,
+        preferred_font_size_px: sizes.preferred_px,
+        reduced_font_size_px: sizes.reduced_px,
+        minimum_font_size_px: sizes.minimum_px,
+        maximum_lines,
     }
 }

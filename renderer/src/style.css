@@ -2,10 +2,6 @@ window {
   background: #000000;
 }
 
-.artwork-column {
-  padding: 0 56px 0 112px;
-}
-
 .artwork {
   border-width: 1px;
   border-style: solid;
@@ -16,68 +12,43 @@ window {
   border-style: solid;
 }
 
-.metadata-column {
-  padding: 48px 132px 48px 104px;
-}
-
 .state-dot {
-  min-width: 13px;
-  min-height: 13px;
-  margin-top: 4px;
   border-radius: 999px;
 }
 
 .state-label {
-  font-size: 18px;
   font-weight: 700;
 }
 
 .title {
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .artist {
-  margin-top: 32px;
   font-weight: 600;
 }
 
 .album {
-  margin-top: 14px;
   font-style: italic;
-}
-
-.progress-group {
-  margin-top: 56px;
+  font-weight: 400;
 }
 
 progressbar trough {
-  min-height: 5px;
   border: 0;
   border-radius: 0;
 }
 
 progressbar progress {
   min-width: 4px;
-  min-height: 5px;
   border: 0;
   border-radius: 0;
 }
 
-.times {
-  margin-top: 15px;
-}
-
-.time {
-  font-size: 19px;
-}
-
 .identity-label {
-  font-size: 16px;
   font-weight: 800;
 }
 
 .identity-name {
-  font-size: 20px;
   font-weight: 600;
 }
 

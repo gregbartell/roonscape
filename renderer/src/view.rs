@@ -5,10 +5,11 @@ use gtk::gdk;
 use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform, MetadataLineLayout,
-    MetadataTypography, NowPlayingPresentation, Presentation, PresentationPalette,
-    PresentationProgress, PresentationRevision, PresentationTransition, TypographyPair,
-    UnavailablePresentation, metadata_layout,
+    GallerySplitLayout, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform,
+    MetadataFontSizes, MetadataLineLayout, MetadataTypography, NowPlayingPresentation,
+    Presentation, PresentationPalette, PresentationProgress, PresentationRevision,
+    PresentationTransition, TypographyPair, UnavailablePresentation, Viewport,
+    metadata_layout_for_viewport,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -19,12 +20,14 @@ pub(crate) struct PresentationView {
     stack: gtk::Stack,
     transition: PresentationTransition<RenderedPresentation>,
     palette_provider: gtk::CssProvider,
+    viewport: Option<Viewport>,
 }
 
 struct RenderedPresentation {
     root: gtk::Widget,
     progress: Option<RenderedProgress>,
     palette: PresentationPalette,
+    gallery_split: Option<RenderedGallerySplit>,
 }
 
 pub(crate) struct RenderedDiagnostics {
@@ -39,7 +42,9 @@ impl RenderedDiagnostics {
 
 #[derive(Clone)]
 struct RenderedProgress {
+    root: gtk::Box,
     bar: gtk::ProgressBar,
+    times: gtk::Box,
     elapsed: gtk::Label,
     remaining: gtk::Label,
 }
@@ -54,7 +59,38 @@ impl RenderedProgress {
 
 struct RenderedMetadata {
     root: gtk::Box,
+    playback_state: RenderedPlaybackState,
+    title: Option<RenderedMetadataLine>,
+    artist: Option<RenderedMetadataLine>,
+    album: Option<RenderedMetadataLine>,
     progress: Option<RenderedProgress>,
+    identity: RenderedIdentity,
+}
+
+struct RenderedGallerySplit {
+    content: gtk::Box,
+    artwork_column: gtk::Box,
+    artwork_frame: gtk::AspectFrame,
+    metadata_slot: gtk::Box,
+    metadata: RenderedMetadata,
+}
+
+struct RenderedPlaybackState {
+    root: gtk::Box,
+    dot: gtk::Box,
+    label: gtk::Label,
+}
+
+struct RenderedMetadataLine {
+    label: gtk::Label,
+}
+
+struct RenderedIdentity {
+    root: gtk::Grid,
+    output_label: gtk::Label,
+    output_name: gtk::Label,
+    zone_label: gtk::Label,
+    zone_name: gtk::Label,
 }
 
 impl PresentationView {
@@ -74,12 +110,13 @@ impl PresentationView {
         stack.set_transition_duration(transition.duration().as_millis() as u32);
         stack.add_child(&transition.current().value().root);
 
-        let view = Self {
+        let mut view = Self {
             stack,
             transition,
             palette_provider,
+            viewport: None,
         };
-        view.install_palette_styles();
+        view.apply_viewport(Viewport::WINDOWED_FIXTURE);
         view
     }
 
@@ -104,6 +141,19 @@ impl PresentationView {
             .set_margin_bottom(vertical_bound - transform.offset.y);
     }
 
+    pub(crate) fn apply_viewport(&mut self, viewport: Viewport) {
+        if self.viewport == Some(viewport) {
+            return;
+        }
+
+        self.transition.current().value().apply_viewport(viewport);
+        if let Some(outgoing) = self.transition.outgoing() {
+            outgoing.value().apply_viewport(viewport);
+        }
+        self.viewport = Some(viewport);
+        self.install_palette_styles();
+    }
+
     pub(crate) fn replace(
         &mut self,
         revision: u64,
@@ -115,6 +165,9 @@ impl PresentationView {
             self.remove_layer(discarded);
         }
         let rendered = render_current(presentation, repository_root);
+        if let Some(viewport) = self.viewport {
+            rendered.apply_viewport(viewport);
+        }
         let discarded = self.transition.begin(revision, rendered, started_at);
         debug_assert!(discarded.is_none());
 
@@ -134,6 +187,9 @@ impl PresentationView {
         repository_root: &Path,
     ) {
         let rendered = render_current(presentation, repository_root);
+        if let Some(viewport) = self.viewport {
+            rendered.apply_viewport(viewport);
+        }
         let (discarded_current, discarded_outgoing) =
             self.transition.replace_immediately(revision, rendered);
         self.remove_layer(discarded_current);
@@ -170,17 +226,29 @@ impl PresentationView {
     }
 
     fn install_palette_styles(&self) {
+        let layout =
+            GallerySplitLayout::for_viewport(self.viewport.unwrap_or(Viewport::WINDOWED_FIXTURE));
         let mut styles = palette_styles(
             CURRENT_LAYER_CLASS,
             self.transition.current().value().palette,
+            &layout,
         );
         if let Some(outgoing) = self.transition.outgoing() {
             styles.push_str(&palette_styles(
                 OUTGOING_LAYER_CLASS,
                 outgoing.value().palette,
+                &layout,
             ));
         }
         self.palette_provider.load_from_data(&styles);
+    }
+}
+
+impl RenderedPresentation {
+    fn apply_viewport(&self, viewport: Viewport) {
+        if let Some(gallery_split) = self.gallery_split.as_ref() {
+            gallery_split.apply_layout(&GallerySplitLayout::for_viewport(viewport));
+        }
     }
 }
 
@@ -204,6 +272,7 @@ fn render_presentation(
             root: unavailable(presentation).upcast(),
             progress: None,
             palette,
+            gallery_split: None,
         },
     }
 }
@@ -229,24 +298,46 @@ fn gallery_split(
     repository_root: &Path,
     palette: PresentationPalette,
 ) -> RenderedPresentation {
-    let root = gtk::Grid::new();
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("gallery-split");
-    root.set_column_homogeneous(true);
+    root.set_hexpand(true);
+    root.set_vexpand(true);
+
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    content.add_css_class("gallery-content");
+    content.set_hexpand(true);
+    content.set_vexpand(true);
+    root.append(&content);
 
     let artwork_column = gtk::Box::new(gtk::Orientation::Vertical, 0);
     artwork_column.add_css_class("artwork-column");
-    artwork_column.set_hexpand(true);
+    artwork_column.set_hexpand(false);
     artwork_column.set_vexpand(true);
-    artwork_column.append(&artwork(presentation, repository_root));
+    let artwork_frame = artwork(presentation, repository_root);
+    artwork_column.append(&artwork_frame);
 
     let metadata = metadata(presentation);
+    let metadata_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    metadata_slot.add_css_class("metadata-slot");
+    metadata_slot.set_hexpand(false);
+    metadata_slot.set_vexpand(true);
+    metadata_slot.append(&metadata.root);
 
-    root.attach(&artwork_column, 0, 0, 58, 1);
-    root.attach(&metadata.root, 58, 0, 42, 1);
+    content.append(&artwork_column);
+    content.append(&metadata_slot);
+    let progress = metadata.progress.clone();
+    let gallery_split = RenderedGallerySplit {
+        content,
+        artwork_column,
+        artwork_frame,
+        metadata_slot,
+        metadata,
+    };
     RenderedPresentation {
         root: root.upcast(),
-        progress: metadata.progress,
+        progress,
         palette,
+        gallery_split: Some(gallery_split),
     }
 }
 
@@ -258,6 +349,7 @@ fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk
     picture.set_alternative_text(Some("Current album artwork"));
     picture.add_css_class("artwork");
     picture.set_can_shrink(true);
+    picture.set_keep_aspect_ratio(true);
     picture.set_hexpand(true);
     picture.set_vexpand(true);
     if presentation.artwork_path.is_none() {
@@ -266,8 +358,10 @@ fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> gtk
 
     let frame = gtk::AspectFrame::new(0.5, 0.5, 1.0, false);
     frame.add_css_class("artwork-frame");
-    frame.set_hexpand(true);
-    frame.set_vexpand(true);
+    frame.set_halign(gtk::Align::Start);
+    frame.set_valign(gtk::Align::Center);
+    frame.set_hexpand(false);
+    frame.set_vexpand(false);
     frame.set_child(Some(&picture));
     frame
 }
@@ -278,41 +372,51 @@ fn metadata(presentation: &NowPlayingPresentation) -> RenderedMetadata {
     column.set_hexpand(true);
     column.set_vexpand(true);
 
-    column.append(&playback_state(&presentation.playback_state));
-
     let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
     copy.add_css_class("metadata-copy");
     copy.set_valign(gtk::Align::Center);
     copy.set_vexpand(true);
 
-    let layout = metadata_layout(presentation);
-    if let Some(title) = layout.title.as_ref() {
-        copy.append(&metadata_line(title, "title"));
-    }
-    if let Some(artist) = layout.artist.as_ref() {
-        copy.append(&metadata_line(artist, "artist"));
-    }
-    if let Some(album) = layout.album.as_ref() {
-        copy.append(&metadata_line(album, "album"));
-    }
+    let playback_state = playback_state(&presentation.playback_state);
+    copy.append(&playback_state.root);
+
+    let layout = metadata_layout_for_viewport(presentation, Viewport::WINDOWED_FIXTURE);
+    let title = layout.title.as_ref().map(|layout| {
+        let line = metadata_line(layout, "title");
+        copy.append(&line.label);
+        line
+    });
+    let artist = layout.artist.as_ref().map(|layout| {
+        let line = metadata_line(layout, "artist");
+        copy.append(&line.label);
+        line
+    });
+    let album = layout.album.as_ref().map(|layout| {
+        let line = metadata_line(layout, "album");
+        copy.append(&line.label);
+        line
+    });
     let progress = presentation.progress.as_ref().map(|progress| {
-        let (group, rendered_progress) = progress_view(progress);
-        copy.append(&group);
+        let rendered_progress = progress_view(progress);
+        copy.append(&rendered_progress.root);
         rendered_progress
     });
 
     column.append(&copy);
-    column.append(&tracked_identity(
-        &presentation.tracked_output,
-        &presentation.tracked_zone,
-    ));
+    let identity = tracked_identity(&presentation.tracked_output, &presentation.tracked_zone);
+    column.append(&identity.root);
     RenderedMetadata {
         root: column,
+        playback_state,
+        title,
+        artist,
+        album,
         progress,
+        identity,
     }
 }
 
-fn metadata_line(layout: &MetadataLineLayout, class_name: &str) -> gtk::Label {
+fn metadata_line(layout: &MetadataLineLayout, class_name: &str) -> RenderedMetadataLine {
     let label = metadata_label(&layout.text, class_name);
     label.add_css_class(match layout.typography {
         MetadataTypography::EditorialSerif => "editorial-text",
@@ -324,14 +428,7 @@ fn metadata_line(layout: &MetadataLineLayout, class_name: &str) -> gtk::Label {
     label.set_wrap_mode(pango::WrapMode::WordChar);
     set_label_font_size(&label, layout.preferred_font_size_px);
 
-    let fitting_layout = layout.clone();
-    label.connect_map(move |label| {
-        let _ = fitting_layout.fitting_font_size(|font_size_px| {
-            set_label_font_size(label, font_size_px);
-            !label.layout().is_ellipsized()
-        });
-    });
-    label
+    RenderedMetadataLine { label }
 }
 
 fn set_label_font_size(label: &gtk::Label, font_size_px: u32) {
@@ -340,6 +437,112 @@ fn set_label_font_size(label: &gtk::Label, font_size_px: u32) {
         font_size_px as i32 * pango::SCALE,
     ));
     label.set_attributes(Some(&attributes));
+}
+
+impl RenderedGallerySplit {
+    fn apply_layout(&self, layout: &GallerySplitLayout) {
+        let gutter = dimension(layout.outer_gutter_px);
+        self.content.set_margin_start(gutter);
+        self.content.set_margin_end(gutter);
+        self.content.set_margin_top(gutter);
+        self.content.set_margin_bottom(gutter);
+        self.content.set_spacing(dimension(layout.column_gap_px));
+
+        self.artwork_column
+            .set_width_request(dimension(layout.artwork_column_width_px));
+        self.artwork_frame.set_size_request(
+            dimension(layout.artwork_field_width_px),
+            dimension(layout.artwork_field_height_px),
+        );
+        self.metadata_slot
+            .set_width_request(dimension(layout.metadata_column_width_px));
+        self.metadata
+            .root
+            .set_margin_end(dimension(layout.metadata_right_inset_px));
+        self.metadata.apply_layout(layout);
+    }
+}
+
+impl RenderedMetadata {
+    fn apply_layout(&self, layout: &GallerySplitLayout) {
+        self.playback_state
+            .root
+            .set_spacing(dimension(layout.state_dot_size_px));
+        self.playback_state
+            .root
+            .set_margin_bottom(dimension(layout.status_to_title_spacing_px));
+        let dot_size = dimension(layout.state_dot_size_px);
+        self.playback_state.dot.set_size_request(dot_size, dot_size);
+        set_label_font_size(&self.playback_state.label, layout.typography.status_px);
+
+        if let Some(title) = self.title.as_ref() {
+            title.apply_font_sizes(layout.typography.title);
+        }
+        if let Some(artist) = self.artist.as_ref() {
+            artist
+                .label
+                .set_margin_top(dimension(layout.artist_spacing_px));
+            artist.apply_font_sizes(layout.typography.artist);
+        }
+        if let Some(album) = self.album.as_ref() {
+            album
+                .label
+                .set_margin_top(dimension(layout.album_spacing_px));
+            album.apply_font_sizes(layout.typography.album);
+        }
+        if let Some(progress) = self.progress.as_ref() {
+            progress
+                .root
+                .set_margin_top(dimension(layout.progress_spacing_px));
+            progress
+                .bar
+                .set_height_request(dimension(layout.progress_height_px));
+            progress
+                .times
+                .set_margin_top(dimension(layout.time_spacing_px));
+            set_label_font_size(&progress.elapsed, layout.typography.time_px);
+            set_label_font_size(&progress.remaining, layout.typography.time_px);
+        }
+
+        self.identity
+            .root
+            .set_column_spacing(layout.identity_gap_px);
+        let identity_label_size = ((layout.typography.identity_px as f64) * 0.84).round() as u32;
+        set_label_font_size(&self.identity.output_label, identity_label_size);
+        set_label_font_size(&self.identity.output_name, layout.typography.identity_px);
+        set_label_font_size(&self.identity.zone_label, identity_label_size);
+        set_label_font_size(&self.identity.zone_name, layout.typography.identity_px);
+        self.identity
+            .output_label
+            .set_margin_end(dimension(identity_label_size / 2));
+        self.identity
+            .zone_label
+            .set_margin_end(dimension(identity_label_size / 2));
+    }
+}
+
+impl RenderedMetadataLine {
+    fn apply_font_sizes(&self, sizes: MetadataFontSizes) {
+        set_label_font_size(&self.label, sizes.preferred_px);
+        let label = self.label.clone();
+        self.label.add_tick_callback(move |_, _| {
+            fit_metadata_line(&label, sizes);
+            gtk::glib::ControlFlow::Break
+        });
+    }
+}
+
+fn fit_metadata_line(label: &gtk::Label, sizes: MetadataFontSizes) {
+    for font_size_px in [sizes.preferred_px, sizes.reduced_px, sizes.minimum_px] {
+        set_label_font_size(label, font_size_px);
+        if !label.layout().is_ellipsized() || font_size_px == sizes.minimum_px {
+            break;
+        }
+    }
+}
+
+fn dimension(value: u32) -> i32 {
+    i32::try_from(value).expect("supported viewport dimensions fit GTK's signed sizes")
 }
 
 fn unavailable(presentation: &UnavailablePresentation) -> gtk::Box {
@@ -385,19 +588,26 @@ fn unavailable(presentation: &UnavailablePresentation) -> gtk::Box {
     root
 }
 
-fn playback_state(state: &str) -> gtk::Box {
+fn playback_state(state: &str) -> RenderedPlaybackState {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 14);
     row.add_css_class("playback-state");
     row.set_halign(gtk::Align::Start);
 
     let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     dot.add_css_class("state-dot");
+    dot.set_halign(gtk::Align::Center);
+    dot.set_valign(gtk::Align::Center);
     row.append(&dot);
-    row.append(&metadata_label(state, "state-label"));
-    row
+    let label = metadata_label(state, "state-label");
+    row.append(&label);
+    RenderedPlaybackState {
+        root: row,
+        dot,
+        label,
+    }
 }
 
-fn progress_view(progress: &PresentationProgress) -> (gtk::Box, RenderedProgress) {
+fn progress_view(progress: &PresentationProgress) -> RenderedProgress {
     let group = gtk::Box::new(gtk::Orientation::Vertical, 0);
     group.add_css_class("progress-group");
 
@@ -415,24 +625,55 @@ fn progress_view(progress: &PresentationProgress) -> (gtk::Box, RenderedProgress
     times.append(&elapsed);
     times.append(&remaining);
     group.append(&times);
-    (
-        group,
-        RenderedProgress {
-            bar,
-            elapsed,
-            remaining,
-        },
-    )
+    RenderedProgress {
+        root: group,
+        bar,
+        times,
+        elapsed,
+        remaining,
+    }
 }
 
-fn tracked_identity(tracked_output: &str, tracked_zone: &str) -> gtk::Box {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 18);
+fn tracked_identity(tracked_output: &str, tracked_zone: &str) -> RenderedIdentity {
+    let row = gtk::Grid::new();
     row.add_css_class("tracked-identity");
-    row.append(&metadata_label("OUTPUT", "identity-label"));
-    row.append(&metadata_label(tracked_output, "identity-name"));
-    row.append(&metadata_label("ZONE", "identity-label"));
-    row.append(&metadata_label(tracked_zone, "identity-name"));
-    row
+    row.set_column_homogeneous(true);
+    row.set_hexpand(true);
+    row.set_halign(gtk::Align::Fill);
+
+    let output = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    output.set_hexpand(true);
+    output.set_halign(gtk::Align::Fill);
+    let output_label = metadata_label("OUTPUT", "identity-label");
+    let output_name = identity_name(tracked_output);
+    output.append(&output_label);
+    output.append(&output_name);
+
+    let zone = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    zone.set_halign(gtk::Align::End);
+    let zone_label = metadata_label("ZONE", "identity-label");
+    let zone_name = identity_name(tracked_zone);
+    zone_name.set_xalign(1.0);
+    zone.append(&zone_label);
+    zone.append(&zone_name);
+
+    row.attach(&output, 0, 0, 1, 1);
+    row.attach(&zone, 1, 0, 1, 1);
+    RenderedIdentity {
+        root: row,
+        output_label,
+        output_name,
+        zone_label,
+        zone_name,
+    }
+}
+
+fn identity_name(text: &str) -> gtk::Label {
+    let label = metadata_label(text, "identity-name");
+    label.set_ellipsize(pango::EllipsizeMode::End);
+    label.set_lines(1);
+    label.set_single_line_mode(true);
+    label
 }
 
 fn metadata_label(text: &str, class_name: &str) -> gtk::Label {
@@ -490,21 +731,26 @@ fn typography_styles(typography: TypographyPair) -> String {
     )
 }
 
-fn palette_styles(class_name: &str, palette: PresentationPalette) -> String {
+fn palette_styles(
+    class_name: &str,
+    palette: PresentationPalette,
+    layout: &GallerySplitLayout,
+) -> String {
     let background = palette.background.to_hex();
     let artwork_field = palette.artwork_field.to_hex();
     let metadata_field = palette.metadata_field.to_hex();
     let primary_text = palette.primary_text.to_hex();
     let secondary_text = palette.secondary_text.to_hex();
     let accent = palette.accent.to_hex();
+    let shadow_offset = layout.artwork_shadow_offset_px;
+    let shadow_blur = layout.artwork_shadow_blur_px;
     format!(
         ".{class_name} {{ background-color: {background}; color: {primary_text}; }}\n\
-         .{class_name}.gallery-split {{ background-image: linear-gradient(112deg, {artwork_field} 0%, {background} 58%, {metadata_field} 100%); }}\n\
-         .{class_name} .artwork-column {{ background-color: alpha({artwork_field}, 0.48); }}\n\
-         .{class_name} .artwork-frame {{ box-shadow: 0 36px 96px alpha({background}, 0.88); }}\n\
+         .{class_name}.gallery-split {{ background-image: linear-gradient(118deg, {artwork_field} 0%, {background} 62%, {metadata_field} 100%); }}\n\
+         .{class_name} .artwork-frame {{ box-shadow: 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.72); }}\n\
          .{class_name} .artwork {{ border-color: alpha({primary_text}, 0.16); background-color: {artwork_field}; }}\n\
          .{class_name} .artwork-missing {{ border-color: alpha({secondary_text}, 0.22); background-image: linear-gradient(142deg, alpha({secondary_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16); }}\n\
-         .{class_name} .metadata-column, .{class_name}.unavailable .unavailable-copy {{ background-color: {metadata_field}; }}\n\
+         .{class_name}.unavailable .unavailable-copy {{ background-color: {metadata_field}; }}\n\
          .{class_name} .playback-state, .{class_name} .identity-label, .{class_name} .unavailable-state {{ color: {accent}; }}\n\
          .{class_name} .state-dot {{ background-color: {accent}; box-shadow: 0 0 18px alpha({accent}, 0.72); }}\n\
          .{class_name} .title, .{class_name} .unavailable-heading {{ color: {primary_text}; }}\n\

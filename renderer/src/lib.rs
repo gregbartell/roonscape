@@ -3,6 +3,7 @@ mod diagnostics;
 mod display_configuration;
 mod ipc;
 mod keyboard;
+mod layout;
 mod metadata;
 mod palette;
 mod presentation;
@@ -26,7 +27,14 @@ pub use ipc::{
     read_snapshot_from_socket,
 };
 pub use keyboard::{RendererKey, should_close_renderer};
-pub use metadata::{MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout};
+pub use layout::{
+    ArtworkFit, GalleryField, GallerySplitLayout, GallerySplitRole, GallerySplitTypography,
+    IdentityPlacement, MetadataFontSizes, Viewport,
+};
+pub use metadata::{
+    MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout,
+    metadata_layout_for_viewport,
+};
 pub use palette::{PaletteError, PresentationPalette, Rgb};
 pub use presentation::{
     INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform, LayoutOffset,

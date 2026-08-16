@@ -15,7 +15,7 @@ use gtk::prelude::*;
 use roonscape_renderer::{
     ConnectionState, Diagnostics, DiagnosticsConfiguration, InactivityConfiguration, Presentation,
     PresentationState, PresentationTime, PresentationUpdate, RendererKey, SnapshotEvent,
-    SnapshotSubscription, current_process_memory_bytes, display_configuration_file_path,
+    SnapshotSubscription, Viewport, current_process_memory_bytes, display_configuration_file_path,
     load_inactivity_configuration, register_packaged_fallback_fonts, select_typography,
     should_close_renderer,
 };
@@ -30,6 +30,7 @@ struct PresentationRuntime {
     presentation_view: Rc<RefCell<PresentationView>>,
     updates: Rc<SnapshotSubscription>,
     diagnostics: Option<Rc<RefCell<Diagnostics>>>,
+    display: gtk::Overlay,
     repository_root: PathBuf,
     progress_clock: Instant,
 }
@@ -165,6 +166,7 @@ fn build_window(
         presentation_view,
         updates,
         diagnostics: diagnostics.clone(),
+        display: display.clone(),
         repository_root: repository_root.to_path_buf(),
         progress_clock,
     };
@@ -194,10 +196,23 @@ fn build_window(
 
 impl PresentationRuntime {
     fn tick(&self) {
+        self.apply_viewport();
         let now = self.progress_clock.elapsed();
         let presentation_update = self.apply_snapshot_events(now);
         self.render(now, presentation_update);
         self.presentation_view.borrow_mut().finish_transition(now);
+    }
+
+    fn apply_viewport(&self) {
+        let width = self.display.width();
+        let height = self.display.height();
+        if width <= 0 || height <= 0 {
+            return;
+        }
+
+        self.presentation_view
+            .borrow_mut()
+            .apply_viewport(Viewport::new(width as u32, height as u32));
     }
 
     fn apply_snapshot_events(&self, now: Duration) -> Option<PresentationUpdate> {
