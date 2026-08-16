@@ -22,6 +22,19 @@ fn inactivity_configuration() -> InactivityConfiguration {
         .expect("test inactivity configuration should be valid")
 }
 
+fn assert_full_field_identity(
+    presentation: &roonscape_renderer::FullFieldPresentation,
+    tracked_output: &str,
+    tracked_zone: &str,
+) {
+    let identity = presentation
+        .identity
+        .as_ref()
+        .expect("available full-field presentation should retain authoritative identities");
+    assert_eq!(identity.tracked_output, tracked_output);
+    assert_eq!(identity.tracked_zone, tracked_zone);
+}
+
 #[test]
 fn maps_the_playing_snapshot_to_gallery_split_content() {
     let fixture = support::fixture("playing.json");
@@ -125,8 +138,7 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
             ),
             (state_label, heading, Some(explanation)),
         );
-        assert_eq!(presentation.tracked_output, None);
-        assert_eq!(presentation.tracked_zone, None);
+        assert_eq!(presentation.identity, None);
     }
 }
 
@@ -144,8 +156,7 @@ fn presents_stopped_playback_as_idle_full_field_copy_with_authoritative_identiti
     assert_eq!(presentation.state_label, "Idle");
     assert_eq!(presentation.heading, "Nothing is playing");
     assert_eq!(presentation.explanation, None);
-    assert_eq!(presentation.tracked_output.as_deref(), Some("AudioDevice"));
-    assert_eq!(presentation.tracked_zone.as_deref(), Some("Living Room"));
+    assert_full_field_identity(&presentation, "AudioDevice", "Living Room");
 }
 
 #[test]
@@ -162,8 +173,7 @@ fn presents_empty_loading_as_full_field_copy_with_authoritative_identities() {
     assert_eq!(presentation.state_label, "Loading");
     assert_eq!(presentation.heading, "Loading");
     assert_eq!(presentation.explanation, None);
-    assert_eq!(presentation.tracked_output.as_deref(), Some("AudioDevice"));
-    assert_eq!(presentation.tracked_zone.as_deref(), Some("Living Room"));
+    assert_full_field_identity(&presentation, "AudioDevice", "Living Room");
 }
 
 #[test]
@@ -180,8 +190,7 @@ fn presents_playing_without_usable_content_as_a_truthful_full_field() {
     assert_eq!(presentation.state_label, "Playing");
     assert_eq!(presentation.heading, "Now Playing details unavailable");
     assert_eq!(presentation.explanation, None);
-    assert_eq!(presentation.tracked_output.as_deref(), Some("AudioDevice"));
-    assert_eq!(presentation.tracked_zone.as_deref(), Some("Living Room"));
+    assert_full_field_identity(&presentation, "AudioDevice", "Living Room");
 }
 
 #[test]

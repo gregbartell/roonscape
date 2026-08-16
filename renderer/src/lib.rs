@@ -7,6 +7,7 @@ mod layout;
 mod metadata;
 mod palette;
 mod presentation;
+mod resolution;
 mod style;
 mod transition;
 mod typography;
@@ -40,9 +41,10 @@ pub use palette::{PaletteError, PresentationPalette, Rgb};
 pub use presentation::{
     FullFieldPresentation, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform,
     LayoutOffset, NowPlayingPresentation, Presentation, PresentationError, PresentationFrame,
-    PresentationProgress, PresentationState, PresentationTime, PresentationUpdate,
-    presentation_from_snapshot,
+    PresentationIdentity, PresentationProgress, PresentationState, PresentationTime,
+    PresentationUpdate, StatusEmphasis, presentation_from_snapshot,
 };
+pub use resolution::{ResolvedPresentation, resolve_presentation};
 pub use style::presentation_palette_styles;
 pub use transition::{PresentationRevision, PresentationTransition};
 pub use typography::{

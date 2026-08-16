@@ -9,8 +9,8 @@ use roonscape_renderer::{
     GallerySplitRole, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, IdentityPlacement,
     InactivityTransform, MetadataFontSizes, MetadataLineLayout, MetadataTypography,
     NowPlayingPresentation, Presentation, PresentationPalette, PresentationProgress,
-    PresentationRevision, PresentationTransition, TypographyPair, Viewport,
-    metadata_layout_for_viewport, presentation_palette_styles,
+    PresentationRevision, PresentationTransition, StatusEmphasis, TypographyPair, Viewport,
+    metadata_layout_for_viewport, presentation_palette_styles, resolve_presentation,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -285,13 +285,13 @@ fn render_presentation(
     presentation: &Presentation,
     repository_root: &Path,
 ) -> RenderedPresentation {
-    let palette = palette_for_presentation(presentation, repository_root);
+    let resolved = resolve_presentation(presentation, repository_root);
 
-    match presentation {
+    match &resolved.presentation {
         Presentation::NowPlaying(presentation) => {
-            gallery_split(presentation, repository_root, palette)
+            gallery_split(presentation, repository_root, resolved.palette)
         }
-        Presentation::FullField(presentation) => full_field(presentation, palette),
+        Presentation::FullField(presentation) => full_field(presentation, resolved.palette),
     }
 }
 
@@ -312,7 +312,7 @@ fn full_field(
 
     let message = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let state = playback_state(presentation.state_label);
-    if matches!(presentation.state_label, "Idle" | "Loading") {
+    if presentation.status_emphasis == StatusEmphasis::Quiet {
         state.root.add_css_class("quiet-state");
     }
     message.append(&state.root);
@@ -337,11 +337,13 @@ fn full_field(
     copy.append(&message);
     root.set_child(Some(&copy));
 
-    let identity = if let (Some(tracked_output), Some(tracked_zone)) = (
-        presentation.tracked_output.as_deref(),
-        presentation.tracked_zone.as_deref(),
-    ) {
-        let identity = tracked_identity(tracked_output, tracked_zone, layout.identity_placement);
+    let identity = if let Some(presentation_identity) = presentation.identity.as_ref() {
+        let identity = tracked_identity(
+            &presentation_identity.tracked_output,
+            &presentation_identity.tracked_zone,
+            layout.identity_placement,
+        );
+        identity.root.set_halign(gtk::Align::End);
         root.add_overlay(&identity.root);
         Some(identity)
     } else {
@@ -526,6 +528,7 @@ fn metadata(
         &presentation.tracked_zone,
         gallery_layout.identity_placement,
     );
+    identity.root.set_halign(gtk::Align::Fill);
     column.append(&identity.root);
     RenderedMetadata {
         root,
@@ -621,7 +624,9 @@ impl RenderedFullField {
         }
         if let Some(identity) = self.identity.as_ref() {
             let gutter = dimension(layout.outer_gutter_px);
-            identity.root.set_margin_end(gutter);
+            identity
+                .root
+                .set_margin_end(gutter + dimension(layout.identity_right_inset_px));
             identity.root.set_margin_bottom(gutter);
             identity
                 .root
@@ -774,7 +779,7 @@ fn tracked_identity(
     row.set_hexpand(true);
     match placement {
         IdentityPlacement::BottomRight => {
-            row.set_halign(gtk::Align::Fill);
+            row.set_halign(gtk::Align::End);
             row.set_valign(gtk::Align::End);
         }
     }
@@ -819,21 +824,6 @@ fn metadata_label(text: &str, class_name: &str) -> gtk::Label {
     label.add_css_class(class_name);
     label.set_xalign(0.0);
     label
-}
-
-fn palette_for_presentation(
-    presentation: &Presentation,
-    repository_root: &Path,
-) -> PresentationPalette {
-    let Presentation::NowPlaying(presentation) = presentation else {
-        return PresentationPalette::fallback();
-    };
-    let artwork_path = presentation
-        .artwork_path
-        .as_deref()
-        .map(|path| repository_root.join(path));
-
-    PresentationPalette::for_artwork(artwork_path.as_deref())
 }
 
 pub(crate) fn install_style_providers(typography: TypographyPair) -> gtk::CssProvider {

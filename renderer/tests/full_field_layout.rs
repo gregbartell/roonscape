@@ -13,6 +13,7 @@ fn scales_the_shared_full_field_accent_composition_from_reference_to_fixture() {
     assert_eq!(reference.heading_px, 208);
     assert_eq!(reference.explanation_px, 46);
     assert_eq!(reference.identity_width_px, 864);
+    assert_eq!(reference.identity_right_inset_px, 77);
     assert_eq!(reference.identity_placement, IdentityPlacement::BottomRight);
 
     assert_eq!(tall.outer_gutter_px, reference.outer_gutter_px);
@@ -27,5 +28,6 @@ fn scales_the_shared_full_field_accent_composition_from_reference_to_fixture() {
     assert_eq!(windowed.heading_px, 99);
     assert_eq!(windowed.explanation_px, 22);
     assert_eq!(windowed.identity_width_px, 608);
+    assert_eq!(windowed.identity_right_inset_px, 32);
     assert_eq!(windowed.identity_placement, IdentityPlacement::BottomRight);
 }
