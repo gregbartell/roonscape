@@ -4,7 +4,7 @@ use std::path::Path;
 
 use roonscape_renderer::{
     FALLBACK_FONT_FILES, FALLBACK_FONT_LICENSES, TypographyPair, register_packaged_fallback_fonts,
-    select_typography,
+    select_capture_typography, select_typography,
 };
 
 #[test]
@@ -35,6 +35,34 @@ fn exposes_complete_editorial_and_utility_pairs_without_mixing() {
             TypographyPair::Fallback.utility_family(),
         ),
         ("Libre Baskerville", "IBM Plex Sans")
+    );
+}
+
+#[test]
+fn capture_workflow_forces_only_complete_available_pairs() {
+    let complete = available_families(["Palatino Linotype", "Segoe UI"]);
+    let absent = available_families([]);
+
+    assert_eq!(
+        select_capture_typography(&complete, TypographyPair::Preferred)
+            .expect("an installed preferred pair should be forceable"),
+        TypographyPair::Preferred
+    );
+    assert_eq!(
+        select_capture_typography(&complete, TypographyPair::Fallback)
+            .expect("the packaged fallback pair should always be forceable"),
+        TypographyPair::Fallback
+    );
+    assert_eq!(
+        select_capture_typography(&absent, TypographyPair::Fallback)
+            .expect("fallback capture should not depend on host fonts"),
+        TypographyPair::Fallback
+    );
+    assert_eq!(
+        select_capture_typography(&absent, TypographyPair::Preferred)
+            .expect_err("preferred capture should not use host substitutions")
+            .to_string(),
+        "capture requested Palatino Linotype and Segoe UI, but both host fonts are not available"
     );
 }
 

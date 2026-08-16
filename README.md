@@ -49,6 +49,11 @@ Playing snapshot when the renderer connects, and removes its runtime directory
 when the renderer exits. Set `ROONSCAPE_WINDOWED=1` before the command when a
 window is more convenient than the default fullscreen presentation.
 
+For repeatable native-renderer captures at the three accepted viewports, use
+the [Gallery split visual acceptance workflow](docs/visual-acceptance/gallery-split.md).
+It covers the complete fixture matrix, typography and diagnostics
+representatives, the decision checklist, and the physical-display handoff.
+
 The renderer uses the host-provided Palatino Linotype and Segoe UI families
 only when both are available. Otherwise it atomically selects the packaged
 Libre Baskerville and IBM Plex Sans fallback pair. The open fallback files and

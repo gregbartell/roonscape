@@ -15,8 +15,9 @@ use gtk::prelude::*;
 use roonscape_renderer::{
     ConnectionState, Diagnostics, DiagnosticsConfiguration, InactivityConfiguration, Presentation,
     PresentationState, PresentationTime, PresentationUpdate, RendererKey, SnapshotEvent,
-    SnapshotSubscription, Viewport, current_process_memory_bytes, display_configuration_file_path,
-    load_inactivity_configuration, register_packaged_fallback_fonts, select_typography,
+    SnapshotSubscription, TypographyPair, Viewport, current_process_memory_bytes,
+    display_configuration_file_path, load_inactivity_configuration,
+    register_packaged_fallback_fonts, select_capture_typography, select_typography,
     should_close_renderer,
 };
 
@@ -24,6 +25,12 @@ use view::{PresentationView, install_style_providers};
 
 const APPLICATION_ID: &str = "io.roonscape.Renderer";
 const SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(250);
+
+#[derive(Clone, Copy)]
+struct CaptureConfiguration {
+    viewport: Option<Viewport>,
+    typography: Option<TypographyPair>,
+}
 
 struct PresentationRuntime {
     presentation: Rc<RefCell<PresentationState>>,
@@ -50,6 +57,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         .map(PathBuf::from)
         .ok_or("ROONSCAPE_SOCKET must name the private Unix socket")?;
     let inactivity_configuration = host_inactivity_configuration();
+    let capture_configuration = capture_configuration_from_environment()?;
     let progress_clock = Instant::now();
     let presentation = Rc::new(RefCell::new(
         PresentationState::disconnected_with_inactivity(
@@ -73,18 +81,28 @@ fn run() -> Result<(), Box<dyn Error>> {
     let application = gtk::Application::builder()
         .application_id(APPLICATION_ID)
         .build();
+    let activation_error = Rc::new(RefCell::new(None));
+    let captured_activation_error = activation_error.clone();
 
     application.connect_activate(move |application| {
-        build_window(
+        if let Err(error) = build_window(
             application,
             presentation.clone(),
             updates.clone(),
             diagnostics.clone(),
             &repository_root,
             progress_clock,
-        );
+            capture_configuration,
+        ) {
+            *captured_activation_error.borrow_mut() = Some(error);
+            application.quit();
+        }
     });
     application.run();
+
+    if let Some(error) = activation_error.borrow_mut().take() {
+        return Err(error);
+    }
 
     Ok(())
 }
@@ -96,12 +114,16 @@ fn build_window(
     diagnostics: Option<Rc<RefCell<Diagnostics>>>,
     repository_root: &Path,
     progress_clock: Instant,
-) {
+    capture_configuration: CaptureConfiguration,
+) -> Result<(), Box<dyn Error>> {
+    let viewport = capture_configuration
+        .viewport
+        .unwrap_or(Viewport::WINDOWED_FIXTURE);
     let window = gtk::ApplicationWindow::builder()
         .application(application)
         .decorated(false)
-        .default_width(1600)
-        .default_height(900)
+        .default_width(viewport.width_px as i32)
+        .default_height(viewport.height_px as i32)
         .show_menubar(false)
         .title("RoonScape")
         .build();
@@ -116,7 +138,10 @@ fn build_window(
                 .collect::<HashSet<_>>()
         })
         .unwrap_or_default();
-    let typography = select_typography(&available_families);
+    let typography = match capture_configuration.typography {
+        Some(requested) => select_capture_typography(&available_families, requested)?,
+        None => select_typography(&available_families),
+    };
     let palette_provider = install_style_providers(typography);
     let initial_frame = presentation
         .borrow()
@@ -174,7 +199,7 @@ fn build_window(
 
     install_diagnostics_updates(&window, diagnostics, presentation_view);
 
-    if env::var_os("ROONSCAPE_WINDOWED").is_none() {
+    if capture_configuration.viewport.is_none() && env::var_os("ROONSCAPE_WINDOWED").is_none() {
         window.fullscreen();
     }
 
@@ -189,6 +214,47 @@ fn build_window(
     }
 
     window.present();
+    Ok(())
+}
+
+fn capture_configuration_from_environment() -> Result<CaptureConfiguration, Box<dyn Error>> {
+    let viewport = env::var("ROONSCAPE_CAPTURE_VIEWPORT")
+        .ok()
+        .map(|value| parse_capture_viewport(&value))
+        .transpose()?;
+    let typography = env::var("ROONSCAPE_CAPTURE_TYPOGRAPHY")
+        .ok()
+        .map(|value| match value.as_str() {
+            "preferred" => Ok(TypographyPair::Preferred),
+            "fallback" => Ok(TypographyPair::Fallback),
+            _ => Err("ROONSCAPE_CAPTURE_TYPOGRAPHY must be preferred or fallback"),
+        })
+        .transpose()?;
+    if typography.is_some() && viewport.is_none() {
+        return Err("ROONSCAPE_CAPTURE_TYPOGRAPHY requires ROONSCAPE_CAPTURE_VIEWPORT".into());
+    }
+
+    Ok(CaptureConfiguration {
+        viewport,
+        typography,
+    })
+}
+
+fn parse_capture_viewport(value: &str) -> Result<Viewport, Box<dyn Error>> {
+    let (width, height) = value
+        .split_once('x')
+        .ok_or("ROONSCAPE_CAPTURE_VIEWPORT must use WIDTHxHEIGHT")?;
+    let width = width
+        .parse::<u32>()
+        .map_err(|_| "ROONSCAPE_CAPTURE_VIEWPORT width must be a positive integer")?;
+    let height = height
+        .parse::<u32>()
+        .map_err(|_| "ROONSCAPE_CAPTURE_VIEWPORT height must be a positive integer")?;
+    if width == 0 || height == 0 || width > i32::MAX as u32 || height > i32::MAX as u32 {
+        return Err("ROONSCAPE_CAPTURE_VIEWPORT dimensions must fit positive GTK sizes".into());
+    }
+
+    Ok(Viewport::new(width, height))
 }
 
 impl PresentationRuntime {

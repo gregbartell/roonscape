@@ -126,6 +126,19 @@ fn allows_light_artwork_to_own_a_light_presentation() {
 }
 
 #[test]
+fn visual_acceptance_light_artwork_fixture_produces_a_light_presentation() {
+    let artwork_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/artwork/light.svg");
+
+    let palette = PresentationPalette::from_artwork(&artwork_path)
+        .expect("the shared light artwork fixture should produce a palette");
+
+    assert!(
+        palette.background.contrast_ratio(BLACK) >= 7.0,
+        "the visual acceptance fixture should exercise a readable light presentation"
+    );
+}
+
+#[test]
 fn allows_dark_artwork_to_own_a_dark_presentation() {
     let directory = tempdir().expect("a temporary artwork directory should be available");
     let artwork_path = synthetic_artwork(&directory, "dark.svg", "#08172d", "#db674f");

@@ -46,13 +46,27 @@ impl TypographyPair {
 }
 
 pub fn select_typography(available_families: &HashSet<String>) -> TypographyPair {
-    if available_families.contains(PREFERRED_EDITORIAL_FAMILY)
-        && available_families.contains(PREFERRED_UTILITY_FAMILY)
-    {
+    if preferred_pair_available(available_families) {
         TypographyPair::Preferred
     } else {
         TypographyPair::Fallback
     }
+}
+
+pub fn select_capture_typography(
+    available_families: &HashSet<String>,
+    requested: TypographyPair,
+) -> Result<TypographyPair, TypographyError> {
+    if requested == TypographyPair::Preferred && !preferred_pair_available(available_families) {
+        return Err(TypographyError::PreferredPairUnavailable);
+    }
+
+    Ok(requested)
+}
+
+fn preferred_pair_available(available_families: &HashSet<String>) -> bool {
+    available_families.contains(PREFERRED_EDITORIAL_FAMILY)
+        && available_families.contains(PREFERRED_UTILITY_FAMILY)
 }
 
 pub fn register_packaged_fallback_fonts(renderer_root: &Path) -> Result<(), TypographyError> {
@@ -80,6 +94,7 @@ pub enum TypographyError {
     FontConfigurationUnavailable,
     InvalidFontPath(PathBuf),
     FontRegistrationFailed(PathBuf),
+    PreferredPairUnavailable,
 }
 
 impl fmt::Display for TypographyError {
@@ -102,6 +117,9 @@ impl fmt::Display for TypographyError {
                     path.display()
                 )
             }
+            Self::PreferredPairUnavailable => formatter.write_str(
+                "capture requested Palatino Linotype and Segoe UI, but both host fonts are not available",
+            ),
         }
     }
 }

@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspace @roonscape/bridge",
+    "capture:gallery": "npm run build && node scripts/capture-gallery.mjs",
     "check": "npm run format:check && npm run typecheck && npm run lint && npm test",
     "configure": "npm run build --workspace @roonscape/bridge && node bridge/dist/src/configure.js",
     "fixture": "npm run build && node scripts/run-fixture.mjs",
@@ -17,9 +18,10 @@
     "lint": "eslint bridge/src bridge/test scripts eslint.config.js && cargo clippy --workspace --all-targets -- -D warnings",
     "start:bridge": "npm run start --workspace @roonscape/bridge",
     "smoke:ipc": "npm run build && cargo build --package roonscape-renderer --example ipc-probe && node scripts/ipc-smoke.mjs",
-    "test": "npm run test:bridge && npm run test:fixture-launcher && cargo test --workspace && npm run smoke:ipc",
+    "test": "npm run test:bridge && npm run test:fixture-launcher && npm run test:gallery-captures && cargo test --workspace && npm run smoke:ipc",
     "test:bridge": "npm run test --workspace @roonscape/bridge",
     "test:fixture-launcher": "node --test scripts/run-fixture.test.mjs",
+    "test:gallery-captures": "npm run build && node --test scripts/gallery-captures.test.mjs",
     "typecheck": "npm run build && cargo check --workspace --all-targets"
   },
   "devDependencies": {

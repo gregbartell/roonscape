@@ -81,6 +81,25 @@ fn parses_missing_artwork_and_artwork_revision_fixtures() {
 }
 
 #[test]
+fn parses_the_light_artwork_visual_acceptance_fixture() {
+    let snapshot = parse_snapshot(&support::fixture("light-artwork.json"))
+        .expect("light artwork fixture should be valid");
+
+    assert_eq!(
+        snapshot
+            .artwork
+            .map(|artwork| (artwork.revision, artwork.path)),
+        Some((20, "fixtures/artwork/light.svg".to_owned()))
+    );
+    assert_eq!(
+        snapshot
+            .now_playing
+            .and_then(|now_playing| now_playing.title),
+        Some("Last Light on Phobos".to_owned())
+    );
+}
+
+#[test]
 fn parses_missing_long_and_extreme_metadata_fixtures() {
     let missing = parse_snapshot(&support::fixture("missing-metadata.json"))
         .expect("missing metadata fixture should be valid");

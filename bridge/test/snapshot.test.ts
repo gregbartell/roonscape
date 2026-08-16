@@ -125,6 +125,20 @@ test("loads missing artwork and artwork revision fixtures", async () => {
   assert.equal(revisedArtwork.revision, 9);
 });
 
+test("loads the light-artwork visual acceptance fixture", async () => {
+  const snapshot = await loadSnapshot("fixtures/light-artwork.json");
+
+  assert.deepEqual(snapshot.artwork, {
+    revision: 20,
+    path: "fixtures/artwork/light.svg",
+  });
+  assert.deepEqual(snapshot.nowPlaying, {
+    title: "Last Light on Phobos",
+    artist: "Evelyn Lark & The Orbital Choir",
+    album: "Signals from the Quiet Sea",
+  });
+});
+
 test("loads missing, long, and extreme metadata fixtures without inventing values", async () => {
   const missing = await loadSnapshot("fixtures/missing-metadata.json");
   const missingArtist = await loadSnapshot("fixtures/missing-artist.json");

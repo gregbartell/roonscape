@@ -50,5 +50,5 @@ pub use style::{DiagnosticsStyle, PresentationStyleLayer, PresentationTransition
 pub use transition::{PresentationRevision, PresentationTransition};
 pub use typography::{
     FALLBACK_FONT_FILES, FALLBACK_FONT_LICENSES, TypographyError, TypographyPair,
-    register_packaged_fallback_fonts, select_typography,
+    register_packaged_fallback_fonts, select_capture_typography, select_typography,
 };
