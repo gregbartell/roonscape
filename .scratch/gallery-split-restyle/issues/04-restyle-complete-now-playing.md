@@ -7,23 +7,23 @@ editorial metadata column on the right, all within one cohesive field.
 **Blocked by:** 02 — Publish the selected fixture reference; 03 — Ship
 preferred and fallback typography.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Artwork occupies a restrained square field with generous breathing room,
+- [x] Artwork occupies a restrained square field with generous breathing room,
       contained image fit, and prototype-like depth instead of filling an
       opaque left panel.
-- [ ] The metadata column presents explicit playback status, dominant Title,
+- [x] The metadata column presents explicit playback status, dominant Title,
       supporting Artist and Album, and determinate progress in the prototype's
       visual order and hierarchy.
-- [ ] Determinate progress retains elapsed and negative remaining time;
+- [x] Determinate progress retains elapsed and negative remaining time;
       Playing advances locally while Paused and Loading remain frozen.
-- [ ] Authoritative Output and Zone names occupy one stable bottom-right row in
+- [x] Authoritative Output and Zone names occupy one stable bottom-right row in
       Playing, Paused, and content-bearing Loading presentations.
-- [ ] The cohesive field replaces the conspicuous two-panel split without
+- [x] The cohesive field replaces the conspicuous two-panel split without
       adding persistent branding, controls, browser UI, or ambient animation.
-- [ ] Layout and typography scale around 3840×2160 while remaining credible
+- [x] Layout and typography scale around 3840×2160 while remaining credible
       without letterboxing at 3840×2400 and in the 1600×900 windowed fixture.
-- [ ] Fixture and live snapshots render through the same native GTK/Pango view,
+- [x] Fixture and live snapshots render through the same native GTK/Pango view,
       and layout-policy tests assert visible proportions and roles rather than
       private widget nesting.
 
@@ -62,18 +62,32 @@ agreed 16:10 and windowed preview sizes without letterboxing.
 
 **Acceptance criteria:**
 
-- [ ] Complete Playing, Paused, and content-bearing Loading snapshots use the
+- [x] Complete Playing, Paused, and content-bearing Loading snapshots use the
       selected artwork/metadata hierarchy and stable Output/Zone footer.
-- [ ] The two opaque panels are replaced by a cohesive field with contained
+- [x] The two opaque panels are replaced by a cohesive field with contained
       artwork, deliberate negative space, and prototype-like depth.
-- [ ] Determinate progress remains truthful and indeterminate progress remains
+- [x] Determinate progress remains truthful and indeterminate progress remains
       absent.
-- [ ] The layout remains credible at 3840×2160, 3840×2400, and 1600×900
+- [x] The layout remains credible at 3840×2160, 3840×2400, and 1600×900
       without letterboxing.
-- [ ] Automated tests cover public layout policy and both fixture and live
+- [x] Automated tests cover public layout policy and both fixture and live
       snapshot paths.
 
 **Out of scope:**
 
 - Copying the prototype DOM/CSS or adding a browser engine.
 - Controls, branding, ambient animation, or fixture-only presentation code.
+
+### Implementation Result — 2026-08-15
+
+Implemented in `6ee5254` with review-driven policy integration and metadata
+layout simplifications in `7722604` and `47a2d9f`. The shared native renderer
+now derives Gallery split geometry and typography from the viewport, presents
+contained artwork and the ordered editorial metadata stack on one cohesive
+field, and anchors authoritative Output and Zone identities at the lower right.
+
+Native captures at 1600×900 and 3840×2400 confirmed the intended composition;
+the public layout policy covers the 3840×2160 reference as well. Final Standards
+and Spec reviews reported no findings. `npm run check` passed formatting,
+typechecking, linting, all TypeScript and Rust tests, and both IPC startup and
+restart orders.
