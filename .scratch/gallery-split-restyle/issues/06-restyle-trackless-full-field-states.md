@@ -6,25 +6,25 @@ accent bar, precise state copy, and only identities that remain authoritative.
 
 **Blocked by:** 05 — Derive the complete presentation palette from artwork.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Roon's stopped playback state appears as a dotted Idle status with the
+- [x] Roon's stopped playback state appears as a dotted Idle status with the
       heading Nothing is playing, no explanatory sentence, and authoritative
       Output and Zone names in the shared footer position.
-- [ ] Empty Loading shows a Loading status and large Loading heading without
+- [x] Empty Loading shows a Loading status and large Loading heading without
       invented explanation, while retaining authoritative Output and Zone
       names.
-- [ ] Playing without usable metadata or artwork shows Playing and Now Playing
+- [x] Playing without usable metadata or artwork shows Playing and Now Playing
       details unavailable without a meaningless empty artwork square.
-- [ ] Pairing required, disconnected, and Tracked Output unavailable retain
+- [x] Pairing required, disconnected, and Tracked Output unavailable retain
       distinct corrective headings and explanations rather than collapsing
       into a generic error.
-- [ ] Pairing-required, disconnected, and output-unavailable presentations
+- [x] Pairing-required, disconnected, and output-unavailable presentations
       omit stale Output, Zone, metadata, progress, and artwork.
-- [ ] Every full-field state uses the same accent-bar composition and fixed
+- [x] Every full-field state uses the same accent-bar composition and fixed
       no-art palette while remaining visually distinct through truthful status
       and copy.
-- [ ] Presentation and renderer tests exercise every full-field state and its
+- [x] Presentation and renderer tests exercise every full-field state and its
       identity visibility through complete snapshots.
 
 ## Comments
@@ -64,16 +64,31 @@ Playing content.
 
 **Acceptance criteria:**
 
-- [ ] Idle, empty Loading, and unavailable states render the exact specified
+- [x] Idle, empty Loading, and unavailable states render the exact specified
       headings, explanations, and status labels.
-- [ ] Playing without usable metadata or artwork reports that Now Playing
+- [x] Playing without usable metadata or artwork reports that Now Playing
       details are unavailable and does not render an empty artwork square.
-- [ ] Available trackless states show Output/Zone only when authoritative;
+- [x] Available trackless states show Output/Zone only when authoritative;
       unavailable states contain no identity, metadata, progress, or artwork.
-- [ ] Every full-field state uses the same accent-bar grammar and fixed no-art
+- [x] Every full-field state uses the same accent-bar grammar and fixed no-art
       palette while remaining distinguishable by truthful copy.
 
 **Out of scope:**
 
 - Collapsing distinct availability conditions into a generic error.
 - Invented metadata, Roon Control, or a settings interface.
+
+### Implementation Result — 2026-08-15
+
+Implemented in `f5d5e46`, with review corrections in `372b2bf`, `76922de`,
+and `cbbb887`. Idle, empty Loading, trackless playback, pairing required,
+disconnected, and Tracked Output unavailable now resolve through one native,
+viewport-scaled full-field accent-bar composition. Available states retain one
+authoritative Output/Zone identity value; unavailable states retain none. The
+shared footer geometry matches Gallery split, and missing or unreadable
+artwork without usable metadata selects truthful full-field copy and the fixed
+no-art palette.
+
+Final Standards and Spec reviews reported no findings. `npm run check` passed
+formatting, typechecking, linting, all TypeScript and Rust tests, and the IPC
+smoke check for both startup and restart orders.
