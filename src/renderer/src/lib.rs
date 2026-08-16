@@ -37,10 +37,7 @@ pub use layout::{
     IdentityLineLayout, IdentityPlacement, InactivityLayout, MetadataFontSizes, NowPlayingField,
     NowPlayingLayout, NowPlayingRole, NowPlayingTypography, TextOverflow, Viewport,
 };
-pub use metadata::{
-    MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout,
-    metadata_layout_for_viewport,
-};
+pub use metadata::{MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout};
 pub use palette::{PaletteError, PresentationPalette, Rgb};
 pub use presentation::{
     FullFieldPresentation, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform,

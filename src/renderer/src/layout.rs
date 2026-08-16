@@ -62,7 +62,6 @@ impl InactivityLayout {
 }
 
 impl Viewport {
-    pub const REFERENCE: Self = Self::new(3840, 2160);
     pub const WINDOWED_FIXTURE: Self = Self::new(1600, 900);
 
     pub const fn new(width_px: u32, height_px: u32) -> Self {
@@ -271,8 +270,16 @@ impl NowPlayingLayout {
             .saturating_sub(column_gap_px);
         let artwork_column_width_px = ((content_width_px as f64) * 0.59).round() as u32;
         let metadata_column_width_px = content_width_px - artwork_column_width_px;
-        let artwork_field_size_px =
-            artwork_column_width_px.min(((viewport.height_px as f64) * 0.81).round() as u32);
+        let artwork_shadow_offset_px = scaled(viewport.height_px, 0.04, 36, 86);
+        let artwork_shadow_blur_px = scaled(viewport.height_px, 0.09, 81, 194);
+        let artwork_shadow_extent_px =
+            artwork_shadow_offset_px + artwork_shadow_blur_px.div_ceil(2);
+        let artwork_height_limit_px = viewport
+            .height_px
+            .saturating_sub(artwork_shadow_extent_px.saturating_mul(2));
+        let artwork_field_size_px = artwork_column_width_px
+            .min(((viewport.height_px as f64) * 0.81).round() as u32)
+            .min(artwork_height_limit_px);
         let status_px = scaled(viewport.width_px, 0.008, 12, 30);
         let typography = NowPlayingTypography {
             title: MetadataFontSizes {
@@ -316,8 +323,8 @@ impl NowPlayingLayout {
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
             state_dot_size_px: ((typography.status_px as f64) * 0.58).round() as u32,
             progress_height_px: scaled(viewport.width_px, 0.0016, 3, 6),
-            artwork_shadow_offset_px: scaled(viewport.height_px, 0.04, 36, 86),
-            artwork_shadow_blur_px: scaled(viewport.height_px, 0.09, 81, 194),
+            artwork_shadow_offset_px,
+            artwork_shadow_blur_px,
             typography,
         }
     }

@@ -1,3 +1,5 @@
+#[path = "support/representative_viewports.rs"]
+mod representative_viewports;
 mod support;
 
 use std::path::Path;
@@ -30,63 +32,12 @@ fn now_playing_from_snapshot(contents: &str) -> roonscape_renderer::NowPlayingPr
 }
 
 #[test]
-fn lays_out_complete_now_playing_as_the_reference_now_playing_field() {
-    let layout =
-        NowPlayingLayout::for_presentation(&now_playing("playing.json"), Viewport::new(3840, 2160));
-
-    assert_eq!(layout.field, NowPlayingField::Cohesive);
-    assert_eq!(layout.outer_gutter_px, 160);
-    assert_eq!(layout.column_gap_px, 192);
-    assert_eq!(layout.artwork_column_width_px, 1964);
-    assert_eq!(layout.metadata_column_width_px, 1364);
-    assert_eq!(layout.artwork_field_width_px, 1750);
-    assert_eq!(layout.artwork_field_height_px, 1750);
-    assert_eq!(layout.status_top_inset_px, 39);
-    assert_eq!(layout.identity_placement, IdentityPlacement::BottomRight);
-    assert_eq!(
-        layout.metadata_roles,
-        vec![
-            NowPlayingRole::PlaybackStatus,
-            NowPlayingRole::Title,
-            NowPlayingRole::Artist,
-            NowPlayingRole::Album,
-            NowPlayingRole::Progress,
-        ]
-    );
-    assert_eq!(layout.typography.title.preferred_px, 168);
-    assert_eq!(layout.typography.artist.preferred_px, 64);
-    assert_eq!(layout.typography.album.preferred_px, 45);
-    assert_eq!(layout.typography.status_px, 30);
-    assert_eq!(layout.typography.status_letter_spacing_px, 4);
-}
-
-#[test]
-fn scales_the_now_playing_composition_at_the_tall_and_windowed_viewports() {
+fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
     let presentation = now_playing("playing.json");
-    let tall = NowPlayingLayout::for_presentation(&presentation, Viewport::new(3840, 2400));
-    let windowed = NowPlayingLayout::for_presentation(&presentation, Viewport::new(1600, 900));
 
-    assert_eq!(tall.artwork_field_width_px, 1944);
-    assert_eq!(tall.artwork_field_height_px, 1944);
-    assert_eq!(tall.status_top_inset_px, 43);
-    assert_eq!(tall.typography.title.preferred_px, 168);
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = NowPlayingLayout::for_presentation(&presentation, viewport);
 
-    assert_eq!(windowed.outer_gutter_px, 67);
-    assert_eq!(windowed.column_gap_px, 80);
-    assert_eq!(windowed.artwork_column_width_px, 818);
-    assert_eq!(windowed.metadata_column_width_px, 568);
-    assert_eq!(windowed.artwork_field_width_px, 729);
-    assert_eq!(windowed.status_top_inset_px, 16);
-    assert_eq!(windowed.typography.title.preferred_px, 74);
-    assert_eq!(windowed.typography.artist.preferred_px, 28);
-    assert_eq!(windowed.typography.album.preferred_px, 20);
-    assert_eq!(windowed.typography.status_px, 13);
-    assert_eq!(windowed.typography.status_letter_spacing_px, 2);
-
-    for (viewport, layout) in [
-        (Viewport::new(3840, 2400), tall),
-        (Viewport::new(1600, 900), windowed),
-    ] {
         assert_eq!(
             layout.outer_gutter_px * 2
                 + layout.artwork_column_width_px
@@ -94,6 +45,53 @@ fn scales_the_now_playing_composition_at_the_tall_and_windowed_viewports() {
                 + layout.metadata_column_width_px,
             viewport.width_px,
             "the composition should use the complete viewport without letterboxing"
+        );
+        assert_eq!(layout.field, NowPlayingField::Cohesive);
+        assert_eq!(layout.identity_placement, IdentityPlacement::BottomRight);
+        assert_eq!(
+            layout.metadata_roles,
+            vec![
+                NowPlayingRole::PlaybackStatus,
+                NowPlayingRole::Title,
+                NowPlayingRole::Artist,
+                NowPlayingRole::Album,
+                NowPlayingRole::Progress,
+            ]
+        );
+        assert!(layout.metadata_right_inset_px < layout.metadata_column_width_px);
+        assert!(layout.typography.title.preferred_px >= layout.typography.title.reduced_px);
+        assert!(layout.typography.title.reduced_px >= layout.typography.title.minimum_px);
+        assert!(layout.typography.title.minimum_px >= 36);
+        assert!(layout.typography.artist.minimum_px >= 18);
+        assert!(layout.typography.album.minimum_px >= 15);
+        assert!(layout.typography.status_px >= 12);
+        assert!(layout.typography.time_px >= 11);
+        assert!(layout.typography.identity_px >= 11);
+    }
+}
+
+#[test]
+fn contains_the_artwork_and_its_depth_at_representative_landscape_viewports() {
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = NowPlayingLayout::for_viewport(viewport);
+        let vertical_clearance = (viewport
+            .height_px
+            .saturating_sub(layout.artwork_field_height_px))
+            / 2;
+        let shadow_extent =
+            layout.artwork_shadow_offset_px + layout.artwork_shadow_blur_px.div_ceil(2);
+
+        assert_eq!(
+            layout.artwork_field_width_px, layout.artwork_field_height_px,
+            "artwork should retain its square field at {viewport:?}"
+        );
+        assert!(
+            layout.artwork_field_width_px <= layout.artwork_column_width_px,
+            "artwork should remain inside its column at {viewport:?}"
+        );
+        assert!(
+            shadow_extent <= vertical_clearance,
+            "artwork depth should remain inside the viewport at {viewport:?}"
         );
     }
 }

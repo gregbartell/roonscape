@@ -11,7 +11,7 @@ use roonscape_renderer::{
     NowPlayingField, NowPlayingLayout, NowPlayingPresentation, NowPlayingRole, Presentation,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationStyleLayer,
     PresentationTransition, PresentationTransitionStyles, StatusEmphasis, TextOverflow,
-    TypographyPair, TypographyStyles, Viewport, metadata_layout_for_viewport, resolve_presentation,
+    TypographyPair, TypographyStyles, Viewport, metadata_layout, resolve_presentation,
 };
 
 const STYLES: &str = include_str!("style.css");
@@ -566,7 +566,7 @@ fn metadata(
 
     let playback_state = playback_state(presentation.playback_state());
 
-    let layout = metadata_layout_for_viewport(presentation, Viewport::WINDOWED_FIXTURE);
+    let layout = metadata_layout(presentation, Viewport::WINDOWED_FIXTURE);
     let title = layout
         .title
         .as_ref()

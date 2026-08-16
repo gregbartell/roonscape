@@ -17,7 +17,13 @@ import { buildPresentationCapturePlan } from "./presentation-captures.mjs";
 const execFileAsync = promisify(execFile);
 const scratchRoot = "/tmp/codex/roonscape";
 
-const REQUIRED_VIEWPORTS = ["1600x900", "3840x2160", "3840x2400"];
+const REPRESENTATIVE_VIEWPORTS = [
+  "1280x720",
+  "1600x1200",
+  "1920x1200",
+  "2560x1080",
+  "3840x2160",
+];
 const REQUIRED_SCENARIOS = [
   "playing",
   "paused",
@@ -39,22 +45,8 @@ const REQUIRED_SCENARIOS = [
   "light-artwork",
 ];
 
-test("plans every visual acceptance scenario at every supported viewport", () => {
+test("plans every visual acceptance scenario at every representative viewport", () => {
   const plan = buildPresentationCapturePlan();
-  const referenceMatrix = plan.filter(
-    (capture) =>
-      capture.variant === "matrix" && capture.viewport === "3840x2160",
-  );
-
-  assert.deepEqual(
-    referenceMatrix.map((capture) => capture.scenario),
-    REQUIRED_SCENARIOS,
-  );
-  assert.deepEqual(
-    referenceMatrix.map((capture) => capture.fileName),
-    REQUIRED_SCENARIOS.map((scenario) => `3840x2160--${scenario}.png`),
-  );
-
   for (const scenario of REQUIRED_SCENARIOS) {
     const captures = plan.filter(
       (capture) =>
@@ -62,8 +54,24 @@ test("plans every visual acceptance scenario at every supported viewport", () =>
     );
     assert.deepEqual(
       captures.map((capture) => capture.viewport).sort(),
-      REQUIRED_VIEWPORTS,
-      `${scenario} should be captured at every supported viewport`,
+      REPRESENTATIVE_VIEWPORTS,
+      `${scenario} should be captured at every representative viewport`,
+    );
+  }
+
+  for (const viewport of REPRESENTATIVE_VIEWPORTS) {
+    const captures = plan.filter(
+      (capture) =>
+        capture.variant === "matrix" && capture.viewport === viewport,
+    );
+    assert.deepEqual(
+      captures.map((capture) => capture.scenario),
+      REQUIRED_SCENARIOS,
+      `${viewport} should cover every Fixture Scenario as a peer viewport`,
+    );
+    assert.deepEqual(
+      captures.map((capture) => capture.fileName),
+      REQUIRED_SCENARIOS.map((scenario) => `${viewport}--${scenario}.png`),
     );
   }
 
@@ -95,17 +103,20 @@ test("derives the visual acceptance matrix from the Fixture Scenario catalog", a
     ];
     await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
 
-    const matrixScenarios = buildPresentationCapturePlan({ catalogPath })
-      .filter(
-        (capture) =>
-          capture.variant === "matrix" && capture.viewport === "3840x2160",
-      )
-      .map((capture) => capture.scenario);
+    const plan = buildPresentationCapturePlan({ catalogPath });
+    for (const viewport of REPRESENTATIVE_VIEWPORTS) {
+      const matrixScenarios = plan
+        .filter(
+          (capture) =>
+            capture.variant === "matrix" && capture.viewport === viewport,
+        )
+        .map((capture) => capture.scenario);
 
-    assert.deepEqual(
-      matrixScenarios,
-      catalog.scenarios.map((scenario) => scenario.scenario),
-    );
+      assert.deepEqual(
+        matrixScenarios,
+        catalog.scenarios.map((scenario) => scenario.scenario),
+      );
+    }
   } finally {
     await rm(taskDirectory, { force: true, recursive: true });
   }
@@ -117,10 +128,13 @@ test("plans explicit typography and adaptive diagnostics representatives", () =>
   );
 
   assert.deepEqual(
-    representatives
-      .filter((capture) => capture.typography !== "automatic")
-      .map((capture) => capture.typography)
-      .sort(),
+    [
+      ...new Set(
+        representatives
+          .filter((capture) => capture.typography !== "automatic")
+          .map((capture) => capture.typography),
+      ),
+    ].sort(),
     ["fallback", "preferred"],
   );
   assert.ok(
@@ -133,16 +147,30 @@ test("plans explicit typography and adaptive diagnostics representatives", () =>
     "both complete font pairs should visibly exercise Pango glyph fallback",
   );
   assert.deepEqual(
-    representatives
-      .filter((capture) => capture.diagnostics)
-      .map((capture) => capture.palette)
-      .sort(),
+    [
+      ...new Set(
+        representatives
+          .filter((capture) => capture.diagnostics)
+          .map((capture) => capture.palette),
+      ),
+    ].sort(),
     ["dark", "fixed-no-art", "light"],
   );
-  assert.ok(
-    representatives.every((capture) => capture.viewport === "3840x2160"),
-    "representative captures should use the Reference Deployment viewport",
-  );
+  for (const viewport of REPRESENTATIVE_VIEWPORTS) {
+    assert.deepEqual(
+      representatives
+        .filter((capture) => capture.viewport === viewport)
+        .map((capture) => capture.scenario),
+      [
+        "preferred-typography",
+        "fallback-typography",
+        "dark-diagnostics",
+        "light-diagnostics",
+        "fixed-no-art-diagnostics",
+      ],
+      `${viewport} should receive the same typography and diagnostics review`,
+    );
+  }
 });
 
 test("capture command lists the durable plan without launching the renderer", async () => {
@@ -169,7 +197,7 @@ test("capture command orchestrates one native fixture capture and records its ma
     "display-configuration",
   );
   await mkdir(binDirectory);
-  await writeFile(fakePng, pngHeader(1600, 900));
+  await writeFile(fakePng, pngHeader(1280, 720));
   await executable(
     path.join(binDirectory, "Xvfb"),
     '#!/bin/sh\ndisplay_number="${1#:}"\nsocket="/tmp/.X11-unix/X${display_number}"\nmkdir -p /tmp/.X11-unix\ntouch "$socket"\ntrap \'rm -f "$socket"; exit 0\' TERM INT EXIT\nwhile :; do /usr/bin/sleep 1; done\n',
@@ -180,7 +208,7 @@ test("capture command orchestrates one native fixture capture and records its ma
   );
   await executable(
     path.join(binDirectory, "xwininfo"),
-    "#!/bin/sh\nprintf 'xwininfo: Window id: 4242 \"RoonScape\"\\n  Width: 1600\\n  Height: 900\\n'\n",
+    "#!/bin/sh\nprintf 'xwininfo: Window id: 4242 \"RoonScape\"\\n  Width: 1280\\n  Height: 720\\n'\n",
   );
   await executable(
     path.join(binDirectory, "scrot"),
@@ -197,7 +225,7 @@ test("capture command orchestrates one native fixture capture and records its ma
         "--only",
         "playing",
         "--viewport",
-        "1600x900",
+        "1280x720",
         "--settle-ms",
         "0",
       ],
@@ -223,7 +251,7 @@ test("capture command orchestrates one native fixture capture and records its ma
         ...buildPresentationCapturePlan().find(
           (capture) =>
             capture.scenario === "playing" &&
-            capture.viewport === "1600x900" &&
+            capture.viewport === "1280x720" &&
             capture.variant === "matrix",
         ),
         renderer: "native GTK 4/Pango",
@@ -233,7 +261,7 @@ test("capture command orchestrates one native fixture capture and records its ma
       await readFile(path.join(outputDirectory, manifest.captures[0].fileName)),
       await readFile(fakePng),
     );
-    assert.equal(await readFile(rendererEnvironment, "utf8"), "1600x900||0\n");
+    assert.equal(await readFile(rendererEnvironment, "utf8"), "1280x720||0\n");
     assert.deepEqual(JSON.parse(await readFile(displayConfiguration, "utf8")), {
       trackedOutputId: "visual-acceptance-capture",
       inactivity: {

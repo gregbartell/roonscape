@@ -1,51 +1,47 @@
+#[path = "support/representative_viewports.rs"]
+mod representative_viewports;
+
 use roonscape_renderer::{
     FullFieldLayout, IdentityLineLayout, IdentityPlacement, NowPlayingLayout, TextOverflow,
-    Viewport,
 };
 
 #[test]
-fn scales_the_shared_full_field_accent_composition_from_reference_to_fixture() {
-    let reference = FullFieldLayout::for_viewport(Viewport::REFERENCE);
-    let reference_now_playing = NowPlayingLayout::for_viewport(Viewport::REFERENCE);
-    let tall = FullFieldLayout::for_viewport(Viewport::new(3840, 2400));
-    let windowed = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
+fn bounds_full_field_states_and_identities_at_representative_landscape_viewports() {
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = FullFieldLayout::for_viewport(viewport);
+        let now_playing = NowPlayingLayout::for_viewport(viewport);
+        let maximum_copy_height = layout.status_px
+            + layout.status_spacing_px
+            + layout.heading_px * 3
+            + layout.explanation_spacing_px
+            + layout.explanation_px * 3;
 
-    assert_eq!(reference.outer_gutter_px, 160);
-    assert_eq!(reference.copy_width_px, 1088);
-    assert_eq!(reference.accent_width_px, 15);
-    assert_eq!(reference.accent_padding_px, 144);
-    assert_eq!(reference.heading_px, 208);
-    assert_eq!(reference.explanation_px, 46);
-    assert_eq!(reference.identity_width_px, 1287);
-    assert_eq!(reference.identity_right_inset_px, 77);
-    assert_eq!(reference.identity_placement, IdentityPlacement::BottomRight);
-    assert_eq!(
-        reference.identity_line,
-        IdentityLineLayout {
-            maximum_lines: 1,
-            overflow: TextOverflow::EllipsizeEnd,
-        }
-    );
-
-    assert_eq!(tall.outer_gutter_px, reference.outer_gutter_px);
-    assert_eq!(tall.copy_width_px, reference.copy_width_px);
-    assert_eq!(tall.heading_px, reference.heading_px);
-    assert_eq!(tall.status_spacing_px, 80);
-
-    assert_eq!(windowed.outer_gutter_px, 67);
-    assert_eq!(windowed.copy_width_px, 1088);
-    assert_eq!(windowed.accent_width_px, 6);
-    assert_eq!(windowed.accent_padding_px, 64);
-    assert_eq!(windowed.heading_px, 99);
-    assert_eq!(windowed.explanation_px, 22);
-    assert_eq!(windowed.identity_width_px, 536);
-    assert_eq!(windowed.identity_right_inset_px, 32);
-    assert_eq!(windowed.identity_placement, IdentityPlacement::BottomRight);
-
-    assert_eq!(
-        reference.identity_width_px,
-        reference_now_playing.metadata_column_width_px
-            - reference_now_playing.metadata_right_inset_px,
-        "the full-field identity row should share the Now Playing layout footer geometry"
-    );
+        assert!(
+            layout.copy_width_px + layout.outer_gutter_px * 2 <= viewport.width_px,
+            "full-field copy should remain horizontally bounded at {viewport:?}"
+        );
+        assert!(
+            maximum_copy_height + layout.outer_gutter_px * 2 <= viewport.height_px,
+            "full-field copy should remain vertically bounded at {viewport:?}"
+        );
+        assert!(layout.accent_padding_px < layout.copy_width_px);
+        assert_eq!(layout.identity_placement, IdentityPlacement::BottomRight);
+        assert_eq!(
+            layout.identity_line,
+            IdentityLineLayout {
+                maximum_lines: 1,
+                overflow: TextOverflow::EllipsizeEnd,
+            }
+        );
+        assert_eq!(
+            layout.identity_width_px,
+            now_playing.metadata_column_width_px - now_playing.metadata_right_inset_px,
+            "full-field states should share the stable Output and Zone row at {viewport:?}"
+        );
+        assert!(
+            layout.identity_width_px + layout.identity_right_inset_px + layout.outer_gutter_px
+                <= viewport.width_px,
+            "the identity row should remain inside the field at {viewport:?}"
+        );
+    }
 }

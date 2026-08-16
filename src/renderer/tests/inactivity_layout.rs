@@ -1,15 +1,14 @@
+#[path = "support/representative_viewports.rs"]
+mod representative_viewports;
+
 use roonscape_renderer::{
     FullFieldLayout, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityLayout,
     InactivityTransform, LayoutOffset, NowPlayingLayout, Viewport,
 };
 
 #[test]
-fn reserves_the_complete_oled_movement_envelope_around_restyled_layouts() {
-    for display_viewport in [
-        Viewport::WINDOWED_FIXTURE,
-        Viewport::REFERENCE,
-        Viewport::new(3840, 2400),
-    ] {
+fn reserves_the_complete_oled_movement_envelope_at_representative_landscape_viewports() {
+    for display_viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
         for offset in [
             LayoutOffset {
                 x: -INACTIVE_HORIZONTAL_BOUND,

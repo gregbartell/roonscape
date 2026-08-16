@@ -29,11 +29,7 @@ pub struct MetadataLayout {
     pub album: Option<MetadataLineLayout>,
 }
 
-pub fn metadata_layout(presentation: &NowPlayingPresentation) -> MetadataLayout {
-    metadata_layout_for_viewport(presentation, Viewport::REFERENCE)
-}
-
-pub fn metadata_layout_for_viewport(
+pub fn metadata_layout(
     presentation: &NowPlayingPresentation,
     viewport: Viewport,
 ) -> MetadataLayout {

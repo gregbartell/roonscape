@@ -2,16 +2,12 @@ import { fileURLToPath } from "node:url";
 
 import { readFixtureScenarioCatalog } from "../src/bridge/dist/src/fixture-scenario-catalog.js";
 
-const REFERENCE_VIEWPORT = {
-  key: "3840x2160",
-  width: 3840,
-  height: 2160,
-};
-
 const VIEWPORTS = [
-  REFERENCE_VIEWPORT,
-  { key: "3840x2400", width: 3840, height: 2400 },
-  { key: "1600x900", width: 1600, height: 900 },
+  { key: "1280x720", width: 1280, height: 720 },
+  { key: "1600x1200", width: 1600, height: 1200 },
+  { key: "1920x1200", width: 1920, height: 1200 },
+  { key: "2560x1080", width: 2560, height: 1080 },
+  { key: "3840x2160", width: 3840, height: 2160 },
 ];
 
 const defaultCatalogPath = fileURLToPath(
@@ -69,8 +65,15 @@ export function buildPresentationCapturePlan({
       fileName: `${viewport.key}--${scenario.scenario}.png`,
     })),
   );
+  const representatives = VIEWPORTS.flatMap((viewport) =>
+    REPRESENTATIVES.map((capture) => ({
+      ...capture,
+      ...viewportFields(viewport),
+      fileName: `${viewport.key}--representative--${capture.scenario}.png`,
+    })),
+  );
 
-  return [...matrix, ...REPRESENTATIVES];
+  return [...matrix, ...representatives];
 }
 
 function fixtureScenario(scenario, fixtureName, palette) {
@@ -91,10 +94,8 @@ function representative(
   return {
     variant: "representative",
     ...fixtureScenario(scenario, fixtureName, palette),
-    ...viewportFields(REFERENCE_VIEWPORT),
     typography,
     diagnostics,
-    fileName: `${REFERENCE_VIEWPORT.key}--representative--${scenario}.png`,
   };
 }
 

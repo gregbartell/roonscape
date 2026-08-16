@@ -1,9 +1,13 @@
+#[path = "support/representative_viewports.rs"]
+mod representative_viewports;
 mod support;
 
 use roonscape_renderer::{
     MetadataFontSizes, MetadataTypography, Presentation, TextOverflow, Viewport, metadata_layout,
-    metadata_layout_for_viewport, parse_snapshot, presentation_from_snapshot,
+    parse_snapshot, presentation_from_snapshot,
 };
+
+const VIEWPORT: Viewport = Viewport::new(1920, 1200);
 
 fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation {
     let snapshot = parse_snapshot(&support::fixture(fixture_name))
@@ -19,7 +23,7 @@ fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation
 #[test]
 fn omits_missing_artist_and_album_from_the_metadata_layout() {
     let presentation = now_playing("missing-metadata.json");
-    let layout = metadata_layout(&presentation);
+    let layout = metadata_layout(&presentation, VIEWPORT);
 
     assert_eq!(
         layout.title.as_ref().map(|line| line.text.as_str()),
@@ -31,8 +35,8 @@ fn omits_missing_artist_and_album_from_the_metadata_layout() {
 
 #[test]
 fn independently_collapses_each_missing_optional_metadata_line() {
-    let missing_artist = metadata_layout(&now_playing("missing-artist.json"));
-    let missing_album = metadata_layout(&now_playing("missing-album.json"));
+    let missing_artist = metadata_layout(&now_playing("missing-artist.json"), VIEWPORT);
+    let missing_album = metadata_layout(&now_playing("missing-album.json"), VIEWPORT);
 
     assert!(missing_artist.artist.is_none());
     assert_eq!(
@@ -48,7 +52,7 @@ fn independently_collapses_each_missing_optional_metadata_line() {
 
 #[test]
 fn collapses_blank_optional_metadata_without_dead_spacing() {
-    let layout = metadata_layout(&now_playing("blank-optional-metadata.json"));
+    let layout = metadata_layout(&now_playing("blank-optional-metadata.json"), VIEWPORT);
 
     assert!(layout.title.is_some());
     assert_eq!(layout.artist, None);
@@ -58,14 +62,14 @@ fn collapses_blank_optional_metadata_without_dead_spacing() {
 #[test]
 fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
     let presentation = now_playing("long-metadata.json");
-    let layout = metadata_layout(&presentation);
+    let layout = metadata_layout(&presentation, VIEWPORT);
     let title = layout.title.expect("long fixture should have a Title");
     let artist = layout.artist.expect("long fixture should have an Artist");
     let album = layout.album.expect("long fixture should have an Album");
 
-    assert_eq!(title.font_sizes, font_sizes(168, 128, 96));
-    assert_eq!(artist.font_sizes, font_sizes(64, 56, 48));
-    assert_eq!(album.font_sizes, font_sizes(45, 40, 35));
+    assert_eq!(title.font_sizes, font_sizes(88, 70, 54));
+    assert_eq!(artist.font_sizes, font_sizes(34, 28, 24));
+    assert_eq!(album.font_sizes, font_sizes(23, 20, 18));
     assert_eq!(
         (
             title.maximum_lines,
@@ -82,7 +86,7 @@ fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
 #[test]
 fn extreme_metadata_stops_reducing_at_readable_minimum_sizes() {
     let presentation = now_playing("extreme-metadata.json");
-    let layout = metadata_layout(&presentation);
+    let layout = metadata_layout(&presentation, VIEWPORT);
     let title = layout.title.expect("extreme fixture should have a Title");
     let artist = layout
         .artist
@@ -105,7 +109,7 @@ fn extreme_metadata_stops_reducing_at_readable_minimum_sizes() {
 
 #[test]
 fn selects_the_first_font_size_that_fits_the_allocated_pango_layout() {
-    let layout = metadata_layout(&now_playing("long-metadata.json"));
+    let layout = metadata_layout(&now_playing("long-metadata.json"), VIEWPORT);
     let title = layout.title.expect("long fixture should have a Title");
     let mut attempted_sizes = Vec::new();
 
@@ -123,7 +127,7 @@ fn selects_the_first_font_size_that_fits_the_allocated_pango_layout() {
 
 #[test]
 fn assigns_editorial_and_utility_typography_roles() {
-    let layout = metadata_layout(&now_playing("playing.json"));
+    let layout = metadata_layout(&now_playing("playing.json"), VIEWPORT);
 
     assert_eq!(
         layout.title.map(|line| line.typography),
@@ -140,19 +144,18 @@ fn assigns_editorial_and_utility_typography_roles() {
 }
 
 #[test]
-fn scales_metadata_typography_with_the_now_playing_viewport() {
+fn scales_metadata_typography_across_representative_landscape_viewports() {
     let presentation = now_playing("playing.json");
-    let reference = metadata_layout_for_viewport(&presentation, Viewport::new(3840, 2160));
-    let windowed = metadata_layout_for_viewport(&presentation, Viewport::new(1600, 900));
+    let preferred_title_sizes =
+        representative_viewports::REPRESENTATIVE_VIEWPORTS.map(|viewport| {
+            metadata_layout(&presentation, viewport)
+                .title
+                .expect("Playing should have a Title")
+                .font_sizes
+                .preferred_px
+        });
 
-    let reference_title = reference
-        .title
-        .expect("reference fixture should have a Title");
-    let windowed_title = windowed
-        .title
-        .expect("windowed fixture should have a Title");
-    assert_eq!(reference_title.font_sizes, font_sizes(168, 128, 96));
-    assert_eq!(windowed_title.font_sizes, font_sizes(74, 58, 45));
+    assert_eq!(preferred_title_sizes, [59, 74, 88, 118, 168]);
 }
 
 fn font_sizes(preferred_px: u32, reduced_px: u32, minimum_px: u32) -> MetadataFontSizes {
