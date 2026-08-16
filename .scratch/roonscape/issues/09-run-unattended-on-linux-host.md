@@ -6,7 +6,8 @@ product. Normal boot reaches a ready display without local interaction, and a
 display failure cannot take down Roon Server, other RoonScape Host workloads,
 or remote administration.
 
-**Blocked by:** None — 06, 07, and 08 are `done`.
+**Blocked by:** initialization-simplification 05 — Publish and document the
+release workflow.
 
 **Status:** ready-for-human
 
@@ -35,6 +36,12 @@ or remote administration.
 - [ ] Disabling or failing RoonScape leaves Roon Server, other RoonScape Host
       workloads, and remote administration operational and does not control
       television power or input selection.
+- [ ] The relocatable release runs against the compatible host's GTK runtime
+      without requiring source Node, npm, Rust, Cargo, a compiler, or GTK
+      development libraries.
+- [ ] First launch from the release completes real Roon Authorization, discovers
+      and selects the intended Tracked Output, enters the presentation, exits
+      cleanly, and starts again without repeating setup.
 - [ ] A deployment smoke check reaches the current truthful presentation after
       normal boot without routine intervention.
 
@@ -87,6 +94,9 @@ and Display Configuration persist with appropriately restricted access.
       while remaining separate and access-restricted.
 - [ ] The installed system opens no network listener and does not control
       television power or input selection.
+- [ ] The unpacked release completes real Roon Authorization, discovers and
+      selects the intended Tracked Output, enters the presentation, exits
+      cleanly, and starts again without source toolchains or repeated setup.
 
 **Out of scope:**
 
@@ -105,3 +115,13 @@ the repository yet. The `ready-for-human` state remains correct because the
 ticket cannot be completed without privileged service and graphical-session
 changes followed by boot, failure-isolation, persistence, and access-control
 checks on an authorized RoonScape Host.
+
+### Initialization handoff — 2026-08-15
+
+Compatible-host verification of the relocatable release is folded into this
+deployment ticket rather than tracked as a second human acceptance ticket. The
+ticket is blocked again while initialization-simplification 05 records the
+owner's unattended deployment decision and reconciles the earlier independent
+bridge/renderer supervision requirements with the launcher-managed runtime
+session. Its `ready-for-human` role remains appropriate once that blocker is
+complete.
