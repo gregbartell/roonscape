@@ -22,11 +22,26 @@ A choice that changes what or how RoonScape presents without changing
 Roon state.
 _Avoid_: Roon Control
 
+**Fixture Mode**:
+A development workflow in which RoonScape presents predefined Fixture
+Scenarios without requiring current Roon state.
+_Avoid_: Fixture version, test mode
+
+**Fixture Scenario**:
+A predefined RoonScape presentation used for repeatable visual inspection in
+Fixture Mode.
+_Avoid_: Fixture screen, mode, screen
+
 **Idle**:
 The viewer-facing state used when an available Tracked Output has no current
 playback. It corresponds to Roon's stopped playback state and contains no Now
 Playing content.
 _Avoid_: Stopped in viewer-facing copy
+
+**Live Mode**:
+The normal RoonScape workflow in which its presentation reflects current state
+observed from Roon.
+_Avoid_: Live version, production mode
 
 **Now Playing**:
 The Roon-provided content currently associated with the Tracked Zone.
