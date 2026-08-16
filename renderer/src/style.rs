@@ -35,17 +35,9 @@ impl PresentationTransitionStyles {
     }
 
     pub fn diagnostics(self) -> Vec<DiagnosticsStyle> {
-        let mut styles = vec![diagnostics_style(
-            PresentationStyleLayer::Current,
-            self.current,
-        )];
-        if let Some(outgoing) = self.outgoing {
-            styles.push(diagnostics_style(
-                PresentationStyleLayer::Outgoing,
-                outgoing,
-            ));
-        }
-        styles
+        self.layers()
+            .map(|(layer, palette)| diagnostics_style(layer, palette))
+            .collect()
     }
 
     pub fn to_css(
@@ -53,21 +45,26 @@ impl PresentationTransitionStyles {
         layout: &GallerySplitLayout,
         full_field_layout: &FullFieldLayout,
     ) -> String {
-        let mut styles = presentation_palette_styles(
-            PresentationStyleLayer::Current,
-            self.current,
-            layout,
-            full_field_layout,
-        );
-        if let Some(outgoing) = self.outgoing {
+        let mut styles = String::new();
+        for (layer, palette) in self.layers() {
             styles.push_str(&presentation_palette_styles(
-                PresentationStyleLayer::Outgoing,
-                outgoing,
+                layer,
+                palette,
                 layout,
                 full_field_layout,
             ));
         }
+        for diagnostics in self.diagnostics() {
+            styles.push_str(&diagnostics_palette_styles(diagnostics));
+        }
         styles
+    }
+
+    fn layers(self) -> impl Iterator<Item = (PresentationStyleLayer, PresentationPalette)> {
+        std::iter::once((PresentationStyleLayer::Current, self.current)).chain(
+            self.outgoing
+                .map(|palette| (PresentationStyleLayer::Outgoing, palette)),
+        )
     }
 }
 
@@ -99,10 +96,6 @@ fn presentation_palette_styles(
     let accent = palette.accent.to_hex();
     let progress_track = palette.progress_track.to_hex();
     let progress_fill = palette.progress_fill.to_hex();
-    let diagnostics = diagnostics_style(layer, palette);
-    let diagnostics_field = diagnostics.field.to_hex();
-    let diagnostics_text = diagnostics.text.to_hex();
-    let diagnostics_border = diagnostics.border.to_hex();
     let shadow_offset = layout.artwork_shadow_offset_px;
     let shadow_blur = layout.artwork_shadow_blur_px;
     let accent_width = full_field_layout.accent_width_px;
@@ -120,7 +113,16 @@ fn presentation_palette_styles(
          .{class_name} .full-field-explanation {{ color: {muted_text}; }}\n\
          .{class_name} .identity-label {{ color: {muted_text}; }}\n\
          .{class_name} progressbar trough {{ background-color: {progress_track}; }}\n\
-         .{class_name} progressbar progress {{ background-color: {progress_fill}; }}\n\
-         .{class_name} .diagnostics {{ color: {diagnostics_text}; background-color: {diagnostics_field}; border-color: {diagnostics_border}; }}\n"
+         .{class_name} progressbar progress {{ background-color: {progress_fill}; }}\n"
+    )
+}
+
+fn diagnostics_palette_styles(style: DiagnosticsStyle) -> String {
+    let class_name = style.layer.class_name();
+    let field = style.field.to_hex();
+    let text = style.text.to_hex();
+    let border = style.border.to_hex();
+    format!(
+        ".{class_name} .diagnostics {{ color: {text}; background-color: {field}; border-color: {border}; }}\n"
     )
 }
