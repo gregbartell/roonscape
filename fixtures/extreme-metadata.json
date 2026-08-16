@@ -14,6 +14,13 @@
     "artist": "The International Assembly of Patient Astronomers, Metropolitan Chamber Players, Northern Coast Signal Choir, Cartographers Without Borders, and Friends",
     "album": "Collected Nocturnes for Temporary Cities, Fading Radio Signals, Unmapped Roads, Impossible Weather, Borrowed Telescopes, and All of the Quiet Rooms We Remember Only After Waking"
   },
-  "progress": null,
-  "artwork": null
+  "progress": {
+    "positionSeconds": 171,
+    "durationSeconds": 266,
+    "sampledAt": "2026-08-15T19:20:00Z"
+  },
+  "artwork": {
+    "revision": 3,
+    "path": "fixtures/artwork/playing.svg"
+  }
 }

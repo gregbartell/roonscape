@@ -14,7 +14,11 @@
     "artist": null,
     "album": null
   },
-  "progress": null,
+  "progress": {
+    "positionSeconds": 171,
+    "durationSeconds": 266,
+    "sampledAt": "2026-08-15T19:20:00Z"
+  },
   "artwork": {
     "revision": 3,
     "path": "fixtures/artwork/playing.svg"

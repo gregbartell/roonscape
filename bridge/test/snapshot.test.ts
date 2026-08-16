@@ -95,8 +95,19 @@ test("keeps the selected fictional release coherent across related fixtures", as
   });
 });
 
-test("uses the reference progress sample across playback fixtures", async () => {
-  for (const fixtureName of ["playing.json", "paused.json", "loading.json"]) {
+test("uses the reference progress sample unless timing is the named edge", async () => {
+  for (const fixtureName of [
+    "playing.json",
+    "paused.json",
+    "loading.json",
+    "missing-metadata.json",
+    "missing-artist.json",
+    "missing-album.json",
+    "missing-artwork.json",
+    "artwork-revision-changed.json",
+    "long-metadata.json",
+    "extreme-metadata.json",
+  ]) {
     const snapshot = await loadSnapshot(`fixtures/${fixtureName}`);
 
     assert.deepEqual(
@@ -172,6 +183,19 @@ test("loads missing, long, and extreme metadata fixtures without inventing value
   assert.ok((long.nowPlaying?.artist?.length ?? 0) > 80);
   assert.ok((long.nowPlaying?.album?.length ?? 0) > 80);
   assert.ok((extreme.nowPlaying?.title?.length ?? 0) > 250);
+});
+
+test("metadata-only edge fixtures retain the reference artwork", async () => {
+  const referenceArtwork = {
+    revision: 3,
+    path: "fixtures/artwork/playing.svg",
+  };
+
+  for (const fixtureName of ["long-metadata.json", "extreme-metadata.json"]) {
+    const snapshot = await loadSnapshot(`fixtures/${fixtureName}`);
+
+    assert.deepEqual(snapshot.artwork, referenceArtwork);
+  }
 });
 
 test("loads non-square artwork and long identity edge-case fixtures", async () => {
