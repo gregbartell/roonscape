@@ -5,14 +5,15 @@ use gtk::gdk;
 use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, FullFieldLayout,
-    FullFieldLineLayout, FullFieldPresentation, IdentityLineLayout, IdentityPlacement,
-    InactivityLayout, InactivityTransform, MetadataFontSizes, MetadataLineLayout,
-    MetadataTypography, NowPlayingField, NowPlayingLayout, NowPlayingPresentation, NowPlayingRole,
-    Presentation, PresentationPalette, PresentationProgress, PresentationRevision,
-    PresentationStatus, PresentationStatusEmphasis, PresentationStatusLayout,
-    PresentationStyleLayer, PresentationTransition, PresentationTransitionStyles, TextOverflow,
-    TypographyPair, TypographyStyles, Viewport, metadata_layout, resolve_presentation,
+    ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
+    ArtworkLayout, FullFieldLayout, FullFieldLineLayout, FullFieldPresentation, IdentityLineLayout,
+    IdentityPlacement, InactivityLayout, InactivityTransform, MetadataFontSizes,
+    MetadataLineLayout, MetadataTypography, NowPlayingField, NowPlayingLayout,
+    NowPlayingPresentation, NowPlayingRole, Presentation, PresentationPalette,
+    PresentationProgress, PresentationRevision, PresentationStatus, PresentationStatusEmphasis,
+    PresentationStatusLayout, PresentationStyleLayer, PresentationTransition,
+    PresentationTransitionStyles, TextOverflow, TypographyPair, TypographyStyles, Viewport,
+    metadata_layout, resolve_presentation,
 };
 
 use crate::status_symbol::presentation_status_symbol;
@@ -68,9 +69,17 @@ struct RenderedMetadata {
 struct RenderedNowPlaying {
     content: gtk::Box,
     artwork_column: gtk::Box,
-    artwork_frame: gtk::AspectFrame,
+    artwork: RenderedArtwork,
     metadata_slot: gtk::Box,
     metadata: RenderedMetadata,
+}
+
+struct RenderedArtwork {
+    reservation: gtk::AspectFrame,
+    decoration: gtk::AspectFrame,
+    surface: gtk::Picture,
+    source: Option<gdk_pixbuf::Pixbuf>,
+    layout: ArtworkLayout,
 }
 
 struct RenderedFullField {
@@ -437,12 +446,8 @@ fn now_playing(
     artwork_column.add_css_class("artwork-column");
     artwork_column.set_hexpand(false);
     artwork_column.set_vexpand(true);
-    let artwork_frame = artwork(
-        presentation,
-        repository_root,
-        ArtworkLayout::for_presentation(presentation),
-    );
-    artwork_column.append(&artwork_frame);
+    let artwork = artwork(presentation, repository_root);
+    artwork_column.append(&artwork.reservation);
 
     let metadata = metadata(presentation, &layout);
     let metadata_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -457,7 +462,7 @@ fn now_playing(
     let now_playing = RenderedNowPlaying {
         content,
         artwork_column,
-        artwork_frame,
+        artwork,
         metadata_slot,
         metadata,
     };
@@ -493,21 +498,27 @@ fn presentation_layer(
     (root, diagnostics)
 }
 
-fn artwork(
-    presentation: &NowPlayingPresentation,
-    repository_root: &Path,
-    layout: ArtworkLayout,
-) -> gtk::AspectFrame {
+fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> RenderedArtwork {
+    let source = presentation
+        .artwork_path
+        .as_deref()
+        .and_then(|path| gdk_pixbuf::Pixbuf::from_file(repository_root.join(path)).ok());
+    let intrinsic_dimensions = source.as_ref().map(|artwork| {
+        ArtworkDimensions::new(
+            artwork
+                .width()
+                .try_into()
+                .expect("decoded artwork width should be positive"),
+            artwork
+                .height()
+                .try_into()
+                .expect("decoded artwork height should be positive"),
+        )
+    });
+    let layout = ArtworkLayout::for_presentation(presentation, intrinsic_dimensions);
     let picture = match layout.content {
         ArtworkContent::Supplied => {
-            let picture = gtk::Picture::for_filename(
-                repository_root.join(
-                    presentation
-                        .artwork_path
-                        .as_deref()
-                        .expect("supplied artwork layout requires an artwork path"),
-                ),
-            );
+            let picture = gtk::Picture::new();
             picture.set_alternative_text(Some("Current album artwork"));
             picture
         }
@@ -528,14 +539,37 @@ fn artwork(
     let (horizontal_alignment, vertical_alignment) = match layout.alignment {
         ArtworkAlignment::Center => (0.5, 0.5),
     };
-    let frame = gtk::AspectFrame::new(horizontal_alignment, vertical_alignment, 1.0, false);
-    frame.add_css_class("artwork-frame");
-    frame.set_halign(gtk::Align::Start);
-    frame.set_valign(gtk::Align::Center);
-    frame.set_hexpand(false);
-    frame.set_vexpand(false);
-    frame.set_child(Some(&picture));
-    frame
+    let decoration_ratio = match layout.decoration {
+        ArtworkDecoration::ContainedImage(dimensions) => {
+            dimensions.width_px as f32 / dimensions.height_px as f32
+        }
+        ArtworkDecoration::QuietSquareField => 1.0,
+    };
+    let decoration = gtk::AspectFrame::new(
+        horizontal_alignment,
+        vertical_alignment,
+        decoration_ratio,
+        false,
+    );
+    decoration.set_hexpand(true);
+    decoration.set_vexpand(true);
+    decoration.set_child(Some(&picture));
+
+    let reservation = gtk::AspectFrame::new(horizontal_alignment, vertical_alignment, 1.0, false);
+    reservation.add_css_class("artwork-reservation");
+    reservation.set_halign(gtk::Align::Start);
+    reservation.set_valign(gtk::Align::Center);
+    reservation.set_hexpand(false);
+    reservation.set_vexpand(false);
+    reservation.set_child(Some(&decoration));
+
+    RenderedArtwork {
+        reservation,
+        decoration,
+        surface: picture,
+        source,
+        layout,
+    }
 }
 
 fn metadata(
@@ -673,16 +707,44 @@ impl RenderedNowPlaying {
 
         self.artwork_column
             .set_width_request(dimension(layout.artwork_column_width_px));
-        self.artwork_frame.set_size_request(
-            dimension(layout.artwork_field_width_px),
-            dimension(layout.artwork_field_height_px),
-        );
+        self.artwork.apply_layout(ArtworkDimensions::new(
+            layout.artwork_field_width_px,
+            layout.artwork_field_height_px,
+        ));
         self.metadata_slot
             .set_width_request(dimension(layout.metadata_column_width_px));
         self.metadata
             .root
             .set_margin_end(dimension(layout.metadata_right_inset_px));
         self.metadata.apply_layout(layout);
+    }
+}
+
+impl RenderedArtwork {
+    fn apply_layout(&self, reservation: ArtworkDimensions) {
+        self.reservation.set_size_request(
+            dimension(reservation.width_px),
+            dimension(reservation.height_px),
+        );
+        let visible = self.layout.visible_decoration(reservation);
+        self.decoration
+            .set_ratio(visible.width_px as f32 / visible.height_px as f32);
+        self.surface
+            .set_size_request(dimension(visible.width_px), dimension(visible.height_px));
+        if let Some(source) = self.source.as_ref() {
+            let image = self
+                .layout
+                .fitted_image(reservation)
+                .expect("supplied artwork should have fitted image dimensions");
+            let scaled = source
+                .scale_simple(
+                    dimension(image.width_px),
+                    dimension(image.height_px),
+                    gdk_pixbuf::InterpType::Bilinear,
+                )
+                .expect("positive artwork dimensions should produce a scaled image");
+            self.surface.set_pixbuf(Some(&scaled));
+        }
     }
 }
 

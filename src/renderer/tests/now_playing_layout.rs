@@ -2,12 +2,13 @@
 mod representative_viewports;
 mod support;
 
-use std::path::Path;
+use std::{fs, path::Path};
 
 use roonscape_renderer::{
-    ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, IdentityLineLayout,
-    IdentityPlacement, NowPlayingField, NowPlayingLayout, NowPlayingRole, Presentation,
-    TextOverflow, parse_snapshot, presentation_from_snapshot,
+    ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
+    ArtworkLayout, ArtworkReference, IdentityLineLayout, IdentityPlacement, NowPlayingField,
+    NowPlayingLayout, NowPlayingRole, Presentation, TextOverflow, parse_snapshot,
+    presentation_from_snapshot, resolve_presentation,
 };
 
 fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation {
@@ -29,6 +30,43 @@ fn now_playing_from_snapshot(contents: &str) -> roonscape_renderer::NowPlayingPr
         panic!("available snapshot should produce Now Playing");
     };
     presentation
+}
+
+fn artwork_dimensions(fixture_name: &str) -> ArtworkDimensions {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../shared/fixtures/artwork")
+        .join(fixture_name);
+    let artwork = gdk_pixbuf::Pixbuf::from_file(path).expect("artwork fixture should be decodable");
+    ArtworkDimensions::new(
+        artwork
+            .width()
+            .try_into()
+            .expect("artwork width should be positive"),
+        artwork
+            .height()
+            .try_into()
+            .expect("artwork height should be positive"),
+    )
+}
+
+fn now_playing_with_unusable_artwork() -> roonscape_renderer::NowPlayingPresentation {
+    let repository_root = tempfile::tempdir().expect("temporary repository root should be created");
+    fs::write(repository_root.path().join("broken.jpg"), b"not an image")
+        .expect("unusable artwork fixture should be written");
+    let mut snapshot =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    snapshot.artwork = Some(ArtworkReference {
+        revision: 42,
+        path: "broken.jpg".to_owned(),
+    });
+    let presentation = presentation_from_snapshot(&snapshot)
+        .expect("snapshot with unusable artwork should produce a presentation");
+    let Presentation::NowPlaying(now_playing) =
+        resolve_presentation(&presentation, repository_root.path()).presentation
+    else {
+        panic!("usable metadata should retain Now Playing layout");
+    };
+    now_playing
 }
 
 #[test]
@@ -97,47 +135,117 @@ fn contains_the_artwork_and_its_depth_at_representative_landscape_viewports() {
 }
 
 #[test]
-fn keeps_imperfect_artwork_inside_the_stable_square_field() {
-    let missing = now_playing("missing-artwork.json");
+fn fits_supplied_decoration_to_the_actual_image_bounds() {
     let non_square = now_playing("non-square-artwork.json");
-    let artwork_path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/non-square.svg");
-    let artwork = gdk_pixbuf::Pixbuf::from_file(artwork_path)
-        .expect("the non-square artwork fixture should be decodable");
+    let intrinsic_dimensions = artwork_dimensions("non-square.svg");
 
-    assert_ne!(artwork.width(), artwork.height());
-
-    assert_eq!(
-        ArtworkLayout::for_presentation(&missing),
-        ArtworkLayout {
-            content: ArtworkContent::QuietField,
-            fit: ArtworkFit::Contain,
-            alignment: ArtworkAlignment::Center,
-        }
+    assert_ne!(
+        intrinsic_dimensions.width_px,
+        intrinsic_dimensions.height_px
     );
+    let layout = ArtworkLayout::for_presentation(&non_square, Some(intrinsic_dimensions));
     assert_eq!(
-        ArtworkLayout::for_presentation(&non_square),
+        layout,
         ArtworkLayout {
             content: ArtworkContent::Supplied,
             fit: ArtworkFit::Contain,
             alignment: ArtworkAlignment::Center,
+            decoration: ArtworkDecoration::ContainedImage(intrinsic_dimensions),
         }
     );
+    assert_eq!(
+        layout.fitted_image(ArtworkDimensions::new(800, 800)),
+        Some(ArtworkDimensions::new(798, 449)),
+        "the image should fit inside its one-pixel border",
+    );
+    assert_eq!(
+        layout.visible_decoration(ArtworkDimensions::new(800, 800)),
+        ArtworkDimensions::new(800, 451),
+        "the visible decoration should add the border around the contained image",
+    );
+}
+
+#[test]
+fn keeps_extreme_fitted_dimensions_visible() {
+    let non_square = now_playing("non-square-artwork.json");
+    let reservation = ArtworkDimensions::new(566, 566);
+
+    for (intrinsic, expected) in [
+        (
+            ArtworkDimensions::new(2000, 1),
+            ArtworkDimensions::new(564, 1),
+        ),
+        (
+            ArtworkDimensions::new(1, 2000),
+            ArtworkDimensions::new(1, 564),
+        ),
+    ] {
+        assert_eq!(
+            ArtworkLayout::for_presentation(&non_square, Some(intrinsic)).fitted_image(reservation),
+            Some(expected),
+            "valid artwork should retain at least one visible pixel on each axis",
+        );
+    }
+}
+
+#[test]
+fn preserves_square_decoration_for_square_and_missing_artwork() {
+    let square = now_playing("playing.json");
+    let missing = now_playing("missing-artwork.json");
+    let reservation = ArtworkDimensions::new(800, 800);
+    assert_eq!(
+        ArtworkLayout::for_presentation(&missing, None),
+        ArtworkLayout {
+            content: ArtworkContent::QuietField,
+            fit: ArtworkFit::Contain,
+            alignment: ArtworkAlignment::Center,
+            decoration: ArtworkDecoration::QuietSquareField,
+        }
+    );
+    assert_eq!(
+        ArtworkLayout::for_presentation(&missing, None).visible_decoration(reservation),
+        reservation,
+        "the quiet fallback should decorate the complete square field",
+    );
+    let square_dimensions = artwork_dimensions("playing.svg");
+    assert_eq!(
+        ArtworkLayout::for_presentation(&square, Some(square_dimensions))
+            .visible_decoration(reservation),
+        reservation,
+        "square supplied artwork should retain its framed dimensions",
+    );
+}
+
+#[test]
+fn keeps_the_square_reservation_invariant_across_artwork_conditions() {
+    let square = now_playing("playing.json");
+    let non_square = now_playing("non-square-artwork.json");
+    let missing = now_playing("missing-artwork.json");
+    let unusable = now_playing_with_unusable_artwork();
 
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
-        let missing_geometry = NowPlayingLayout::for_presentation(&missing, viewport);
-        let non_square_geometry = NowPlayingLayout::for_presentation(&non_square, viewport);
-        assert_eq!(
-            (
-                missing_geometry.artwork_field_width_px,
-                missing_geometry.artwork_field_height_px,
-            ),
-            (
-                non_square_geometry.artwork_field_width_px,
-                non_square_geometry.artwork_field_height_px,
-            ),
-            "imperfect artwork must not change the Now Playing geometry at {viewport:?}"
+        let square_geometry = NowPlayingLayout::for_presentation(&square, viewport);
+        let expected_reservation = (
+            square_geometry.artwork_column_width_px,
+            square_geometry.artwork_field_width_px,
+            square_geometry.artwork_field_height_px,
         );
+        for (condition, presentation) in [
+            ("non-square", &non_square),
+            ("missing", &missing),
+            ("unusable", &unusable),
+        ] {
+            let geometry = NowPlayingLayout::for_presentation(presentation, viewport);
+            assert_eq!(
+                (
+                    geometry.artwork_column_width_px,
+                    geometry.artwork_field_width_px,
+                    geometry.artwork_field_height_px,
+                ),
+                expected_reservation,
+                "{condition} artwork must not change the reserved square geometry at {viewport:?}",
+            );
+        }
     }
 }
 

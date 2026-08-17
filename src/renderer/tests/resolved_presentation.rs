@@ -4,9 +4,9 @@ use std::fs;
 use std::time::Duration;
 
 use roonscape_renderer::{
-    ArtworkContent, ArtworkLayout, ArtworkReference, Presentation, PresentationPalette,
-    PresentationStatusEmphasis, PresentationStatusMotion, PresentationStatusSymbol, parse_snapshot,
-    presentation_from_snapshot, resolve_presentation,
+    ArtworkContent, ArtworkDecoration, ArtworkLayout, ArtworkReference, Presentation,
+    PresentationPalette, PresentationStatusEmphasis, PresentationStatusMotion,
+    PresentationStatusSymbol, parse_snapshot, presentation_from_snapshot, resolve_presentation,
 };
 
 #[test]
@@ -227,9 +227,11 @@ fn metadata_with_unreadable_artwork_resolves_to_the_quiet_artwork_field() {
 
     assert_eq!(now_playing.artwork_revision, None);
     assert_eq!(now_playing.artwork_path, None);
+    let artwork_layout = ArtworkLayout::for_presentation(&now_playing, None);
+    assert_eq!(artwork_layout.content, ArtworkContent::QuietField);
     assert_eq!(
-        ArtworkLayout::for_presentation(&now_playing).content,
-        ArtworkContent::QuietField,
+        artwork_layout.decoration,
+        ArtworkDecoration::QuietSquareField,
     );
     assert_eq!(resolved.palette, PresentationPalette::fallback());
 }

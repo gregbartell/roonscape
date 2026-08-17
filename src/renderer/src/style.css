@@ -2,16 +2,6 @@ window {
   background: #000000;
 }
 
-.artwork {
-  border-width: 1px;
-  border-style: solid;
-}
-
-.artwork-missing {
-  border-width: 1px;
-  border-style: solid;
-}
-
 .status-symbol-container {
   border: 1px solid alpha(currentColor, 0.48);
   border-radius: 999px;

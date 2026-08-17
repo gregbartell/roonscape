@@ -71,7 +71,7 @@ peer representative viewports: 1280x720, 1600x1200, 1920x1200, 2560x1080, and
 | Long metadata            | `long-metadata.json`          | Responsive wrapping and reduction              |
 | Extreme metadata         | `extreme-metadata.json`       | Final line bounds and ellipsis                 |
 | Indeterminate progress   | `indeterminate-progress.json` | Timeline omitted                               |
-| Non-square artwork       | `non-square-artwork.json`     | Centered contain fit without cropping          |
+| Non-square artwork       | `non-square-artwork.json`     | Image-shaped frame in a reserved square        |
 | Light artwork            | `light-artwork.json`          | Readable light artwork-derived palette         |
 
 Treat all five viewports as peers. Together they exercise the minimum
@@ -108,9 +108,13 @@ instead of approving a scenario at only one size.
 - **Hierarchy:** Title dominates; Artist, Album, status, progress, and utility
   text step down deliberately. Missing fields close up cleanly, and long or
   extreme values remain readable within their line bounds.
-- **Artwork fit:** Square artwork is complete, non-square artwork is centered
-  and contained, and missing artwork preserves a quiet square field without an
-  invented icon.
+- **Artwork fit and decoration:** The artwork column reserves the same
+  imaginary square for square, non-square, missing, and unusable artwork.
+  Square supplied artwork fills that reservation with its existing one-pixel
+  border and shadow. Non-square supplied artwork is centered and contained;
+  its surrounding reservation is transparent, and its visible surface,
+  one-pixel border, and shadow hug the image rectangle. Missing or unusable
+  artwork preserves a quiet decorated square field without an invented icon.
 - **Palette:** Dark and light artwork recolor the complete presentation. The
   fixed no-art palette remains deliberate, and text, accent, progress, and
   diagnostics roles remain readable.

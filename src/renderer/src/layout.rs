@@ -96,24 +96,124 @@ pub enum ArtworkContent {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArtworkDimensions {
+    pub width_px: u32,
+    pub height_px: u32,
+}
+
+impl ArtworkDimensions {
+    pub const fn new(width_px: u32, height_px: u32) -> Self {
+        assert!(width_px > 0, "artwork width must be positive");
+        assert!(height_px > 0, "artwork height must be positive");
+        Self {
+            width_px,
+            height_px,
+        }
+    }
+
+    fn contained_within(self, reservation: Self) -> Self {
+        let width_constrained = u64::from(self.width_px) * u64::from(reservation.height_px)
+            >= u64::from(self.height_px) * u64::from(reservation.width_px);
+        if width_constrained {
+            Self::new(
+                reservation.width_px,
+                rounded_scale(reservation.width_px, self.height_px, self.width_px)
+                    .max(1)
+                    .min(reservation.height_px),
+            )
+        } else {
+            Self::new(
+                rounded_scale(reservation.height_px, self.width_px, self.height_px)
+                    .max(1)
+                    .min(reservation.width_px),
+                reservation.height_px,
+            )
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArtworkDecoration {
+    ContainedImage(ArtworkDimensions),
+    QuietSquareField,
+}
+
+pub(crate) const ARTWORK_DECORATION_BORDER_WIDTH_PX: u32 = 1;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArtworkLayout {
     pub content: ArtworkContent,
     pub fit: ArtworkFit,
     pub alignment: ArtworkAlignment,
+    pub decoration: ArtworkDecoration,
 }
 
 impl ArtworkLayout {
-    pub fn for_presentation(presentation: &NowPlayingPresentation) -> Self {
+    pub fn for_presentation(
+        presentation: &NowPlayingPresentation,
+        intrinsic_dimensions: Option<ArtworkDimensions>,
+    ) -> Self {
+        let (content, decoration) = match (presentation.artwork_path.as_ref(), intrinsic_dimensions)
+        {
+            (Some(_), Some(dimensions)) => (
+                ArtworkContent::Supplied,
+                ArtworkDecoration::ContainedImage(dimensions),
+            ),
+            _ => (
+                ArtworkContent::QuietField,
+                ArtworkDecoration::QuietSquareField,
+            ),
+        };
         Self {
-            content: if presentation.artwork_path.is_some() {
-                ArtworkContent::Supplied
-            } else {
-                ArtworkContent::QuietField
-            },
+            content,
             fit: ArtworkFit::Contain,
             alignment: ArtworkAlignment::Center,
+            decoration,
         }
     }
+
+    pub fn fitted_image(self, reservation: ArtworkDimensions) -> Option<ArtworkDimensions> {
+        let border_extent_px = self.border_extent_px();
+        assert!(
+            reservation.width_px > border_extent_px,
+            "artwork reservation must contain its border"
+        );
+        assert!(
+            reservation.height_px > border_extent_px,
+            "artwork reservation must contain its border"
+        );
+        match (self.fit, self.decoration) {
+            (ArtworkFit::Contain, ArtworkDecoration::ContainedImage(dimensions)) => {
+                Some(dimensions.contained_within(ArtworkDimensions::new(
+                    reservation.width_px - border_extent_px,
+                    reservation.height_px - border_extent_px,
+                )))
+            }
+            (ArtworkFit::Contain, ArtworkDecoration::QuietSquareField) => None,
+        }
+    }
+
+    pub fn visible_decoration(self, reservation: ArtworkDimensions) -> ArtworkDimensions {
+        match self.fitted_image(reservation) {
+            Some(image) => {
+                let border_extent_px = self.border_extent_px();
+                ArtworkDimensions::new(
+                    image.width_px + border_extent_px,
+                    image.height_px + border_extent_px,
+                )
+            }
+            None => reservation,
+        }
+    }
+
+    fn border_extent_px(self) -> u32 {
+        ARTWORK_DECORATION_BORDER_WIDTH_PX * 2
+    }
+}
+
+fn rounded_scale(axis_px: u32, numerator: u32, denominator: u32) -> u32 {
+    let scaled = u64::from(axis_px) * u64::from(numerator);
+    ((scaled + u64::from(denominator) / 2) / u64::from(denominator)) as u32
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

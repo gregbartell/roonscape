@@ -1,4 +1,7 @@
-use crate::{FullFieldLayout, NowPlayingLayout, PresentationPalette, Rgb, TypographyPair};
+use crate::{
+    FullFieldLayout, NowPlayingLayout, PresentationPalette, Rgb, TypographyPair,
+    layout::ARTWORK_DECORATION_BORDER_WIDTH_PX,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PresentationStyleLayer {
@@ -115,13 +118,13 @@ fn presentation_palette_styles(
     let progress_fill = palette.progress_fill.to_hex();
     let shadow_offset = layout.artwork_shadow_offset_px;
     let shadow_blur = layout.artwork_shadow_blur_px;
+    let artwork_border_width = ARTWORK_DECORATION_BORDER_WIDTH_PX;
     let accent_width = full_field_layout.accent_width_px;
     format!(
         ".{class_name} {{ background-color: {background}; color: {primary_text}; }}\n\
          .{class_name}.now-playing {{ background-image: linear-gradient(118deg, {artwork_field} 0%, {background} 62%, {metadata_field} 100%); }}\n\
-         .{class_name} .artwork-frame {{ box-shadow: 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.72); }}\n\
-         .{class_name} .artwork {{ border-color: alpha({primary_text}, 0.16); background-color: {artwork_field}; }}\n\
-         .{class_name} .artwork-missing {{ border-color: alpha({muted_text}, 0.22); background-image: linear-gradient(142deg, alpha({muted_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16); }}\n\
+         .{class_name} .artwork {{ border: {artwork_border_width}px solid alpha({primary_text}, 0.16); background-color: {artwork_field}; box-shadow: 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.72); }}\n\
+         .{class_name} .artwork-missing {{ border-color: alpha({muted_text}, 0.22); background-image: linear-gradient(142deg, alpha({muted_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16), 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.72); }}\n\
          .{class_name}.full-field .full-copy {{ border-left: {accent_width}px solid {accent}; }}\n\
          .{class_name} .status-full, .{class_name} .status-glow {{ color: {accent}; }}\n\
          .{class_name} .status-muted {{ color: {muted_accent}; }}\n\

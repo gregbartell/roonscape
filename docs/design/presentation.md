@@ -27,10 +27,15 @@ and high-resolution displays rather than treating one viewport as canonical.
 
 ## Artwork and palette
 
-Artwork is always shown completely. Square images fill the square artwork
-field; non-square images are centered and contained without cropping. When
-Now Playing metadata exists without usable artwork, a restrained square field
-preserves the composition without inventing an icon or label.
+Artwork composition always reserves the same imaginary square field. Supplied
+artwork is shown completely within that square: square images fill it, while
+non-square images are centered and contained without cropping. The unused area
+around a supplied non-square image is transparent. Its visible surface,
+one-pixel border, and shadow follow the contained image rectangle rather than
+revealing the reserved square. Square supplied artwork keeps the same framed
+appearance. When Now Playing metadata exists without usable artwork, a
+restrained square field preserves the composition without inventing an icon or
+label.
 
 Usable artwork supplies the color basis for the complete presentation,
 including its background, artwork field, metadata field, text, accent,
