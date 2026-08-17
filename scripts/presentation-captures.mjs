@@ -32,6 +32,13 @@ const REPRESENTATIVES = [
     false,
     "dark",
   ),
+  representative(
+    "identity-baselines",
+    "long-identities.json",
+    "automatic",
+    false,
+    "dark",
+  ),
   representative("dark-diagnostics", "playing.json", "automatic", true, "dark"),
   representative(
     "light-diagnostics",

@@ -374,7 +374,7 @@ fn full_field(
     let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
     copy.add_css_class("full-copy");
     copy.set_halign(gtk::Align::Center);
-    copy.set_valign(gtk::Align::Center);
+    copy.set_valign(gtk::Align::Start);
 
     let message = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let rendered_status = presentation_status(&presentation.status);
@@ -768,6 +768,11 @@ impl RenderedArtwork {
 impl RenderedFullField {
     fn apply_layout(&self, layout: &FullFieldLayout) {
         self.copy.set_width_request(dimension(layout.copy_width_px));
+        self.copy.set_margin_top(dimension(
+            layout
+                .artwork_field_anchors
+                .presentation_status_margin_top_px(0),
+        ));
         self.message
             .set_margin_start(dimension(layout.accent_padding_px));
         self.presentation_status
@@ -787,7 +792,9 @@ impl RenderedFullField {
             identity
                 .root
                 .set_margin_end(gutter + dimension(layout.identity_right_inset_px));
-            identity.root.set_margin_bottom(gutter);
+            identity.root.set_margin_bottom(dimension(
+                layout.artwork_field_anchors.identity_margin_bottom_px(0),
+            ));
             identity
                 .root
                 .set_width_request(dimension(layout.identity_width_px));
@@ -800,9 +807,11 @@ impl RenderedMetadata {
     fn apply_layout(&self, layout: &NowPlayingLayout) {
         self.presentation_status
             .apply_layout(layout.presentation_status);
-        self.presentation_status
-            .root
-            .set_margin_top(dimension(layout.status_top_inset_px));
+        self.presentation_status.root.set_margin_top(dimension(
+            layout
+                .artwork_field_anchors
+                .presentation_status_margin_top_px(layout.outer_gutter_px),
+        ));
 
         if let Some(title) = self.title.as_ref() {
             title.apply_font_sizes(layout.typography.title);
@@ -849,6 +858,11 @@ impl RenderedMetadata {
 
         self.identity
             .apply_layout(layout.identity_gap_px, layout.typography.identity_px);
+        self.identity.root.set_margin_bottom(dimension(
+            layout
+                .artwork_field_anchors
+                .identity_margin_bottom_px(layout.outer_gutter_px),
+        ));
     }
 }
 
@@ -994,6 +1008,8 @@ fn tracked_identity(
     output.set_halign(gtk::Align::Fill);
     let output_label = metadata_label("OUTPUT", "identity-label");
     let output_name = identity_name(tracked_output, line_layout);
+    output_label.set_valign(gtk::Align::Baseline);
+    output_name.set_valign(gtk::Align::Baseline);
     output.append(&output_label);
     output.append(&output_name);
 
@@ -1001,6 +1017,8 @@ fn tracked_identity(
     zone.set_halign(gtk::Align::End);
     let zone_label = metadata_label("ZONE", "identity-label");
     let zone_name = identity_name(tracked_zone, line_layout);
+    zone_label.set_valign(gtk::Align::Baseline);
+    zone_name.set_valign(gtk::Align::Baseline);
     zone_name.set_xalign(1.0);
     zone.append(&zone_label);
     zone.append(&zone_name);

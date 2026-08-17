@@ -14,15 +14,23 @@ its shadow to remain inside the display. The narrower right side is a dedicated
 metadata column ordered as Presentation Status, Title, Artist, Album, progress
 or indeterminate activity, and the Output and Zone identity row.
 
+Presentation Status begins a responsive inset below the imaginary square
+artwork field's top edge. The complete Output and Zone identity row ends the
+identical inset above its bottom edge. These symmetric anchors use the reserved
+square, not the viewport or the visible bounds of supplied artwork. They remain
+stable for square, non-square, missing, and unusable artwork and are shared by
+Now Playing and every available full-field presentation.
+
 Title is the dominant text. Artist and Album step down in size, followed by
 Presentation Status, progress or activity copy, and identity labels. Missing
 metadata closes up cleanly instead of leaving placeholders. Long values use
 the first fitting preferred, reduced, or minimum readable font tier, then
 ellipsize at the end when content still exceeds bounds of five Title lines,
 three Artist lines, and three Album lines. Output and Zone names remain on one
-line and ellipsize only as a defensive fallback. Metadata uses no scrolling,
-marquee motion, or pagination and never shrinks below the established readable
-font floors.
+ellipsize only as a defensive fallback. Each identity label shares one text
+baseline with its name, and content length does not move or resize the stable
+row. Metadata uses no scrolling, marquee motion, or pagination and never
+shrinks below the established readable font floors.
 
 The composition uses the complete landscape field without letterboxing.
 Artwork and metadata keep their relative emphasis on ordinary, tall, wide,
@@ -131,7 +139,8 @@ occupies one complete line across the supported landscape range.
 Available states show the Tracked Output and current Tracked Zone at one
 stable bottom-right position, under the viewer-facing labels **Output** and
 **Zone**. The row stays in that position across Now Playing and available
-full-field states. Awaiting Roon Authorization, disconnected, and
+full-field states, and Presentation Status shares the same imaginary-square
+top anchor in both forms. Awaiting Roon Authorization, disconnected, and
 output-unavailable states omit the row so potentially stale identities are
 never shown.
 

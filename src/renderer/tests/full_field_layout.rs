@@ -1,9 +1,11 @@
 #[path = "support/representative_viewports.rs"]
 mod representative_viewports;
+mod support;
 
 use roonscape_renderer::{
     FullFieldLayout, FullFieldLineLayout, IdentityLineLayout, IdentityPlacement, NowPlayingLayout,
-    TextOverflow, register_packaged_fallback_fonts,
+    Presentation, TextOverflow, parse_snapshot, presentation_from_snapshot,
+    register_packaged_fallback_fonts,
 };
 
 #[test]
@@ -44,6 +46,63 @@ fn bounds_full_field_states_and_identities_at_representative_landscape_viewports
                 <= viewport.width_px,
             "the identity row should remain inside the field at {viewport:?}"
         );
+    }
+}
+
+#[test]
+fn shares_the_imaginary_square_anchors_with_now_playing() {
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let full_field = FullFieldLayout::for_viewport(viewport);
+        let now_playing = NowPlayingLayout::for_viewport(viewport);
+
+        assert_eq!(
+            full_field.artwork_field_anchors, now_playing.artwork_field_anchors,
+            "Presentation Status and the complete Output and Zone row should share one anchor at {viewport:?}",
+        );
+    }
+}
+
+#[test]
+fn available_presentation_forms_use_the_shared_status_and_identity_anchors() {
+    let fixtures = [
+        "playing.json",
+        "paused.json",
+        "loading.json",
+        "stopped.json",
+        "loading-empty.json",
+        "playing-empty.json",
+        "paused-empty.json",
+    ];
+
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let shared = NowPlayingLayout::for_viewport(viewport);
+        let expected = shared.artwork_field_anchors;
+
+        for fixture in fixtures {
+            let snapshot = parse_snapshot(&support::fixture(fixture))
+                .expect("available layout fixture should satisfy the shared contract");
+            let presentation = presentation_from_snapshot(&snapshot)
+                .expect("available layout fixture should produce a presentation");
+            let anchors = match presentation {
+                Presentation::NowPlaying(presentation) => {
+                    let layout = NowPlayingLayout::for_presentation(&presentation, viewport);
+                    layout.artwork_field_anchors
+                }
+                Presentation::FullField(presentation) => {
+                    assert!(
+                        presentation.identity.is_some(),
+                        "{fixture} should retain the Tracked Output and Tracked Zone",
+                    );
+                    let layout = FullFieldLayout::for_viewport(viewport);
+                    layout.artwork_field_anchors
+                }
+            };
+
+            assert_eq!(
+                anchors, expected,
+                "{fixture} should use the shared square anchors at {viewport:?}",
+            );
+        }
     }
 }
 

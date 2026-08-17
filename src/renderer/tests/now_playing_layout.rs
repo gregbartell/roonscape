@@ -250,6 +250,64 @@ fn keeps_the_square_reservation_invariant_across_artwork_conditions() {
 }
 
 #[test]
+fn anchors_status_and_identity_to_the_reserved_square_at_every_viewport() {
+    let presentations = [
+        now_playing("playing.json"),
+        now_playing("non-square-artwork.json"),
+        now_playing("missing-artwork.json"),
+        now_playing_with_unusable_artwork(),
+        now_playing("long-identities.json"),
+    ];
+
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        for presentation in &presentations {
+            let layout = NowPlayingLayout::for_presentation(presentation, viewport);
+            let anchors = layout.artwork_field_anchors;
+            let expected_artwork_top_viewport_y_px = layout.outer_gutter_px;
+            let expected_artwork_bottom_viewport_y_px =
+                expected_artwork_top_viewport_y_px + layout.artwork_field_height_px;
+
+            assert_eq!(
+                (
+                    anchors.artwork_top_viewport_y_px,
+                    anchors.presentation_status_top_viewport_y_px,
+                    anchors.identity_bottom_viewport_y_px,
+                    anchors.artwork_bottom_viewport_y_px,
+                ),
+                (
+                    expected_artwork_top_viewport_y_px,
+                    expected_artwork_top_viewport_y_px + anchors.responsive_inset_px,
+                    expected_artwork_bottom_viewport_y_px - anchors.responsive_inset_px,
+                    expected_artwork_bottom_viewport_y_px,
+                ),
+                "the status and identity anchors should use the rendered square reservation at {viewport:?}",
+            );
+        }
+    }
+}
+
+#[test]
+fn converts_the_square_anchors_to_metadata_container_margins() {
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = NowPlayingLayout::for_viewport(viewport);
+        let anchors = layout.artwork_field_anchors;
+
+        assert_eq!(
+            anchors.presentation_status_margin_top_px(layout.outer_gutter_px),
+            anchors.responsive_inset_px,
+            "the metadata container should preserve the status square inset at {viewport:?}",
+        );
+        assert_eq!(
+            anchors.identity_margin_bottom_px(layout.outer_gutter_px),
+            viewport.height_px + anchors.responsive_inset_px
+                - layout.outer_gutter_px * 2
+                - layout.artwork_field_height_px,
+            "the metadata container should preserve the identity square inset at {viewport:?}",
+        );
+    }
+}
+
+#[test]
 fn replaces_the_determinate_timeline_with_activity_for_indeterminate_playing() {
     let determinate = now_playing("playing.json");
     let indeterminate = now_playing("indeterminate-progress.json");

@@ -41,6 +41,7 @@ output directory must be absent or empty:
 
 ```sh
 npm run capture:presentations -- --only playing
+npm run capture:presentations -- --only identity-baselines
 npm run capture:presentations -- --viewport 1600x1200
 npm run capture:presentations -- --only playing --viewport 1600x1200
 npm run capture:presentations -- --output /tmp/codex/roonscape/presentation-review
@@ -78,15 +79,18 @@ Treat all five viewports as peers. Together they exercise the minimum
 supported landscape size, 4:3, 16:10, ultrawide, and high-resolution
 presentations without making one size the visual authority.
 
-## Typography and diagnostics representatives
+## Typography, identity, and diagnostics representatives
 
-At every representative viewport, the plan adds two typography captures and
-three diagnostics captures beyond the Fixture Scenario matrix:
+At every representative viewport, the plan adds two typography captures, one
+identity capture, and three diagnostics captures beyond the Fixture Scenario
+matrix:
 
 - **Preferred typography** requests Palatino Linotype with Segoe UI. The
   capture fails clearly unless both families are available.
 - **Fallback typography** forces the packaged Libre Baskerville and IBM Plex
   Sans pair.
+- **Identity baselines** uses long Tracked Output and Tracked Zone names to
+  expose single-line baseline alignment and defensive end ellipsis.
 - **Dark diagnostics**, **light diagnostics**, and **fixed-no-art
   diagnostics** exercise the overlay against each palette class.
 
@@ -125,7 +129,9 @@ instead of approving a scenario at only one size.
 - **Presentation Status:** Every condition has the correct circular symbol
   and bold uppercase label in both presentation forms. Playing alone glows,
   Paused uses a muted artwork accent, Starting uses the full accent, and no
-  status row contains secondary detail.
+  status row contains secondary detail. The row begins the same responsive
+  inset below the imaginary square's top edge in Now Playing and full-field
+  presentations.
 - **Indeterminate activity:** Playing without meaningful timing retains its
   supplied artwork and replaces the complete determinate timeline with seven
   rounded activity bars followed by `Audio active` and `Timing unavailable`
@@ -134,8 +140,11 @@ instead of approving a scenario at only one size.
   The dedicated missing-artwork Fixture Scenario continues to show the quiet
   artwork fallback independently.
 - **Identities:** Output and Zone share one stable bottom-right row in
-  available states. Ordinary names fit comfortably, long names degrade
-  defensively, and unavailable states expose no stale identities.
+  available states. The complete row ends the same inset above the imaginary
+  square's bottom edge that Presentation Status uses below its top edge. Each
+  identity label and name share one text baseline. Ordinary names fit
+  comfortably, long names remain on one line and end-ellipsize without moving
+  or resizing the row, and unavailable states expose no stale identities.
 - **Full-field grammar:** Idle, Starting without content, details unavailable,
   Awaiting Roon Authorization, disconnected, and output-unavailable states
   share the accent-bar language while retaining distinct meanings. Confirm
@@ -146,7 +155,8 @@ instead of approving a scenario at only one size.
   overlay-free.
 - **Responsive bounds:** Artwork, metadata, full-field copy, identities,
   diagnostics, shadows, and the reserved OLED movement envelope stay inside
-  every viewport.
+  every viewport. The status and identity anchors remain tied to the imaginary
+  square for square, non-square, missing, and unusable artwork.
 
 Static captures establish settled endpoints. To review motion, launch Fixture
 Mode:

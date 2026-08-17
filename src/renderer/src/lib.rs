@@ -33,10 +33,10 @@ pub use ipc::{
 };
 pub use keyboard::{NavigationIntent, RendererAction, RendererKey, RendererKeyboard};
 pub use layout::{
-    ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
-    ArtworkLayout, FullFieldLayout, FullFieldLineLayout, IdentityLineLayout, IdentityPlacement,
-    InactivityLayout, MetadataFontSizes, NowPlayingField, NowPlayingLayout, NowPlayingRole,
-    NowPlayingTypography, PresentationStatusLayout, TextOverflow, Viewport,
+    ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFieldAnchors,
+    ArtworkFit, ArtworkLayout, FullFieldLayout, FullFieldLineLayout, IdentityLineLayout,
+    IdentityPlacement, InactivityLayout, MetadataFontSizes, NowPlayingField, NowPlayingLayout,
+    NowPlayingRole, NowPlayingTypography, PresentationStatusLayout, TextOverflow, Viewport,
 };
 pub use metadata::{MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout};
 pub use palette::{PaletteError, PresentationPalette, Rgb};

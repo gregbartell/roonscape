@@ -287,6 +287,47 @@ pub struct PresentationStatusLayout {
     pub letter_spacing_px: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArtworkFieldAnchors {
+    pub artwork_top_viewport_y_px: u32,
+    pub artwork_bottom_viewport_y_px: u32,
+    pub responsive_inset_px: u32,
+    pub presentation_status_top_viewport_y_px: u32,
+    pub identity_bottom_viewport_y_px: u32,
+    viewport_height_px: u32,
+}
+
+impl ArtworkFieldAnchors {
+    fn for_artwork_field(
+        viewport: Viewport,
+        artwork_top_viewport_y_px: u32,
+        artwork_field_height_px: u32,
+    ) -> Self {
+        let artwork_bottom_viewport_y_px = artwork_top_viewport_y_px + artwork_field_height_px;
+        let responsive_inset_px = scaled(viewport.height_px, 0.018, 16, 44);
+
+        Self {
+            artwork_top_viewport_y_px,
+            artwork_bottom_viewport_y_px,
+            responsive_inset_px,
+            presentation_status_top_viewport_y_px: artwork_top_viewport_y_px + responsive_inset_px,
+            identity_bottom_viewport_y_px: artwork_bottom_viewport_y_px - responsive_inset_px,
+            viewport_height_px: viewport.height_px,
+        }
+    }
+
+    pub fn presentation_status_margin_top_px(self, container_top_viewport_y_px: u32) -> u32 {
+        self.presentation_status_top_viewport_y_px
+            .saturating_sub(container_top_viewport_y_px)
+    }
+
+    pub fn identity_margin_bottom_px(self, container_bottom_viewport_inset_px: u32) -> u32 {
+        self.viewport_height_px
+            .saturating_sub(container_bottom_viewport_inset_px)
+            .saturating_sub(self.identity_bottom_viewport_y_px)
+    }
+}
+
 impl PresentationStatusLayout {
     fn for_viewport(viewport: Viewport) -> Self {
         let font_px = scaled(viewport.width_px, 0.022, 29, 42);
@@ -322,6 +363,7 @@ pub struct FullFieldLayout {
     pub accent_padding_px: u32,
     pub status_spacing_px: u32,
     pub presentation_status: PresentationStatusLayout,
+    pub artwork_field_anchors: ArtworkFieldAnchors,
     pub heading_px: u32,
     pub heading_line: FullFieldLineLayout,
     pub explanation_spacing_px: u32,
@@ -347,6 +389,7 @@ impl FullFieldLayout {
             accent_padding_px: scaled(viewport.width_px, 0.04, 32, 144),
             status_spacing_px: scaled(viewport.height_px, 0.036, 29, 80),
             presentation_status: PresentationStatusLayout::for_viewport(viewport),
+            artwork_field_anchors: now_playing_layout.artwork_field_anchors,
             heading_px: scaled(viewport.width_px, 0.05, 51, 160),
             heading_line: FullFieldLineLayout::COMPLETE,
             explanation_spacing_px: ((explanation_px as f64) * 0.9).round() as u32,
@@ -377,7 +420,7 @@ pub struct NowPlayingLayout {
     pub identity_line: IdentityLineLayout,
     pub metadata_roles: Vec<NowPlayingRole>,
     pub metadata_right_inset_px: u32,
-    pub status_top_inset_px: u32,
+    pub artwork_field_anchors: ArtworkFieldAnchors,
     pub artist_spacing_px: u32,
     pub album_spacing_px: u32,
     pub progress_spacing_px: u32,
@@ -419,6 +462,11 @@ impl NowPlayingLayout {
         let artwork_field_size_px = artwork_column_width_px
             .min(((viewport.height_px as f64) * 0.81).round() as u32)
             .min(artwork_height_limit_px);
+        let artwork_field_anchors = ArtworkFieldAnchors::for_artwork_field(
+            viewport,
+            outer_gutter_px,
+            artwork_field_size_px,
+        );
         let typography = NowPlayingTypography {
             title: MetadataFontSizes {
                 preferred_px: scaled(viewport.width_px, 0.046, 53, 168),
@@ -453,7 +501,7 @@ impl NowPlayingLayout {
             identity_line: IdentityLineLayout::DEFENSIVE,
             metadata_roles: Vec::new(),
             metadata_right_inset_px: scaled(viewport.width_px, 0.02, 24, 77),
-            status_top_inset_px: scaled(viewport.height_px, 0.018, 16, 44),
+            artwork_field_anchors,
             artist_spacing_px: scaled(viewport.height_px, 0.032, 26, 72),
             album_spacing_px: ((typography.album.preferred_px as f64) * 0.48).round() as u32,
             progress_spacing_px: scaled(viewport.height_px, 0.065, 45, 128),

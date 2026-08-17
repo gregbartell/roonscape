@@ -157,6 +157,17 @@ test("plans explicit typography and adaptive diagnostics representatives", () =>
     ].sort(),
     ["dark", "fixed-no-art", "light"],
   );
+  assert.ok(
+    representatives
+      .filter((capture) => capture.scenario === "identity-baselines")
+      .every(
+        (capture) =>
+          capture.fixture === "src/shared/fixtures/long-identities.json" &&
+          capture.typography === "automatic" &&
+          !capture.diagnostics,
+      ),
+    "the native capture plan should expose long Output and Zone baseline alignment",
+  );
   for (const viewport of REPRESENTATIVE_VIEWPORTS) {
     assert.deepEqual(
       representatives
@@ -165,6 +176,7 @@ test("plans explicit typography and adaptive diagnostics representatives", () =>
       [
         "preferred-typography",
         "fallback-typography",
+        "identity-baselines",
         "dark-diagnostics",
         "light-diagnostics",
         "fixed-no-art-diagnostics",
