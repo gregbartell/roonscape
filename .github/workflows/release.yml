@@ -28,6 +28,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes libgtk-4-dev
       - name: Install Node dependencies
         run: npm ci
+      - name: Run repository checks
+        run: npm run check
       - name: Build release artifacts
         run: npm run package
       - name: Publish GitHub Release
@@ -35,7 +37,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            release/*.tar.gz \
-            release/*.tar.gz.sha256 \
+            release/roonscape-linux-x64.tar.gz \
+            release/roonscape-linux-x64.tar.gz.sha256 \
             --generate-notes \
             --verify-tag
