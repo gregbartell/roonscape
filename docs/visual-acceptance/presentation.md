@@ -9,9 +9,9 @@ screenshot-difference failure.
 
 ## Generate captures
 
-Install the source toolchains and GTK development libraries described in the
-repository README. The capture host also needs `Xvfb`, `xwininfo`, and `scrot`.
-No browser engine is involved.
+Install the source prerequisites described in the [Development
+guide](../development.md). The capture host also needs `Xvfb`, `xwininfo`, and
+`scrot`. No browser engine is involved.
 
 From the repository root, run:
 

@@ -27,6 +27,7 @@ host, aspect ratio, or resolution as canonical.
 
 - [Domain language](CONTEXT.md)
 - [Architecture decision](docs/adr/0001-use-a-native-renderer-behind-the-roon-bridge.md)
+- [Development](docs/development.md)
 - [Presentation design](docs/design/presentation.md)
 - [Presentation visual acceptance](docs/visual-acceptance/presentation.md)
 - [MIT license](LICENSE)
@@ -105,64 +106,8 @@ one command with the boot integration appropriate to the RoonScape Host.
 
 ## Source development
 
-Source workflows need Node.js 24.19.0, npm 11.17.0, Rust 1.97.1, and the GTK 4
-development libraries. Toolchain versions are pinned in `.node-version`,
-`package.json`, and `rust-toolchain.toml`. Install dependencies once:
-
-```sh
-npm install
-```
-
-Use the production-equivalent commands for ordinary setup, launch, and
-packaging:
-
-```sh
-npm run setup
-npm start
-npm run package
-```
-
-`npm run setup` builds and runs explicit reconfiguration, then exits. `npm
-start` builds and launches one foreground session. `npm run package` is the
-sole release-packaging implementation and writes the versioned archive and
-checksum under `release/`.
-
-For focused presentation work, `npm run fixture` launches the TypeScript
-fixture publisher and native renderer together. An ordinary Fixture Mode
-session starts at Playing. With the renderer window focused, Right selects the
-next Fixture Scenario and Left selects the previous one; both directions wrap,
-and holding an arrow advances only once until it is released. The terminal
-names the initial and subsequently selected Fixture Scenarios without adding
-anything onscreen.
-
-The catalog order is Playing, Paused, Starting with content, Starting without
-content, Idle, pairing required, disconnected, output unavailable, Playing
-without content, missing metadata, missing Artist, missing Album, missing
-artwork, long metadata, extreme metadata, indeterminate progress, non-square
-artwork, and light artwork. Set `ROONSCAPE_WINDOWED=1` when a window is more
-convenient than fullscreen. Setting `ROONSCAPE_FIXTURE` retains the focused
-single-fixture workflow and intentionally disables arrow navigation.
-
-For focused bridge work, `npm run start:bridge` remains available when
-`ROONSCAPE_SOCKET` names a developer-managed private socket. The lower-level
-`npm run configure -- ...` commands remain available for discovery and
-configuration diagnostics, but are not the ordinary owner setup path.
-
-For repeatable native-renderer captures at the representative landscape
-viewports, run `npm run capture:presentations` and follow the [presentation
-visual-acceptance workflow](docs/visual-acceptance/presentation.md). It covers
-the complete Fixture Scenario matrix, typography and diagnostics
-representatives, and the decision checklist.
-
-The renderer uses the host-provided Palatino Linotype and Segoe UI families
-only when both are available. Otherwise it atomically selects the packaged
-Libre Baskerville and IBM Plex Sans fallback pair. The open fallback files and
-their license notices live under `src/renderer/assets/fonts/`; renderer startup
-registers them privately without a network request or global font install.
-
-Run every formatter check, linter, typecheck, and automated test used by CI with
-`npm run check`. Run the focused headless IPC restart exercise with `npm run
-smoke:ipc`.
+See the [Development guide](docs/development.md) for source prerequisites and
+the primary development workflows.
 
 ## Publish a release
 
