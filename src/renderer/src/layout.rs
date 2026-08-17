@@ -246,6 +246,7 @@ pub enum NowPlayingRole {
     Artist,
     Album,
     Progress,
+    Activity,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -273,6 +274,8 @@ pub struct NowPlayingTypography {
     pub artist: MetadataFontSizes,
     pub album: MetadataFontSizes,
     pub time_px: u32,
+    pub activity_heading_px: u32,
+    pub activity_detail_px: u32,
     pub identity_px: u32,
 }
 
@@ -382,6 +385,9 @@ pub struct NowPlayingLayout {
     pub identity_gap_px: u32,
     pub presentation_status: PresentationStatusLayout,
     pub progress_height_px: u32,
+    pub activity_waveform_width_px: u32,
+    pub activity_waveform_height_px: u32,
+    pub activity_copy_gap_px: u32,
     pub artwork_shadow_offset_px: u32,
     pub artwork_shadow_blur_px: u32,
     pub typography: NowPlayingTypography,
@@ -430,6 +436,8 @@ impl NowPlayingLayout {
                 minimum_px: scaled(viewport.width_px, 0.0094, 15, 35),
             },
             time_px: scaled(viewport.width_px, 0.0072, 11, 26),
+            activity_heading_px: scaled(viewport.width_px, 0.0094, 14, 34),
+            activity_detail_px: scaled(viewport.width_px, 0.0072, 11, 26),
             identity_px: scaled(viewport.width_px, 0.0072, 11, 27),
         };
 
@@ -453,6 +461,9 @@ impl NowPlayingLayout {
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
             presentation_status: PresentationStatusLayout::for_viewport(viewport),
             progress_height_px: scaled(viewport.width_px, 0.0016, 3, 6),
+            activity_waveform_width_px: scaled(viewport.width_px, 0.058, 74, 180),
+            activity_waveform_height_px: scaled(viewport.height_px, 0.065, 46, 96),
+            activity_copy_gap_px: scaled(viewport.width_px, 0.012, 15, 42),
             artwork_shadow_offset_px,
             artwork_shadow_blur_px,
             typography,
@@ -473,6 +484,9 @@ fn metadata_roles(presentation: &NowPlayingPresentation) -> Vec<NowPlayingRole> 
     }
     if presentation.progress.is_some() {
         roles.push(NowPlayingRole::Progress);
+    }
+    if presentation.activity.is_some() {
+        roles.push(NowPlayingRole::Activity);
     }
     roles
 }

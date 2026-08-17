@@ -9,13 +9,14 @@ use roonscape_renderer::{
     ArtworkLayout, FullFieldLayout, FullFieldLineLayout, FullFieldPresentation, IdentityLineLayout,
     IdentityPlacement, InactivityLayout, InactivityTransform, MetadataFontSizes,
     MetadataLineLayout, MetadataTypography, NowPlayingField, NowPlayingLayout,
-    NowPlayingPresentation, NowPlayingRole, Presentation, PresentationPalette,
-    PresentationProgress, PresentationRevision, PresentationStatus, PresentationStatusEmphasis,
-    PresentationStatusLayout, PresentationStyleLayer, PresentationTransition,
-    PresentationTransitionStyles, TextOverflow, TypographyPair, TypographyStyles, Viewport,
-    metadata_layout, resolve_presentation,
+    NowPlayingPresentation, NowPlayingRole, Presentation, PresentationActivity,
+    PresentationPalette, PresentationProgress, PresentationRevision, PresentationStatus,
+    PresentationStatusEmphasis, PresentationStatusLayout, PresentationStyleLayer,
+    PresentationTransition, PresentationTransitionStyles, TextOverflow, TypographyPair,
+    TypographyStyles, Viewport, metadata_layout, resolve_presentation,
 };
 
+use crate::activity_waveform::activity_waveform;
 use crate::status_symbol::presentation_status_symbol;
 
 const STYLES: &str = include_str!("style.css");
@@ -63,7 +64,15 @@ struct RenderedMetadata {
     artist: Option<RenderedMetadataLine>,
     album: Option<RenderedMetadataLine>,
     progress: Option<RenderedProgress>,
+    activity: Option<RenderedActivity>,
     identity: RenderedIdentity,
+}
+
+struct RenderedActivity {
+    root: gtk::Box,
+    waveform: gtk::DrawingArea,
+    heading: gtk::Label,
+    detail: gtk::Label,
 }
 
 struct RenderedNowPlaying {
@@ -607,6 +616,7 @@ fn metadata(
         .as_ref()
         .map(|layout| metadata_line(layout, "album"));
     let progress = presentation.progress.as_ref().map(progress_view);
+    let activity = presentation.activity.as_deref().map(activity_view);
 
     for role in &now_playing_layout.metadata_roles {
         match role {
@@ -624,6 +634,12 @@ fn metadata(
                 &progress
                     .as_ref()
                     .expect("progress role requires a timeline")
+                    .root,
+            ),
+            NowPlayingRole::Activity => copy.append(
+                &activity
+                    .as_ref()
+                    .expect("activity role requires indeterminate activity")
                     .root,
             ),
         }
@@ -645,6 +661,7 @@ fn metadata(
         artist,
         album,
         progress,
+        activity,
         identity,
     }
 }
@@ -815,6 +832,20 @@ impl RenderedMetadata {
             set_label_font_size(&progress.elapsed, layout.typography.time_px);
             set_label_font_size(&progress.remaining, layout.typography.time_px);
         }
+        if let Some(activity) = self.activity.as_ref() {
+            activity
+                .root
+                .set_margin_top(dimension(layout.progress_spacing_px));
+            activity
+                .root
+                .set_spacing(dimension(layout.activity_copy_gap_px));
+            activity.waveform.set_size_request(
+                dimension(layout.activity_waveform_width_px),
+                dimension(layout.activity_waveform_height_px),
+            );
+            set_label_font_size(&activity.heading, layout.typography.activity_heading_px);
+            set_label_font_size(&activity.detail, layout.typography.activity_detail_px);
+        }
 
         self.identity
             .apply_layout(layout.identity_gap_px, layout.typography.identity_px);
@@ -911,6 +942,33 @@ fn progress_view(progress: &PresentationProgress) -> RenderedProgress {
         times,
         elapsed,
         remaining,
+    }
+}
+
+fn activity_view(activity: &PresentationActivity) -> RenderedActivity {
+    let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    root.add_css_class("activity-group");
+    root.set_halign(gtk::Align::Start);
+    root.set_valign(gtk::Align::Center);
+
+    let waveform = activity_waveform(activity.waveform);
+    root.append(&waveform);
+
+    let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    copy.set_valign(gtk::Align::Center);
+    let heading = metadata_label(activity.heading, "activity-heading");
+    heading.add_css_class("utility-text");
+    let detail = metadata_label(activity.detail, "activity-detail");
+    detail.add_css_class("utility-text");
+    copy.append(&heading);
+    copy.append(&detail);
+    root.append(&copy);
+
+    RenderedActivity {
+        root,
+        waveform,
+        heading,
+        detail,
     }
 }
 

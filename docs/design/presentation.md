@@ -11,18 +11,18 @@ part of the supported presentation range.
 The artwork field occupies the larger left side of the presentation. It has
 enough surrounding space for the artwork to read as an album sleeve and for
 its shadow to remain inside the display. The narrower right side is a dedicated
-metadata column ordered as Presentation Status, Title, Artist, Album, progress,
-and the Output and Zone identity row.
+metadata column ordered as Presentation Status, Title, Artist, Album, progress
+or indeterminate activity, and the Output and Zone identity row.
 
 Title is the dominant text. Artist and Album step down in size, followed by
-Presentation Status, progress times, and identity labels. Missing metadata
-closes up cleanly instead of leaving placeholders. Long values use the first
-fitting preferred, reduced, or minimum readable font tier, then ellipsize at
-the end when content still exceeds bounds of five Title lines, three Artist
-lines, and three Album lines. Output and Zone names remain on one line and
-ellipsize only as a defensive fallback. Metadata uses no scrolling, marquee
-motion, or pagination and never shrinks below the established readable font
-floors.
+Presentation Status, progress or activity copy, and identity labels. Missing
+metadata closes up cleanly instead of leaving placeholders. Long values use
+the first fitting preferred, reduced, or minimum readable font tier, then
+ellipsize at the end when content still exceeds bounds of five Title lines,
+three Artist lines, and three Album lines. Output and Zone names remain on one
+line and ellipsize only as a defensive fallback. Metadata uses no scrolling,
+marquee motion, or pagination and never shrinks below the established readable
+font floors.
 
 The composition uses the complete landscape field without letterboxing.
 Artwork and metadata keep their relative emphasis on ordinary, tall, wide,
@@ -65,6 +65,14 @@ Presentation Status contains only its symbol and label. Elapsed time,
 held-time copy, preparation copy, and other secondary detail do not appear in
 the status row; determinate time remains in the progress area.
 
+Playing without meaningful duration uses that progress area for a compact
+activity treatment instead of fabricating a timeline. Seven rounded vertical
+bars use symmetrical reference heights of 30%, 70%, 100%, 48%, 100%, 70%, and
+30%, followed by `Audio active` and `Timing unavailable` on separate lines.
+The waveform uses the current accent and the timing explanation uses muted
+text. This treatment is independent of artwork availability: supplied artwork
+remains present, while missing artwork retains the established quiet field.
+
 ## Typography
 
 Title and Album use an editorial serif voice; Artist, Presentation Status,
@@ -94,10 +102,13 @@ keeping every position inside the available field. Playing and Starting remain
 at full opacity and their normal position. This OLED-safe behavior is a
 product capability configured through Display Configuration.
 
-Only the complete Starting ring rotates, using a 1.8-second linear
-revolution. All other Presentation Status symbols remain static. The
-platform's reduced-animation preference leaves Starting on a stable,
-meaningful frame.
+Only the complete Starting ring rotates, using a 1.8-second linear revolution;
+all other Presentation Status symbols remain static. The indeterminate
+activity waveform is separate from Presentation Status and scales its bars
+toward 28% on an approximately 1.1-second alternating ease-in-out cycle with
+staggered phases. The platform's reduced-animation preference leaves Starting
+and the waveform on stable, meaningful frames without removing the activity or
+timing copy.
 
 ## Full-field states
 

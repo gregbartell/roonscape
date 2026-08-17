@@ -21,6 +21,9 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
         ".presentation-current .status-full, .presentation-current .status-glow { color: #FF7051; }",
         ".full-field-heading { color: #F3EAD7; }",
         ".full-field-explanation { color: #9299A8; }",
+        ".activity-waveform { color: #FF7051; }",
+        ".activity-heading { color: #F3EAD7; }",
+        ".activity-detail, .presentation-current .full-field-explanation { color: #9299A8; }",
         "progressbar trough { background-color: #9299A8; }",
         "progressbar progress { background-color: #FF7051; }",
     ] {

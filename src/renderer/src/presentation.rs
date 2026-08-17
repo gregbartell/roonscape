@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::f64::consts::PI;
 use std::fmt;
 use std::time::{Duration, SystemTime};
 
@@ -89,6 +90,7 @@ pub struct NowPlayingPresentation {
     pub tracked_zone: String,
     pub status: PresentationStatus,
     pub progress: Option<PresentationProgress>,
+    pub activity: Option<Box<PresentationActivity>>,
     pub artwork_revision: Option<u64>,
     pub artwork_path: Option<String>,
 }
@@ -112,6 +114,48 @@ pub struct PresentationProgress {
     pub fraction: f64,
     pub elapsed: String,
     pub remaining: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PresentationActivity {
+    pub waveform: PresentationActivityWaveform,
+    pub heading: &'static str,
+    pub detail: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PresentationActivityWaveform {
+    pub reference_heights_percent: [u8; 7],
+    pub minimum_scale_percent: u8,
+    pub phase_offsets: [Duration; 7],
+    pub motion: PresentationActivityMotion,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresentationActivityMotion {
+    AlternatingEaseInOut { period: Duration },
+}
+
+impl PresentationActivityWaveform {
+    pub fn bar_scales_at(self, elapsed: Duration, animations_enabled: bool) -> [f64; 7] {
+        let PresentationActivityMotion::AlternatingEaseInOut { period } = self.motion;
+        if !animations_enabled || period.is_zero() {
+            return [1.0; 7];
+        }
+
+        let period_seconds = period.as_secs_f64();
+        let minimum_scale = f64::from(self.minimum_scale_percent) / 100.0;
+        self.phase_offsets.map(|offset| {
+            let phase = elapsed
+                .saturating_add(offset)
+                .as_secs_f64()
+                .rem_euclid(period_seconds)
+                / period_seconds;
+            let alternating_progress = 1.0 - (phase * 2.0 - 1.0).abs();
+            let eased = (1.0 - (alternating_progress * PI).cos()) / 2.0;
+            1.0 - eased * (1.0 - minimum_scale)
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -455,6 +499,8 @@ fn presentation_from_snapshot_after(
             .progress
             .as_ref()
             .map(|progress| presentation_progress(progress, playback, elapsed)),
+        activity: (playback == Playback::Playing && snapshot.progress.is_none())
+            .then(|| Box::new(indeterminate_activity())),
         artwork_revision: snapshot.artwork.as_ref().map(|artwork| artwork.revision),
         artwork_path: snapshot
             .artwork
@@ -466,6 +512,21 @@ fn presentation_from_snapshot_after(
     }
 
     Ok(Presentation::NowPlaying(now_playing))
+}
+
+fn indeterminate_activity() -> PresentationActivity {
+    PresentationActivity {
+        waveform: PresentationActivityWaveform {
+            reference_heights_percent: [30, 70, 100, 48, 100, 70, 30],
+            minimum_scale_percent: 28,
+            phase_offsets: [0, 90, 180, 270, 360, 450, 540].map(Duration::from_millis),
+            motion: PresentationActivityMotion::AlternatingEaseInOut {
+                period: Duration::from_millis(1_100),
+            },
+        },
+        heading: "Audio active",
+        detail: "Timing unavailable",
+    }
 }
 
 fn usable_metadata_line(value: Option<&str>) -> Option<String> {

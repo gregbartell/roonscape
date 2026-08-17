@@ -250,7 +250,7 @@ fn keeps_the_square_reservation_invariant_across_artwork_conditions() {
 }
 
 #[test]
-fn omits_the_complete_timeline_for_indeterminate_content() {
+fn replaces_the_determinate_timeline_with_activity_for_indeterminate_playing() {
     let determinate = now_playing("playing.json");
     let indeterminate = now_playing("indeterminate-progress.json");
 
@@ -268,7 +268,13 @@ fn omits_the_complete_timeline_for_indeterminate_content() {
             !indeterminate
                 .metadata_roles
                 .contains(&NowPlayingRole::Progress),
-            "indeterminate progress should remain absent at {viewport:?}"
+            "indeterminate Playing should omit determinate timing at {viewport:?}"
+        );
+        assert!(
+            indeterminate
+                .metadata_roles
+                .contains(&NowPlayingRole::Activity),
+            "indeterminate Playing should retain visible activity at {viewport:?}"
         );
     }
 }

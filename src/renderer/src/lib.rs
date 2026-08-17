@@ -42,7 +42,8 @@ pub use metadata::{MetadataLayout, MetadataLineLayout, MetadataTypography, metad
 pub use palette::{PaletteError, PresentationPalette, Rgb};
 pub use presentation::{
     FullFieldPresentation, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform,
-    LayoutOffset, NowPlayingPresentation, Presentation, PresentationError, PresentationFrame,
+    LayoutOffset, NowPlayingPresentation, Presentation, PresentationActivity,
+    PresentationActivityMotion, PresentationActivityWaveform, PresentationError, PresentationFrame,
     PresentationIdentity, PresentationProgress, PresentationState, PresentationStatus,
     PresentationStatusEmphasis, PresentationStatusMotion, PresentationStatusSymbol,
     PresentationTime, PresentationUpdate, presentation_from_snapshot,

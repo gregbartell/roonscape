@@ -25,6 +25,10 @@ window {
   font-weight: 400;
 }
 
+.activity-heading {
+  font-weight: 600;
+}
+
 progressbar trough {
   border: 0;
   border-radius: 0;

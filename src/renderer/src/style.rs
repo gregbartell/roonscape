@@ -45,7 +45,7 @@ impl TypographyStyles {
     pub fn to_css(self) -> String {
         format!(
             ".editorial-text, .full-field-heading {{ font-family: \"{}\", serif; }}\n\
-             .utility-text, .status-label, .identity-label, .identity-name, .time, .full-field-explanation, .diagnostics {{ font-family: \"{}\", sans-serif; }}\n",
+             .utility-text, .status-label, .identity-label, .identity-name, .time, .activity-heading, .activity-detail, .full-field-explanation, .diagnostics {{ font-family: \"{}\", sans-serif; }}\n",
             self.typography.editorial_family(),
             self.typography.utility_family(),
         )
@@ -131,7 +131,9 @@ fn presentation_palette_styles(
          .{class_name} .status-glow .status-symbol-container {{ box-shadow: 0 0 34px alpha({accent}, 0.72); }}\n\
          .{class_name} .title, .{class_name} .full-field-heading {{ color: {primary_text}; }}\n\
          .{class_name} .artist, .{class_name} .album, .{class_name} .time, .{class_name} .identity-name {{ color: {secondary_text}; }}\n\
-         .{class_name} .full-field-explanation {{ color: {muted_text}; }}\n\
+         .{class_name} .activity-waveform {{ color: {accent}; }}\n\
+         .{class_name} .activity-heading {{ color: {primary_text}; }}\n\
+         .{class_name} .activity-detail, .{class_name} .full-field-explanation {{ color: {muted_text}; }}\n\
          .{class_name} .identity-label {{ color: {muted_text}; }}\n\
          .{class_name} progressbar trough {{ background-color: {progress_track}; }}\n\
          .{class_name} progressbar progress {{ background-color: {progress_fill}; }}\n"

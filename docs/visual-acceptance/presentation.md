@@ -70,7 +70,7 @@ peer representative viewports: 1280x720, 1600x1200, 1920x1200, 2560x1080, and
 | Missing artwork          | `missing-artwork.json`        | Fixed no-art palette and square field          |
 | Long metadata            | `long-metadata.json`          | Responsive wrapping and reduction              |
 | Extreme metadata         | `extreme-metadata.json`       | Final line bounds and ellipsis                 |
-| Indeterminate progress   | `indeterminate-progress.json` | Timeline omitted                               |
+| Indeterminate progress   | `indeterminate-progress.json` | Artwork, activity waveform, and timing copy    |
 | Non-square artwork       | `non-square-artwork.json`     | Image-shaped frame in a reserved square        |
 | Light artwork            | `light-artwork.json`          | Readable light artwork-derived palette         |
 
@@ -126,6 +126,13 @@ instead of approving a scenario at only one size.
   and bold uppercase label in both presentation forms. Playing alone glows,
   Paused uses a muted artwork accent, Starting uses the full accent, and no
   status row contains secondary detail.
+- **Indeterminate activity:** Playing without meaningful timing retains its
+  supplied artwork and replaces the complete determinate timeline with seven
+  rounded activity bars followed by `Audio active` and `Timing unavailable`
+  on separate lines. The waveform uses the current accent, its proportions are
+  visibly symmetrical in a settled frame, and the timing explanation is muted.
+  The dedicated missing-artwork Fixture Scenario continues to show the quiet
+  artwork fallback independently.
 - **Identities:** Output and Zone share one stable bottom-right row in
   available states. Ordinary names fit comfortably, long names degrade
   defensively, and unavailable states expose no stale identities.
@@ -157,6 +164,10 @@ clipped or stale boundary states.
 Confirm that only the complete Starting ring rotates, with a steady linear
 revolution of about 1.8 seconds. With the platform animation preference
 disabled, confirm that Starting retains a clear static ring-and-center frame.
+For Indeterminate progress, confirm that the activity bars alternate through
+staggered ease-in-out phases over about 1.1 seconds and scale toward 28% without
+collapsing. With animation disabled, confirm that the reference-height waveform
+remains meaningful and both activity lines remain present.
 
 Do not commit captures as goldens or add screenshot comparisons to CI.
 Automated checks belong at the shared fixture, layout, typography,

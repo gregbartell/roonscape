@@ -15,5 +15,8 @@
     "album": null
   },
   "progress": null,
-  "artwork": null
+  "artwork": {
+    "revision": 3,
+    "path": "src/shared/fixtures/artwork/playing.svg"
+  }
 }

@@ -1,3 +1,4 @@
+mod activity_waveform;
 mod status_symbol;
 mod view;
 

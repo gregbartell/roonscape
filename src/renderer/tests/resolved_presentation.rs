@@ -5,8 +5,9 @@ use std::time::Duration;
 
 use roonscape_renderer::{
     ArtworkContent, ArtworkDecoration, ArtworkLayout, ArtworkReference, Presentation,
-    PresentationPalette, PresentationStatusEmphasis, PresentationStatusMotion,
-    PresentationStatusSymbol, parse_snapshot, presentation_from_snapshot, resolve_presentation,
+    PresentationActivityMotion, PresentationPalette, PresentationStatusEmphasis,
+    PresentationStatusMotion, PresentationStatusSymbol, parse_snapshot, presentation_from_snapshot,
+    resolve_presentation,
 };
 
 #[test]
@@ -234,4 +235,79 @@ fn metadata_with_unreadable_artwork_resolves_to_the_quiet_artwork_field() {
         ArtworkDecoration::QuietSquareField,
     );
     assert_eq!(resolved.palette, PresentationPalette::fallback());
+}
+
+#[test]
+fn resolves_indeterminate_playing_as_artwork_backed_audio_activity() {
+    let repository_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let snapshot = parse_snapshot(&support::fixture("indeterminate-progress.json"))
+        .expect("Indeterminate progress Fixture Scenario should be valid");
+    let presentation = presentation_from_snapshot(&snapshot)
+        .expect("indeterminate Playing should produce a presentation");
+
+    let resolved = resolve_presentation(&presentation, &repository_root);
+    let Presentation::NowPlaying(indeterminate) = resolved.presentation else {
+        panic!("indeterminate Playing should retain Now Playing content");
+    };
+    let activity = indeterminate
+        .activity
+        .expect("indeterminate Playing should expose audio activity");
+
+    assert!(indeterminate.artwork_path.is_some());
+    assert_eq!(indeterminate.progress, None);
+    assert_eq!(activity.heading, "Audio active");
+    assert_eq!(activity.detail, "Timing unavailable");
+    assert_eq!(
+        activity.waveform.reference_heights_percent,
+        [30, 70, 100, 48, 100, 70, 30]
+    );
+    assert_eq!(activity.waveform.minimum_scale_percent, 28);
+    assert_eq!(
+        activity.waveform.motion,
+        PresentationActivityMotion::AlternatingEaseInOut {
+            period: Duration::from_millis(1_100),
+        }
+    );
+    assert!(
+        activity
+            .waveform
+            .phase_offsets
+            .windows(2)
+            .all(|phases| phases[0] < phases[1]),
+        "activity bars should use staggered phases"
+    );
+    assert_eq!(
+        activity.waveform.bar_scales_at(Duration::ZERO, true)[0],
+        1.0
+    );
+    assert_eq!(
+        activity
+            .waveform
+            .bar_scales_at(Duration::from_millis(550), true)[0],
+        0.28
+    );
+    assert_eq!(
+        activity
+            .waveform
+            .bar_scales_at(Duration::from_millis(1_100), true)[0],
+        1.0
+    );
+    assert_eq!(
+        activity
+            .waveform
+            .bar_scales_at(Duration::from_millis(275), false),
+        [1.0; 7],
+        "reduced animation should retain the reference-height waveform"
+    );
+
+    let determinate = parse_snapshot(&support::fixture("playing.json"))
+        .expect("determinate Playing Fixture Scenario should be valid");
+    let determinate = presentation_from_snapshot(&determinate)
+        .expect("determinate Playing should produce a presentation");
+    let Presentation::NowPlaying(determinate) = determinate else {
+        panic!("determinate Playing should retain Now Playing content");
+    };
+
+    assert!(determinate.progress.is_some());
+    assert_eq!(determinate.activity, None);
 }
