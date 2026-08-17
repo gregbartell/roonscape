@@ -6,9 +6,9 @@ use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
     ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
-    ArtworkLayout, FullFieldLayout, FullFieldLineLayout, FullFieldPresentation, IdentityLineLayout,
-    IdentityPlacement, InactivityLayout, InactivityTransform, MetadataFontSizes,
-    MetadataLineLayout, MetadataTypography, NowPlayingField, NowPlayingLayout,
+    ArtworkLayout, FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, FullFieldPresentation,
+    IdentityLineLayout, IdentityPlacement, InactivityLayout, InactivityTransform,
+    MetadataFontSizes, MetadataLineLayout, MetadataTypography, NowPlayingField, NowPlayingLayout,
     NowPlayingPresentation, NowPlayingRole, Presentation, PresentationActivity,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationStatus,
     PresentationStatusEmphasis, PresentationStatusLayout, PresentationStyleLayer,
@@ -95,7 +95,9 @@ struct RenderedFullField {
     copy: gtk::Box,
     message: gtk::Box,
     presentation_status: RenderedPresentationStatus,
+    heading_slot: gtk::Box,
     heading: gtk::Label,
+    explanation_slot: Option<gtk::Box>,
     explanation: Option<gtk::Label>,
     identity: Option<RenderedIdentity>,
 }
@@ -361,19 +363,23 @@ fn full_field(
     copy.set_valign(gtk::Align::Start);
 
     let message = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    message.set_hexpand(true);
     let rendered_status = presentation_status(&presentation.status);
     message.append(&rendered_status.root);
 
-    let heading = metadata_label(presentation.heading, "full-field-heading");
+    let (heading_slot, heading) = full_field_line(presentation.heading, "full-field-heading");
     heading.add_css_class("editorial-text");
-    message.append(&heading);
+    message.append(&heading_slot);
 
-    let explanation = presentation.explanation.map(|explanation| {
-        let explanation = metadata_label(explanation, "full-field-explanation");
-        explanation.add_css_class("utility-text");
-        message.append(&explanation);
-        explanation
-    });
+    let (explanation_slot, explanation) = match presentation.explanation {
+        Some(text) => {
+            let (slot, explanation) = full_field_line(text, "full-field-explanation");
+            explanation.add_css_class("utility-text");
+            message.append(&slot);
+            (Some(slot), Some(explanation))
+        }
+        None => (None, None),
+    };
     copy.append(&message);
     content.set_child(Some(&copy));
 
@@ -400,7 +406,9 @@ fn full_field(
             copy,
             message,
             presentation_status: rendered_status,
+            heading_slot,
             heading,
+            explanation_slot,
             explanation,
             identity,
         }),
@@ -675,7 +683,20 @@ fn apply_full_field_line_layout(label: &gtk::Label, layout: FullFieldLineLayout)
     apply_text_overflow(label, layout.overflow);
     label.set_lines(layout.maximum_lines as i32);
     label.set_single_line_mode(layout.maximum_lines == 1);
+    if layout.maximum_lines == 1 {
+        label.set_max_width_chars(1);
+    }
     label.set_wrap(layout.wrap);
+}
+
+fn full_field_line(text: &str, class_name: &str) -> (gtk::Box, gtk::Label) {
+    let label = metadata_label(text, class_name);
+    label.set_hexpand(true);
+    label.set_valign(gtk::Align::Center);
+    let slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    slot.set_hexpand(true);
+    slot.append(&label);
+    (slot, label)
 }
 
 fn set_label_font_size(label: &gtk::Label, font_size_px: u32) {
@@ -751,24 +772,30 @@ impl RenderedArtwork {
 
 impl RenderedFullField {
     fn apply_layout(&self, layout: &FullFieldLayout) {
-        self.copy.set_width_request(dimension(layout.copy_width_px));
-        self.copy.set_margin_top(dimension(
-            layout
-                .artwork_field_anchors
-                .presentation_status_margin_top_px(0),
-        ));
+        self.copy
+            .set_width_request(dimension(layout.composition_width_px));
+        self.copy
+            .set_margin_top(dimension(layout.presentation_status_slot.top_viewport_y_px));
         self.message
             .set_margin_start(dimension(layout.accent_padding_px));
         self.presentation_status
             .apply_layout(layout.presentation_status);
         self.presentation_status
             .root
+            .set_height_request(dimension(layout.presentation_status_slot.height_px));
+        self.presentation_status
+            .root
             .set_margin_bottom(dimension(layout.status_spacing_px));
-        set_label_font_size(&self.heading, layout.heading_px);
+        self.heading_slot
+            .set_height_request(dimension(layout.heading_slot.height_px));
+        apply_full_field_font_size(&self.heading, layout.heading_font);
         apply_full_field_line_layout(&self.heading, layout.heading_line);
-        if let Some(explanation) = self.explanation.as_ref() {
-            explanation.set_margin_top(dimension(layout.explanation_spacing_px));
-            set_label_font_size(explanation, layout.explanation_px);
+        if let (Some(slot), Some(explanation)) =
+            (self.explanation_slot.as_ref(), self.explanation.as_ref())
+        {
+            slot.set_margin_top(dimension(layout.explanation_spacing_px));
+            slot.set_height_request(dimension(layout.explanation_slot.height_px));
+            apply_full_field_font_size(explanation, layout.explanation_font);
             apply_full_field_line_layout(explanation, layout.explanation_line);
         }
         if let Some(identity) = self.identity.as_ref() {
@@ -776,9 +803,9 @@ impl RenderedFullField {
             identity
                 .root
                 .set_margin_end(gutter + dimension(layout.identity_right_inset_px));
-            identity.root.set_margin_bottom(dimension(
-                layout.artwork_field_anchors.identity_margin_bottom_px(0),
-            ));
+            identity
+                .root
+                .set_margin_bottom(dimension(layout.identity_anchor.margin_bottom_px(0)));
             identity
                 .root
                 .set_width_request(dimension(layout.identity_width_px));
@@ -844,8 +871,8 @@ impl RenderedMetadata {
             .apply_layout(layout.identity_gap_px, layout.typography.identity_px);
         self.identity.root.set_margin_bottom(dimension(
             layout
-                .artwork_field_anchors
-                .identity_margin_bottom_px(layout.outer_gutter_px),
+                .identity_anchor
+                .margin_bottom_px(layout.outer_gutter_px),
         ));
     }
 }
@@ -887,6 +914,29 @@ fn fit_metadata_line(label: &gtk::Label, sizes: MetadataFontSizes) {
     let _ = sizes.fitting_font_size(|font_size_px| {
         set_label_font_size(label, font_size_px);
         !label.layout().is_ellipsized()
+    });
+}
+
+fn apply_full_field_font_size(label: &gtk::Label, sizes: FullFieldFontSize) {
+    set_label_font_size(label, sizes.preferred_px);
+    let fitted_label = label.clone();
+    label.add_tick_callback(move |_, _| {
+        if fitted_label.width() <= 0 {
+            return gtk::glib::ControlFlow::Continue;
+        }
+        fit_full_field_line(&fitted_label, sizes);
+        gtk::glib::ControlFlow::Break
+    });
+}
+
+fn fit_full_field_line(label: &gtk::Label, sizes: FullFieldFontSize) {
+    let _ = sizes.fitting_font_size(|font_size_px| {
+        set_label_font_size(label, font_size_px);
+        let measurement = pango::Layout::new(&label.pango_context());
+        measurement.set_text(&label.text());
+        measurement.set_attributes(label.attributes().as_ref());
+        let (width_px, _) = measurement.pixel_size();
+        width_px <= label.width()
     });
 }
 

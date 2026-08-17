@@ -293,8 +293,6 @@ pub struct ArtworkFieldAnchors {
     pub artwork_bottom_viewport_y_px: u32,
     pub responsive_inset_px: u32,
     pub presentation_status_top_viewport_y_px: u32,
-    pub identity_bottom_viewport_y_px: u32,
-    viewport_height_px: u32,
 }
 
 impl ArtworkFieldAnchors {
@@ -311,8 +309,6 @@ impl ArtworkFieldAnchors {
             artwork_bottom_viewport_y_px,
             responsive_inset_px,
             presentation_status_top_viewport_y_px: artwork_top_viewport_y_px + responsive_inset_px,
-            identity_bottom_viewport_y_px: artwork_bottom_viewport_y_px - responsive_inset_px,
-            viewport_height_px: viewport.height_px,
         }
     }
 
@@ -320,11 +316,27 @@ impl ArtworkFieldAnchors {
         self.presentation_status_top_viewport_y_px
             .saturating_sub(container_top_viewport_y_px)
     }
+}
 
-    pub fn identity_margin_bottom_px(self, container_bottom_viewport_inset_px: u32) -> u32 {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IdentityAnchor {
+    pub bottom_viewport_y_px: u32,
+    viewport_height_px: u32,
+}
+
+impl IdentityAnchor {
+    fn for_artwork_field(viewport: Viewport, anchors: ArtworkFieldAnchors) -> Self {
+        Self {
+            bottom_viewport_y_px: anchors.artwork_bottom_viewport_y_px
+                - anchors.responsive_inset_px,
+            viewport_height_px: viewport.height_px,
+        }
+    }
+
+    pub fn margin_bottom_px(self, container_bottom_viewport_inset_px: u32) -> u32 {
         self.viewport_height_px
             .saturating_sub(container_bottom_viewport_inset_px)
-            .saturating_sub(self.identity_bottom_viewport_y_px)
+            .saturating_sub(self.bottom_viewport_y_px)
     }
 }
 
@@ -356,19 +368,50 @@ impl FullFieldLineLayout {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FullFieldFontSize {
+    pub preferred_px: u32,
+}
+
+impl FullFieldFontSize {
+    pub fn fitting_font_size(self, mut fits: impl FnMut(u32) -> bool) -> u32 {
+        (1..=self.preferred_px)
+            .rev()
+            .find(|font_size_px| fits(*font_size_px))
+            .unwrap_or(1)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FullFieldSlot {
+    pub top_viewport_y_px: u32,
+    pub height_px: u32,
+}
+
+impl FullFieldSlot {
+    pub const fn bottom_viewport_y_px(self) -> u32 {
+        self.top_viewport_y_px + self.height_px
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FullFieldLayout {
     pub outer_gutter_px: u32,
-    pub copy_width_px: u32,
+    pub composition_width_px: u32,
+    pub composition_left_viewport_x_px: u32,
     pub accent_width_px: u32,
     pub accent_padding_px: u32,
+    pub text_left_viewport_x_px: u32,
     pub status_spacing_px: u32,
     pub presentation_status: PresentationStatusLayout,
-    pub artwork_field_anchors: ArtworkFieldAnchors,
-    pub heading_px: u32,
+    pub presentation_status_slot: FullFieldSlot,
+    pub heading_slot: FullFieldSlot,
+    pub heading_font: FullFieldFontSize,
     pub heading_line: FullFieldLineLayout,
     pub explanation_spacing_px: u32,
-    pub explanation_px: u32,
+    pub explanation_slot: FullFieldSlot,
+    pub explanation_font: FullFieldFontSize,
     pub explanation_line: FullFieldLineLayout,
+    pub identity_anchor: IdentityAnchor,
     pub identity_width_px: u32,
     pub identity_right_inset_px: u32,
     pub identity_gap_px: u32,
@@ -381,20 +424,60 @@ impl FullFieldLayout {
     pub fn for_viewport(viewport: Viewport) -> Self {
         let now_playing_layout = NowPlayingLayout::for_viewport(viewport);
         let outer_gutter_px = scaled(viewport.width_px, 0.042, 32, 160);
-        let explanation_px = scaled(viewport.width_px, 0.0135, 16, 46);
+        let composition_width_px = rounded_fraction(viewport.width_px, 3, 5);
+        let composition_left_viewport_x_px =
+            viewport.width_px.saturating_sub(composition_width_px) / 2;
+        let accent_width_px = scaled(viewport.width_px, 0.0038, 5, 15);
+        let accent_padding_px = scaled(viewport.width_px, 0.04, 32, 144);
+        let heading_font = FullFieldFontSize {
+            preferred_px: scaled(viewport.width_px, 0.05, 51, 160),
+        };
+        let explanation_font = FullFieldFontSize {
+            preferred_px: scaled(viewport.width_px, 0.0135, 16, 46),
+        };
+        let heading_slot_height_px = rounded_fraction(heading_font.preferred_px, 5, 4);
+        let heading_slot_top_viewport_y_px =
+            viewport.height_px.saturating_sub(heading_slot_height_px) / 2;
+        let presentation_status_slot_height_px =
+            now_playing_layout.presentation_status.symbol_size_px;
+        let status_spacing_px = scaled(viewport.height_px, 0.036, 29, 80);
+        let presentation_status_top_viewport_y_px = heading_slot_top_viewport_y_px
+            .saturating_sub(status_spacing_px)
+            .saturating_sub(presentation_status_slot_height_px);
+        let explanation_spacing_px = ((explanation_font.preferred_px as f64) * 0.9).round() as u32;
+        let explanation_slot_top_viewport_y_px =
+            heading_slot_top_viewport_y_px + heading_slot_height_px + explanation_spacing_px;
+        let explanation_slot_height_px =
+            ((explanation_font.preferred_px as f64) * 1.45).round() as u32;
         Self {
             outer_gutter_px,
-            copy_width_px: viewport.width_px.saturating_sub(outer_gutter_px * 2),
-            accent_width_px: scaled(viewport.width_px, 0.0038, 5, 15),
-            accent_padding_px: scaled(viewport.width_px, 0.04, 32, 144),
-            status_spacing_px: scaled(viewport.height_px, 0.036, 29, 80),
+            composition_width_px,
+            composition_left_viewport_x_px,
+            accent_width_px,
+            accent_padding_px,
+            text_left_viewport_x_px: composition_left_viewport_x_px
+                + accent_width_px
+                + accent_padding_px,
+            status_spacing_px,
             presentation_status: PresentationStatusLayout::for_viewport(viewport),
-            artwork_field_anchors: now_playing_layout.artwork_field_anchors,
-            heading_px: scaled(viewport.width_px, 0.05, 51, 160),
+            presentation_status_slot: FullFieldSlot {
+                top_viewport_y_px: presentation_status_top_viewport_y_px,
+                height_px: presentation_status_slot_height_px,
+            },
+            heading_slot: FullFieldSlot {
+                top_viewport_y_px: heading_slot_top_viewport_y_px,
+                height_px: heading_slot_height_px,
+            },
+            heading_font,
             heading_line: FullFieldLineLayout::COMPLETE,
-            explanation_spacing_px: ((explanation_px as f64) * 0.9).round() as u32,
-            explanation_px,
+            explanation_spacing_px,
+            explanation_slot: FullFieldSlot {
+                top_viewport_y_px: explanation_slot_top_viewport_y_px,
+                height_px: explanation_slot_height_px,
+            },
+            explanation_font,
             explanation_line: FullFieldLineLayout::COMPLETE,
+            identity_anchor: now_playing_layout.identity_anchor,
             identity_width_px: now_playing_layout
                 .metadata_column_width_px
                 .saturating_sub(now_playing_layout.metadata_right_inset_px),
@@ -404,6 +487,20 @@ impl FullFieldLayout {
             identity_placement: IdentityPlacement::BottomRight,
             identity_line: IdentityLineLayout::DEFENSIVE,
         }
+    }
+
+    pub fn accent_bottom_viewport_y_px(self, has_explanation: bool) -> u32 {
+        if has_explanation {
+            self.explanation_slot.bottom_viewport_y_px()
+        } else {
+            self.heading_slot.bottom_viewport_y_px()
+        }
+    }
+
+    pub fn text_width_px(self) -> u32 {
+        self.composition_width_px
+            .saturating_sub(self.accent_width_px)
+            .saturating_sub(self.accent_padding_px)
     }
 }
 
@@ -421,6 +518,7 @@ pub struct NowPlayingLayout {
     pub metadata_roles: Vec<NowPlayingRole>,
     pub metadata_right_inset_px: u32,
     pub artwork_field_anchors: ArtworkFieldAnchors,
+    pub identity_anchor: IdentityAnchor,
     pub artist_spacing_px: u32,
     pub album_spacing_px: u32,
     pub progress_spacing_px: u32,
@@ -467,6 +565,7 @@ impl NowPlayingLayout {
             outer_gutter_px,
             artwork_field_size_px,
         );
+        let identity_anchor = IdentityAnchor::for_artwork_field(viewport, artwork_field_anchors);
         let typography = NowPlayingTypography {
             title: MetadataFontSizes {
                 preferred_px: scaled(viewport.width_px, 0.046, 53, 168),
@@ -502,6 +601,7 @@ impl NowPlayingLayout {
             metadata_roles: Vec::new(),
             metadata_right_inset_px: scaled(viewport.width_px, 0.02, 24, 77),
             artwork_field_anchors,
+            identity_anchor,
             artist_spacing_px: scaled(viewport.height_px, 0.032, 26, 72),
             album_spacing_px: ((typography.album.preferred_px as f64) * 0.48).round() as u32,
             progress_spacing_px: scaled(viewport.height_px, 0.065, 45, 128),
@@ -543,4 +643,9 @@ fn scaled(axis_px: u32, ratio: f64, minimum_px: u32, maximum_px: u32) -> u32 {
     ((axis_px as f64) * ratio)
         .round()
         .clamp(minimum_px as f64, maximum_px as f64) as u32
+}
+
+fn rounded_fraction(value: u32, numerator: u32, denominator: u32) -> u32 {
+    let scaled = u64::from(value) * u64::from(numerator);
+    ((scaled + u64::from(denominator) / 2) / u64::from(denominator)) as u32
 }

@@ -130,9 +130,10 @@ instead of approving a scenario at only one size.
 - **Presentation Status:** Every condition has the correct circular symbol
   and bold uppercase label in both presentation forms. Playing alone glows,
   Paused uses a muted artwork accent, Starting uses the full accent, and no
-  status row contains secondary detail. The row begins the same responsive
-  inset below the imaginary square's top edge in Now Playing and full-field
-  presentations.
+  status row contains secondary detail. In Now Playing, the row begins at its
+  responsive imaginary-square inset. Across Full-field Presentations, it
+  occupies one separate stable slot above the centered heading slot and aligns
+  with the accent's top edge.
 - **Indeterminate activity:** Playing without meaningful timing retains its
   supplied artwork and replaces the complete determinate timeline with seven
   rounded activity bars followed by `Audio active` and `Timing unavailable`
@@ -148,16 +149,28 @@ instead of approving a scenario at only one size.
   or resizing the row, and unavailable states expose no stale identities.
 - **Full-field grammar:** Idle, Starting without content, details unavailable,
   Awaiting Roon Authorization, disconnected, and output-unavailable states
-  share the accent-bar language while retaining distinct meanings. Confirm
-  every heading and every present explanation is complete on one line, and
-  that `Nothing is playing` is not clipped at its lower edge.
+  share the accent-bar language while retaining distinct meanings. At every
+  peer viewport, confirm that the bar-and-copy composition occupies 60% of the
+  layout viewport and is horizontally centered; the bar remains its stable
+  left edge; and Presentation Status, heading, and explanation share the same
+  left-aligned text edge after the responsive inset. The fixed heading slot is
+  vertically centered and all scenarios share its position. Presentation
+  Status and the bar top do not move. Explanations occupy the fixed slot below
+  the heading and extend only the bar bottom. Confirm every approved heading
+  and explanation is complete on one line without ellipsis, shorter copy keeps
+  its preferred size, only over-capacity copy shrinks to its largest fitting
+  size, and `Nothing is playing` is not clipped at its lower edge. Any approved
+  Full-field copy change requires renewed visual fit review rather than relying
+  on a permanent minimum font floor.
 - **Diagnostics:** The three overlay representatives remain legible,
   non-displacing, and inside the OLED-safe field; ordinary captures remain
   overlay-free.
 - **Responsive bounds:** Artwork, metadata, full-field copy, identities,
   diagnostics, shadows, and the reserved OLED movement envelope stay inside
-  every viewport. The status and identity anchors remain tied to the imaginary
-  square for square, non-square, missing, and unusable artwork.
+  every viewport. In Now Playing, status and identity anchors remain tied to
+  the imaginary square for square, non-square, missing, and unusable artwork.
+  Available Full-field Presentations retain the same bottom-right identity
+  anchor while using their independent centered status-and-copy geometry.
 
 Static captures establish settled endpoints. To review motion, launch Fixture
 Mode:

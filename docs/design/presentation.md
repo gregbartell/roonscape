@@ -18,8 +18,10 @@ Presentation Status begins a responsive inset below the imaginary square
 artwork field's top edge. The complete Output and Zone identity row ends the
 identical inset above its bottom edge. These symmetric anchors use the reserved
 square, not the viewport or the visible bounds of supplied artwork. They remain
-stable for square, non-square, missing, and unusable artwork and are shared by
-Now Playing and every available full-field presentation.
+stable for square, non-square, missing, and unusable artwork in the Now Playing
+composition. Available Full-field Presentations share only the established
+bottom-right identity anchor; their Presentation Status uses the independent
+Full-field geometry described below.
 
 Title is the dominant text. Artist and Album step down in size, followed by
 Presentation Status, progress or activity copy, and identity labels. Missing
@@ -142,10 +144,34 @@ occupies one complete line across the supported landscape range.
 Available states show the Tracked Output and current Tracked Zone at one
 stable bottom-right position, under the viewer-facing labels **Output** and
 **Zone**. The row stays in that position across Now Playing and available
-full-field states, and Presentation Status shares the same imaginary-square
-top anchor in both forms. Awaiting Roon Authorization, disconnected, and
+Full-field Presentations. Awaiting Roon Authorization, disconnected, and
 output-unavailable states omit the row so potentially stale identities are
 never shown.
+
+The accent bar and copy form a centered composition that occupies 60% of the
+layout viewport. The accent is its stable left edge. Presentation Status, the
+heading, and any explanation are left-aligned to one shared text edge after the
+existing responsive accent inset. The composition remains independent of the
+bottom-right identity row.
+
+The heading occupies a fixed-height slot whose center is the viewport's
+vertical midpoint. Presentation Status occupies one stable slot above it,
+using the established responsive status-to-heading spacing. An optional
+explanation occupies a fixed slot below the heading using the established
+responsive heading-to-explanation spacing. The accent begins at the top of the
+Presentation Status slot and ends after the heading slot when no explanation
+is present. An explanation extends only the accent's bottom edge through its
+slot; it does not move Presentation Status, the heading, or identities.
+
+Each heading and explanation starts at its preferred responsive size and is
+fitted independently after allocation. Only a line that would otherwise
+ellipsize shrinks, choosing the largest size that completes the current
+approved copy on one line. The fixed slots retain their preferred-typography
+geometry while fitted glyphs remain centered within them, so copy length and
+font fitting do not move any anchor. End ellipsis remains a defensive widget
+fallback, but no approved Full-field line is ellipsized. A change to approved
+Full-field copy requires renewed layout and visual fit review; this design does
+not establish a permanent minimum font size for future copy.
 
 Fixture Mode includes both Playing without content and Paused without content
 so the shared content-unavailable behavior can be inspected in each active

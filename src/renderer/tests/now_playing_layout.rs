@@ -263,6 +263,7 @@ fn anchors_status_and_identity_to_the_reserved_square_at_every_viewport() {
         for presentation in &presentations {
             let layout = NowPlayingLayout::for_presentation(presentation, viewport);
             let anchors = layout.artwork_field_anchors;
+            let identity_anchor = layout.identity_anchor;
             let expected_artwork_top_viewport_y_px = layout.outer_gutter_px;
             let expected_artwork_bottom_viewport_y_px =
                 expected_artwork_top_viewport_y_px + layout.artwork_field_height_px;
@@ -271,7 +272,7 @@ fn anchors_status_and_identity_to_the_reserved_square_at_every_viewport() {
                 (
                     anchors.artwork_top_viewport_y_px,
                     anchors.presentation_status_top_viewport_y_px,
-                    anchors.identity_bottom_viewport_y_px,
+                    identity_anchor.bottom_viewport_y_px,
                     anchors.artwork_bottom_viewport_y_px,
                 ),
                 (
@@ -291,6 +292,7 @@ fn converts_the_square_anchors_to_metadata_container_margins() {
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
         let layout = NowPlayingLayout::for_viewport(viewport);
         let anchors = layout.artwork_field_anchors;
+        let identity_anchor = layout.identity_anchor;
 
         assert_eq!(
             anchors.presentation_status_margin_top_px(layout.outer_gutter_px),
@@ -298,7 +300,7 @@ fn converts_the_square_anchors_to_metadata_container_margins() {
             "the metadata container should preserve the status square inset at {viewport:?}",
         );
         assert_eq!(
-            anchors.identity_margin_bottom_px(layout.outer_gutter_px),
+            identity_anchor.margin_bottom_px(layout.outer_gutter_px),
             viewport.height_px + anchors.responsive_inset_px
                 - layout.outer_gutter_px * 2
                 - layout.artwork_field_height_px,

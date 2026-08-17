@@ -62,8 +62,7 @@ fn reserves_the_complete_oled_movement_envelope_at_representative_landscape_view
 
             let full_field = FullFieldLayout::for_viewport(safe.content_viewport);
             assert!(
-                full_field.copy_width_px + 2 * full_field.outer_gutter_px
-                    <= safe.content_viewport.width_px,
+                full_field.composition_width_px <= safe.content_viewport.width_px,
                 "full-field copy should remain inside the OLED envelope"
             );
             assert!(

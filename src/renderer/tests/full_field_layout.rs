@@ -2,144 +2,197 @@
 mod representative_viewports;
 mod support;
 
+use gtk::pango::prelude::FontFamilyExt;
+use gtk::pango::{self, FontDescription, Layout};
+use gtk::prelude::FontMapExt;
 use roonscape_renderer::{
-    FullFieldLayout, FullFieldLineLayout, IdentityLineLayout, IdentityPlacement, NowPlayingLayout,
-    Presentation, TextOverflow, parse_snapshot, presentation_from_snapshot,
-    register_packaged_fallback_fonts,
+    FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, IdentityLineLayout, IdentityPlacement,
+    NowPlayingLayout, Presentation, TextOverflow, Viewport, parse_snapshot,
+    presentation_from_snapshot, register_packaged_fallback_fonts,
 };
 
+const FULL_FIELD_FIXTURES: [(&str, bool, bool); 7] = [
+    ("stopped.json", false, true),
+    ("loading-empty.json", false, true),
+    ("pairing-required.json", true, false),
+    ("disconnected.json", true, false),
+    ("output-unavailable.json", true, false),
+    ("playing-empty.json", false, true),
+    ("paused-empty.json", false, true),
+];
+
 #[test]
-fn bounds_full_field_states_and_identities_at_representative_landscape_viewports() {
+fn centers_a_sixty_percent_full_field_composition_inside_every_safe_viewport() {
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        assert_centered_composition(viewport);
+        assert_centered_composition(Viewport::new(
+            viewport.width_px - 96,
+            viewport.height_px - 72,
+        ));
+    }
+
+    fn assert_centered_composition(viewport: Viewport) {
         let layout = FullFieldLayout::for_viewport(viewport);
-        let now_playing = NowPlayingLayout::for_viewport(viewport);
-        let maximum_copy_height = layout.presentation_status.symbol_size_px
-            + layout.status_spacing_px
-            + layout.heading_px
-            + layout.explanation_spacing_px
-            + layout.explanation_px;
+        let left_space = layout.composition_left_viewport_x_px;
+        let right_space = viewport.width_px - left_space - layout.composition_width_px;
 
         assert!(
-            layout.copy_width_px + layout.outer_gutter_px * 2 <= viewport.width_px,
-            "full-field copy should remain horizontally bounded at {viewport:?}"
+            (layout.composition_width_px as i64 * 5 - viewport.width_px as i64 * 3).abs() <= 2,
+            "full-field composition should occupy 60% at {viewport:?}",
         );
         assert!(
-            maximum_copy_height + layout.outer_gutter_px * 2 <= viewport.height_px,
-            "full-field copy should remain vertically bounded at {viewport:?}"
-        );
-        assert!(layout.accent_padding_px < layout.copy_width_px);
-        assert_eq!(layout.identity_placement, IdentityPlacement::BottomRight);
-        assert_eq!(
-            layout.identity_line,
-            IdentityLineLayout {
-                maximum_lines: 1,
-                overflow: TextOverflow::EllipsizeEnd,
-            }
+            left_space.abs_diff(right_space) <= 1,
+            "full-field composition should be horizontally centered at {viewport:?}",
         );
         assert_eq!(
-            layout.identity_width_px,
-            now_playing.metadata_column_width_px - now_playing.metadata_right_inset_px,
-            "full-field states should share the stable Output and Zone row at {viewport:?}"
+            layout.text_left_viewport_x_px,
+            left_space + layout.accent_width_px + layout.accent_padding_px,
+            "all Full-field copy should share the inset text edge at {viewport:?}",
         );
-        assert!(
-            layout.identity_width_px + layout.identity_right_inset_px + layout.outer_gutter_px
-                <= viewport.width_px,
-            "the identity row should remain inside the field at {viewport:?}"
-        );
+        assert!(layout.composition_width_px <= viewport.width_px);
     }
 }
 
 #[test]
-fn shares_the_imaginary_square_anchors_with_now_playing() {
+fn keeps_full_field_status_heading_and_accent_anchors_stable_across_scenarios() {
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
-        let full_field = FullFieldLayout::for_viewport(viewport);
-        let now_playing = NowPlayingLayout::for_viewport(viewport);
+        let expected = FullFieldLayout::for_viewport(viewport);
 
-        assert_eq!(
-            full_field.artwork_field_anchors, now_playing.artwork_field_anchors,
-            "Presentation Status and the complete Output and Zone row should share one anchor at {viewport:?}",
-        );
-    }
-}
-
-#[test]
-fn available_presentation_forms_use_the_shared_status_and_identity_anchors() {
-    let fixtures = [
-        "playing.json",
-        "paused.json",
-        "loading.json",
-        "stopped.json",
-        "loading-empty.json",
-        "playing-empty.json",
-        "paused-empty.json",
-    ];
-
-    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
-        let shared = NowPlayingLayout::for_viewport(viewport);
-        let expected = shared.artwork_field_anchors;
-
-        for fixture in fixtures {
+        for (fixture, has_explanation, _) in FULL_FIELD_FIXTURES {
             let snapshot = parse_snapshot(&support::fixture(fixture))
-                .expect("available layout fixture should satisfy the shared contract");
+                .expect("Full-field Fixture Scenario should be valid");
             let presentation = presentation_from_snapshot(&snapshot)
-                .expect("available layout fixture should produce a presentation");
-            let anchors = match presentation {
-                Presentation::NowPlaying(presentation) => {
-                    let layout = NowPlayingLayout::for_presentation(&presentation, viewport);
-                    layout.artwork_field_anchors
-                }
-                Presentation::FullField(presentation) => {
-                    assert!(
-                        presentation.identity.is_some(),
-                        "{fixture} should retain the Tracked Output and Tracked Zone",
-                    );
-                    let layout = FullFieldLayout::for_viewport(viewport);
-                    layout.artwork_field_anchors
-                }
+                .expect("Full-field Fixture Scenario should produce a presentation");
+            let Presentation::FullField(presentation) = presentation else {
+                panic!("{fixture} should use a Full-field Presentation");
             };
 
             assert_eq!(
-                anchors, expected,
-                "{fixture} should use the shared square anchors at {viewport:?}",
+                presentation.explanation.is_some(),
+                has_explanation,
+                "{fixture}"
+            );
+            let actual = FullFieldLayout::for_viewport(viewport);
+            assert_eq!(
+                (
+                    actual.composition_left_viewport_x_px,
+                    actual.text_left_viewport_x_px,
+                    actual.presentation_status_slot,
+                    actual.heading_slot,
+                ),
+                (
+                    expected.composition_left_viewport_x_px,
+                    expected.text_left_viewport_x_px,
+                    expected.presentation_status_slot,
+                    expected.heading_slot,
+                ),
+                "{fixture} should preserve Full-field anchors at {viewport:?}",
+            );
+            assert_eq!(
+                actual.accent_bottom_viewport_y_px(has_explanation),
+                if has_explanation {
+                    expected.explanation_slot.bottom_viewport_y_px()
+                } else {
+                    expected.heading_slot.bottom_viewport_y_px()
+                },
+                "{fixture} should extend the accent only through its occupied fixed slots at {viewport:?}",
             );
         }
     }
 }
 
 #[test]
-fn reserves_a_complete_long_heading_word_at_representative_landscape_viewports() {
+fn centers_the_fixed_heading_slot_and_adds_explanation_space_only_below_it() {
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
         let layout = FullFieldLayout::for_viewport(viewport);
-        let heading_width = layout
-            .copy_width_px
-            .saturating_sub(layout.accent_padding_px);
+        let heading_slot_bottom = layout.heading_slot.bottom_viewport_y_px();
 
         assert!(
-            heading_width * 5 >= layout.heading_px * 27,
-            "full-field copy should reserve 5.4 em for a complete heading word at {viewport:?}"
+            (layout.heading_slot.top_viewport_y_px * 2 + layout.heading_slot.height_px)
+                .abs_diff(viewport.height_px)
+                <= 1,
+            "the heading slot should own the vertical center at {viewport:?}",
+        );
+        assert_eq!(
+            layout.explanation_slot.top_viewport_y_px,
+            heading_slot_bottom + layout.explanation_spacing_px,
+            "the explanation slot should begin below the fixed heading slot at {viewport:?}",
+        );
+        assert_eq!(
+            layout.presentation_status_slot.top_viewport_y_px
+                + layout.presentation_status_slot.height_px
+                + layout.status_spacing_px,
+            layout.heading_slot.top_viewport_y_px,
+            "Presentation Status should occupy one stable slot above the heading at {viewport:?}",
+        );
+        assert!(
+            layout.accent_bottom_viewport_y_px(true) <= viewport.height_px,
+            "explanation-bearing copy should remain vertically bounded at {viewport:?}",
         );
     }
 }
 
 #[test]
-fn fits_every_approved_full_field_line_at_representative_landscape_viewports() {
-    use gtk::pango::prelude::FontFamilyExt;
-    use gtk::pango::{self, FontDescription, Layout};
-    use gtk::prelude::FontMapExt;
+fn preserves_the_now_playing_identity_anchor_but_not_its_status_anchor() {
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let full_field = FullFieldLayout::for_viewport(viewport);
+        let now_playing = NowPlayingLayout::for_viewport(viewport);
 
-    let renderer_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    register_packaged_fallback_fonts(renderer_root)
-        .expect("packaged full-field fonts should register");
-    let font_map = pangocairo::FontMap::new();
-    font_map.changed();
-    let available_families = font_map
-        .list_families()
-        .into_iter()
-        .map(|family| family.name().to_string())
-        .collect::<std::collections::HashSet<_>>();
-    assert!(available_families.contains("Libre Baskerville"));
-    assert!(available_families.contains("IBM Plex Sans"));
+        assert_eq!(
+            full_field.identity_anchor, now_playing.identity_anchor,
+            "available presentation forms should share the bottom-right identity anchor at {viewport:?}",
+        );
+        assert_ne!(
+            full_field.presentation_status_slot.top_viewport_y_px,
+            now_playing
+                .artwork_field_anchors
+                .presentation_status_top_viewport_y_px,
+            "Full-field status should be independent of the Now Playing imaginary square at {viewport:?}",
+        );
+        assert_eq!(
+            full_field.identity_placement,
+            IdentityPlacement::BottomRight
+        );
+        assert_eq!(
+            full_field.identity_line,
+            IdentityLineLayout {
+                maximum_lines: 1,
+                overflow: TextOverflow::EllipsizeEnd,
+            }
+        );
+    }
+}
 
+#[test]
+fn available_full_field_scenarios_use_the_shared_identity_anchor_and_unavailable_ones_omit_it() {
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let expected_anchor = NowPlayingLayout::for_viewport(viewport).identity_anchor;
+
+        for (fixture, _, has_identity) in FULL_FIELD_FIXTURES {
+            let snapshot = parse_snapshot(&support::fixture(fixture))
+                .expect("Full-field identity Fixture Scenario should be valid");
+            let presentation = presentation_from_snapshot(&snapshot)
+                .expect("Full-field identity Fixture Scenario should produce a presentation");
+            let Presentation::FullField(presentation) = presentation else {
+                panic!("{fixture} should use a Full-field Presentation");
+            };
+
+            assert_eq!(presentation.identity.is_some(), has_identity, "{fixture}");
+            if has_identity {
+                assert_eq!(
+                    FullFieldLayout::for_viewport(viewport).identity_anchor,
+                    expected_anchor,
+                    "{fixture} should retain the established identity anchor at {viewport:?}",
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn keeps_approved_full_field_copy_complete_at_the_largest_fitting_size() {
+    let font_map = full_field_font_map();
+    let context = font_map.create_context();
     let headings = [
         "Nothing is playing",
         "Preparing playback",
@@ -153,7 +206,6 @@ fn fits_every_approved_full_field_line_at_representative_landscape_viewports() {
         "Check Roon Server and the network.",
         "Open RoonScape setup to choose another Tracked Output, or make the selected output available in Roon.",
     ];
-    let context = font_map.create_context();
 
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
         let layout = FullFieldLayout::for_viewport(viewport);
@@ -171,51 +223,139 @@ fn fits_every_approved_full_field_line_at_representative_landscape_viewports() {
                     overflow: TextOverflow::EllipsizeEnd,
                 },
             ),
-            "full-field copy should stay on complete lines at {viewport:?}",
         );
-        let available_width_px = layout
-            .copy_width_px
-            .saturating_sub(layout.accent_width_px)
-            .saturating_sub(layout.accent_padding_px);
+        let available_width_px = layout.text_width_px();
 
         for heading in headings {
-            assert_line_fits(
+            assert_largest_fitting_line(
                 &context,
                 heading,
                 "Libre Baskerville",
-                layout.heading_px,
+                layout.heading_font,
                 available_width_px,
                 viewport,
             );
         }
         for explanation in explanations {
-            assert_line_fits(
+            assert_largest_fitting_line(
                 &context,
                 explanation,
                 "IBM Plex Sans",
-                layout.explanation_px,
+                layout.explanation_font,
                 available_width_px,
                 viewport,
             );
         }
     }
+}
 
-    fn assert_line_fits(
-        context: &pango::Context,
-        text: &str,
-        family: &str,
-        font_size_px: u32,
-        available_width_px: u32,
-        viewport: roonscape_renderer::Viewport,
-    ) {
-        let line = Layout::new(context);
-        let mut font = FontDescription::from_string(family);
-        font.set_absolute_size(f64::from(font_size_px * pango::SCALE as u32));
-        line.set_font_description(Some(&font));
-        line.set_text(text);
-        line.set_width(available_width_px as i32 * pango::SCALE);
-        line.set_ellipsize(pango::EllipsizeMode::End);
-        assert_eq!(line.line_count(), 1, "{text:?} at {viewport:?}");
-        assert!(!line.is_ellipsized(), "{text:?} at {viewport:?}");
+#[test]
+fn retains_preferred_size_for_short_copy_and_shrinks_only_over_capacity_copy() {
+    let font_map = full_field_font_map();
+    let context = font_map.create_context();
+
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = FullFieldLayout::for_viewport(viewport);
+        let available_width_px = layout.text_width_px();
+        let short_heading = fitting_size(
+            &context,
+            "Nothing is playing",
+            "Libre Baskerville",
+            layout.heading_font,
+            available_width_px,
+        );
+        let long_heading = fitting_size(
+            &context,
+            "Now Playing details unavailable",
+            "Libre Baskerville",
+            layout.heading_font,
+            available_width_px,
+        );
+        let long_explanation = fitting_size(
+            &context,
+            "Open RoonScape setup to choose another Tracked Output, or make the selected output available in Roon.",
+            "IBM Plex Sans",
+            layout.explanation_font,
+            available_width_px,
+        );
+
+        assert_eq!(
+            short_heading, layout.heading_font.preferred_px,
+            "{viewport:?}"
+        );
+        assert!(
+            long_heading < layout.heading_font.preferred_px,
+            "{viewport:?}"
+        );
+        assert!(
+            long_explanation < layout.explanation_font.preferred_px,
+            "{viewport:?}",
+        );
     }
+}
+
+fn full_field_font_map() -> pango::FontMap {
+    let renderer_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    register_packaged_fallback_fonts(renderer_root)
+        .expect("packaged Full-field fonts should register");
+    let font_map = pangocairo::FontMap::new();
+    font_map.changed();
+    let available_families = font_map
+        .list_families()
+        .into_iter()
+        .map(|family| family.name().to_string())
+        .collect::<std::collections::HashSet<_>>();
+    assert!(available_families.contains("Libre Baskerville"));
+    assert!(available_families.contains("IBM Plex Sans"));
+    font_map
+}
+
+fn assert_largest_fitting_line(
+    context: &pango::Context,
+    text: &str,
+    family: &str,
+    sizes: FullFieldFontSize,
+    available_width_px: u32,
+    viewport: Viewport,
+) {
+    let chosen = fitting_size(context, text, family, sizes, available_width_px);
+    assert!(
+        line_fits(context, text, family, chosen, available_width_px),
+        "{text:?} should be complete at {viewport:?}",
+    );
+    if chosen < sizes.preferred_px {
+        assert!(
+            !line_fits(context, text, family, chosen + 1, available_width_px),
+            "{text:?} should use the largest fitting size at {viewport:?}",
+        );
+    }
+}
+
+fn fitting_size(
+    context: &pango::Context,
+    text: &str,
+    family: &str,
+    sizes: FullFieldFontSize,
+    available_width_px: u32,
+) -> u32 {
+    sizes.fitting_font_size(|font_size_px| {
+        line_fits(context, text, family, font_size_px, available_width_px)
+    })
+}
+
+fn line_fits(
+    context: &pango::Context,
+    text: &str,
+    family: &str,
+    font_size_px: u32,
+    available_width_px: u32,
+) -> bool {
+    let line = Layout::new(context);
+    let mut font = FontDescription::from_string(family);
+    font.set_absolute_size(f64::from(font_size_px * pango::SCALE as u32));
+    line.set_font_description(Some(&font));
+    line.set_text(text);
+    line.set_width(available_width_px as i32 * pango::SCALE);
+    line.set_ellipsize(pango::EllipsizeMode::End);
+    line.line_count() == 1 && !line.is_ellipsized()
 }

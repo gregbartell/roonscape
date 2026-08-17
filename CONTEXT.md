@@ -32,6 +32,11 @@ A predefined RoonScape presentation used for repeatable visual inspection in
 Fixture Mode.
 _Avoid_: Fixture screen, mode, screen
 
+**Full-field Presentation**:
+A viewer-facing presentation for a condition that has no useful Now Playing
+composition and instead uses Presentation Status with concise editorial copy.
+_Avoid_: Screen without artwork, no-art screen, full-field state
+
 **Idle**:
 The viewer-facing state used when an available Tracked Output has no current
 playback. It corresponds to Roon's stopped playback state and contains no Now
