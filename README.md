@@ -135,9 +135,10 @@ identifies artwork by its presentation revision. Superseded files are removed;
 the renderer derives a readable presentation palette from the current file and
 uses the fixed navy, coral, and cream fallback when artwork is absent or
 unusable. Metadata wraps within fixed line counts, reduces to readable minimum
-sizes, and ellipsizes only when it still cannot fit. Visual revision changes
-crossfade artwork, metadata, and both layers' full palettes together while
-progress-only samples update in place.
+sizes, and ellipsizes only when it still cannot fit. Presentation changes,
+including availability loss and disconnection, crossfade artwork, metadata,
+and both layers' full palettes together while progress-only samples update in
+place.
 
 Roon Authorization is stored separately at
 `$XDG_STATE_HOME/roonscape/authorization.json`, falling back to

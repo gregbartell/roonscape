@@ -229,22 +229,6 @@ impl PresentationView {
         self.reveal_current();
     }
 
-    pub(crate) fn replace_immediately(
-        &mut self,
-        revision: u64,
-        presentation: &Presentation,
-        repository_root: &Path,
-    ) {
-        let rendered = self.render_current_at_viewport(presentation, repository_root);
-        let (discarded_current, discarded_outgoing) =
-            self.transition.replace_immediately(revision, rendered);
-        self.remove_layer(discarded_current);
-        if let Some(discarded_outgoing) = discarded_outgoing {
-            self.remove_layer(discarded_outgoing);
-        }
-        self.reveal_current();
-    }
-
     pub(crate) fn finish_transition(&mut self, now: Duration) {
         let Some(outgoing) = self.transition.finish(now) else {
             return;

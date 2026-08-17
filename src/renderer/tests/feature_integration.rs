@@ -107,7 +107,7 @@ fn revision_crossfade_enters_inactivity_and_playing_restores_during_the_transiti
 }
 
 #[test]
-fn local_disconnect_clears_a_transition_and_reconnect_keeps_resources_bounded() {
+fn local_disconnect_transitions_and_reconnect_keeps_resources_bounded() {
     let playing = snapshot("playing.json", 7);
     let mut state = PresentationState::new_with_inactivity(
         playing,
@@ -132,7 +132,7 @@ fn local_disconnect_clears_a_transition_and_reconnect_keeps_resources_bounded() 
 
     assert_eq!(
         state.disconnect(Duration::from_millis(100)),
-        PresentationUpdate::ReplaceImmediately
+        PresentationUpdate::TransitionRequired
     );
     let disconnected = state
         .frame_at(Duration::from_millis(100))
@@ -142,11 +142,15 @@ fn local_disconnect_clears_a_transition_and_reconnect_keeps_resources_bounded() 
         &disconnected.presentation,
         Presentation::FullField(_)
     ));
-    let (discarded_current, discarded_outgoing) =
-        transition.replace_immediately(state.revision(), disconnected.presentation);
-    assert_eq!(discarded_current.revision(), 9);
-    assert_eq!(discarded_outgoing.map(|layer| layer.revision()), Some(7));
-    assert!(!transition.is_active());
+    let discarded = transition.begin(
+        state.revision(),
+        disconnected.presentation,
+        Duration::from_millis(100),
+    );
+    assert_eq!(discarded.map(|layer| layer.revision()), Some(7));
+    assert_eq!(transition.current().revision(), 9);
+    assert_eq!(transition.outgoing().map(|layer| layer.revision()), Some(9));
+    assert!(transition.is_active());
 
     assert_eq!(
         state

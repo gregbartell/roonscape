@@ -401,13 +401,6 @@ impl PresentationRuntime {
         };
 
         match presentation_update {
-            Some(PresentationUpdate::ReplaceImmediately) => {
-                self.presentation_view.borrow_mut().replace_immediately(
-                    self.presentation.borrow().revision(),
-                    &current_frame.presentation,
-                    &self.repository_root,
-                );
-            }
             Some(PresentationUpdate::TransitionRequired) => {
                 self.presentation_view.borrow_mut().replace(
                     self.presentation.borrow().revision(),
@@ -441,8 +434,6 @@ fn combine_presentation_update(
     }
 
     Some(match (current, next) {
-        (Some(PresentationUpdate::ReplaceImmediately), _)
-        | (_, PresentationUpdate::ReplaceImmediately) => PresentationUpdate::ReplaceImmediately,
         (Some(PresentationUpdate::TransitionRequired), _)
         | (_, PresentationUpdate::TransitionRequired) => PresentationUpdate::TransitionRequired,
         _ => PresentationUpdate::ProgressOnly,
@@ -513,11 +504,11 @@ mod tests {
     fn fixture_navigation_uses_the_final_selections_update() {
         assert_eq!(
             combine_presentation_update(
-                Some(PresentationUpdate::ReplaceImmediately),
-                PresentationUpdate::TransitionRequired,
+                Some(PresentationUpdate::TransitionRequired),
+                PresentationUpdate::ProgressOnly,
                 true,
             ),
-            Some(PresentationUpdate::TransitionRequired)
+            Some(PresentationUpdate::ProgressOnly)
         );
     }
 
@@ -525,11 +516,11 @@ mod tests {
     fn live_mode_retains_the_strongest_update_in_a_batch() {
         assert_eq!(
             combine_presentation_update(
-                Some(PresentationUpdate::ReplaceImmediately),
-                PresentationUpdate::TransitionRequired,
+                Some(PresentationUpdate::TransitionRequired),
+                PresentationUpdate::ProgressOnly,
                 false,
             ),
-            Some(PresentationUpdate::ReplaceImmediately)
+            Some(PresentationUpdate::TransitionRequired)
         );
     }
 }

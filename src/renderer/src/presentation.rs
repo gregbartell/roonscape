@@ -182,7 +182,6 @@ pub struct PresentationError(&'static str);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PresentationUpdate {
     ProgressOnly,
-    ReplaceImmediately,
     TransitionRequired,
 }
 
@@ -302,10 +301,6 @@ impl PresentationState {
         presentation_from_snapshot(&snapshot)?;
         let update = if !transition_content_changed(&self.snapshot, &snapshot) {
             PresentationUpdate::ProgressOnly
-        } else if self.snapshot.availability == Availability::Available
-            && snapshot.availability != Availability::Available
-        {
-            PresentationUpdate::ReplaceImmediately
         } else {
             PresentationUpdate::TransitionRequired
         };
@@ -338,7 +333,7 @@ impl PresentationState {
         self.progress_anchored_at = anchored_at;
         self.source_sample_age = Duration::ZERO;
         if content_changed {
-            PresentationUpdate::ReplaceImmediately
+            PresentationUpdate::TransitionRequired
         } else {
             PresentationUpdate::ProgressOnly
         }

@@ -555,7 +555,7 @@ fn every_visual_snapshot_field_requests_one_coordinated_transition() {
 }
 
 #[test]
-fn unavailable_snapshots_replace_now_playing_immediately() {
+fn unavailable_snapshots_request_a_coordinated_transition() {
     for (index, fixture_name) in [
         "pairing-required.json",
         "disconnected.json",
@@ -581,8 +581,8 @@ fn unavailable_snapshots_replace_now_playing_immediately() {
 
         assert_eq!(
             update,
-            PresentationUpdate::ReplaceImmediately,
-            "{fixture_name} must not retain outgoing Now Playing content"
+            PresentationUpdate::TransitionRequired,
+            "{fixture_name} should transition from Now Playing content"
         );
         assert!(matches!(
             state
@@ -591,6 +591,68 @@ fn unavailable_snapshots_replace_now_playing_immediately() {
             Presentation::FullField(_)
         ));
     }
+}
+
+#[test]
+fn fixture_scenario_jumps_always_request_a_transition() {
+    let catalog: serde_json::Value = serde_json::from_str(include_str!(
+        "../../shared/fixtures/fixture-scenario-catalog.json"
+    ))
+    .expect("Fixture Scenario catalog should be valid JSON");
+    let scenarios = catalog["scenarios"]
+        .as_array()
+        .expect("Fixture Scenario catalog should contain scenarios");
+    let mut missing_transitions = Vec::new();
+
+    for current_index in 0..scenarios.len() {
+        for selected_index in [
+            (current_index + 1) % scenarios.len(),
+            (current_index + scenarios.len() - 1) % scenarios.len(),
+        ] {
+            let current = &scenarios[current_index];
+            let selected = &scenarios[selected_index];
+            let current_fixture = current["fixture"]
+                .as_str()
+                .and_then(|fixture| fixture.rsplit('/').next())
+                .expect("Fixture Scenario should name a fixture file");
+            let selected_fixture = selected["fixture"]
+                .as_str()
+                .and_then(|fixture| fixture.rsplit('/').next())
+                .expect("Fixture Scenario should name a fixture file");
+            let current_label = current["label"]
+                .as_str()
+                .expect("Fixture Scenario should have a label");
+            let selected_label = selected["label"]
+                .as_str()
+                .expect("Fixture Scenario should have a label");
+            let mut current_snapshot = parse_snapshot(&support::fixture(current_fixture))
+                .expect("current Fixture Scenario should be valid");
+            current_snapshot.revision = 1;
+            let mut selected_snapshot = parse_snapshot(&support::fixture(selected_fixture))
+                .expect("selected Fixture Scenario should be valid");
+            selected_snapshot.revision = 2;
+            let mut state =
+                PresentationState::new(current_snapshot, presentation_time(0, PLAYING_SAMPLED_AT))
+                    .expect("current Fixture Scenario should be presentable");
+
+            let update = state
+                .update_for_fixture_selection(
+                    selected_snapshot,
+                    presentation_time(1, PLAYING_SAMPLED_AT + 1),
+                )
+                .expect("selected Fixture Scenario should be presentable");
+
+            if update != PresentationUpdate::TransitionRequired {
+                missing_transitions.push(format!("{current_label} -> {selected_label}"));
+            }
+        }
+    }
+
+    assert!(
+        missing_transitions.is_empty(),
+        "Fixture Mode did not request transitions for: {}",
+        missing_transitions.join(", ")
+    );
 }
 
 #[test]
@@ -886,7 +948,7 @@ fn clears_now_playing_while_the_bridge_is_disconnected_and_recovers_after_reconn
 
     assert_eq!(
         state.disconnect(Duration::from_secs(11)),
-        PresentationUpdate::ReplaceImmediately
+        PresentationUpdate::TransitionRequired
     );
     let Presentation::FullField(disconnected) = state
         .presentation_at(Duration::from_secs(11))

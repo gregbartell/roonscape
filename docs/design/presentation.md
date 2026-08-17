@@ -102,9 +102,9 @@ fallback for characters that are absent from the active pair.
 
 Motion is restrained to information that changes over time or protects the
 display. Determinate progress advances in place while Playing and remains
-frozen while Paused. A Now Playing revision crossfades artwork, metadata, and
-the full palette as one coordinated layer. When availability is lost, stale
-Now Playing content is removed immediately.
+frozen while Paused. Every presentation change, including availability loss
+and disconnection, crossfades artwork, metadata, and the full palette as one
+coordinated layer.
 
 Paused, Idle, and unavailable presentations retain their normal appearance
 during the configured inactivity grace period, then dim and move periodically

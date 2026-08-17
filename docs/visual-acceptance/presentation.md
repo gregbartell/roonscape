@@ -168,9 +168,9 @@ npm run fixture
 
 Keep the renderer window focused and use Left and Right to move between Fixture
 Scenarios. Confirm that artwork, metadata, palette, identities, and diagnostics
-crossfade as one layer; progress alone updates in place; availability loss
-clears stale Now Playing content immediately; and no transition exposes
-clipped or stale boundary states.
+crossfade as one layer; progress alone updates in place; availability loss and
+disconnection use the same crossfade; and no transition exposes clipped or
+stale boundary states.
 
 Confirm that only the complete Starting ring rotates, with a steady linear
 revolution of about 1.8 seconds. With the platform animation preference
