@@ -19,10 +19,12 @@ const scratchRoot = "/tmp/codex/roonscape";
 
 const REPRESENTATIVE_VIEWPORTS = [
   "1280x720",
+  "1600x900",
   "1600x1200",
   "1920x1200",
   "2560x1080",
   "3840x2160",
+  "3840x2400",
 ];
 const REQUIRED_SCENARIOS = [
   "playing",
@@ -55,7 +57,7 @@ test("plans every visual acceptance scenario at every representative viewport", 
     );
     assert.deepEqual(
       captures.map((capture) => capture.viewport).sort(),
-      REPRESENTATIVE_VIEWPORTS,
+      REPRESENTATIVE_VIEWPORTS.toSorted(),
       `${scenario} should be captured at every representative viewport`,
     );
   }
@@ -206,6 +208,10 @@ test("capture command orchestrates one native fixture capture and records its ma
   const fakePng = path.join(taskDirectory, "fake.png");
   const rendererEnvironment = path.join(taskDirectory, "renderer-environment");
   const rendererArguments = path.join(taskDirectory, "renderer-arguments");
+  const windowInspectionAttempts = path.join(
+    taskDirectory,
+    "window-inspection-attempts",
+  );
   const displayConfiguration = path.join(
     taskDirectory,
     "display-configuration",
@@ -218,11 +224,11 @@ test("capture command orchestrates one native fixture capture and records its ma
   );
   await executable(
     path.join(binDirectory, "cargo"),
-    '#!/bin/sh\nconfiguration_file="$7"\nprintf "%s|%s|%s|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "$ROONSCAPE_CAPTURE_TYPOGRAPHY" "$ROONSCAPE_DIAGNOSTICS" "${ROONSCAPE_DISPLAY_CONFIG-unset}" > "$ROONSCAPE_CAPTURE_TEST_RENDERER_ENVIRONMENT"\nprintf "%s\\n" "$@" > "$ROONSCAPE_CAPTURE_TEST_RENDERER_ARGUMENTS"\ncp "$configuration_file" "$ROONSCAPE_CAPTURE_TEST_DISPLAY_CONFIGURATION"\ntrap \'exit 0\' TERM INT\nwhile :; do /usr/bin/sleep 1; done\n',
+    '#!/bin/sh\nconfiguration_file="$7"\nif [ -S "$ROONSCAPE_SOCKET" ]; then\n  publisher_state=ready\nelse\n  publisher_state=missing\nfi\nprintf "%s|%s|%s|%s|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "$ROONSCAPE_CAPTURE_TYPOGRAPHY" "$ROONSCAPE_DIAGNOSTICS" "${ROONSCAPE_DISPLAY_CONFIG-unset}" "$publisher_state" > "$ROONSCAPE_CAPTURE_TEST_RENDERER_ENVIRONMENT"\nprintf "%s\\n" "$@" > "$ROONSCAPE_CAPTURE_TEST_RENDERER_ARGUMENTS"\ncp "$configuration_file" "$ROONSCAPE_CAPTURE_TEST_DISPLAY_CONFIGURATION"\ntrap \'exit 0\' TERM INT\nwhile :; do /usr/bin/sleep 1; done\n',
   );
   await executable(
     path.join(binDirectory, "xwininfo"),
-    "#!/bin/sh\nprintf 'xwininfo: Window id: 4242 \"RoonScape\"\\n  Width: 1280\\n  Height: 720\\n'\n",
+    '#!/bin/sh\nattempts_file="$ROONSCAPE_CAPTURE_TEST_WINDOW_INSPECTION_ATTEMPTS"\nattempt=0\n[ ! -f "$attempts_file" ] || read -r attempt < "$attempts_file"\nattempt=$((attempt + 1))\nprintf "%s\\n" "$attempt" > "$attempts_file"\nif [ "$attempt" -eq 1 ]; then\n  width=1\n  height=1\nelse\n  width=1280\n  height=720\nfi\nprintf \'xwininfo: Window id: 4242 "RoonScape"\\n  Width: %s\\n  Height: %s\\n\' "$width" "$height"\n',
   );
   await executable(
     path.join(binDirectory, "scrot"),
@@ -252,6 +258,8 @@ test("capture command orchestrates one native fixture capture and records its ma
           ROONSCAPE_CAPTURE_TEST_DISPLAY_CONFIGURATION: displayConfiguration,
           ROONSCAPE_CAPTURE_TEST_RENDERER_ARGUMENTS: rendererArguments,
           ROONSCAPE_CAPTURE_TEST_RENDERER_ENVIRONMENT: rendererEnvironment,
+          ROONSCAPE_CAPTURE_TEST_WINDOW_INSPECTION_ATTEMPTS:
+            windowInspectionAttempts,
           ROONSCAPE_CAPTURE_TEST_WINDOW_ID: "4242",
         },
       },
@@ -278,7 +286,13 @@ test("capture command orchestrates one native fixture capture and records its ma
     );
     assert.equal(
       await readFile(rendererEnvironment, "utf8"),
-      "1280x720||0|unset\n",
+      "1280x720||0|unset|ready\n",
+      "the fixture publisher should be ready before the renderer starts",
+    );
+    assert.equal(
+      await readFile(windowInspectionAttempts, "utf8"),
+      "2\n",
+      "capture readiness should wait for the native window to reach its requested size",
     );
     const rendererArgumentList = (await readFile(rendererArguments, "utf8"))
       .trimEnd()

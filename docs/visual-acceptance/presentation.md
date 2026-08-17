@@ -42,16 +42,16 @@ output directory must be absent or empty:
 ```sh
 npm run capture:presentations -- --only playing
 npm run capture:presentations -- --only identity-baselines
-npm run capture:presentations -- --viewport 1600x1200
-npm run capture:presentations -- --only playing --viewport 1600x1200
+npm run capture:presentations -- --viewport 1600x900
+npm run capture:presentations -- --only playing --viewport 1600x900
 npm run capture:presentations -- --output /tmp/codex/roonscape/presentation-review
 ```
 
 ## Complete Fixture Scenario matrix
 
 The full matrix captures every maintained Fixture Scenario at each of these
-peer representative viewports: 1280x720, 1600x1200, 1920x1200, 2560x1080, and
-3840x2160.
+peer representative viewports: 1280×720, 1600×900, 1600×1200, 1920×1200,
+2560×1080, 3840×2160, and 3840×2400.
 
 | Scenario                 | Shared fixture                | Review focus                                   |
 | ------------------------ | ----------------------------- | ---------------------------------------------- |
@@ -75,9 +75,10 @@ peer representative viewports: 1280x720, 1600x1200, 1920x1200, 2560x1080, and
 | Non-square artwork       | `non-square-artwork.json`     | Image-shaped frame in a reserved square        |
 | Light artwork            | `light-artwork.json`          | Readable light artwork-derived palette         |
 
-Treat all five viewports as peers. Together they exercise the minimum
-supported landscape size, 4:3, 16:10, ultrawide, and high-resolution
-presentations without making one size the visual authority.
+Treat all seven viewports as peers. Together they exercise the minimum
+supported landscape size, the 1600×900 windowed Fixture Mode presentation,
+4:3, 16:10, ultrawide, 4K, and 3840×2400 fullscreen presentations without
+making one size the visual authority.
 
 ## Typography, identity, and diagnostics representatives
 

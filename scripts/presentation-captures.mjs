@@ -4,10 +4,12 @@ import { readFixtureScenarioCatalog } from "../src/bridge/dist/src/fixture-scena
 
 const VIEWPORTS = [
   { key: "1280x720", width: 1280, height: 720 },
+  { key: "1600x900", width: 1600, height: 900 },
   { key: "1600x1200", width: 1600, height: 1200 },
   { key: "1920x1200", width: 1920, height: 1200 },
   { key: "2560x1080", width: 2560, height: 1080 },
   { key: "3840x2160", width: 3840, height: 2160 },
+  { key: "3840x2400", width: 3840, height: 2400 },
 ];
 
 const defaultCatalogPath = fileURLToPath(

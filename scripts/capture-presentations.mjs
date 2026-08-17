@@ -17,6 +17,7 @@ import { buildPresentationCapturePlan } from "./presentation-captures.mjs";
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const scratchRoot = "/tmp/codex/roonscape";
 const nativeRenderer = "native GTK 4/Pango";
+const defaultSettleMilliseconds = 1_500;
 const captureDisplayConfiguration = {
   trackedOutputId: "visual-acceptance-capture",
   inactivity: {
@@ -137,6 +138,13 @@ async function captureFixture(
   let publisher;
   let renderer;
   try {
+    publisher = startLongRunning(
+      process.execPath,
+      [path.join(repositoryRoot, "src/bridge/dist/src/fixture.js")],
+      environment,
+    );
+    await publisher.spawned;
+    await waitForPath(socketPath, publisher, "the fixture publisher");
     renderer = startLongRunning(
       "cargo",
       [
@@ -157,12 +165,6 @@ async function captureFixture(
       capture.width,
       capture.height,
     );
-    publisher = startLongRunning(
-      process.execPath,
-      [path.join(repositoryRoot, "src/bridge/dist/src/fixture.js")],
-      environment,
-    );
-    await waitForPath(socketPath, publisher, "the fixture publisher");
     await delay(settleMilliseconds);
     assertRunning(renderer, "the native renderer");
 
@@ -248,6 +250,7 @@ async function waitForRoonScapeWindow(
   expectedWidth,
   expectedHeight,
 ) {
+  let lastWindow;
   for (let attempt = 0; attempt < 300; attempt += 1) {
     assertRunning(renderer, "the native renderer");
     try {
@@ -257,28 +260,25 @@ async function waitForRoonScapeWindow(
         environment,
       );
       const window = parseWindowInformation(output);
-      if (window.width !== expectedWidth || window.height !== expectedHeight) {
-        throw new Error(
-          `native RoonScape window is ${window.width}x${window.height}; expected ${expectedWidth}x${expectedHeight}`,
-        );
+      lastWindow = window;
+      if (window.width === expectedWidth && window.height === expectedHeight) {
+        return window.id;
       }
-      return window.id;
     } catch (error) {
       if (error?.code === "ENOENT") {
         throw new Error("xwininfo is required for native capture readiness", {
           cause: error,
         });
       }
-      if (
-        error instanceof Error &&
-        error.message.startsWith("native RoonScape window is ")
-      ) {
-        throw error;
-      }
     }
     await delay(100);
   }
 
+  if (lastWindow !== undefined) {
+    throw new Error(
+      `native RoonScape window remained ${lastWindow.width}x${lastWindow.height}; expected ${expectedWidth}x${expectedHeight}`,
+    );
+  }
   throw new Error("timed out waiting for the native RoonScape window");
 }
 
@@ -416,7 +416,7 @@ function parseArguments(arguments_) {
     output: undefined,
     only: undefined,
     viewport: undefined,
-    settleMilliseconds: 900,
+    settleMilliseconds: defaultSettleMilliseconds,
   };
 
   for (let index = 0; index < arguments_.length; index += 1) {

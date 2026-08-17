@@ -35,6 +35,9 @@ shrinks below the established readable font floors.
 The composition uses the complete landscape field without letterboxing.
 Artwork and metadata keep their relative emphasis on ordinary, tall, wide,
 and high-resolution displays rather than treating one viewport as canonical.
+The peer acceptance set is exactly 1280×720, 1600×900, 1600×1200, 1920×1200,
+2560×1080, 3840×2160, and 3840×2400; all seven viewports carry equal design
+authority.
 
 ## Artwork and palette
 

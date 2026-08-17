@@ -93,6 +93,11 @@ fn retains_long_metadata_with_expanded_bounds_and_existing_readability_tiers() {
             album: font_tiers(20, 17, 15),
         },
         ExpectedFontTiers {
+            title: font_tiers(74, 58, 45),
+            artist: font_tiers(28, 23, 20),
+            album: font_tiers(20, 17, 15),
+        },
+        ExpectedFontTiers {
             title: font_tiers(88, 70, 54),
             artist: font_tiers(34, 28, 24),
             album: font_tiers(23, 20, 18),
@@ -101,6 +106,11 @@ fn retains_long_metadata_with_expanded_bounds_and_existing_readability_tiers() {
             title: font_tiers(118, 93, 72),
             artist: font_tiers(45, 37, 32),
             album: font_tiers(31, 27, 24),
+        },
+        ExpectedFontTiers {
+            title: font_tiers(168, 128, 96),
+            artist: font_tiers(64, 56, 48),
+            album: font_tiers(45, 40, 35),
         },
         ExpectedFontTiers {
             title: font_tiers(168, 128, 96),
@@ -237,5 +247,5 @@ fn scales_metadata_typography_across_representative_landscape_viewports() {
                 .preferred_px
         });
 
-    assert_eq!(preferred_title_sizes, [59, 74, 88, 118, 168]);
+    assert_eq!(preferred_title_sizes, [59, 74, 74, 88, 118, 168, 168]);
 }
