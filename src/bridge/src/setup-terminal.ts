@@ -20,43 +20,45 @@ export function readSetupKey(
       return;
     }
 
-    const wasPaused = input.isPaused();
     const wasRaw = input.isRaw;
     emitKeypressEvents(input);
     input.setRawMode(true);
     input.resume();
 
+    let settled = false;
     const cleanup = (): void => {
       input.off("keypress", handleKeypress);
       signal.removeEventListener("abort", handleAbort);
       input.setRawMode(wasRaw);
-      if (wasPaused) {
-        input.pause();
-      }
+      input.pause();
     };
     const finish = (key: SetupKey): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       cleanup();
       resolve(key);
     };
     const handleAbort = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       cleanup();
       reject(abortError());
     };
     const handleKeypress = (_character: string, key: Key): void => {
       if (key.ctrl && key.name === "c") {
-        finish("quit");
+        handleAbort();
       } else if (key.name === "up") {
         finish("up");
       } else if (key.name === "down") {
         finish("down");
       } else if (key.name === "return" || key.name === "enter") {
         finish("enter");
-      } else if (key.name === "r") {
-        finish("retry");
       } else if (key.name === "c") {
         finish("customize");
-      } else if (key.name === "q") {
-        finish("quit");
       }
     };
 
@@ -68,17 +70,24 @@ export function readSetupKey(
 export function readSetupValue(
   prompt: string,
   initialValue: string,
+  signal: AbortSignal,
   input: ReadStream = process.stdin,
   output: NodeJS.WriteStream = process.stdout,
-): Promise<string | null> {
-  return new Promise((resolve) => {
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(abortError());
+      return;
+    }
+
     const terminal = createInterface({ input, output, terminal: true });
     let settled = false;
     const cleanup = (): void => {
       terminal.off("SIGINT", handleInterrupt);
+      signal.removeEventListener("abort", handleAbort);
       terminal.close();
     };
-    const finish = (value: string | null): void => {
+    const finish = (value: string): void => {
       if (settled) {
         return;
       }
@@ -86,14 +95,24 @@ export function readSetupValue(
       cleanup();
       resolve(value);
     };
-    const handleInterrupt = (): void => finish(null);
+    const cancel = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(abortError());
+    };
+    const handleInterrupt = (): void => cancel();
+    const handleAbort = (): void => cancel();
 
     terminal.on("SIGINT", handleInterrupt);
+    signal.addEventListener("abort", handleAbort, { once: true });
     terminal.question(`${prompt} `, finish);
     terminal.write(initialValue);
   });
 }
 
 function abortError(): Error {
-  return new DOMException("Setup key read cancelled", "AbortError");
+  return new DOMException("Setup cancelled", "AbortError");
 }

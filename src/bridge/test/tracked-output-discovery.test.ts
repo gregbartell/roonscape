@@ -104,7 +104,7 @@ test("discovers physical Tracked Outputs from Roon's initial full zone state", a
   );
 });
 
-test("indefinite discovery can be cancelled cleanly for Retry or Quit", async () => {
+test("indefinite discovery can be cancelled cleanly", async () => {
   let discoveryStopped = false;
   let disconnected = false;
   const controller = new AbortController();

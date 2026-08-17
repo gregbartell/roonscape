@@ -51,7 +51,8 @@ export interface RoonScapeCommandDependencies extends SetupDependencies {
 
 const usage = `Usage: roonscape [--setup] [--config PATH]
 
-Launch RoonScape as one foreground session.
+  Show what Roon's playing.
+  Display only, no controls.
 
 Options:
   --setup        Reconfigure and exit without launching
@@ -109,20 +110,32 @@ export async function runRoonScapeCommand(
   }
 
   if (configuration === null || options.setupRequested) {
+    const setupAbort = new AbortController();
+    let cancellationExitCode = 130;
+    const unsubscribe = dependencies.subscribeToTermination((signal) => {
+      cancellationExitCode = signal === "SIGINT" ? 130 : 143;
+      setupAbort.abort();
+    });
     try {
-      const completed = await runSetup(
+      await runSetup(
         configurationFile,
         dependencies,
         configuration,
+        setupAbort.signal,
       );
-      if (!completed || options.setupRequested) {
+      if (options.setupRequested) {
         return 0;
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        return cancellationExitCode;
+      }
       dependencies.writeError(
         `Could not complete setup: ${error instanceof Error ? error.message : String(error)}`,
       );
       return 1;
+    } finally {
+      unsubscribe();
     }
   }
 
@@ -134,6 +147,10 @@ export async function runRoonScapeCommand(
     );
     return 1;
   }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 interface LaunchOptions {

@@ -44,6 +44,10 @@ test("help describes the owner-facing command", async () => {
     output.join("\n"),
     /Usage: roonscape \[--setup\] \[--config PATH\]/,
   );
+  assert.match(
+    output.join("\n"),
+    /Show what Roon's playing\.\n {2}Display only, no controls\./,
+  );
   assert.match(output.join("\n"), /--setup/);
   assert.match(output.join("\n"), /--help/);
   assert.match(output.join("\n"), /--version/);
@@ -239,7 +243,6 @@ test("first-time setup saves OLED defaults and continues into the presentation",
   let savedConfiguration:
     | Parameters<RoonScapeCommandDependencies["saveConfiguration"]>[1]
     | undefined;
-  let keyRead = 0;
   const bridge = pendingChild((signal) => events.push(`bridge:${signal}`));
   const dependencies = commandDependencies({
     terminalIsInteractive: () => true,
@@ -251,13 +254,7 @@ test("first-time setup saves OLED defaults and continues into the presentation",
         trackedZoneName: "Living Room",
       },
     ],
-    readSetupKey: (signal) => {
-      keyRead += 1;
-      if (keyRead === 1) {
-        return abortedKeyRead(signal);
-      }
-      return Promise.resolve("enter");
-    },
+    readSetupKey: async () => "enter",
     saveConfiguration: (configurationFile, configuration) => {
       events.push(`configuration:save:${configurationFile}`);
       savedConfiguration = configuration;
@@ -289,6 +286,8 @@ test("first-time setup saves OLED defaults and continues into the presentation",
   assert.match(output.join("\n"), /5 minutes/);
   assert.match(output.join("\n"), /35 percent/);
   assert.match(output.join("\n"), /1 minute/);
+  assert.match(output.join("\n"), /Ctrl-C.*cancel without saving/);
+  assert.doesNotMatch(output.join("\n"), /Retry|Quit|Press Q/);
   assert.deepEqual(savedConfiguration, {
     trackedOutputId: "output-speaker-system",
     inactivity: {
@@ -363,7 +362,7 @@ test("--setup refuses to wait for input without an interactive terminal", async 
       loadConfiguration: () => ({ trackedOutputId: "output-study" }),
       readSetupKey: async () => {
         inputRead = true;
-        return "quit";
+        return "enter";
       },
       writeError: (line) => errors.push(line),
     }),
@@ -404,7 +403,11 @@ test("--setup prefills OLED values and corrects invalid custom entries", async (
       readSetupKey: scriptedSetupKeys("enter", "customize"),
       readSetupValue: async (prompt, initialValue) => {
         prompts.push({ prompt, initialValue });
-        return answers.shift() ?? null;
+        const answer = answers.shift();
+        if (answer === undefined) {
+          throw new Error("an OLED answer was not scripted");
+        }
+        return answer;
       },
       saveConfiguration: (_configurationFile, configuration) => {
         savedConfiguration = configuration;
@@ -568,13 +571,15 @@ test("cancelling reconfiguration leaves the Display Configuration byte-for-byte 
           },
         ],
         readSetupKey: scriptedSetupKeys("enter", "customize"),
-        readSetupValue: async () => null,
+        readSetupValue: async () => {
+          throw new DOMException("cancelled", "AbortError");
+        },
         saveConfiguration: (_selectedFile, configuration) =>
           configurationStore.save(configuration),
       }),
     );
 
-    assert.equal(result, 0);
+    assert.equal(result, 130);
     assert.equal(await readFile(configurationFile, "utf8"), original);
   });
 });
@@ -628,7 +633,6 @@ test("setup atomically publishes a private Display Configuration before launch",
     const configurationStore = new FileDisplayConfigurationStore(
       configurationFile,
     );
-    let keyRead = 0;
     let configurationAtLaunch:
       ReturnType<FileDisplayConfigurationStore["load"]> | undefined;
     const bridge = pendingChild(() => undefined);
@@ -646,12 +650,7 @@ test("setup atomically publishes a private Display Configuration before launch",
             trackedZoneName: "Living Room",
           },
         ],
-        readSetupKey: (signal) => {
-          keyRead += 1;
-          return keyRead === 1
-            ? abortedKeyRead(signal)
-            : Promise.resolve("enter");
-        },
+        readSetupKey: async () => "enter",
         saveConfiguration: (_configurationFile, configuration) =>
           configurationStore.save(configuration),
         openRuntime: async () => ({
@@ -678,72 +677,77 @@ test("setup atomically publishes a private Display Configuration before launch",
   });
 });
 
-test("waiting for Roon Authorization shows delayed troubleshooting and supports Retry", async () => {
+test("waiting for Roon Authorization keeps one discovery attempt active", async () => {
   const output: string[] = [];
   const discoveryAuthorizations: string[] = [];
-  let discoveryAttempt = 0;
   let keyRead = 0;
-  let cancelledAttempt = false;
+  let finishDiscovery:
+    | ((
+        outputs: Array<{
+          trackedOutputId: string;
+          trackedOutputName: string;
+          trackedZoneName: string;
+        }>,
+      ) => void)
+    | undefined;
   const result = await runRoonScapeCommand(
-    [],
+    ["--setup"],
     commandDependencies({
       terminalIsInteractive: () => true,
       discoverTrackedOutputs: (authorizationFile, signal) => {
         discoveryAuthorizations.push(authorizationFile);
-        discoveryAttempt += 1;
-        if (discoveryAttempt === 1) {
-          return new Promise((_, reject) => {
-            signal.addEventListener(
-              "abort",
-              () => {
-                cancelledAttempt = true;
-                reject(new DOMException("cancelled", "AbortError"));
-              },
-              { once: true },
-            );
-          });
-        }
-        return Promise.resolve([
-          {
-            trackedOutputId: "output-speaker-system",
-            trackedOutputName: "Speaker System",
-            trackedZoneName: "Living Room",
-          },
-        ]);
+        return new Promise((resolve, reject) => {
+          finishDiscovery = resolve;
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("cancelled", "AbortError")),
+            { once: true },
+          );
+        });
       },
-      readSetupKey: (signal) => {
+      readSetupKey: async () => {
         keyRead += 1;
-        if (keyRead === 1 || keyRead === 3) {
-          return abortedKeyRead(signal);
-        }
-        return Promise.resolve(keyRead === 2 ? "retry" : "quit");
+        return "enter";
       },
       delay: async () => undefined,
-      writeOutput: (line) => output.push(line),
+      writeOutput: (line) => {
+        output.push(line);
+        if (line.startsWith("Still waiting")) {
+          finishDiscovery?.([
+            {
+              trackedOutputId: "output-speaker-system",
+              trackedOutputName: "Speaker System",
+              trackedZoneName: "Living Room",
+            },
+          ]);
+        }
+      },
+      saveConfiguration: () => undefined,
     }),
   );
 
   assert.equal(result, 0);
-  assert.equal(cancelledAttempt, true);
+  assert.equal(keyRead, 2);
   assert.deepEqual(discoveryAuthorizations, [
-    "/state/roonscape/authorization.json",
     "/state/roonscape/authorization.json",
   ]);
   assert.match(output.join("\n"), /Still waiting/);
   assert.match(output.join("\n"), /same network/);
-  assert.match(output.join("\n"), /Retrying Roon discovery/);
+  assert.doesNotMatch(output.join("\n"), /Retry|Quit/);
 });
 
-test("quitting while waiting for Roon Authorization leaves Display Configuration untouched", async () => {
+test("Ctrl-C while waiting for Roon Authorization leaves Display Configuration untouched", async () => {
   let discoveryCancelled = false;
   let saved = false;
   let launched = false;
+  let interruptSetup: ((signal: "SIGINT") => void) | undefined;
   const result = await runRoonScapeCommand(
     [],
     commandDependencies({
       terminalIsInteractive: () => true,
-      discoverTrackedOutputs: (_authorizationFile, signal) =>
-        new Promise((_, reject) => {
+      discoverTrackedOutputs: (_authorizationFile, signal) => {
+        queueMicrotask(() => interruptSetup?.("SIGINT"));
+        return new Promise((_, reject) => {
           signal.addEventListener(
             "abort",
             () => {
@@ -752,8 +756,8 @@ test("quitting while waiting for Roon Authorization leaves Display Configuration
             },
             { once: true },
           );
-        }),
-      readSetupKey: async () => "quit",
+        });
+      },
       delay: () => new Promise(() => undefined),
       saveConfiguration: () => {
         saved = true;
@@ -762,10 +766,14 @@ test("quitting while waiting for Roon Authorization leaves Display Configuration
         launched = true;
         throw new Error("runtime should not be opened");
       },
+      subscribeToTermination: (handler) => {
+        interruptSetup = handler;
+        return () => undefined;
+      },
     }),
   );
 
-  assert.equal(result, 0);
+  assert.equal(result, 130);
   assert.equal(discoveryCancelled, true);
   assert.equal(saved, false);
   assert.equal(launched, false);
@@ -774,7 +782,6 @@ test("quitting while waiting for Roon Authorization leaves Display Configuration
 test("arrow-key selection disambiguates identical Tracked Output choices", async () => {
   const output: string[] = [];
   let selectedTrackedOutput = "";
-  let keyRead = 0;
   const bridge = pendingChild(() => undefined);
   const result = await runRoonScapeCommand(
     [],
@@ -792,14 +799,7 @@ test("arrow-key selection disambiguates identical Tracked Output choices", async
           trackedZoneName: "Living Room",
         },
       ],
-      readSetupKey: (signal) => {
-        keyRead += 1;
-        if (keyRead === 1) {
-          return abortedKeyRead(signal);
-        }
-        const keys = ["down", "enter", "enter"] as const;
-        return Promise.resolve(keys[keyRead - 2] ?? "quit");
-      },
+      readSetupKey: scriptedSetupKeys("down", "enter", "enter"),
       saveConfiguration: (_configurationFile, configuration) => {
         selectedTrackedOutput = configuration.trackedOutputId;
       },
@@ -833,13 +833,15 @@ test("OLED defaults require explicit acceptance before saving", async () => {
           trackedZoneName: "Living Room",
         },
       ],
-      readSetupKey: (signal) => {
+      readSetupKey: () => {
         keyRead += 1;
         if (keyRead === 1) {
-          return abortedKeyRead(signal);
+          return Promise.resolve("enter");
         }
-        const keys = ["enter", "down", "quit"] as const;
-        return Promise.resolve(keys[keyRead - 2] ?? "quit");
+        if (keyRead === 2) {
+          return Promise.resolve("down");
+        }
+        return Promise.reject(new DOMException("cancelled", "AbortError"));
       },
       saveConfiguration: () => {
         saved = true;
@@ -847,14 +849,13 @@ test("OLED defaults require explicit acceptance before saving", async () => {
     }),
   );
 
-  assert.equal(result, 0);
+  assert.equal(result, 130);
   assert.equal(saved, false);
 });
 
-test("empty discovery offers Refresh and Quit without guessing an output", async () => {
-  const output: string[] = [];
+test("empty discovery exits with guidance to rerun setup", async () => {
+  const errors: string[] = [];
   let discoveryAttempt = 0;
-  let keyRead = 0;
   let saved = false;
   const result = await runRoonScapeCommand(
     [],
@@ -862,36 +863,38 @@ test("empty discovery offers Refresh and Quit without guessing an output", async
       terminalIsInteractive: () => true,
       discoverTrackedOutputs: async () => {
         discoveryAttempt += 1;
-        return discoveryAttempt === 1
-          ? []
-          : [
-              {
-                trackedOutputId: "output-speaker-system",
-                trackedOutputName: "Speaker System",
-                trackedZoneName: "Living Room",
-              },
-            ];
-      },
-      readSetupKey: (signal) => {
-        keyRead += 1;
-        if (keyRead === 1 || keyRead === 3) {
-          return abortedKeyRead(signal);
-        }
-        return Promise.resolve(keyRead === 2 ? "retry" : "quit");
+        return [];
       },
       saveConfiguration: () => {
         saved = true;
       },
-      writeOutput: (line) => output.push(line),
+      writeError: (line) => errors.push(line),
     }),
   );
 
-  assert.equal(result, 0);
-  assert.equal(discoveryAttempt, 2);
+  assert.equal(result, 1);
+  assert.equal(discoveryAttempt, 1);
   assert.equal(saved, false);
-  assert.match(output.join("\n"), /No Tracked Outputs/);
-  assert.match(output.join("\n"), /Refresh/);
-  assert.match(output.join("\n"), /Quit/);
+  assert.match(errors.join("\n"), /No Tracked Outputs/);
+  assert.match(errors.join("\n"), /rerun roonscape --setup/);
+});
+
+test("failed discovery exits with guidance to rerun setup", async () => {
+  const errors: string[] = [];
+  const result = await runRoonScapeCommand(
+    ["--setup"],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      discoverTrackedOutputs: async () => {
+        throw new Error("network unavailable");
+      },
+      writeError: (line) => errors.push(line),
+    }),
+  );
+
+  assert.equal(result, 1);
+  assert.match(errors.join("\n"), /network unavailable/);
+  assert.match(errors.join("\n"), /Rerun roonscape --setup to try again/);
 });
 
 test("malformed interactive Display Configuration is reported before repair is offered", async () => {
@@ -902,7 +905,9 @@ test("malformed interactive Display Configuration is reported before repair is o
     commandDependencies({
       terminalIsInteractive: () => true,
       configurationFileExists: () => true,
-      readSetupKey: async () => "quit",
+      readSetupKey: async () => {
+        throw new DOMException("cancelled", "AbortError");
+      },
       writeError: (line) => events.push(`error:${line}`),
       writeOutput: (line) => events.push(`output:${line}`),
       saveConfiguration: () => {
@@ -911,7 +916,7 @@ test("malformed interactive Display Configuration is reported before repair is o
     }),
   );
 
-  assert.equal(result, 0);
+  assert.equal(result, 130);
   assert.equal(saved, false);
   assert.match(events[0] ?? "", /Display Configuration is invalid/);
   assert.match(events[1] ?? "", /repair/);
@@ -927,7 +932,7 @@ test("malformed noninteractive Display Configuration never enters setup", async 
       terminalIsInteractive: () => false,
       readSetupKey: async () => {
         inputRead = true;
-        return "quit";
+        return "enter";
       },
       writeError: (line) => errors.push(line),
     }),
@@ -1439,27 +1444,17 @@ function completedChild(result: ChildResult): RunningChild {
   };
 }
 
-function abortedKeyRead(signal: AbortSignal): Promise<never> {
-  return new Promise((_, reject) => {
-    signal.addEventListener(
-      "abort",
-      () => {
-        reject(new DOMException("Setup key read cancelled", "AbortError"));
-      },
-      { once: true },
-    );
-  });
-}
-
 function scriptedSetupKeys(
   ...keys: SetupKey[]
 ): RoonScapeCommandDependencies["readSetupKey"] {
   let keyRead = 0;
-  return (signal) => {
+  return async () => {
+    const key = keys[keyRead];
     keyRead += 1;
-    return keyRead === 1
-      ? abortedKeyRead(signal)
-      : Promise.resolve(keys[keyRead - 2] ?? "quit");
+    if (key === undefined) {
+      throw new Error("a setup key was not scripted");
+    }
+    return key;
   };
 }
 
