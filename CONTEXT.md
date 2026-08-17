@@ -47,6 +47,12 @@ _Avoid_: Live version, production mode
 The Roon-provided content currently associated with the Tracked Zone.
 _Avoid_: Now-playing presentation, current content
 
+**Presentation Status**:
+The viewer-facing condition label that identifies RoonScape's current
+playback or availability condition, such as Playing, Paused, Idle, or
+Disconnected.
+_Avoid_: Screen name, eyebrow
+
 **Roon Authorization**:
 Roon's persisted approval for RoonScape to connect as an extension. It is
 independent of Display Configuration.
@@ -65,6 +71,11 @@ _Avoid_: Roon Display, web controller, remote
 The machine that runs RoonScape and drives its attached display. It may also
 run Roon Server or unrelated workloads.
 _Avoid_: Dedicated host
+
+**Starting**:
+The viewer-facing playback condition used while Roon reports that the Tracked
+Zone is loading, whether or not Now Playing content is available.
+_Avoid_: Loading in viewer-facing copy, Preparing
 
 **Title**:
 Roon's first Now Playing display line, presented as the track title even though

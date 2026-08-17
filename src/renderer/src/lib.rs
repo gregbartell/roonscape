@@ -42,8 +42,9 @@ pub use palette::{PaletteError, PresentationPalette, Rgb};
 pub use presentation::{
     FullFieldPresentation, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform,
     LayoutOffset, NowPlayingPresentation, Presentation, PresentationError, PresentationFrame,
-    PresentationIdentity, PresentationProgress, PresentationState, PresentationTime,
-    PresentationUpdate, StatusEmphasis, presentation_from_snapshot,
+    PresentationIdentity, PresentationProgress, PresentationState, PresentationStatus,
+    PresentationStatusEmphasis, PresentationStatusMotion, PresentationStatusSymbol,
+    PresentationTime, PresentationUpdate, presentation_from_snapshot,
 };
 pub use resolution::{ResolvedPresentation, resolve_presentation};
 pub use style::{

@@ -57,7 +57,7 @@ fn maps_the_playing_snapshot_to_now_playing_content() {
     );
     assert_eq!(presentation.tracked_output, "Speaker System");
     assert_eq!(presentation.tracked_zone, "Living Room");
-    assert_eq!(presentation.playback_state(), "Playing");
+    assert_eq!(presentation.status.label, "PLAYING");
     assert_eq!(presentation.artwork_revision, Some(3));
     assert_eq!(
         presentation.artwork_path.as_deref(),
@@ -103,19 +103,19 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
     let expected = [
         (
             "pairing-required.json",
-            "Pairing required",
+            "PAIRING REQUIRED",
             "Enable RoonScape",
             "Open Settings → Extensions in a Roon client, then enable RoonScape.",
         ),
         (
             "disconnected.json",
-            "Disconnected",
+            "DISCONNECTED",
             "Waiting for Roon",
             "Check Roon Server and the network. This display updates when Roon returns.",
         ),
         (
             "output-unavailable.json",
-            "Output unavailable",
+            "OUTPUT UNAVAILABLE",
             "Tracked Output unavailable",
             "Configure a Tracked Output on this RoonScape Host, or check that the selected output is available in Roon.",
         ),
@@ -132,7 +132,7 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
 
         assert_eq!(
             (
-                presentation.state_label,
+                presentation.status.label,
                 presentation.heading,
                 presentation.explanation,
             ),
@@ -153,7 +153,7 @@ fn presents_stopped_playback_as_idle_full_field_copy_with_authoritative_identiti
         panic!("Stopped playback should use the full-field presentation");
     };
 
-    assert_eq!(presentation.state_label, "Idle");
+    assert_eq!(presentation.status.label, "IDLE");
     assert_eq!(presentation.heading, "Nothing is playing");
     assert_eq!(presentation.explanation, None);
     assert_full_field_identity(&presentation, "Speaker System", "Living Room");
@@ -170,8 +170,8 @@ fn presents_empty_loading_as_full_field_copy_with_authoritative_identities() {
         panic!("empty Loading should use the full-field presentation");
     };
 
-    assert_eq!(presentation.state_label, "Loading");
-    assert_eq!(presentation.heading, "Loading");
+    assert_eq!(presentation.status.label, "STARTING");
+    assert_eq!(presentation.heading, "Preparing playback");
     assert_eq!(presentation.explanation, None);
     assert_full_field_identity(&presentation, "Speaker System", "Living Room");
 }
@@ -187,7 +187,7 @@ fn presents_playing_without_usable_content_as_a_truthful_full_field() {
         panic!("trackless Playing should use the full-field presentation");
     };
 
-    assert_eq!(presentation.state_label, "Playing");
+    assert_eq!(presentation.status.label, "PLAYING");
     assert_eq!(presentation.heading, "Now Playing details unavailable");
     assert_eq!(presentation.explanation, None);
     assert_full_field_identity(&presentation, "Speaker System", "Living Room");
@@ -317,19 +317,19 @@ fn presents_each_playback_state_without_inventing_now_playing() {
     let fixtures = [
         (
             "playing.json",
-            "Playing",
+            "PLAYING",
             Some("Last Light on Phobos"),
             Some(3),
         ),
         (
             "paused.json",
-            "Paused",
+            "PAUSED",
             Some("Last Light on Phobos"),
             Some(3),
         ),
         (
             "loading.json",
-            "Loading",
+            "STARTING",
             Some("Last Light on Phobos"),
             Some(3),
         ),
@@ -344,7 +344,7 @@ fn presents_each_playback_state_without_inventing_now_playing() {
             panic!("available playback should produce an available presentation");
         };
 
-        assert_eq!(presentation.playback_state(), state_label);
+        assert_eq!(presentation.status.label, state_label);
         assert_eq!(presentation.title.as_deref(), title);
         assert_eq!(presentation.artwork_revision, artwork_revision);
     }
@@ -362,7 +362,7 @@ fn clears_now_playing_from_a_stopped_presentation() {
         panic!("Stopped playback should replace stale content with a full-field presentation");
     };
 
-    assert_eq!(presentation.state_label, "Idle");
+    assert_eq!(presentation.status.label, "IDLE");
     assert_eq!(presentation.heading, "Nothing is playing");
     assert_eq!(presentation.explanation, None);
 }
@@ -885,7 +885,7 @@ fn clears_now_playing_while_the_bridge_is_disconnected_and_recovers_after_reconn
     else {
         panic!("disconnection must clear stale Now Playing content");
     };
-    assert_eq!(disconnected.state_label, "Disconnected");
+    assert_eq!(disconnected.status.label, "DISCONNECTED");
 
     let paused =
         parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
@@ -898,5 +898,5 @@ fn clears_now_playing_while_the_bridge_is_disconnected_and_recovers_after_reconn
     else {
         panic!("reconnected current state should replace the Disconnected presentation");
     };
-    assert_eq!(reconnected.playback_state(), "Paused");
+    assert_eq!(reconnected.status.label, "PAUSED");
 }

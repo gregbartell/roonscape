@@ -51,7 +51,7 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
         assert_eq!(
             layout.metadata_roles,
             vec![
-                NowPlayingRole::PlaybackStatus,
+                NowPlayingRole::PresentationStatus,
                 NowPlayingRole::Title,
                 NowPlayingRole::Artist,
                 NowPlayingRole::Album,
@@ -220,7 +220,7 @@ fn applies_one_complete_now_playing_policy_to_fixture_and_roon_snapshots() {
       "artwork": { "revision": 41, "path": "artwork/artwork-41.jpg" }
     }"#;
     let expected_roles = vec![
-        NowPlayingRole::PlaybackStatus,
+        NowPlayingRole::PresentationStatus,
         NowPlayingRole::Title,
         NowPlayingRole::Artist,
         NowPlayingRole::Album,

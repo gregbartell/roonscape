@@ -10,7 +10,7 @@ fn bounds_full_field_states_and_identities_at_representative_landscape_viewports
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
         let layout = FullFieldLayout::for_viewport(viewport);
         let now_playing = NowPlayingLayout::for_viewport(viewport);
-        let maximum_copy_height = layout.status_px
+        let maximum_copy_height = layout.status_symbol_size_px
             + layout.status_spacing_px
             + layout.heading_px * 3
             + layout.explanation_spacing_px

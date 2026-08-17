@@ -1,70 +1,143 @@
 mod support;
 
 use std::fs;
+use std::time::Duration;
 
 use roonscape_renderer::{
     ArtworkContent, ArtworkLayout, ArtworkReference, Presentation, PresentationPalette,
-    StatusEmphasis, parse_snapshot, presentation_from_snapshot, resolve_presentation,
+    PresentationStatusEmphasis, PresentationStatusMotion, PresentationStatusSymbol, parse_snapshot,
+    presentation_from_snapshot, resolve_presentation,
 };
+
+#[test]
+fn resolves_canonical_presentation_status_for_every_fixture_condition_and_form() {
+    let expected = [
+        (
+            "playing.json",
+            "PLAYING",
+            PresentationStatusSymbol::Playing,
+            PresentationStatusMotion::Static,
+            PresentationStatusEmphasis::FullAccentWithGlow,
+            false,
+        ),
+        (
+            "paused.json",
+            "PAUSED",
+            PresentationStatusSymbol::Paused,
+            PresentationStatusMotion::Static,
+            PresentationStatusEmphasis::MutedAccent,
+            false,
+        ),
+        (
+            "loading.json",
+            "STARTING",
+            PresentationStatusSymbol::Starting,
+            PresentationStatusMotion::ContinuousRotation {
+                period: Duration::from_millis(1_800),
+            },
+            PresentationStatusEmphasis::FullAccent,
+            false,
+        ),
+        (
+            "loading-empty.json",
+            "STARTING",
+            PresentationStatusSymbol::Starting,
+            PresentationStatusMotion::ContinuousRotation {
+                period: Duration::from_millis(1_800),
+            },
+            PresentationStatusEmphasis::FullAccent,
+            true,
+        ),
+        (
+            "stopped.json",
+            "IDLE",
+            PresentationStatusSymbol::Idle,
+            PresentationStatusMotion::Static,
+            PresentationStatusEmphasis::MutedAccent,
+            true,
+        ),
+        (
+            "pairing-required.json",
+            "PAIRING REQUIRED",
+            PresentationStatusSymbol::PairingRequired,
+            PresentationStatusMotion::Static,
+            PresentationStatusEmphasis::FullAccent,
+            true,
+        ),
+        (
+            "disconnected.json",
+            "DISCONNECTED",
+            PresentationStatusSymbol::Disconnected,
+            PresentationStatusMotion::Static,
+            PresentationStatusEmphasis::FullAccent,
+            true,
+        ),
+        (
+            "output-unavailable.json",
+            "OUTPUT UNAVAILABLE",
+            PresentationStatusSymbol::OutputUnavailable,
+            PresentationStatusMotion::Static,
+            PresentationStatusEmphasis::FullAccent,
+            true,
+        ),
+    ];
+    let repository_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+    for (fixture_name, label, symbol, motion, emphasis, is_full_field) in expected {
+        let snapshot = parse_snapshot(&support::fixture(fixture_name))
+            .expect("Presentation Status fixture should be valid");
+        let presentation = presentation_from_snapshot(&snapshot)
+            .expect("Presentation Status fixture should produce a presentation");
+
+        let resolved = resolve_presentation(&presentation, &repository_root);
+
+        assert_eq!(resolved.status.label, label, "{fixture_name}");
+        assert_eq!(resolved.status.symbol, symbol, "{fixture_name}");
+        assert_eq!(resolved.status.motion, motion, "{fixture_name}");
+        assert_eq!(resolved.status.emphasis, emphasis, "{fixture_name}");
+        assert_eq!(
+            matches!(resolved.presentation, Presentation::FullField(_)),
+            is_full_field,
+            "{fixture_name}",
+        );
+    }
+}
 
 #[test]
 fn resolves_every_full_field_snapshot_with_truthful_copy_identity_and_fallback_palette() {
     let expected = [
-        (
-            "stopped.json",
-            "Idle",
-            "Nothing is playing",
-            None,
-            true,
-            StatusEmphasis::Quiet,
-        ),
-        (
-            "loading-empty.json",
-            "Loading",
-            "Loading",
-            None,
-            true,
-            StatusEmphasis::Quiet,
-        ),
+        ("stopped.json", "Nothing is playing", None, true),
+        ("loading-empty.json", "Preparing playback", None, true),
         (
             "playing-empty.json",
-            "Playing",
             "Now Playing details unavailable",
             None,
             true,
-            StatusEmphasis::Prominent,
         ),
         (
             "pairing-required.json",
-            "Pairing required",
             "Enable RoonScape",
             Some("Open Settings → Extensions in a Roon client, then enable RoonScape."),
             false,
-            StatusEmphasis::Prominent,
         ),
         (
             "disconnected.json",
-            "Disconnected",
             "Waiting for Roon",
             Some("Check Roon Server and the network. This display updates when Roon returns."),
             false,
-            StatusEmphasis::Prominent,
         ),
         (
             "output-unavailable.json",
-            "Output unavailable",
             "Tracked Output unavailable",
             Some(
                 "Configure a Tracked Output on this RoonScape Host, or check that the selected output is available in Roon.",
             ),
             false,
-            StatusEmphasis::Prominent,
         ),
     ];
     let repository_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
 
-    for (fixture_name, state_label, heading, explanation, has_identity, status_emphasis) in expected
-    {
+    for (fixture_name, heading, explanation, has_identity) in expected {
         let snapshot = parse_snapshot(&support::fixture(fixture_name))
             .expect("full-field fixture should be valid");
         let presentation = presentation_from_snapshot(&snapshot)
@@ -75,11 +148,9 @@ fn resolves_every_full_field_snapshot_with_truthful_copy_identity_and_fallback_p
             panic!("{fixture_name} should resolve to a full-field presentation");
         };
 
-        assert_eq!(full_field.state_label, state_label);
         assert_eq!(full_field.heading, heading);
         assert_eq!(full_field.explanation, explanation);
         assert_eq!(full_field.identity.is_some(), has_identity);
-        assert_eq!(full_field.status_emphasis, status_emphasis);
         assert_eq!(resolved.palette, PresentationPalette::fallback());
     }
 }
@@ -103,7 +174,7 @@ fn unreadable_artwork_without_metadata_resolves_to_details_unavailable() {
         panic!("unreadable artwork without metadata should not retain Now Playing layout");
     };
 
-    assert_eq!(full_field.state_label, "Playing");
+    assert_eq!(full_field.status.label, "PLAYING");
     assert_eq!(full_field.heading, "Now Playing details unavailable");
     assert!(full_field.identity.is_some());
     assert_eq!(resolved.palette, PresentationPalette::fallback());

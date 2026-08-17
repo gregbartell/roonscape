@@ -104,6 +104,7 @@ fn uses_the_fixed_no_art_palette_without_artwork() {
     assert_eq!(palette.secondary_text.to_hex(), "#C9C5BD");
     assert_eq!(palette.muted_text.to_hex(), "#9299A8");
     assert_eq!(palette.accent.to_hex(), "#FF7051");
+    assert_eq!(palette.status_muted_accent.to_hex(), "#C38781");
     assert_eq!(palette.progress_track.to_hex(), "#9299A8");
     assert_eq!(palette.progress_fill.to_hex(), "#FF7051");
     assert_eq!(palette.diagnostics_field.to_hex(), "#0A1429");
@@ -202,6 +203,7 @@ fn every_semantic_text_and_accent_role_meets_its_field_contrast() {
                 ("secondary text", palette.secondary_text, 4.5),
                 ("muted text", palette.muted_text, 4.5),
                 ("accent", palette.accent, 4.5),
+                ("muted status accent", palette.status_muted_accent, 4.5),
                 ("progress track", palette.progress_track, 4.5),
                 ("progress fill", palette.progress_fill, 4.5),
             ] {

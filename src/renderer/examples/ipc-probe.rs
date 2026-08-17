@@ -6,8 +6,8 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant, SystemTime};
 
 use roonscape_renderer::{
-    Availability, ConnectionState, Presentation, PresentationState, PresentationTime,
-    SnapshotEvent, SnapshotSubscription,
+    Availability, ConnectionState, Presentation, PresentationState, PresentationStatusSymbol,
+    PresentationTime, SnapshotEvent, SnapshotSubscription,
 };
 
 fn main() -> ExitCode {
@@ -63,8 +63,8 @@ fn report_connection(
     };
     let presentation = match presentation.presentation_at(now)? {
         Presentation::NowPlaying(_) => "nowPlaying",
-        Presentation::FullField(full_field) => match full_field.state_label {
-            "Disconnected" => "disconnected",
+        Presentation::FullField(full_field) => match full_field.status.symbol {
+            PresentationStatusSymbol::Disconnected => "disconnected",
             _ => "unavailable",
         },
     };

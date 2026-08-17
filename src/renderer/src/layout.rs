@@ -141,7 +141,7 @@ impl IdentityLineLayout {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NowPlayingRole {
-    PlaybackStatus,
+    PresentationStatus,
     Title,
     Artist,
     Album,
@@ -185,7 +185,8 @@ pub struct FullFieldLayout {
     pub accent_width_px: u32,
     pub accent_padding_px: u32,
     pub status_spacing_px: u32,
-    pub state_dot_size_px: u32,
+    pub status_symbol_size_px: u32,
+    pub status_symbol_gap_px: u32,
     pub status_px: u32,
     pub status_letter_spacing_px: u32,
     pub heading_px: u32,
@@ -202,7 +203,8 @@ pub struct FullFieldLayout {
 impl FullFieldLayout {
     pub fn for_viewport(viewport: Viewport) -> Self {
         let now_playing_layout = NowPlayingLayout::for_viewport(viewport);
-        let status_px = scaled(viewport.width_px, 0.008, 12, 30);
+        let status_px = scaled(viewport.width_px, 0.022, 29, 42);
+        let status_symbol_size_px = scaled(viewport.width_px, 0.0385, 56, 96);
         let explanation_px = scaled(viewport.width_px, 0.0135, 16, 46);
         Self {
             outer_gutter_px: scaled(viewport.width_px, 0.042, 32, 160),
@@ -210,9 +212,10 @@ impl FullFieldLayout {
             accent_width_px: scaled(viewport.width_px, 0.0038, 5, 15),
             accent_padding_px: scaled(viewport.width_px, 0.04, 32, 144),
             status_spacing_px: scaled(viewport.height_px, 0.036, 29, 80),
-            state_dot_size_px: ((status_px as f64) * 0.58).round() as u32,
+            status_symbol_size_px,
+            status_symbol_gap_px: scaled(viewport.width_px, 0.0115, 16, 44),
             status_px,
-            status_letter_spacing_px: ((status_px as f64) * 0.13).round() as u32,
+            status_letter_spacing_px: ((status_px as f64) * 0.055).round() as u32,
             heading_px: scaled(viewport.width_px, 0.062, 51, 208),
             explanation_spacing_px: ((explanation_px as f64) * 0.9).round() as u32,
             explanation_px,
@@ -247,7 +250,8 @@ pub struct NowPlayingLayout {
     pub progress_spacing_px: u32,
     pub time_spacing_px: u32,
     pub identity_gap_px: u32,
-    pub state_dot_size_px: u32,
+    pub status_symbol_size_px: u32,
+    pub status_symbol_gap_px: u32,
     pub progress_height_px: u32,
     pub artwork_shadow_offset_px: u32,
     pub artwork_shadow_blur_px: u32,
@@ -280,7 +284,8 @@ impl NowPlayingLayout {
         let artwork_field_size_px = artwork_column_width_px
             .min(((viewport.height_px as f64) * 0.81).round() as u32)
             .min(artwork_height_limit_px);
-        let status_px = scaled(viewport.width_px, 0.008, 12, 30);
+        let status_px = scaled(viewport.width_px, 0.022, 29, 42);
+        let status_symbol_size_px = scaled(viewport.width_px, 0.0385, 56, 96);
         let typography = NowPlayingTypography {
             title: MetadataFontSizes {
                 preferred_px: scaled(viewport.width_px, 0.046, 53, 168),
@@ -298,7 +303,7 @@ impl NowPlayingLayout {
                 minimum_px: scaled(viewport.width_px, 0.0094, 15, 35),
             },
             status_px,
-            status_letter_spacing_px: ((status_px as f64) * 0.13).round() as u32,
+            status_letter_spacing_px: ((status_px as f64) * 0.055).round() as u32,
             time_px: scaled(viewport.width_px, 0.0072, 11, 26),
             identity_px: scaled(viewport.width_px, 0.0072, 11, 27),
         };
@@ -321,7 +326,8 @@ impl NowPlayingLayout {
             progress_spacing_px: scaled(viewport.height_px, 0.065, 45, 128),
             time_spacing_px: scaled(viewport.width_px, 0.0055, 7, 22),
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
-            state_dot_size_px: ((typography.status_px as f64) * 0.58).round() as u32,
+            status_symbol_size_px,
+            status_symbol_gap_px: scaled(viewport.width_px, 0.0115, 16, 44),
             progress_height_px: scaled(viewport.width_px, 0.0016, 3, 6),
             artwork_shadow_offset_px,
             artwork_shadow_blur_px,
@@ -331,7 +337,7 @@ impl NowPlayingLayout {
 }
 
 fn metadata_roles(presentation: &NowPlayingPresentation) -> Vec<NowPlayingRole> {
-    let mut roles = vec![NowPlayingRole::PlaybackStatus];
+    let mut roles = vec![NowPlayingRole::PresentationStatus];
     if presentation.title.is_some() {
         roles.push(NowPlayingRole::Title);
     }

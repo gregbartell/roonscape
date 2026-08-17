@@ -1,12 +1,13 @@
 use std::path::Path;
 
 use crate::presentation::trackless_full_field;
-use crate::{Presentation, PresentationPalette};
+use crate::{Presentation, PresentationPalette, PresentationStatus};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedPresentation {
     pub presentation: Presentation,
     pub palette: PresentationPalette,
+    pub status: PresentationStatus,
 }
 
 pub fn resolve_presentation(
@@ -14,10 +15,7 @@ pub fn resolve_presentation(
     repository_root: &Path,
 ) -> ResolvedPresentation {
     let Presentation::NowPlaying(now_playing) = presentation else {
-        return ResolvedPresentation {
-            presentation: presentation.clone(),
-            palette: PresentationPalette::fallback(),
-        };
+        return resolved(presentation.clone(), PresentationPalette::fallback());
     };
     let artwork_path = now_playing
         .artwork_path
@@ -27,24 +25,33 @@ pub fn resolve_presentation(
         .as_deref()
         .and_then(|path| PresentationPalette::from_artwork(path).ok());
     if let Some(palette) = palette {
-        return ResolvedPresentation {
-            presentation: presentation.clone(),
-            palette,
-        };
+        return resolved(presentation.clone(), palette);
     }
     if !now_playing.has_usable_metadata() {
-        return ResolvedPresentation {
-            presentation: Presentation::FullField(trackless_full_field(now_playing)),
-            palette: PresentationPalette::fallback(),
-        };
+        return resolved(
+            Presentation::FullField(trackless_full_field(now_playing)),
+            PresentationPalette::fallback(),
+        );
     }
 
     let mut now_playing = now_playing.clone();
     now_playing.artwork_revision = None;
     now_playing.artwork_path = None;
 
+    resolved(
+        Presentation::NowPlaying(now_playing),
+        PresentationPalette::fallback(),
+    )
+}
+
+fn resolved(presentation: Presentation, palette: PresentationPalette) -> ResolvedPresentation {
+    let status = match &presentation {
+        Presentation::NowPlaying(now_playing) => now_playing.status,
+        Presentation::FullField(full_field) => full_field.status,
+    };
     ResolvedPresentation {
-        presentation: Presentation::NowPlaying(now_playing),
-        palette: PresentationPalette::fallback(),
+        presentation,
+        palette,
+        status,
     }
 }

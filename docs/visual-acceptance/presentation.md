@@ -52,26 +52,26 @@ The full matrix captures every maintained Fixture Scenario at each of these
 peer representative viewports: 1280x720, 1600x1200, 1920x1200, 2560x1080, and
 3840x2160.
 
-| Scenario                | Shared fixture                | Review focus                                  |
-| ----------------------- | ----------------------------- | --------------------------------------------- |
-| Playing                 | `playing.json`                | Advancing determinate progress; dark artwork  |
-| Paused                  | `paused.json`                 | Frozen progress and inactivity-ready layout   |
-| Loading with content    | `loading.json`                | Now Playing composition retained              |
-| Loading without content | `loading-empty.json`          | Full-field Loading grammar                    |
-| Idle                    | `stopped.json`                | Quiet full-field Idle grammar                 |
-| Pairing required        | `pairing-required.json`       | Corrective unavailable state                  |
-| Disconnected            | `disconnected.json`           | Distinct disconnected copy                    |
-| Output unavailable      | `output-unavailable.json`     | Distinct Tracked Output copy                  |
-| Playing without content | `playing-empty.json`          | Details-unavailable full field                |
-| Missing metadata        | `missing-metadata.json`       | Title-only hierarchy                          |
-| Missing Artist          | `missing-artist.json`         | Absent optional Artist spacing                |
-| Missing Album           | `missing-album.json`          | Absent optional Album spacing                 |
-| Missing artwork         | `missing-artwork.json`        | Fixed no-art palette and square field         |
-| Long metadata           | `long-metadata.json`          | Responsive wrapping and reduction             |
-| Extreme metadata        | `extreme-metadata.json`       | Final line bounds and ellipsis                |
-| Indeterminate progress  | `indeterminate-progress.json` | Timeline omitted                              |
-| Non-square artwork      | `non-square-artwork.json`     | Centered contain fit without cropping         |
-| Light artwork           | `light-artwork.json`          | Readable light artwork-derived palette        |
+| Scenario                 | Shared fixture                | Review focus                                  |
+| ------------------------ | ----------------------------- | --------------------------------------------- |
+| Playing                  | `playing.json`                | Advancing determinate progress; dark artwork  |
+| Paused                   | `paused.json`                 | Frozen progress and inactivity-ready layout   |
+| Starting with content    | `loading.json`                | Now Playing composition and rotating ring     |
+| Starting without content | `loading-empty.json`          | Full-field Starting grammar and rotating ring |
+| Idle                     | `stopped.json`                | Quiet full-field Idle grammar                 |
+| Pairing required         | `pairing-required.json`       | Corrective unavailable state                  |
+| Disconnected             | `disconnected.json`           | Distinct disconnected copy                    |
+| Output unavailable       | `output-unavailable.json`     | Distinct Tracked Output copy                  |
+| Playing without content  | `playing-empty.json`          | Details-unavailable full field                |
+| Missing metadata         | `missing-metadata.json`       | Title-only hierarchy                          |
+| Missing Artist           | `missing-artist.json`         | Absent optional Artist spacing                |
+| Missing Album            | `missing-album.json`          | Absent optional Album spacing                 |
+| Missing artwork          | `missing-artwork.json`        | Fixed no-art palette and square field         |
+| Long metadata            | `long-metadata.json`          | Responsive wrapping and reduction             |
+| Extreme metadata         | `extreme-metadata.json`       | Final line bounds and ellipsis                |
+| Indeterminate progress   | `indeterminate-progress.json` | Timeline omitted                              |
+| Non-square artwork       | `non-square-artwork.json`     | Centered contain fit without cropping         |
+| Light artwork            | `light-artwork.json`          | Readable light artwork-derived palette        |
 
 Treat all five viewports as peers. Together they exercise the minimum
 supported landscape size, 4:3, 16:10, ultrawide, and high-resolution
@@ -113,10 +113,14 @@ instead of approving a scenario at only one size.
 - **Palette:** Dark and light artwork recolor the complete presentation. The
   fixed no-art palette remains deliberate, and text, accent, progress, and
   diagnostics roles remain readable.
+- **Presentation Status:** Every condition has the correct circular symbol
+  and bold uppercase label in both presentation forms. Playing alone glows,
+  Paused uses a muted artwork accent, Starting uses the full accent, and no
+  status row contains secondary detail.
 - **Identities:** Output and Zone share one stable bottom-right row in
   available states. Ordinary names fit comfortably, long names degrade
   defensively, and unavailable states expose no stale identities.
-- **Full-field grammar:** Idle, Loading without content, details unavailable,
+- **Full-field grammar:** Idle, Starting without content, details unavailable,
   pairing, disconnected, and output-unavailable states share the accent-bar
   language while retaining distinct meanings and restrained copy.
 - **Diagnostics:** The three overlay representatives remain legible,
@@ -138,6 +142,10 @@ Scenarios. Confirm that artwork, metadata, palette, identities, and diagnostics
 crossfade as one layer; progress alone updates in place; availability loss
 clears stale Now Playing content immediately; and no transition exposes
 clipped or stale boundary states.
+
+Confirm that only the complete Starting ring rotates, with a steady linear
+revolution of about 1.8 seconds. With the platform animation preference
+disabled, confirm that Starting retains a clear static ring-and-center frame.
 
 Do not commit captures as goldens or add screenshot comparisons to CI.
 Automated checks belong at the shared fixture, layout, typography,

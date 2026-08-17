@@ -1,3 +1,4 @@
+mod status_symbol;
 mod view;
 
 use std::cell::RefCell;

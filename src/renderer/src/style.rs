@@ -42,7 +42,7 @@ impl TypographyStyles {
     pub fn to_css(self) -> String {
         format!(
             ".editorial-text, .full-field-heading {{ font-family: \"{}\", serif; }}\n\
-             .utility-text, .state-label, .identity-label, .identity-name, .time, .full-field-explanation, .diagnostics {{ font-family: \"{}\", sans-serif; }}\n",
+             .utility-text, .status-label, .identity-label, .identity-name, .time, .full-field-explanation, .diagnostics {{ font-family: \"{}\", sans-serif; }}\n",
             self.typography.editorial_family(),
             self.typography.utility_family(),
         )
@@ -110,6 +110,7 @@ fn presentation_palette_styles(
     let secondary_text = palette.secondary_text.to_hex();
     let muted_text = palette.muted_text.to_hex();
     let accent = palette.accent.to_hex();
+    let muted_accent = palette.status_muted_accent.to_hex();
     let progress_track = palette.progress_track.to_hex();
     let progress_fill = palette.progress_fill.to_hex();
     let shadow_offset = layout.artwork_shadow_offset_px;
@@ -122,8 +123,9 @@ fn presentation_palette_styles(
          .{class_name} .artwork {{ border-color: alpha({primary_text}, 0.16); background-color: {artwork_field}; }}\n\
          .{class_name} .artwork-missing {{ border-color: alpha({muted_text}, 0.22); background-image: linear-gradient(142deg, alpha({muted_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16); }}\n\
          .{class_name}.full-field .full-copy {{ border-left: {accent_width}px solid {accent}; }}\n\
-         .{class_name} .playback-state {{ color: {accent}; }}\n\
-         .{class_name} .state-dot {{ background-color: {accent}; box-shadow: 0 0 18px alpha({accent}, 0.72); }}\n\
+         .{class_name} .status-full, .{class_name} .status-glow {{ color: {accent}; }}\n\
+         .{class_name} .status-muted {{ color: {muted_accent}; }}\n\
+         .{class_name} .status-glow .status-symbol-container {{ box-shadow: 0 0 34px alpha({accent}, 0.72); }}\n\
          .{class_name} .title, .{class_name} .full-field-heading {{ color: {primary_text}; }}\n\
          .{class_name} .artist, .{class_name} .album, .{class_name} .time, .{class_name} .identity-name {{ color: {secondary_text}; }}\n\
          .{class_name} .full-field-explanation {{ color: {muted_text}; }}\n\

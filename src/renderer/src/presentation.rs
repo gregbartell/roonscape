@@ -48,6 +48,38 @@ pub enum Presentation {
     FullField(FullFieldPresentation),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PresentationStatus {
+    pub label: &'static str,
+    pub symbol: PresentationStatusSymbol,
+    pub motion: PresentationStatusMotion,
+    pub emphasis: PresentationStatusEmphasis,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresentationStatusSymbol {
+    Playing,
+    Paused,
+    Starting,
+    Idle,
+    PairingRequired,
+    Disconnected,
+    OutputUnavailable,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresentationStatusMotion {
+    Static,
+    ContinuousRotation { period: Duration },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresentationStatusEmphasis {
+    FullAccentWithGlow,
+    FullAccent,
+    MutedAccent,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct NowPlayingPresentation {
     pub title: Option<String>,
@@ -55,16 +87,10 @@ pub struct NowPlayingPresentation {
     pub album: Option<String>,
     pub tracked_output: String,
     pub tracked_zone: String,
-    pub playback: Playback,
+    pub status: PresentationStatus,
     pub progress: Option<PresentationProgress>,
     pub artwork_revision: Option<u64>,
     pub artwork_path: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StatusEmphasis {
-    Prominent,
-    Quiet,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,11 +101,10 @@ pub struct PresentationIdentity {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FullFieldPresentation {
-    pub state_label: &'static str,
+    pub status: PresentationStatus,
     pub heading: &'static str,
     pub explanation: Option<&'static str>,
     pub identity: Option<PresentationIdentity>,
-    pub status_emphasis: StatusEmphasis,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -406,9 +431,8 @@ fn presentation_from_snapshot_after(
     ))?;
     if playback == Playback::Stopped {
         return Ok(Presentation::FullField(available_full_field(
-            "Idle",
+            presentation_status_for_playback(playback),
             "Nothing is playing",
-            StatusEmphasis::Quiet,
             tracked_output,
             tracked_zone,
         )));
@@ -426,7 +450,7 @@ fn presentation_from_snapshot_after(
         ),
         tracked_output: tracked_output.name.clone(),
         tracked_zone: tracked_zone.name.clone(),
-        playback,
+        status: presentation_status_for_playback(playback),
         progress: snapshot
             .progress
             .as_ref()
@@ -455,29 +479,23 @@ fn is_usable_metadata_line(value: &str) -> bool {
 }
 
 fn available_full_field(
-    state_label: &'static str,
+    status: PresentationStatus,
     heading: &'static str,
-    status_emphasis: StatusEmphasis,
     tracked_output: &TrackedOutput,
     tracked_zone: &TrackedZone,
 ) -> FullFieldPresentation {
     FullFieldPresentation {
-        state_label,
+        status,
         heading,
         explanation: None,
         identity: Some(PresentationIdentity {
             tracked_output: tracked_output.name.clone(),
             tracked_zone: tracked_zone.name.clone(),
         }),
-        status_emphasis,
     }
 }
 
 impl NowPlayingPresentation {
-    pub fn playback_state(&self) -> &'static str {
-        playback_label(self.playback)
-    }
-
     pub(crate) fn has_usable_metadata(&self) -> bool {
         [
             self.title.as_deref(),
@@ -491,71 +509,106 @@ impl NowPlayingPresentation {
 }
 
 pub(crate) fn trackless_full_field(presentation: &NowPlayingPresentation) -> FullFieldPresentation {
-    let (state_label, heading, status_emphasis) = match presentation.playback {
-        Playback::Loading => ("Loading", "Loading", StatusEmphasis::Quiet),
-        Playback::Paused => (
-            "Paused",
-            "Now Playing details unavailable",
-            StatusEmphasis::Quiet,
-        ),
-        Playback::Playing => (
-            "Playing",
-            "Now Playing details unavailable",
-            StatusEmphasis::Prominent,
-        ),
-        Playback::Stopped => unreachable!("Idle uses the full-field presentation"),
+    let heading = match presentation.status.symbol {
+        PresentationStatusSymbol::Starting => "Preparing playback",
+        PresentationStatusSymbol::Paused | PresentationStatusSymbol::Playing => {
+            "Now Playing details unavailable"
+        }
+        _ => unreachable!("Now Playing fallback requires a playback Presentation Status"),
     };
     FullFieldPresentation {
-        state_label,
+        status: presentation.status,
         heading,
         explanation: None,
         identity: Some(PresentationIdentity {
             tracked_output: presentation.tracked_output.clone(),
             tracked_zone: presentation.tracked_zone.clone(),
         }),
-        status_emphasis,
     }
 }
 
 fn unavailable_presentation(availability: Availability) -> FullFieldPresentation {
+    let status = presentation_status_for_availability(availability);
     match availability {
         Availability::PairingRequired => FullFieldPresentation {
-            state_label: "Pairing required",
+            status,
             heading: "Enable RoonScape",
             explanation: Some(
                 "Open Settings → Extensions in a Roon client, then enable RoonScape.",
             ),
             identity: None,
-            status_emphasis: StatusEmphasis::Prominent,
         },
         Availability::Disconnected => FullFieldPresentation {
-            state_label: "Disconnected",
+            status,
             heading: "Waiting for Roon",
             explanation: Some(
                 "Check Roon Server and the network. This display updates when Roon returns.",
             ),
             identity: None,
-            status_emphasis: StatusEmphasis::Prominent,
         },
         Availability::OutputUnavailable => FullFieldPresentation {
-            state_label: "Output unavailable",
+            status,
             heading: "Tracked Output unavailable",
             explanation: Some(
                 "Configure a Tracked Output on this RoonScape Host, or check that the selected output is available in Roon.",
             ),
             identity: None,
-            status_emphasis: StatusEmphasis::Prominent,
         },
         Availability::Available => unreachable!("available snapshots use Now Playing"),
     }
 }
 
-fn playback_label(playback: Playback) -> &'static str {
+fn presentation_status_for_playback(playback: Playback) -> PresentationStatus {
     match playback {
-        Playback::Playing => "Playing",
-        Playback::Paused => "Paused",
-        Playback::Loading => "Loading",
-        Playback::Stopped => "Stopped",
+        Playback::Playing => PresentationStatus {
+            label: "PLAYING",
+            symbol: PresentationStatusSymbol::Playing,
+            motion: PresentationStatusMotion::Static,
+            emphasis: PresentationStatusEmphasis::FullAccentWithGlow,
+        },
+        Playback::Paused => PresentationStatus {
+            label: "PAUSED",
+            symbol: PresentationStatusSymbol::Paused,
+            motion: PresentationStatusMotion::Static,
+            emphasis: PresentationStatusEmphasis::MutedAccent,
+        },
+        Playback::Loading => PresentationStatus {
+            label: "STARTING",
+            symbol: PresentationStatusSymbol::Starting,
+            motion: PresentationStatusMotion::ContinuousRotation {
+                period: Duration::from_millis(1_800),
+            },
+            emphasis: PresentationStatusEmphasis::FullAccent,
+        },
+        Playback::Stopped => PresentationStatus {
+            label: "IDLE",
+            symbol: PresentationStatusSymbol::Idle,
+            motion: PresentationStatusMotion::Static,
+            emphasis: PresentationStatusEmphasis::MutedAccent,
+        },
+    }
+}
+
+fn presentation_status_for_availability(availability: Availability) -> PresentationStatus {
+    let (label, symbol) = match availability {
+        Availability::PairingRequired => (
+            "PAIRING REQUIRED",
+            PresentationStatusSymbol::PairingRequired,
+        ),
+        Availability::Disconnected => ("DISCONNECTED", PresentationStatusSymbol::Disconnected),
+        Availability::OutputUnavailable => (
+            "OUTPUT UNAVAILABLE",
+            PresentationStatusSymbol::OutputUnavailable,
+        ),
+        Availability::Available => {
+            unreachable!("available snapshots use playback Presentation Status")
+        }
+    };
+    PresentationStatus {
+        label,
+        symbol,
+        motion: PresentationStatusMotion::Static,
+        emphasis: PresentationStatusEmphasis::FullAccent,
     }
 }
 

@@ -9,10 +9,13 @@ use roonscape_renderer::{
     FullFieldPresentation, IdentityLineLayout, IdentityPlacement, InactivityLayout,
     InactivityTransform, MetadataFontSizes, MetadataLineLayout, MetadataTypography,
     NowPlayingField, NowPlayingLayout, NowPlayingPresentation, NowPlayingRole, Presentation,
-    PresentationPalette, PresentationProgress, PresentationRevision, PresentationStyleLayer,
-    PresentationTransition, PresentationTransitionStyles, StatusEmphasis, TextOverflow,
-    TypographyPair, TypographyStyles, Viewport, metadata_layout, resolve_presentation,
+    PresentationPalette, PresentationProgress, PresentationRevision, PresentationStatus,
+    PresentationStatusEmphasis, PresentationStyleLayer, PresentationTransition,
+    PresentationTransitionStyles, TextOverflow, TypographyPair, TypographyStyles, Viewport,
+    metadata_layout, resolve_presentation,
 };
+
+use crate::status_symbol::presentation_status_symbol;
 
 const STYLES: &str = include_str!("style.css");
 
@@ -54,7 +57,7 @@ impl RenderedProgress {
 
 struct RenderedMetadata {
     root: gtk::Overlay,
-    playback_state: RenderedPlaybackState,
+    presentation_status: RenderedPresentationStatus,
     title: Option<RenderedMetadataLine>,
     artist: Option<RenderedMetadataLine>,
     album: Option<RenderedMetadataLine>,
@@ -73,15 +76,15 @@ struct RenderedNowPlaying {
 struct RenderedFullField {
     copy: gtk::Box,
     message: gtk::Box,
-    playback_state: RenderedPlaybackState,
+    presentation_status: RenderedPresentationStatus,
     heading: gtk::Label,
     explanation: Option<gtk::Label>,
     identity: Option<RenderedIdentity>,
 }
 
-struct RenderedPlaybackState {
+struct RenderedPresentationStatus {
     root: gtk::Box,
-    dot: gtk::Box,
+    symbol: gtk::Box,
     label: gtk::Label,
 }
 
@@ -330,18 +333,23 @@ fn render_presentation(
     match &resolved.presentation {
         Presentation::NowPlaying(presentation) => now_playing(
             presentation,
+            &resolved.status,
             repository_root,
             resolved.palette,
             diagnostics_text,
         ),
-        Presentation::FullField(presentation) => {
-            full_field(presentation, resolved.palette, diagnostics_text)
-        }
+        Presentation::FullField(presentation) => full_field(
+            presentation,
+            &resolved.status,
+            resolved.palette,
+            diagnostics_text,
+        ),
     }
 }
 
 fn full_field(
     presentation: &FullFieldPresentation,
+    status: &PresentationStatus,
     palette: PresentationPalette,
     diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
@@ -356,11 +364,8 @@ fn full_field(
     copy.set_valign(gtk::Align::Center);
 
     let message = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let state = playback_state(presentation.state_label);
-    if presentation.status_emphasis == StatusEmphasis::Quiet {
-        state.root.add_css_class("quiet-state");
-    }
-    message.append(&state.root);
+    let rendered_status = presentation_status(status);
+    message.append(&rendered_status.root);
 
     let heading = metadata_label(presentation.heading, "full-field-heading");
     heading.add_css_class("editorial-text");
@@ -404,7 +409,7 @@ fn full_field(
         full_field: Some(RenderedFullField {
             copy,
             message,
-            playback_state: state,
+            presentation_status: rendered_status,
             heading,
             explanation,
             identity,
@@ -425,6 +430,7 @@ fn diagnostics_view(text: &str) -> gtk::Label {
 
 fn now_playing(
     presentation: &NowPlayingPresentation,
+    status: &PresentationStatus,
     repository_root: &Path,
     palette: PresentationPalette,
     diagnostics_text: Option<&str>,
@@ -451,7 +457,7 @@ fn now_playing(
     );
     artwork_column.append(&artwork_frame);
 
-    let metadata = metadata(presentation, &layout);
+    let metadata = metadata(presentation, status, &layout);
     let metadata_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
     metadata_slot.add_css_class("metadata-slot");
     metadata_slot.set_hexpand(false);
@@ -547,6 +553,7 @@ fn artwork(
 
 fn metadata(
     presentation: &NowPlayingPresentation,
+    status: &PresentationStatus,
     now_playing_layout: &NowPlayingLayout,
 ) -> RenderedMetadata {
     let root = gtk::Overlay::new();
@@ -564,7 +571,7 @@ fn metadata(
     copy.set_valign(gtk::Align::Center);
     copy.set_vexpand(true);
 
-    let playback_state = playback_state(presentation.playback_state());
+    let rendered_status = presentation_status(status);
 
     let layout = metadata_layout(presentation, Viewport::WINDOWED_FIXTURE);
     let title = layout
@@ -583,7 +590,7 @@ fn metadata(
 
     for role in &now_playing_layout.metadata_roles {
         match role {
-            NowPlayingRole::PlaybackStatus => root.add_overlay(&playback_state.root),
+            NowPlayingRole::PresentationStatus => root.add_overlay(&rendered_status.root),
             NowPlayingRole::Title => {
                 copy.append(&title.as_ref().expect("Title role requires a label").label)
             }
@@ -613,7 +620,7 @@ fn metadata(
     column.append(&identity.root);
     RenderedMetadata {
         root,
-        playback_state,
+        presentation_status: rendered_status,
         title,
         artist,
         album,
@@ -691,16 +698,18 @@ impl RenderedFullField {
         self.copy.set_width_request(dimension(layout.copy_width_px));
         self.message
             .set_margin_start(dimension(layout.accent_padding_px));
-        self.playback_state
+        self.presentation_status
             .root
-            .set_spacing(dimension(layout.state_dot_size_px));
-        self.playback_state
+            .set_spacing(dimension(layout.status_symbol_gap_px));
+        self.presentation_status
             .root
             .set_margin_bottom(dimension(layout.status_spacing_px));
-        let dot_size = dimension(layout.state_dot_size_px);
-        self.playback_state.dot.set_size_request(dot_size, dot_size);
+        let symbol_size = dimension(layout.status_symbol_size_px);
+        self.presentation_status
+            .symbol
+            .set_size_request(symbol_size, symbol_size);
         set_status_label_typography(
-            &self.playback_state.label,
+            &self.presentation_status.label,
             layout.status_px,
             layout.status_letter_spacing_px,
         );
@@ -725,16 +734,18 @@ impl RenderedFullField {
 
 impl RenderedMetadata {
     fn apply_layout(&self, layout: &NowPlayingLayout) {
-        self.playback_state
+        self.presentation_status
             .root
-            .set_spacing(dimension(layout.state_dot_size_px));
-        self.playback_state
+            .set_spacing(dimension(layout.status_symbol_gap_px));
+        self.presentation_status
             .root
             .set_margin_top(dimension(layout.status_top_inset_px));
-        let dot_size = dimension(layout.state_dot_size_px);
-        self.playback_state.dot.set_size_request(dot_size, dot_size);
+        let symbol_size = dimension(layout.status_symbol_size_px);
+        self.presentation_status
+            .symbol
+            .set_size_request(symbol_size, symbol_size);
         set_status_label_typography(
-            &self.playback_state.label,
+            &self.presentation_status.label,
             layout.typography.status_px,
             layout.typography.status_letter_spacing_px,
         );
@@ -808,22 +819,24 @@ fn dimension(value: u32) -> i32 {
     i32::try_from(value).expect("supported viewport dimensions fit GTK's signed sizes")
 }
 
-fn playback_state(state: &str) -> RenderedPlaybackState {
+fn presentation_status(status: &PresentationStatus) -> RenderedPresentationStatus {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 14);
-    row.add_css_class("playback-state");
+    row.add_css_class("presentation-status");
+    row.add_css_class(match status.emphasis {
+        PresentationStatusEmphasis::FullAccentWithGlow => "status-glow",
+        PresentationStatusEmphasis::FullAccent => "status-full",
+        PresentationStatusEmphasis::MutedAccent => "status-muted",
+    });
     row.set_halign(gtk::Align::Start);
     row.set_valign(gtk::Align::Start);
 
-    let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    dot.add_css_class("state-dot");
-    dot.set_halign(gtk::Align::Center);
-    dot.set_valign(gtk::Align::Center);
-    row.append(&dot);
-    let label = metadata_label(&state.to_uppercase(), "state-label");
+    let symbol = presentation_status_symbol(status);
+    row.append(&symbol);
+    let label = metadata_label(status.label, "status-label");
     row.append(&label);
-    RenderedPlaybackState {
+    RenderedPresentationStatus {
         root: row,
-        dot,
+        symbol,
         label,
     }
 }

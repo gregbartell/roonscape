@@ -172,6 +172,7 @@ pub struct PresentationPalette {
     pub secondary_text: Rgb,
     pub muted_text: Rgb,
     pub accent: Rgb,
+    pub status_muted_accent: Rgb,
     pub progress_track: Rgb,
     pub progress_fill: Rgb,
     pub diagnostics_field: Rgb,
@@ -189,6 +190,7 @@ impl PresentationPalette {
             secondary_text: Rgb::new(0xc9, 0xc5, 0xbd),
             muted_text: Rgb::new(0x92, 0x99, 0xa8),
             accent: Rgb::new(0xff, 0x70, 0x51),
+            status_muted_accent: Rgb::new(0xc3, 0x87, 0x81),
             progress_track: Rgb::new(0x92, 0x99, 0xa8),
             progress_fill: Rgb::new(0xff, 0x70, 0x51),
             diagnostics_field: Rgb::new(0x0a, 0x14, 0x29),
@@ -288,6 +290,7 @@ impl PresentationPalette {
             4.5,
             profile.contrast_step,
         );
+        let status_muted_accent = accent.mix(muted_text, 0.55);
 
         Ok(Self {
             background,
@@ -297,6 +300,7 @@ impl PresentationPalette {
             secondary_text,
             muted_text,
             accent,
+            status_muted_accent,
             progress_track: muted_text,
             progress_fill: accent,
             diagnostics_field: metadata_field,
