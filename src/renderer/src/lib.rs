@@ -34,9 +34,9 @@ pub use ipc::{
 pub use keyboard::{NavigationIntent, RendererAction, RendererKey, RendererKeyboard};
 pub use layout::{
     ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, FullFieldLayout,
-    IdentityLineLayout, IdentityPlacement, InactivityLayout, MetadataFontSizes, NowPlayingField,
-    NowPlayingLayout, NowPlayingRole, NowPlayingTypography, PresentationStatusLayout, TextOverflow,
-    Viewport,
+    FullFieldLineLayout, IdentityLineLayout, IdentityPlacement, InactivityLayout,
+    MetadataFontSizes, NowPlayingField, NowPlayingLayout, NowPlayingRole, NowPlayingTypography,
+    PresentationStatusLayout, TextOverflow, Viewport,
 };
 pub use metadata::{MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout};
 pub use palette::{PaletteError, PresentationPalette, Rgb};

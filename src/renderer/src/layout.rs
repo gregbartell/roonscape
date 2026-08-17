@@ -197,6 +197,21 @@ impl PresentationStatusLayout {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FullFieldLineLayout {
+    pub maximum_lines: u32,
+    pub wrap: bool,
+    pub overflow: TextOverflow,
+}
+
+impl FullFieldLineLayout {
+    const COMPLETE: Self = Self {
+        maximum_lines: 1,
+        wrap: false,
+        overflow: TextOverflow::EllipsizeEnd,
+    };
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FullFieldLayout {
     pub outer_gutter_px: u32,
     pub copy_width_px: u32,
@@ -205,8 +220,10 @@ pub struct FullFieldLayout {
     pub status_spacing_px: u32,
     pub presentation_status: PresentationStatusLayout,
     pub heading_px: u32,
+    pub heading_line: FullFieldLineLayout,
     pub explanation_spacing_px: u32,
     pub explanation_px: u32,
+    pub explanation_line: FullFieldLineLayout,
     pub identity_width_px: u32,
     pub identity_right_inset_px: u32,
     pub identity_gap_px: u32,
@@ -218,17 +235,20 @@ pub struct FullFieldLayout {
 impl FullFieldLayout {
     pub fn for_viewport(viewport: Viewport) -> Self {
         let now_playing_layout = NowPlayingLayout::for_viewport(viewport);
+        let outer_gutter_px = scaled(viewport.width_px, 0.042, 32, 160);
         let explanation_px = scaled(viewport.width_px, 0.0135, 16, 46);
         Self {
-            outer_gutter_px: scaled(viewport.width_px, 0.042, 32, 160),
-            copy_width_px: ((viewport.width_px as f64) * 0.70).round().min(1280.0) as u32,
+            outer_gutter_px,
+            copy_width_px: viewport.width_px.saturating_sub(outer_gutter_px * 2),
             accent_width_px: scaled(viewport.width_px, 0.0038, 5, 15),
             accent_padding_px: scaled(viewport.width_px, 0.04, 32, 144),
             status_spacing_px: scaled(viewport.height_px, 0.036, 29, 80),
             presentation_status: PresentationStatusLayout::for_viewport(viewport),
-            heading_px: scaled(viewport.width_px, 0.062, 51, 208),
+            heading_px: scaled(viewport.width_px, 0.05, 51, 160),
+            heading_line: FullFieldLineLayout::COMPLETE,
             explanation_spacing_px: ((explanation_px as f64) * 0.9).round() as u32,
             explanation_px,
+            explanation_line: FullFieldLineLayout::COMPLETE,
             identity_width_px: now_playing_layout
                 .metadata_column_width_px
                 .saturating_sub(now_playing_layout.metadata_right_inset_px),

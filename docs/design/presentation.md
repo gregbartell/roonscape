@@ -94,17 +94,31 @@ meaningful frame.
 ## Full-field states
 
 States without a useful artwork-and-metadata composition use the entire field
-for a concise editorial message with a vertical accent bar. This grammar
-covers Idle, Starting without content, Now Playing details unavailable,
-pairing required, disconnected, and an unavailable Tracked Output. Each state
-keeps distinct status and explanatory copy while sharing the same hierarchy
-and negative space.
+for a concise editorial message with a vertical accent bar. The grammar is
+Presentation Status, then a heading with the viewer's takeaway or action, then
+an explanation only when essential. Each heading and each present explanation
+occupies one complete line across the supported landscape range.
+
+| Condition | Presentation Status | Heading | Explanation |
+| --- | --- | --- | --- |
+| Idle | `IDLE` | `Nothing is playing` | none |
+| Starting without content | `STARTING` | `Preparing playback` | none |
+| Awaiting Roon Authorization | `PAIRING REQUIRED` | `Enable RoonScape` | `In a Roon client, open Settings → Extensions and enable RoonScape.` |
+| Disconnected | `DISCONNECTED` | `Waiting for Roon` | `Check Roon Server and the network.` |
+| Output unavailable | `OUTPUT UNAVAILABLE` | `Check the selected output` | `Open RoonScape setup to choose another Tracked Output, or make the selected output available in Roon.` |
+| Playing without content | `PLAYING` | `Now Playing details unavailable` | none |
+| Paused without content | `PAUSED` | `Now Playing details unavailable` | none |
 
 Available states show the Tracked Output and current Tracked Zone at one
 stable bottom-right position, under the viewer-facing labels **Output** and
 **Zone**. The row stays in that position across Now Playing and available
-full-field states. Pairing, disconnected, and output-unavailable states omit
-the row so potentially stale identities are never shown.
+full-field states. Awaiting Roon Authorization, disconnected, and
+output-unavailable states omit the row so potentially stale identities are
+never shown.
+
+Fixture Mode includes both Playing without content and Paused without content
+so the shared content-unavailable behavior can be inspected in each active
+playback condition.
 
 Persistent product branding and unrelated controls are absent from the
 viewer-facing presentation.

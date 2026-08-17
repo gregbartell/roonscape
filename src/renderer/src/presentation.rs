@@ -510,7 +510,7 @@ impl NowPlayingPresentation {
 
 pub(crate) fn trackless_full_field(presentation: &NowPlayingPresentation) -> FullFieldPresentation {
     let heading = match presentation.status.symbol {
-        PresentationStatusSymbol::Starting => "Starting playback",
+        PresentationStatusSymbol::Starting => "Preparing playback",
         PresentationStatusSymbol::Paused | PresentationStatusSymbol::Playing => {
             "Now Playing details unavailable"
         }
@@ -533,24 +533,20 @@ fn unavailable_presentation(availability: Availability) -> FullFieldPresentation
         Availability::PairingRequired => FullFieldPresentation {
             status,
             heading: "Enable RoonScape",
-            explanation: Some(
-                "Open Settings → Extensions in a Roon client, then enable RoonScape.",
-            ),
+            explanation: Some("In a Roon client, open Settings → Extensions and enable RoonScape."),
             identity: None,
         },
         Availability::Disconnected => FullFieldPresentation {
             status,
             heading: "Waiting for Roon",
-            explanation: Some(
-                "Check Roon Server and the network. This display updates when Roon returns.",
-            ),
+            explanation: Some("Check Roon Server and the network."),
             identity: None,
         },
         Availability::OutputUnavailable => FullFieldPresentation {
             status,
-            heading: "Tracked Output unavailable",
+            heading: "Check the selected output",
             explanation: Some(
-                "Configure a Tracked Output on this RoonScape Host, or check that the selected output is available in Roon.",
+                "Open RoonScape setup to choose another Tracked Output, or make the selected output available in Roon.",
             ),
             identity: None,
         },

@@ -6,13 +6,13 @@ use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
     ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, FullFieldLayout,
-    FullFieldPresentation, IdentityLineLayout, IdentityPlacement, InactivityLayout,
-    InactivityTransform, MetadataFontSizes, MetadataLineLayout, MetadataTypography,
-    NowPlayingField, NowPlayingLayout, NowPlayingPresentation, NowPlayingRole, Presentation,
-    PresentationPalette, PresentationProgress, PresentationRevision, PresentationStatus,
-    PresentationStatusEmphasis, PresentationStatusLayout, PresentationStyleLayer,
-    PresentationTransition, PresentationTransitionStyles, TextOverflow, TypographyPair,
-    TypographyStyles, Viewport, metadata_layout, resolve_presentation,
+    FullFieldLineLayout, FullFieldPresentation, IdentityLineLayout, IdentityPlacement,
+    InactivityLayout, InactivityTransform, MetadataFontSizes, MetadataLineLayout,
+    MetadataTypography, NowPlayingField, NowPlayingLayout, NowPlayingPresentation, NowPlayingRole,
+    Presentation, PresentationPalette, PresentationProgress, PresentationRevision,
+    PresentationStatus, PresentationStatusEmphasis, PresentationStatusLayout,
+    PresentationStyleLayer, PresentationTransition, PresentationTransitionStyles, TextOverflow,
+    TypographyPair, TypographyStyles, Viewport, metadata_layout, resolve_presentation,
 };
 
 use crate::status_symbol::presentation_status_symbol;
@@ -364,18 +364,11 @@ fn full_field(
 
     let heading = metadata_label(presentation.heading, "full-field-heading");
     heading.add_css_class("editorial-text");
-    heading.set_lines(3);
-    heading.set_max_width_chars(13);
-    heading.set_wrap(true);
-    heading.set_wrap_mode(pango::WrapMode::WordChar);
     message.append(&heading);
 
     let explanation = presentation.explanation.map(|explanation| {
         let explanation = metadata_label(explanation, "full-field-explanation");
         explanation.add_css_class("utility-text");
-        explanation.set_max_width_chars(35);
-        explanation.set_wrap(true);
-        explanation.set_wrap_mode(pango::WrapMode::WordChar);
         message.append(&explanation);
         explanation
     });
@@ -643,6 +636,13 @@ fn apply_text_overflow(label: &gtk::Label, overflow: TextOverflow) {
     }
 }
 
+fn apply_full_field_line_layout(label: &gtk::Label, layout: FullFieldLineLayout) {
+    apply_text_overflow(label, layout.overflow);
+    label.set_lines(layout.maximum_lines as i32);
+    label.set_single_line_mode(layout.maximum_lines == 1);
+    label.set_wrap(layout.wrap);
+}
+
 fn set_label_font_size(label: &gtk::Label, font_size_px: u32) {
     let attributes = pango::AttrList::new();
     attributes.insert(pango::AttrSize::new_size_absolute(
@@ -697,9 +697,11 @@ impl RenderedFullField {
             .root
             .set_margin_bottom(dimension(layout.status_spacing_px));
         set_label_font_size(&self.heading, layout.heading_px);
+        apply_full_field_line_layout(&self.heading, layout.heading_line);
         if let Some(explanation) = self.explanation.as_ref() {
             explanation.set_margin_top(dimension(layout.explanation_spacing_px));
             set_label_font_size(explanation, layout.explanation_px);
+            apply_full_field_line_layout(explanation, layout.explanation_line);
         }
         if let Some(identity) = self.identity.as_ref() {
             let gutter = dimension(layout.outer_gutter_px);

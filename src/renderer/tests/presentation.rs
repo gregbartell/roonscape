@@ -105,19 +105,19 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
             "pairing-required.json",
             "PAIRING REQUIRED",
             "Enable RoonScape",
-            "Open Settings → Extensions in a Roon client, then enable RoonScape.",
+            "In a Roon client, open Settings → Extensions and enable RoonScape.",
         ),
         (
             "disconnected.json",
             "DISCONNECTED",
             "Waiting for Roon",
-            "Check Roon Server and the network. This display updates when Roon returns.",
+            "Check Roon Server and the network.",
         ),
         (
             "output-unavailable.json",
             "OUTPUT UNAVAILABLE",
-            "Tracked Output unavailable",
-            "Configure a Tracked Output on this RoonScape Host, or check that the selected output is available in Roon.",
+            "Check the selected output",
+            "Open RoonScape setup to choose another Tracked Output, or make the selected output available in Roon.",
         ),
     ];
 
@@ -171,26 +171,34 @@ fn presents_empty_loading_as_full_field_copy_with_authoritative_identities() {
     };
 
     assert_eq!(presentation.status.label, "STARTING");
-    assert_eq!(presentation.heading, "Starting playback");
+    assert_eq!(presentation.heading, "Preparing playback");
     assert_eq!(presentation.explanation, None);
     assert_full_field_identity(&presentation, "Speaker System", "Living Room");
 }
 
 #[test]
-fn presents_playing_without_usable_content_as_a_truthful_full_field() {
-    let snapshot = parse_snapshot(&support::fixture("playing-empty.json"))
-        .expect("trackless Playing fixture should be valid");
+fn presents_active_playback_without_usable_content_as_a_truthful_full_field() {
+    for (fixture_name, status) in [
+        ("playing-empty.json", "PLAYING"),
+        ("paused-empty.json", "PAUSED"),
+    ] {
+        let snapshot = parse_snapshot(&support::fixture(fixture_name))
+            .expect("content-unavailable playback fixture should be valid");
 
-    let presentation = presentation_from_snapshot(&snapshot)
-        .expect("trackless Playing should produce a presentation");
-    let Presentation::FullField(presentation) = presentation else {
-        panic!("trackless Playing should use the full-field presentation");
-    };
+        let presentation = presentation_from_snapshot(&snapshot)
+            .expect("content-unavailable playback should produce a presentation");
+        let Presentation::FullField(presentation) = presentation else {
+            panic!("{fixture_name} should use the full-field presentation");
+        };
 
-    assert_eq!(presentation.status.label, "PLAYING");
-    assert_eq!(presentation.heading, "Now Playing details unavailable");
-    assert_eq!(presentation.explanation, None);
-    assert_full_field_identity(&presentation, "Speaker System", "Living Room");
+        assert_eq!(presentation.status.label, status, "{fixture_name}");
+        assert_eq!(
+            presentation.heading, "Now Playing details unavailable",
+            "{fixture_name}",
+        );
+        assert_eq!(presentation.explanation, None, "{fixture_name}");
+        assert_full_field_identity(&presentation, "Speaker System", "Living Room");
+    }
 }
 
 #[test]
@@ -589,6 +597,7 @@ fn unavailable_snapshots_replace_now_playing_immediately() {
 fn inactive_conditions_remain_fully_legible_until_the_grace_period_ends() {
     for fixture_name in [
         "paused.json",
+        "paused-empty.json",
         "stopped.json",
         "pairing-required.json",
         "disconnected.json",

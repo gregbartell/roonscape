@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 2,
+  "revision": 22,
+  "availability": "available",
+  "playback": "paused",
+  "trackedOutput": {
+    "name": "Speaker System"
+  },
+  "trackedZone": {
+    "name": "Living Room"
+  },
+  "nowPlaying": null,
+  "progress": null,
+  "artwork": null
+}

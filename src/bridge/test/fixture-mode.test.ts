@@ -18,6 +18,7 @@ const catalogFixture = new URL(
   "../../../../src/shared/fixtures/fixture-scenario-catalog.json",
   import.meta.url,
 );
+const catalogPreflightTimeoutMilliseconds = 1_500;
 
 interface CatalogFile {
   formatVersion: number;
@@ -107,7 +108,7 @@ test("navigation publishes all Fixture Scenarios in order with wraparound revisi
       const expectedPlaying = await loadSnapshot(
         "src/shared/fixtures/playing.json",
       );
-      assertSelectedSnapshot(wrappedPlaying, expectedPlaying, 19);
+      assertSelectedSnapshot(wrappedPlaying, expectedPlaying, 20);
       assert.notEqual(
         wrappedPlaying.progress?.sampledAt,
         observed[0]?.progress?.sampledAt,
@@ -117,7 +118,7 @@ test("navigation publishes all Fixture Scenarios in order with wraparound revisi
       assertSelectedSnapshot(
         await snapshots.read(),
         await loadSnapshot("src/shared/fixtures/light-artwork.json"),
-        20,
+        21,
       );
       snapshots.close();
     } finally {
@@ -215,7 +216,10 @@ test("ordinary Fixture Mode validates the complete catalog before becoming avail
     const { fixture } = startOrdinaryFixture(taskDirectory, catalogPath);
 
     try {
-      const result = await closeWithin(fixture.child, 1_000);
+      const result = await closeWithin(
+        fixture.child,
+        catalogPreflightTimeoutMilliseconds,
+      );
 
       assert.deepEqual(result, { exitCode: 1, signal: null });
       assert.match(
@@ -261,10 +265,13 @@ test("ordinary Fixture Mode preflights every catalog snapshot against the publis
       catalogPath,
     );
     try {
-      assert.deepEqual(await closeWithin(fixture.child, 1_000), {
-        exitCode: 1,
-        signal: null,
-      });
+      assert.deepEqual(
+        await closeWithin(fixture.child, catalogPreflightTimeoutMilliseconds),
+        {
+          exitCode: 1,
+          signal: null,
+        },
+      );
       assert.match(
         fixture.standardError(),
         /Light artwork.*Snapshot exceeds 64 KiB/s,

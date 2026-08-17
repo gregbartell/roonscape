@@ -34,6 +34,7 @@ const REQUIRED_SCENARIOS = [
   "disconnected",
   "output-unavailable",
   "playing-without-content",
+  "paused-without-content",
   "missing-metadata",
   "missing-artist",
   "missing-album",

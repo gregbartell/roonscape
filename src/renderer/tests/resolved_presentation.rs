@@ -106,38 +106,55 @@ fn resolves_canonical_presentation_status_for_every_fixture_condition_and_form()
 #[test]
 fn resolves_every_full_field_snapshot_with_truthful_copy_identity_and_fallback_palette() {
     let expected = [
-        ("stopped.json", "Nothing is playing", None, true),
-        ("loading-empty.json", "Starting playback", None, true),
+        ("stopped.json", "IDLE", "Nothing is playing", None, true),
+        (
+            "loading-empty.json",
+            "STARTING",
+            "Preparing playback",
+            None,
+            true,
+        ),
         (
             "playing-empty.json",
+            "PLAYING",
+            "Now Playing details unavailable",
+            None,
+            true,
+        ),
+        (
+            "paused-empty.json",
+            "PAUSED",
             "Now Playing details unavailable",
             None,
             true,
         ),
         (
             "pairing-required.json",
+            "PAIRING REQUIRED",
             "Enable RoonScape",
-            Some("Open Settings → Extensions in a Roon client, then enable RoonScape."),
+            Some("In a Roon client, open Settings → Extensions and enable RoonScape."),
             false,
         ),
         (
             "disconnected.json",
+            "DISCONNECTED",
             "Waiting for Roon",
-            Some("Check Roon Server and the network. This display updates when Roon returns."),
+            Some("Check Roon Server and the network."),
             false,
         ),
         (
             "output-unavailable.json",
-            "Tracked Output unavailable",
+            "OUTPUT UNAVAILABLE",
+            "Check the selected output",
             Some(
-                "Configure a Tracked Output on this RoonScape Host, or check that the selected output is available in Roon.",
+                "Open RoonScape setup to choose another Tracked Output, or make the selected output available in Roon.",
             ),
             false,
         ),
     ];
     let repository_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
 
-    for (fixture_name, heading, explanation, has_identity) in expected {
+    for (fixture_name, status, heading, explanation, has_identity) in expected {
         let snapshot = parse_snapshot(&support::fixture(fixture_name))
             .expect("full-field fixture should be valid");
         let presentation = presentation_from_snapshot(&snapshot)
@@ -148,10 +165,19 @@ fn resolves_every_full_field_snapshot_with_truthful_copy_identity_and_fallback_p
             panic!("{fixture_name} should resolve to a full-field presentation");
         };
 
-        assert_eq!(full_field.heading, heading);
-        assert_eq!(full_field.explanation, explanation);
-        assert_eq!(full_field.identity.is_some(), has_identity);
-        assert_eq!(resolved.palette, PresentationPalette::fallback());
+        assert_eq!(full_field.status.label, status, "{fixture_name}");
+        assert_eq!(full_field.heading, heading, "{fixture_name}");
+        assert_eq!(full_field.explanation, explanation, "{fixture_name}");
+        assert_eq!(
+            full_field.identity.is_some(),
+            has_identity,
+            "{fixture_name}",
+        );
+        assert_eq!(
+            resolved.palette,
+            PresentationPalette::fallback(),
+            "{fixture_name}",
+        );
     }
 }
 

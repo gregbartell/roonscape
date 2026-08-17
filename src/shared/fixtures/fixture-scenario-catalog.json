@@ -33,7 +33,7 @@
     },
     {
       "scenario": "pairing-required",
-      "label": "Pairing required",
+      "label": "Awaiting Roon Authorization",
       "fixture": "src/shared/fixtures/pairing-required.json",
       "palette": "fixed-no-art"
     },
@@ -53,6 +53,12 @@
       "scenario": "playing-without-content",
       "label": "Playing without content",
       "fixture": "src/shared/fixtures/playing-empty.json",
+      "palette": "fixed-no-art"
+    },
+    {
+      "scenario": "paused-without-content",
+      "label": "Paused without content",
+      "fixture": "src/shared/fixtures/paused-empty.json",
       "palette": "fixed-no-art"
     },
     {

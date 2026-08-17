@@ -74,8 +74,10 @@ _Avoid_: Dedicated host
 
 **Starting**:
 The viewer-facing playback condition used while Roon reports that the Tracked
-Zone is loading, whether or not Now Playing content is available.
-_Avoid_: Loading in viewer-facing copy, Preparing
+Zone is loading, whether or not Now Playing content is available. Its
+Presentation Status is `STARTING`; when Now Playing is unavailable, its
+takeaway is `Preparing playback`.
+_Avoid_: Loading as a viewer-facing condition, Preparing as a condition name
 
 **Title**:
 Roon's first Now Playing display line, presented as the track title even though

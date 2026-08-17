@@ -187,6 +187,7 @@ fn build_window(
         palette_provider,
         initial_diagnostics.as_deref(),
     )));
+    presentation_view.borrow_mut().apply_viewport(viewport);
     presentation_view
         .borrow_mut()
         .apply_inactivity(initial_frame.inactivity);

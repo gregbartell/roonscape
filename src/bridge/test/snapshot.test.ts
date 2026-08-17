@@ -279,6 +279,7 @@ test("loads every shared playback state with truthful Now Playing", async () => 
   const expected = [
     ["playing.json", "playing", true, true],
     ["paused.json", "paused", true, true],
+    ["paused-empty.json", "paused", false, false],
     ["loading.json", "loading", true, true],
     ["loading-empty.json", "loading", false, false],
     ["stopped.json", "stopped", false, false],

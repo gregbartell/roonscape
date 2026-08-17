@@ -235,6 +235,7 @@ fn parses_every_shared_playback_state_with_truthful_now_playing() {
         ("playing.json", Playback::Playing, true, true),
         ("playing-empty.json", Playback::Playing, false, false),
         ("paused.json", Playback::Paused, true, true),
+        ("paused-empty.json", Playback::Paused, false, false),
         ("loading.json", Playback::Loading, true, true),
         ("loading-empty.json", Playback::Loading, false, false),
         ("stopped.json", Playback::Stopped, false, false),

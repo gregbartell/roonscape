@@ -5,7 +5,7 @@ import { repositoryRoot } from "./repository-root.js";
 import { loadSnapshot, type PresentationSnapshot } from "./snapshot.js";
 
 const defaultCatalogPath = "src/shared/fixtures/fixture-scenario-catalog.json";
-const fixtureScenarioCount = 18;
+const fixtureScenarioCount = 19;
 
 export type FixturePalette = "dark" | "light" | "fixed-no-art";
 

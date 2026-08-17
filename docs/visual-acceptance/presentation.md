@@ -52,26 +52,27 @@ The full matrix captures every maintained Fixture Scenario at each of these
 peer representative viewports: 1280x720, 1600x1200, 1920x1200, 2560x1080, and
 3840x2160.
 
-| Scenario                 | Shared fixture                | Review focus                                  |
-| ------------------------ | ----------------------------- | --------------------------------------------- |
-| Playing                  | `playing.json`                | Advancing determinate progress; dark artwork  |
-| Paused                   | `paused.json`                 | Frozen progress and inactivity-ready layout   |
-| Starting with content    | `loading.json`                | Now Playing composition and rotating ring     |
-| Starting without content | `loading-empty.json`          | Full-field Starting grammar and rotating ring |
-| Idle                     | `stopped.json`                | Quiet full-field Idle grammar                 |
-| Pairing required         | `pairing-required.json`       | Corrective unavailable state                  |
-| Disconnected             | `disconnected.json`           | Distinct disconnected copy                    |
-| Output unavailable       | `output-unavailable.json`     | Distinct Tracked Output copy                  |
-| Playing without content  | `playing-empty.json`          | Details-unavailable full field                |
-| Missing metadata         | `missing-metadata.json`       | Title-only hierarchy                          |
-| Missing Artist           | `missing-artist.json`         | Absent optional Artist spacing                |
-| Missing Album            | `missing-album.json`          | Absent optional Album spacing                 |
-| Missing artwork          | `missing-artwork.json`        | Fixed no-art palette and square field         |
-| Long metadata            | `long-metadata.json`          | Responsive wrapping and reduction             |
-| Extreme metadata         | `extreme-metadata.json`       | Final line bounds and ellipsis                |
-| Indeterminate progress   | `indeterminate-progress.json` | Timeline omitted                              |
-| Non-square artwork       | `non-square-artwork.json`     | Centered contain fit without cropping         |
-| Light artwork            | `light-artwork.json`          | Readable light artwork-derived palette        |
+| Scenario                 | Shared fixture                | Review focus                                   |
+| ------------------------ | ----------------------------- | ---------------------------------------------- |
+| Playing                  | `playing.json`                | Advancing determinate progress; dark artwork   |
+| Paused                   | `paused.json`                 | Frozen progress and inactivity-ready layout    |
+| Starting with content    | `loading.json`                | Now Playing composition and rotating ring      |
+| Starting without content | `loading-empty.json`          | `Preparing playback` on one complete line      |
+| Idle                     | `stopped.json`                | One-line, unclipped `Nothing is playing`        |
+| Awaiting Roon Authorization | `pairing-required.json`       | One-line heading and authorization instruction |
+| Disconnected             | `disconnected.json`           | One-line heading and recovery explanation      |
+| Output unavailable       | `output-unavailable.json`     | One-line heading and complete corrective copy  |
+| Playing without content  | `playing-empty.json`          | Details-unavailable full field                 |
+| Paused without content   | `paused-empty.json`           | Details-unavailable full field                 |
+| Missing metadata         | `missing-metadata.json`       | Title-only hierarchy                           |
+| Missing Artist           | `missing-artist.json`         | Absent optional Artist spacing                 |
+| Missing Album            | `missing-album.json`          | Absent optional Album spacing                  |
+| Missing artwork          | `missing-artwork.json`        | Fixed no-art palette and square field          |
+| Long metadata            | `long-metadata.json`          | Responsive wrapping and reduction              |
+| Extreme metadata         | `extreme-metadata.json`       | Final line bounds and ellipsis                 |
+| Indeterminate progress   | `indeterminate-progress.json` | Timeline omitted                               |
+| Non-square artwork       | `non-square-artwork.json`     | Centered contain fit without cropping          |
+| Light artwork            | `light-artwork.json`          | Readable light artwork-derived palette         |
 
 Treat all five viewports as peers. Together they exercise the minimum
 supported landscape size, 4:3, 16:10, ultrawide, and high-resolution
@@ -121,8 +122,10 @@ instead of approving a scenario at only one size.
   available states. Ordinary names fit comfortably, long names degrade
   defensively, and unavailable states expose no stale identities.
 - **Full-field grammar:** Idle, Starting without content, details unavailable,
-  pairing, disconnected, and output-unavailable states share the accent-bar
-  language while retaining distinct meanings and restrained copy.
+  Awaiting Roon Authorization, disconnected, and output-unavailable states
+  share the accent-bar language while retaining distinct meanings. Confirm
+  every heading and every present explanation is complete on one line, and
+  that `Nothing is playing` is not clipped at its lower edge.
 - **Diagnostics:** The three overlay representatives remain legible,
   non-displacing, and inside the OLED-safe field; ordinary captures remain
   overlay-free.
