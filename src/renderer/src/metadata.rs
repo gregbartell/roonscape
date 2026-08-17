@@ -1,6 +1,10 @@
 use crate::presentation::NowPlayingPresentation;
 use crate::{MetadataFontSizes, NowPlayingLayout, TextOverflow, Viewport};
 
+const TITLE_MAXIMUM_LINES: u32 = 5;
+const ARTIST_MAXIMUM_LINES: u32 = 3;
+const ALBUM_MAXIMUM_LINES: u32 = 3;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MetadataTypography {
     EditorialSerif,
@@ -40,19 +44,23 @@ pub fn metadata_layout(
                 text,
                 MetadataTypography::EditorialSerif,
                 typography.title,
-                3,
+                TITLE_MAXIMUM_LINES,
             )
         }),
-        artist: presentation
-            .artist
-            .as_deref()
-            .map(|text| line_layout(text, MetadataTypography::UtilitySans, typography.artist, 2)),
+        artist: presentation.artist.as_deref().map(|text| {
+            line_layout(
+                text,
+                MetadataTypography::UtilitySans,
+                typography.artist,
+                ARTIST_MAXIMUM_LINES,
+            )
+        }),
         album: presentation.album.as_deref().map(|text| {
             line_layout(
                 text,
                 MetadataTypography::EditorialSerif,
                 typography.album,
-                2,
+                ALBUM_MAXIMUM_LINES,
             )
         }),
     }

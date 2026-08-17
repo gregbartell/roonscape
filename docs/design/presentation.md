@@ -16,10 +16,13 @@ and the Output and Zone identity row.
 
 Title is the dominant text. Artist and Album step down in size, followed by
 Presentation Status, progress times, and identity labels. Missing metadata
-closes up cleanly instead of leaving placeholders. Long values reduce within
-readable limits before ellipsizing, with bounds of three Title lines, two
-Artist lines, and two Album lines. Output and Zone names remain on one line
-and ellipsize only as a defensive fallback.
+closes up cleanly instead of leaving placeholders. Long values use the first
+fitting preferred, reduced, or minimum readable font tier, then ellipsize at
+the end when content still exceeds bounds of five Title lines, three Artist
+lines, and three Album lines. Output and Zone names remain on one line and
+ellipsize only as a defensive fallback. Metadata uses no scrolling, marquee
+motion, or pagination and never shrinks below the established readable font
+floors.
 
 The composition uses the complete landscape field without letterboxing.
 Artwork and metadata keep their relative emphasis on ordinary, tall, wide,

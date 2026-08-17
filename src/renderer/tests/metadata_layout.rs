@@ -3,11 +3,26 @@ mod representative_viewports;
 mod support;
 
 use roonscape_renderer::{
-    MetadataTypography, Presentation, TextOverflow, Viewport, metadata_layout, parse_snapshot,
-    presentation_from_snapshot,
+    MetadataFontSizes, MetadataTypography, Presentation, TextOverflow, Viewport, metadata_layout,
+    parse_snapshot, presentation_from_snapshot,
 };
 
 const VIEWPORT: Viewport = Viewport::new(1920, 1200);
+
+#[derive(Clone, Copy)]
+struct ExpectedFontTiers {
+    title: MetadataFontSizes,
+    artist: MetadataFontSizes,
+    album: MetadataFontSizes,
+}
+
+const fn font_tiers(preferred_px: u32, reduced_px: u32, minimum_px: u32) -> MetadataFontSizes {
+    MetadataFontSizes {
+        preferred_px,
+        reduced_px,
+        minimum_px,
+    }
+}
 
 fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation {
     let snapshot = parse_snapshot(&support::fixture(fixture_name))
@@ -60,25 +75,60 @@ fn collapses_blank_optional_metadata_without_dead_spacing() {
 }
 
 #[test]
-fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
+fn retains_long_metadata_with_expanded_bounds_and_existing_readability_tiers() {
     let presentation = now_playing("long-metadata.json");
+    let expected_title = presentation
+        .title
+        .clone()
+        .expect("long fixture should have a Title");
+    let expected_tiers = [
+        ExpectedFontTiers {
+            title: font_tiers(59, 47, 36),
+            artist: font_tiers(22, 20, 18),
+            album: font_tiers(17, 16, 15),
+        },
+        ExpectedFontTiers {
+            title: font_tiers(74, 58, 45),
+            artist: font_tiers(28, 23, 20),
+            album: font_tiers(20, 17, 15),
+        },
+        ExpectedFontTiers {
+            title: font_tiers(88, 70, 54),
+            artist: font_tiers(34, 28, 24),
+            album: font_tiers(23, 20, 18),
+        },
+        ExpectedFontTiers {
+            title: font_tiers(118, 93, 72),
+            artist: font_tiers(45, 37, 32),
+            album: font_tiers(31, 27, 24),
+        },
+        ExpectedFontTiers {
+            title: font_tiers(168, 128, 96),
+            artist: font_tiers(64, 56, 48),
+            album: font_tiers(45, 40, 35),
+        },
+    ];
 
-    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+    for (viewport, expected_tiers) in representative_viewports::REPRESENTATIVE_VIEWPORTS
+        .into_iter()
+        .zip(expected_tiers)
+    {
         let layout = metadata_layout(&presentation, viewport);
         let title = layout.title.expect("long fixture should have a Title");
         let artist = layout.artist.expect("long fixture should have an Artist");
         let album = layout.album.expect("long fixture should have an Album");
 
-        assert!(title.font_sizes.minimum_px >= 36);
-        assert!(artist.font_sizes.minimum_px >= 18);
-        assert!(album.font_sizes.minimum_px >= 15);
+        assert_eq!(title.text, expected_title);
+        assert_eq!(title.font_sizes, expected_tiers.title);
+        assert_eq!(artist.font_sizes, expected_tiers.artist);
+        assert_eq!(album.font_sizes, expected_tiers.album);
         assert_eq!(
             (
                 title.maximum_lines,
                 artist.maximum_lines,
                 album.maximum_lines
             ),
-            (3, 2, 2)
+            (5, 3, 3)
         );
         assert_eq!(title.overflow, TextOverflow::EllipsizeEnd);
         assert_eq!(artist.overflow, TextOverflow::EllipsizeEnd);
@@ -87,8 +137,20 @@ fn reduces_long_metadata_within_firm_readability_and_line_bounds() {
 }
 
 #[test]
-fn extreme_metadata_stops_reducing_at_readable_minimum_sizes() {
+fn extreme_metadata_uses_expanded_bounds_and_ellipsizes_at_readable_minimum_sizes() {
     let presentation = now_playing("extreme-metadata.json");
+    let expected_title = presentation
+        .title
+        .clone()
+        .expect("extreme fixture should have a Title");
+    let expected_artist = presentation
+        .artist
+        .clone()
+        .expect("extreme fixture should have an Artist");
+    let expected_album = presentation
+        .album
+        .clone()
+        .expect("extreme fixture should have an Album");
 
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
         let layout = metadata_layout(&presentation, viewport);
@@ -98,6 +160,20 @@ fn extreme_metadata_stops_reducing_at_readable_minimum_sizes() {
             .expect("extreme fixture should have an Artist");
         let album = layout.album.expect("extreme fixture should have an Album");
 
+        assert_eq!(title.text, expected_title);
+        assert_eq!(artist.text, expected_artist);
+        assert_eq!(album.text, expected_album);
+        assert_eq!(
+            (
+                title.maximum_lines,
+                artist.maximum_lines,
+                album.maximum_lines
+            ),
+            (5, 3, 3)
+        );
+        assert_eq!(title.overflow, TextOverflow::EllipsizeEnd);
+        assert_eq!(artist.overflow, TextOverflow::EllipsizeEnd);
+        assert_eq!(album.overflow, TextOverflow::EllipsizeEnd);
         assert_eq!(
             title.fitting_font_size(|_| false),
             title.font_sizes.minimum_px
