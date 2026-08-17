@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -18,15 +19,11 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
-const packageMetadata = JSON.parse(
-  readFileSync(path.join(repositoryRoot, "package.json"), "utf8"),
-);
-const releaseName = `roonscape-${packageMetadata.version}-linux-x64`;
-const archiveFile = path.join(
-  repositoryRoot,
-  "release",
-  `${releaseName}.tar.gz`,
-);
+const expectedVersion = "1.0.0";
+const releaseRootName = "roonscape";
+const archiveName = "roonscape-linux-x64.tar.gz";
+const releaseDirectory = path.join(repositoryRoot, "release");
+const archiveFile = path.join(releaseDirectory, archiveName);
 const checksumFile = `${archiveFile}.sha256`;
 
 test(
@@ -45,6 +42,10 @@ test(
       cwd: repositoryRoot,
     });
     assert.equal(packaging.status, 0, packagingOutput(packaging));
+    assert.deepEqual(readdirSync(releaseDirectory).sort(), [
+      archiveName,
+      `${archiveName}.sha256`,
+    ]);
 
     const archive = readFileSync(archiveFile);
     const expectedChecksum = createHash("sha256").update(archive).digest("hex");
@@ -57,12 +58,28 @@ test(
     mkdirSync(scratchRoot, { recursive: true });
     const extractionRoot = mkdtempSync(path.join(scratchRoot, "release-test."));
     try {
+      const archiveListing = run("tar", ["-tzf", archiveFile], {
+        cwd: extractionRoot,
+      });
+      assert.equal(archiveListing.status, 0, packagingOutput(archiveListing));
+      assert.deepEqual(
+        [
+          ...new Set(
+            archiveListing.stdout
+              .trim()
+              .split("\n")
+              .map((entry) => entry.split("/")[0]),
+          ),
+        ],
+        [releaseRootName],
+      );
+
       const extraction = run("tar", ["-xzf", archiveFile], {
         cwd: extractionRoot,
       });
       assert.equal(extraction.status, 0, packagingOutput(extraction));
 
-      const releaseRoot = path.join(extractionRoot, releaseName);
+      const releaseRoot = path.join(extractionRoot, releaseRootName);
       const relocatedRoot = path.join(extractionRoot, "relocated-roonscape");
       renameSync(releaseRoot, relocatedRoot);
       assert.throws(
@@ -100,6 +117,13 @@ test(
         );
       }
 
+      assert.equal(
+        JSON.parse(
+          readFileSync(path.join(relocatedRoot, "package.json"), "utf8"),
+        ).version,
+        expectedVersion,
+      );
+
       for (const relativePath of [
         "roonscape",
         "runtime/node/bin/node",
@@ -134,7 +158,7 @@ test(
         env: environment,
       });
       assert.equal(version.status, 0, packagingOutput(version));
-      assert.equal(version.stdout, `RoonScape ${packageMetadata.version}\n`);
+      assert.equal(version.stdout, `RoonScape ${expectedVersion}\n`);
     } finally {
       rmSync(extractionRoot, { force: true, recursive: true });
     }

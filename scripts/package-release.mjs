@@ -28,9 +28,10 @@ const nodeVersion = readFileSync(
 const nodeArchiveName = `node-v${nodeVersion}-linux-x64.tar.xz`;
 const nodeArchiveChecksum =
   "14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647";
-const releaseName = `roonscape-${version}-linux-x64`;
+const releaseRootName = "roonscape";
+const archiveName = "roonscape-linux-x64.tar.gz";
 const outputDirectory = path.join(repositoryRoot, "release");
-const archiveFile = path.join(outputDirectory, `${releaseName}.tar.gz`);
+const archiveFile = path.join(outputDirectory, archiveName);
 const checksumFile = `${archiveFile}.sha256`;
 const scratchDirectory = mkdtempSync(path.join(tmpdir(), "roonscape-package."));
 
@@ -87,7 +88,7 @@ try {
   );
   run("tar", ["-xJf", nodeArchive, "-C", scratchDirectory]);
 
-  const stageRoot = path.join(scratchDirectory, "stage", releaseName);
+  const stageRoot = path.join(scratchDirectory, "stage", releaseRootName);
   copyRuntimeTree(stageRoot, dependencyWorkspace, nodeDistributionRoot);
   normalizePermissions(stageRoot);
 
@@ -99,11 +100,10 @@ try {
   assertGlibcBaseline(renderer);
   assertGlibcBaseline(privateNode);
 
+  rmSync(outputDirectory, { force: true, recursive: true });
   mkdirSync(outputDirectory, { recursive: true });
-  rmSync(archiveFile, { force: true });
-  rmSync(checksumFile, { force: true });
   const sourceDateEpoch = output("git", ["log", "-1", "--format=%ct"]).trim();
-  const tarFile = path.join(scratchDirectory, `${releaseName}.tar`);
+  const tarFile = path.join(scratchDirectory, `${releaseRootName}.tar`);
   run("tar", [
     "--sort=name",
     `--mtime=@${sourceDateEpoch}`,
@@ -116,7 +116,7 @@ try {
     tarFile,
     "-C",
     path.dirname(stageRoot),
-    releaseName,
+    releaseRootName,
   ]);
   runGzip(tarFile, archiveFile);
 

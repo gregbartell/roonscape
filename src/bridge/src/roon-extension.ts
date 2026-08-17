@@ -8,7 +8,7 @@ import type {
 export const roonScapeExtensionIdentity = {
   extension_id: "io.roonscape.bridge",
   display_name: "RoonScape",
-  display_version: "0.1.0",
+  display_version: "1.0.0",
   publisher: "Gregory Bartell",
   email: "5353310+gregbartell@users.noreply.github.com",
   website: "https://github.com/gregbartell/roonscape",
