@@ -35,7 +35,8 @@ pub use keyboard::{NavigationIntent, RendererAction, RendererKey, RendererKeyboa
 pub use layout::{
     ArtworkAlignment, ArtworkContent, ArtworkFit, ArtworkLayout, FullFieldLayout,
     IdentityLineLayout, IdentityPlacement, InactivityLayout, MetadataFontSizes, NowPlayingField,
-    NowPlayingLayout, NowPlayingRole, NowPlayingTypography, TextOverflow, Viewport,
+    NowPlayingLayout, NowPlayingRole, NowPlayingTypography, PresentationStatusLayout, TextOverflow,
+    Viewport,
 };
 pub use metadata::{MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout};
 pub use palette::{PaletteError, PresentationPalette, Rgb};

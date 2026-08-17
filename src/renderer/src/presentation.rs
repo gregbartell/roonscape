@@ -510,7 +510,7 @@ impl NowPlayingPresentation {
 
 pub(crate) fn trackless_full_field(presentation: &NowPlayingPresentation) -> FullFieldPresentation {
     let heading = match presentation.status.symbol {
-        PresentationStatusSymbol::Starting => "Preparing playback",
+        PresentationStatusSymbol::Starting => "Starting playback",
         PresentationStatusSymbol::Paused | PresentationStatusSymbol::Playing => {
             "Now Playing details unavailable"
         }

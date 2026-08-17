@@ -91,10 +91,10 @@ fn resolves_canonical_presentation_status_for_every_fixture_condition_and_form()
 
         let resolved = resolve_presentation(&presentation, &repository_root);
 
-        assert_eq!(resolved.status.label, label, "{fixture_name}");
-        assert_eq!(resolved.status.symbol, symbol, "{fixture_name}");
-        assert_eq!(resolved.status.motion, motion, "{fixture_name}");
-        assert_eq!(resolved.status.emphasis, emphasis, "{fixture_name}");
+        assert_eq!(resolved.status().label, label, "{fixture_name}");
+        assert_eq!(resolved.status().symbol, symbol, "{fixture_name}");
+        assert_eq!(resolved.status().motion, motion, "{fixture_name}");
+        assert_eq!(resolved.status().emphasis, emphasis, "{fixture_name}");
         assert_eq!(
             matches!(resolved.presentation, Presentation::FullField(_)),
             is_full_field,
@@ -107,7 +107,7 @@ fn resolves_canonical_presentation_status_for_every_fixture_condition_and_form()
 fn resolves_every_full_field_snapshot_with_truthful_copy_identity_and_fallback_palette() {
     let expected = [
         ("stopped.json", "Nothing is playing", None, true),
-        ("loading-empty.json", "Preparing playback", None, true),
+        ("loading-empty.json", "Starting playback", None, true),
         (
             "playing-empty.json",
             "Now Playing details unavailable",

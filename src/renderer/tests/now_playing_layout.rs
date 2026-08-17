@@ -64,7 +64,7 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
         assert!(layout.typography.title.minimum_px >= 36);
         assert!(layout.typography.artist.minimum_px >= 18);
         assert!(layout.typography.album.minimum_px >= 15);
-        assert!(layout.typography.status_px >= 12);
+        assert!(layout.presentation_status.font_px >= 12);
         assert!(layout.typography.time_px >= 11);
         assert!(layout.typography.identity_px >= 11);
     }

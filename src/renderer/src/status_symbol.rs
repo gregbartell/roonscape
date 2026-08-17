@@ -68,7 +68,7 @@ fn draw_symbol(
         (f64::from(height) - extent) / 2.0,
     );
     context.scale(extent / GLYPH_GRID, extent / GLYPH_GRID);
-    context.set_line_cap(LineCap::Round);
+    context.set_line_cap(symbol_line_cap(symbol));
     context.set_line_join(LineJoin::Round);
 
     match symbol {
@@ -79,6 +79,18 @@ fn draw_symbol(
         PresentationStatusSymbol::PairingRequired => draw_pairing_required(context),
         PresentationStatusSymbol::Disconnected => draw_disconnected(context),
         PresentationStatusSymbol::OutputUnavailable => draw_output_unavailable(context),
+    }
+}
+
+fn symbol_line_cap(symbol: PresentationStatusSymbol) -> LineCap {
+    match symbol {
+        PresentationStatusSymbol::PairingRequired
+        | PresentationStatusSymbol::Disconnected
+        | PresentationStatusSymbol::OutputUnavailable => LineCap::Round,
+        PresentationStatusSymbol::Playing
+        | PresentationStatusSymbol::Paused
+        | PresentationStatusSymbol::Starting
+        | PresentationStatusSymbol::Idle => LineCap::Butt,
     }
 }
 
@@ -193,4 +205,33 @@ fn rounded_rectangle(context: &Context, x: f64, y: f64, width: f64, height: f64,
     );
     context.arc(x + radius, y + radius, radius, TAU / 2.0, TAU * 0.75);
     context.close_path();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uses_butt_caps_for_starting_and_round_caps_only_for_unavailable_symbols() {
+        assert!(matches!(
+            symbol_line_cap(PresentationStatusSymbol::Starting),
+            LineCap::Butt
+        ));
+
+        for symbol in [
+            PresentationStatusSymbol::Playing,
+            PresentationStatusSymbol::Paused,
+            PresentationStatusSymbol::Idle,
+        ] {
+            assert!(matches!(symbol_line_cap(symbol), LineCap::Butt));
+        }
+
+        for symbol in [
+            PresentationStatusSymbol::PairingRequired,
+            PresentationStatusSymbol::Disconnected,
+            PresentationStatusSymbol::OutputUnavailable,
+        ] {
+            assert!(matches!(symbol_line_cap(symbol), LineCap::Round));
+        }
+    }
 }

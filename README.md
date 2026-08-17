@@ -135,7 +135,7 @@ and holding an arrow advances only once until it is released. The terminal
 names the initial and subsequently selected Fixture Scenarios without adding
 anything onscreen.
 
-The catalog order is Playing, Paused, Loading with content, Loading without
+The catalog order is Playing, Paused, Starting with content, Starting without
 content, Idle, pairing required, disconnected, output unavailable, Playing
 without content, missing metadata, missing Artist, missing Album, missing
 artwork, long metadata, extreme metadata, indeterminate progress, non-square

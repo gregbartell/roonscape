@@ -7,7 +7,15 @@ use crate::{Presentation, PresentationPalette, PresentationStatus};
 pub struct ResolvedPresentation {
     pub presentation: Presentation,
     pub palette: PresentationPalette,
-    pub status: PresentationStatus,
+}
+
+impl ResolvedPresentation {
+    pub fn status(&self) -> &PresentationStatus {
+        match &self.presentation {
+            Presentation::NowPlaying(now_playing) => &now_playing.status,
+            Presentation::FullField(full_field) => &full_field.status,
+        }
+    }
 }
 
 pub fn resolve_presentation(
@@ -45,13 +53,8 @@ pub fn resolve_presentation(
 }
 
 fn resolved(presentation: Presentation, palette: PresentationPalette) -> ResolvedPresentation {
-    let status = match &presentation {
-        Presentation::NowPlaying(now_playing) => now_playing.status,
-        Presentation::FullField(full_field) => full_field.status,
-    };
     ResolvedPresentation {
         presentation,
         palette,
-        status,
     }
 }

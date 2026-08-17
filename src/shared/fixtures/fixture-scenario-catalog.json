@@ -15,13 +15,13 @@
     },
     {
       "scenario": "loading-with-content",
-      "label": "Loading with content",
+      "label": "Starting with content",
       "fixture": "src/shared/fixtures/loading.json",
       "palette": "dark"
     },
     {
       "scenario": "loading-without-content",
-      "label": "Loading without content",
+      "label": "Starting without content",
       "fixture": "src/shared/fixtures/loading-empty.json",
       "palette": "fixed-no-art"
     },

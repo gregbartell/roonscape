@@ -172,10 +172,28 @@ pub struct NowPlayingTypography {
     pub title: MetadataFontSizes,
     pub artist: MetadataFontSizes,
     pub album: MetadataFontSizes,
-    pub status_px: u32,
-    pub status_letter_spacing_px: u32,
     pub time_px: u32,
     pub identity_px: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PresentationStatusLayout {
+    pub symbol_size_px: u32,
+    pub symbol_gap_px: u32,
+    pub font_px: u32,
+    pub letter_spacing_px: u32,
+}
+
+impl PresentationStatusLayout {
+    fn for_viewport(viewport: Viewport) -> Self {
+        let font_px = scaled(viewport.width_px, 0.022, 29, 42);
+        Self {
+            symbol_size_px: scaled(viewport.width_px, 0.0385, 56, 96),
+            symbol_gap_px: scaled(viewport.width_px, 0.0115, 16, 44),
+            font_px,
+            letter_spacing_px: ((font_px as f64) * 0.055).round() as u32,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -185,10 +203,7 @@ pub struct FullFieldLayout {
     pub accent_width_px: u32,
     pub accent_padding_px: u32,
     pub status_spacing_px: u32,
-    pub status_symbol_size_px: u32,
-    pub status_symbol_gap_px: u32,
-    pub status_px: u32,
-    pub status_letter_spacing_px: u32,
+    pub presentation_status: PresentationStatusLayout,
     pub heading_px: u32,
     pub explanation_spacing_px: u32,
     pub explanation_px: u32,
@@ -203,8 +218,6 @@ pub struct FullFieldLayout {
 impl FullFieldLayout {
     pub fn for_viewport(viewport: Viewport) -> Self {
         let now_playing_layout = NowPlayingLayout::for_viewport(viewport);
-        let status_px = scaled(viewport.width_px, 0.022, 29, 42);
-        let status_symbol_size_px = scaled(viewport.width_px, 0.0385, 56, 96);
         let explanation_px = scaled(viewport.width_px, 0.0135, 16, 46);
         Self {
             outer_gutter_px: scaled(viewport.width_px, 0.042, 32, 160),
@@ -212,10 +225,7 @@ impl FullFieldLayout {
             accent_width_px: scaled(viewport.width_px, 0.0038, 5, 15),
             accent_padding_px: scaled(viewport.width_px, 0.04, 32, 144),
             status_spacing_px: scaled(viewport.height_px, 0.036, 29, 80),
-            status_symbol_size_px,
-            status_symbol_gap_px: scaled(viewport.width_px, 0.0115, 16, 44),
-            status_px,
-            status_letter_spacing_px: ((status_px as f64) * 0.055).round() as u32,
+            presentation_status: PresentationStatusLayout::for_viewport(viewport),
             heading_px: scaled(viewport.width_px, 0.062, 51, 208),
             explanation_spacing_px: ((explanation_px as f64) * 0.9).round() as u32,
             explanation_px,
@@ -250,8 +260,7 @@ pub struct NowPlayingLayout {
     pub progress_spacing_px: u32,
     pub time_spacing_px: u32,
     pub identity_gap_px: u32,
-    pub status_symbol_size_px: u32,
-    pub status_symbol_gap_px: u32,
+    pub presentation_status: PresentationStatusLayout,
     pub progress_height_px: u32,
     pub artwork_shadow_offset_px: u32,
     pub artwork_shadow_blur_px: u32,
@@ -284,8 +293,6 @@ impl NowPlayingLayout {
         let artwork_field_size_px = artwork_column_width_px
             .min(((viewport.height_px as f64) * 0.81).round() as u32)
             .min(artwork_height_limit_px);
-        let status_px = scaled(viewport.width_px, 0.022, 29, 42);
-        let status_symbol_size_px = scaled(viewport.width_px, 0.0385, 56, 96);
         let typography = NowPlayingTypography {
             title: MetadataFontSizes {
                 preferred_px: scaled(viewport.width_px, 0.046, 53, 168),
@@ -302,8 +309,6 @@ impl NowPlayingLayout {
                 reduced_px: scaled(viewport.width_px, 0.0106, 16, 40),
                 minimum_px: scaled(viewport.width_px, 0.0094, 15, 35),
             },
-            status_px,
-            status_letter_spacing_px: ((status_px as f64) * 0.055).round() as u32,
             time_px: scaled(viewport.width_px, 0.0072, 11, 26),
             identity_px: scaled(viewport.width_px, 0.0072, 11, 27),
         };
@@ -326,8 +331,7 @@ impl NowPlayingLayout {
             progress_spacing_px: scaled(viewport.height_px, 0.065, 45, 128),
             time_spacing_px: scaled(viewport.width_px, 0.0055, 7, 22),
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
-            status_symbol_size_px,
-            status_symbol_gap_px: scaled(viewport.width_px, 0.0115, 16, 44),
+            presentation_status: PresentationStatusLayout::for_viewport(viewport),
             progress_height_px: scaled(viewport.width_px, 0.0016, 3, 6),
             artwork_shadow_offset_px,
             artwork_shadow_blur_px,

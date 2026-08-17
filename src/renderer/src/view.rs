@@ -10,9 +10,9 @@ use roonscape_renderer::{
     InactivityTransform, MetadataFontSizes, MetadataLineLayout, MetadataTypography,
     NowPlayingField, NowPlayingLayout, NowPlayingPresentation, NowPlayingRole, Presentation,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationStatus,
-    PresentationStatusEmphasis, PresentationStyleLayer, PresentationTransition,
-    PresentationTransitionStyles, TextOverflow, TypographyPair, TypographyStyles, Viewport,
-    metadata_layout, resolve_presentation,
+    PresentationStatusEmphasis, PresentationStatusLayout, PresentationStyleLayer,
+    PresentationTransition, PresentationTransitionStyles, TextOverflow, TypographyPair,
+    TypographyStyles, Viewport, metadata_layout, resolve_presentation,
 };
 
 use crate::status_symbol::presentation_status_symbol;
@@ -333,23 +333,18 @@ fn render_presentation(
     match &resolved.presentation {
         Presentation::NowPlaying(presentation) => now_playing(
             presentation,
-            &resolved.status,
             repository_root,
             resolved.palette,
             diagnostics_text,
         ),
-        Presentation::FullField(presentation) => full_field(
-            presentation,
-            &resolved.status,
-            resolved.palette,
-            diagnostics_text,
-        ),
+        Presentation::FullField(presentation) => {
+            full_field(presentation, resolved.palette, diagnostics_text)
+        }
     }
 }
 
 fn full_field(
     presentation: &FullFieldPresentation,
-    status: &PresentationStatus,
     palette: PresentationPalette,
     diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
@@ -364,7 +359,7 @@ fn full_field(
     copy.set_valign(gtk::Align::Center);
 
     let message = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let rendered_status = presentation_status(status);
+    let rendered_status = presentation_status(&presentation.status);
     message.append(&rendered_status.root);
 
     let heading = metadata_label(presentation.heading, "full-field-heading");
@@ -430,7 +425,6 @@ fn diagnostics_view(text: &str) -> gtk::Label {
 
 fn now_playing(
     presentation: &NowPlayingPresentation,
-    status: &PresentationStatus,
     repository_root: &Path,
     palette: PresentationPalette,
     diagnostics_text: Option<&str>,
@@ -457,7 +451,7 @@ fn now_playing(
     );
     artwork_column.append(&artwork_frame);
 
-    let metadata = metadata(presentation, status, &layout);
+    let metadata = metadata(presentation, &layout);
     let metadata_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
     metadata_slot.add_css_class("metadata-slot");
     metadata_slot.set_hexpand(false);
@@ -553,7 +547,6 @@ fn artwork(
 
 fn metadata(
     presentation: &NowPlayingPresentation,
-    status: &PresentationStatus,
     now_playing_layout: &NowPlayingLayout,
 ) -> RenderedMetadata {
     let root = gtk::Overlay::new();
@@ -571,7 +564,7 @@ fn metadata(
     copy.set_valign(gtk::Align::Center);
     copy.set_vexpand(true);
 
-    let rendered_status = presentation_status(status);
+    let rendered_status = presentation_status(&presentation.status);
 
     let layout = metadata_layout(presentation, Viewport::WINDOWED_FIXTURE);
     let title = layout
@@ -699,20 +692,10 @@ impl RenderedFullField {
         self.message
             .set_margin_start(dimension(layout.accent_padding_px));
         self.presentation_status
-            .root
-            .set_spacing(dimension(layout.status_symbol_gap_px));
+            .apply_layout(layout.presentation_status);
         self.presentation_status
             .root
             .set_margin_bottom(dimension(layout.status_spacing_px));
-        let symbol_size = dimension(layout.status_symbol_size_px);
-        self.presentation_status
-            .symbol
-            .set_size_request(symbol_size, symbol_size);
-        set_status_label_typography(
-            &self.presentation_status.label,
-            layout.status_px,
-            layout.status_letter_spacing_px,
-        );
         set_label_font_size(&self.heading, layout.heading_px);
         if let Some(explanation) = self.explanation.as_ref() {
             explanation.set_margin_top(dimension(layout.explanation_spacing_px));
@@ -735,20 +718,10 @@ impl RenderedFullField {
 impl RenderedMetadata {
     fn apply_layout(&self, layout: &NowPlayingLayout) {
         self.presentation_status
-            .root
-            .set_spacing(dimension(layout.status_symbol_gap_px));
+            .apply_layout(layout.presentation_status);
         self.presentation_status
             .root
             .set_margin_top(dimension(layout.status_top_inset_px));
-        let symbol_size = dimension(layout.status_symbol_size_px);
-        self.presentation_status
-            .symbol
-            .set_size_request(symbol_size, symbol_size);
-        set_status_label_typography(
-            &self.presentation_status.label,
-            layout.typography.status_px,
-            layout.typography.status_letter_spacing_px,
-        );
 
         if let Some(title) = self.title.as_ref() {
             title.apply_font_sizes(layout.typography.title);
@@ -781,6 +754,15 @@ impl RenderedMetadata {
 
         self.identity
             .apply_layout(layout.identity_gap_px, layout.typography.identity_px);
+    }
+}
+
+impl RenderedPresentationStatus {
+    fn apply_layout(&self, layout: PresentationStatusLayout) {
+        self.root.set_spacing(dimension(layout.symbol_gap_px));
+        let symbol_size = dimension(layout.symbol_size_px);
+        self.symbol.set_size_request(symbol_size, symbol_size);
+        set_status_label_typography(&self.label, layout.font_px, layout.letter_spacing_px);
     }
 }
 

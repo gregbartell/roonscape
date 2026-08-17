@@ -121,7 +121,7 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
         ),
     ];
 
-    for (fixture_name, state_label, heading, explanation) in expected {
+    for (fixture_name, status_label, heading, explanation) in expected {
         let fixture = support::fixture(fixture_name);
         let snapshot = parse_snapshot(&fixture).expect("unavailable fixture should be valid");
         let presentation = presentation_from_snapshot(&snapshot)
@@ -136,7 +136,7 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
                 presentation.heading,
                 presentation.explanation,
             ),
-            (state_label, heading, Some(explanation)),
+            (status_label, heading, Some(explanation)),
         );
         assert_eq!(presentation.identity, None);
     }
@@ -171,7 +171,7 @@ fn presents_empty_loading_as_full_field_copy_with_authoritative_identities() {
     };
 
     assert_eq!(presentation.status.label, "STARTING");
-    assert_eq!(presentation.heading, "Preparing playback");
+    assert_eq!(presentation.heading, "Starting playback");
     assert_eq!(presentation.explanation, None);
     assert_full_field_identity(&presentation, "Speaker System", "Living Room");
 }
@@ -335,7 +335,7 @@ fn presents_each_playback_state_without_inventing_now_playing() {
         ),
     ];
 
-    for (fixture_name, state_label, title, artwork_revision) in fixtures {
+    for (fixture_name, status_label, title, artwork_revision) in fixtures {
         let snapshot = parse_snapshot(&support::fixture(fixture_name))
             .expect("playback fixture should be valid");
         let presentation = presentation_from_snapshot(&snapshot)
@@ -344,7 +344,7 @@ fn presents_each_playback_state_without_inventing_now_playing() {
             panic!("available playback should produce an available presentation");
         };
 
-        assert_eq!(presentation.status.label, state_label);
+        assert_eq!(presentation.status.label, status_label);
         assert_eq!(presentation.title.as_deref(), title);
         assert_eq!(presentation.artwork_revision, artwork_revision);
     }
