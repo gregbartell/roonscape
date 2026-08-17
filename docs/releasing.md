@@ -2,9 +2,11 @@
 
 Use this checklist after the release version has been approved.
 
-1. Set the same version in `package.json`, `src/bridge/package.json`, and
-   `src/renderer/Cargo.toml`. Refresh `package-lock.json` and `Cargo.lock` so
-   their RoonScape entries agree with that version.
+1. Set the same version in `package.json`, `src/bridge/package.json`,
+   `src/renderer/Cargo.toml`, the extension identity in
+   `src/bridge/src/roon-extension.ts`, and the release-package expectation in
+   `scripts/package-release.test.mjs`. Refresh `package-lock.json` and
+   `Cargo.lock` so their RoonScape entries agree with that version.
 2. Install the locked dependencies with `npm ci`, then run the complete local
    check and build the release artifacts:
 
