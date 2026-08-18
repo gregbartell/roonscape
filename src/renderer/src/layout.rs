@@ -333,8 +333,9 @@ pub enum PresentationStatusDecoration {
 pub struct ArtworkFieldAnchors {
     pub artwork_top_viewport_y_px: u32,
     pub artwork_bottom_viewport_y_px: u32,
-    pub responsive_inset_px: u32,
+    pub information_rail_inset_px: u32,
     pub presentation_status_top_viewport_y_px: u32,
+    pub information_rail_bottom_viewport_y_px: u32,
 }
 
 impl ArtworkFieldAnchors {
@@ -344,13 +345,16 @@ impl ArtworkFieldAnchors {
         artwork_field_height_px: u32,
     ) -> Self {
         let artwork_bottom_viewport_y_px = artwork_top_viewport_y_px + artwork_field_height_px;
-        let responsive_inset_px = scaled(viewport.height_px, 0.018, 16, 44);
+        let information_rail_inset_px = rounded_fraction(viewport.height_px, 13, 1_000);
 
         Self {
             artwork_top_viewport_y_px,
             artwork_bottom_viewport_y_px,
-            responsive_inset_px,
-            presentation_status_top_viewport_y_px: artwork_top_viewport_y_px + responsive_inset_px,
+            information_rail_inset_px,
+            presentation_status_top_viewport_y_px: artwork_top_viewport_y_px
+                + information_rail_inset_px,
+            information_rail_bottom_viewport_y_px: artwork_bottom_viewport_y_px
+                - information_rail_inset_px,
         }
     }
 
@@ -361,16 +365,29 @@ impl ArtworkFieldAnchors {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct IdentityAnchor {
+pub struct BottomAnchor {
     pub bottom_viewport_y_px: u32,
     viewport_height_px: u32,
 }
 
-impl IdentityAnchor {
-    fn for_artwork_field(viewport: Viewport, anchors: ArtworkFieldAnchors) -> Self {
+impl BottomAnchor {
+    fn for_now_playing(
+        viewport: Viewport,
+        anchors: ArtworkFieldAnchors,
+        footer_optical_raise_px: u32,
+    ) -> Self {
         Self {
-            bottom_viewport_y_px: anchors.artwork_bottom_viewport_y_px
-                - anchors.responsive_inset_px,
+            bottom_viewport_y_px: anchors
+                .information_rail_bottom_viewport_y_px
+                .saturating_sub(footer_optical_raise_px),
+            viewport_height_px: viewport.height_px,
+        }
+    }
+
+    fn for_full_field(viewport: Viewport, anchors: ArtworkFieldAnchors) -> Self {
+        let established_inset_px = scaled(viewport.height_px, 0.018, 16, 44);
+        Self {
+            bottom_viewport_y_px: anchors.artwork_bottom_viewport_y_px - established_inset_px,
             viewport_height_px: viewport.height_px,
         }
     }
@@ -465,7 +482,7 @@ pub struct FullFieldLayout {
     pub explanation_slot: FullFieldSlot,
     pub explanation_font: FullFieldFontSize,
     pub explanation_line: FullFieldLineLayout,
-    pub identity_anchor: IdentityAnchor,
+    pub identity_anchor: BottomAnchor,
     pub identity_width_px: u32,
     pub identity_right_inset_px: u32,
     pub identity_gap_px: u32,
@@ -533,7 +550,10 @@ impl FullFieldLayout {
             },
             explanation_font,
             explanation_line: FullFieldLineLayout::COMPLETE,
-            identity_anchor: now_playing_layout.identity_anchor,
+            identity_anchor: BottomAnchor::for_full_field(
+                viewport,
+                now_playing_layout.artwork_field_anchors,
+            ),
             identity_width_px,
             identity_right_inset_px,
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
@@ -595,12 +615,13 @@ pub struct NowPlayingLayout {
     pub metadata_roles: Vec<NowPlayingRole>,
     pub information: NowPlayingInformationLayout,
     pub artwork_field_anchors: ArtworkFieldAnchors,
-    pub identity_anchor: IdentityAnchor,
+    pub footer_anchor: BottomAnchor,
     pub artist_spacing_px: u32,
     pub album_spacing_px: u32,
     pub time_spacing_px: u32,
     pub footer_content: NowPlayingFooterContent,
     pub footer_gap_px: u32,
+    pub footer_optical_raise_px: u32,
     pub identity_row: IdentityRowLayout,
     pub presentation_status: PresentationStatusLayout,
     pub progress_height_px: u32,
@@ -667,7 +688,9 @@ impl NowPlayingLayout {
             artwork_top_viewport_y_px,
             artwork_field_size_px,
         );
-        let identity_anchor = IdentityAnchor::for_artwork_field(viewport, artwork_field_anchors);
+        let footer_optical_raise_px = rounded_fraction(viewport.height_px, 48, 1_000);
+        let footer_anchor =
+            BottomAnchor::for_now_playing(viewport, artwork_field_anchors, footer_optical_raise_px);
         let typography = NowPlayingTypography {
             title: MetadataFontSizes {
                 preferred_px: scaled(viewport.height_px, 0.0815, 88, 180),
@@ -735,12 +758,13 @@ impl NowPlayingLayout {
             metadata_roles: Vec::new(),
             information,
             artwork_field_anchors,
-            identity_anchor,
+            footer_anchor,
             artist_spacing_px: metadata_fitting.normal_title_to_credit_gap_px,
             album_spacing_px: metadata_fitting.normal_album_gap_px,
             time_spacing_px: ((typography.time_px as f64) * 0.58).round() as u32,
             footer_content: NowPlayingFooterContent::IdentityOnly,
             footer_gap_px: scaled(viewport.height_px, 0.02, 17, 30),
+            footer_optical_raise_px,
             identity_row,
             presentation_status: PresentationStatusLayout::for_now_playing(viewport),
             progress_height_px: scaled(viewport.width_px, 0.002, 3, 5),
@@ -776,7 +800,7 @@ impl NowPlayingLayout {
         };
         let footer_height_px = footer_content_height_px + footer_gap_px + identity_height_px;
         let footer_top_viewport_y_px = self
-            .identity_anchor
+            .footer_anchor
             .bottom_viewport_y_px
             .saturating_sub(footer_height_px);
         let status_bottom_viewport_y_px = self

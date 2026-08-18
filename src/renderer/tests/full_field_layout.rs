@@ -133,14 +133,24 @@ fn centers_the_fixed_heading_slot_and_adds_explanation_space_only_below_it() {
 }
 
 #[test]
-fn preserves_the_now_playing_identity_anchor_but_not_its_status_anchor() {
-    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+fn preserves_the_established_full_field_identity_anchor_but_not_the_now_playing_rail() {
+    let expected_bottom_margins_px = [74, 88, 174, 118, 106, 212, 235];
+
+    for (viewport, expected_bottom_margin_px) in representative_viewports::REPRESENTATIVE_VIEWPORTS
+        .into_iter()
+        .zip(expected_bottom_margins_px)
+    {
         let full_field = FullFieldLayout::for_viewport(viewport);
         let now_playing = NowPlayingLayout::for_viewport(viewport);
 
         assert_eq!(
-            full_field.identity_anchor, now_playing.identity_anchor,
-            "available presentation forms should share the bottom-right identity anchor at {viewport:?}",
+            full_field.identity_anchor.margin_bottom_px(0),
+            expected_bottom_margin_px,
+            "Full-field identity geometry should remain unchanged at {viewport:?}",
+        );
+        assert_ne!(
+            full_field.identity_anchor, now_playing.footer_anchor,
+            "the raised Now Playing footer must not move Full-field identities at {viewport:?}",
         );
         assert_ne!(
             full_field.presentation_status_slot.top_viewport_y_px,
@@ -224,7 +234,7 @@ fn retains_full_field_status_and_identity_sizes() {
 #[test]
 fn available_full_field_scenarios_use_the_shared_identity_anchor_and_unavailable_ones_omit_it() {
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
-        let expected_anchor = NowPlayingLayout::for_viewport(viewport).identity_anchor;
+        let expected_anchor = FullFieldLayout::for_viewport(viewport).identity_anchor;
 
         for (fixture, _, has_identity) in FULL_FIELD_FIXTURES {
             let snapshot = parse_snapshot(&support::fixture(fixture))

@@ -575,7 +575,7 @@ fn keeps_the_square_reservation_invariant_across_artwork_conditions() {
 }
 
 #[test]
-fn anchors_status_and_identity_to_the_reserved_square_at_every_viewport() {
+fn anchors_the_information_rail_and_footer_to_the_reserved_square_at_every_viewport() {
     let presentations = [
         now_playing("playing.json"),
         now_playing("non-square-artwork.json"),
@@ -588,26 +588,40 @@ fn anchors_status_and_identity_to_the_reserved_square_at_every_viewport() {
         for presentation in &presentations {
             let layout = NowPlayingLayout::for_presentation(presentation, viewport);
             let anchors = layout.artwork_field_anchors;
-            let identity_anchor = layout.identity_anchor;
+            let footer_anchor = layout.footer_anchor;
             let expected_artwork_top_viewport_y_px =
                 (viewport.height_px - layout.artwork_field_height_px) / 2;
             let expected_artwork_bottom_viewport_y_px =
                 expected_artwork_top_viewport_y_px + layout.artwork_field_height_px;
+            let expected_rail_inset_px = ((viewport.height_px as f64) * 0.013).round() as u32;
+            let expected_footer_raise_px = ((viewport.height_px as f64) * 0.048).round() as u32;
 
             assert_eq!(
                 (
                     anchors.artwork_top_viewport_y_px,
                     anchors.presentation_status_top_viewport_y_px,
-                    identity_anchor.bottom_viewport_y_px,
+                    anchors.information_rail_bottom_viewport_y_px,
+                    footer_anchor.bottom_viewport_y_px,
                     anchors.artwork_bottom_viewport_y_px,
                 ),
                 (
                     expected_artwork_top_viewport_y_px,
-                    expected_artwork_top_viewport_y_px + anchors.responsive_inset_px,
-                    expected_artwork_bottom_viewport_y_px - anchors.responsive_inset_px,
+                    expected_artwork_top_viewport_y_px + expected_rail_inset_px,
+                    expected_artwork_bottom_viewport_y_px - expected_rail_inset_px,
+                    expected_artwork_bottom_viewport_y_px
+                        - expected_rail_inset_px
+                        - expected_footer_raise_px,
                     expected_artwork_bottom_viewport_y_px,
                 ),
-                "the status and identity anchors should use the rendered square reservation at {viewport:?}",
+                "the rail and raised footer should use the rendered square reservation at {viewport:?}",
+            );
+            assert_eq!(
+                anchors.information_rail_inset_px, expected_rail_inset_px,
+                "the rail should sit approximately 1.3vh inside the artwork clearance at {viewport:?}",
+            );
+            assert_eq!(
+                layout.footer_optical_raise_px, expected_footer_raise_px,
+                "the footer should receive one approximately 4.8vh optical raise at {viewport:?}",
             );
         }
     }
@@ -618,19 +632,26 @@ fn converts_the_square_anchors_to_metadata_container_margins() {
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
         let layout = NowPlayingLayout::for_viewport(viewport);
         let anchors = layout.artwork_field_anchors;
-        let identity_anchor = layout.identity_anchor;
+        let footer_anchor = layout.footer_anchor;
         let artwork_top_clearance_px = anchors.artwork_top_viewport_y_px;
         let artwork_bottom_clearance_px = viewport.height_px - anchors.artwork_bottom_viewport_y_px;
 
         assert_eq!(
             anchors.presentation_status_margin_top_px(0),
-            artwork_top_clearance_px + anchors.responsive_inset_px,
+            artwork_top_clearance_px + anchors.information_rail_inset_px,
             "the metadata container should preserve the status square inset at {viewport:?}",
         );
         assert_eq!(
-            identity_anchor.margin_bottom_px(0),
-            artwork_bottom_clearance_px + anchors.responsive_inset_px,
-            "the metadata container should preserve the identity square inset at {viewport:?}",
+            viewport.height_px - anchors.information_rail_bottom_viewport_y_px,
+            artwork_bottom_clearance_px + anchors.information_rail_inset_px,
+            "the information rail should preserve the same square-relative bottom inset at {viewport:?}",
+        );
+        assert_eq!(
+            footer_anchor.margin_bottom_px(0),
+            artwork_bottom_clearance_px
+                + anchors.information_rail_inset_px
+                + layout.footer_optical_raise_px,
+            "the metadata container should optically raise the complete footer at {viewport:?}",
         );
     }
 }

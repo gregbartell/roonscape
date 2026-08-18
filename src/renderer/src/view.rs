@@ -960,7 +960,7 @@ impl RenderedMetadata {
 
         self.footer.set_spacing(dimension(layout.footer_gap_px));
         self.footer
-            .set_margin_bottom(dimension(layout.identity_anchor.margin_bottom_px(0)));
+            .set_margin_bottom(dimension(layout.footer_anchor.margin_bottom_px(0)));
         self.identity
             .apply_now_playing_layout(layout.identity_row, layout.typography.identity_px);
     }
