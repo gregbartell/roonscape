@@ -17,11 +17,12 @@ use gtk::glib;
 use gtk::prelude::*;
 use roonscape_renderer::{
     ConnectionState, Diagnostics, DiagnosticsConfiguration, FixtureNavigation,
-    InactivityConfiguration, Presentation, PresentationState, PresentationTime, PresentationUpdate,
-    RendererAction, RendererKey, RendererKeyboard, SnapshotEvent, SnapshotSubscription,
-    TypographyPair, Viewport, current_process_memory_bytes, display_configuration_file_path,
-    load_inactivity_configuration, register_packaged_fallback_fonts,
-    reject_removed_display_configuration_override, select_capture_typography, select_typography,
+    InactivityConfiguration, NowPlayingTitleFace, Presentation, PresentationState,
+    PresentationTime, PresentationUpdate, RendererAction, RendererKey, RendererKeyboard,
+    SnapshotEvent, SnapshotSubscription, Viewport, current_process_memory_bytes,
+    display_configuration_file_path, load_inactivity_configuration,
+    register_packaged_fallback_fonts, reject_removed_display_configuration_override,
+    select_capture_typography, select_typography,
 };
 
 use view::{PresentationView, install_style_providers};
@@ -32,7 +33,7 @@ const SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(250);
 #[derive(Clone, Copy)]
 struct CaptureConfiguration {
     viewport: Option<Viewport>,
-    typography: Option<TypographyPair>,
+    typography: Option<NowPlayingTitleFace>,
 }
 
 #[derive(Clone)]
@@ -286,8 +287,8 @@ fn capture_configuration_from_environment() -> Result<CaptureConfiguration, Box<
     let typography = env::var("ROONSCAPE_CAPTURE_TYPOGRAPHY")
         .ok()
         .map(|value| match value.as_str() {
-            "preferred" => Ok(TypographyPair::Preferred),
-            "fallback" => Ok(TypographyPair::Fallback),
+            "preferred" => Ok(NowPlayingTitleFace::Preferred),
+            "fallback" => Ok(NowPlayingTitleFace::Fallback),
             _ => Err("ROONSCAPE_CAPTURE_TYPOGRAPHY must be preferred or fallback"),
         })
         .transpose()?;

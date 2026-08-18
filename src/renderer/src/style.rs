@@ -1,5 +1,5 @@
 use crate::{
-    FullFieldLayout, NowPlayingLayout, PresentationPalette, Rgb, TypographyPair,
+    FullFieldLayout, NowPlayingLayout, PresentationPalette, Rgb, TypographySelection,
     layout::ARTWORK_DECORATION_BORDER_WIDTH_PX,
 };
 
@@ -34,20 +34,31 @@ pub struct PresentationTransitionStyles {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TypographyStyles {
-    typography: TypographyPair,
+    typography: TypographySelection,
 }
 
 impl TypographyStyles {
-    pub const fn new(typography: TypographyPair) -> Self {
+    pub const fn new(typography: TypographySelection) -> Self {
         Self { typography }
     }
 
     pub fn to_css(self) -> String {
+        let title_fallback =
+            if self.typography.now_playing_title_face() == crate::NowPlayingTitleFace::Preferred {
+                format!(", \"{}\"", crate::NowPlayingTitleFace::Fallback.family())
+            } else {
+                String::new()
+            };
         format!(
-            ".editorial-text, .full-field-heading {{ font-family: \"{}\", serif; }}\n\
-             .utility-text, .status-label, .identity-label, .identity-name, .time, .activity-heading, .activity-detail, .full-field-explanation, .diagnostics {{ font-family: \"{}\", sans-serif; }}\n",
-            self.typography.editorial_family(),
-            self.typography.utility_family(),
+            ".now-playing .title {{ font-family: \"{}\"{}, serif; font-style: normal; font-weight: 700; }}\n\
+             .now-playing .artist, .now-playing .album, .now-playing .status-label, .now-playing .time, .now-playing .activity-heading, .now-playing .activity-detail, .now-playing .identity-label, .now-playing .identity-name {{ font-family: \"{}\", sans-serif; }}\n\
+             .full-field .editorial-text, .full-field-heading {{ font-family: \"{}\", serif; }}\n\
+             .full-field .utility-text, .full-field .status-label, .full-field .identity-label, .full-field .identity-name, .full-field .full-field-explanation, .diagnostics {{ font-family: \"{}\", sans-serif; }}\n",
+            self.typography.now_playing_title_family(),
+            title_fallback,
+            self.typography.now_playing_supporting_family(),
+            self.typography.full_field_editorial_family(),
+            self.typography.full_field_utility_family(),
         )
     }
 }

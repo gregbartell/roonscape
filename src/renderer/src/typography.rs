@@ -17,56 +17,108 @@ pub const FALLBACK_FONT_LICENSES: [&str; 2] = [
     "assets/fonts/IBM-Plex-Sans-OFL.txt",
 ];
 
-const PREFERRED_EDITORIAL_FAMILY: &str = "Palatino Linotype";
-const PREFERRED_UTILITY_FAMILY: &str = "Segoe UI";
+const PREFERRED_NOW_PLAYING_TITLE_FAMILY: &str = "Sitka Display";
+const PREFERRED_FULL_FIELD_EDITORIAL_FAMILY: &str = "Palatino Linotype";
+const PREFERRED_FULL_FIELD_UTILITY_FAMILY: &str = "Segoe UI";
 const FALLBACK_EDITORIAL_FAMILY: &str = "Libre Baskerville";
-const FALLBACK_UTILITY_FAMILY: &str = "IBM Plex Sans";
+const PACKAGED_SUPPORTING_FAMILY: &str = "IBM Plex Sans";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TypographyPair {
+pub enum NowPlayingTitleFace {
     Preferred,
     Fallback,
 }
 
-impl TypographyPair {
-    pub const fn editorial_family(self) -> &'static str {
-        self.families().0
-    }
-
-    pub const fn utility_family(self) -> &'static str {
-        self.families().1
-    }
-
-    const fn families(self) -> (&'static str, &'static str) {
+impl NowPlayingTitleFace {
+    pub const fn family(self) -> &'static str {
         match self {
-            Self::Preferred => (PREFERRED_EDITORIAL_FAMILY, PREFERRED_UTILITY_FAMILY),
-            Self::Fallback => (FALLBACK_EDITORIAL_FAMILY, FALLBACK_UTILITY_FAMILY),
+            Self::Preferred => PREFERRED_NOW_PLAYING_TITLE_FAMILY,
+            Self::Fallback => FALLBACK_EDITORIAL_FAMILY,
         }
     }
 }
 
-pub fn select_typography(available_families: &HashSet<String>) -> TypographyPair {
-    if preferred_pair_available(available_families) {
-        TypographyPair::Preferred
-    } else {
-        TypographyPair::Fallback
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FullFieldTypographyPair {
+    Preferred,
+    Fallback,
+}
+
+impl FullFieldTypographyPair {
+    const fn families(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Preferred => (
+                PREFERRED_FULL_FIELD_EDITORIAL_FAMILY,
+                PREFERRED_FULL_FIELD_UTILITY_FAMILY,
+            ),
+            Self::Fallback => (FALLBACK_EDITORIAL_FAMILY, PACKAGED_SUPPORTING_FAMILY),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TypographySelection {
+    now_playing_title: NowPlayingTitleFace,
+    full_field: FullFieldTypographyPair,
+}
+
+impl TypographySelection {
+    pub const fn now_playing_title_face(self) -> NowPlayingTitleFace {
+        self.now_playing_title
+    }
+
+    pub const fn now_playing_title_family(self) -> &'static str {
+        self.now_playing_title.family()
+    }
+
+    pub const fn now_playing_supporting_family(self) -> &'static str {
+        PACKAGED_SUPPORTING_FAMILY
+    }
+
+    pub const fn full_field_editorial_family(self) -> &'static str {
+        self.full_field.families().0
+    }
+
+    pub const fn full_field_utility_family(self) -> &'static str {
+        self.full_field.families().1
+    }
+}
+
+pub fn select_typography(available_families: &HashSet<String>) -> TypographySelection {
+    TypographySelection {
+        now_playing_title: if available_families.contains(PREFERRED_NOW_PLAYING_TITLE_FAMILY) {
+            NowPlayingTitleFace::Preferred
+        } else {
+            NowPlayingTitleFace::Fallback
+        },
+        full_field: select_full_field_typography(available_families),
     }
 }
 
 pub fn select_capture_typography(
     available_families: &HashSet<String>,
-    requested: TypographyPair,
-) -> Result<TypographyPair, TypographyError> {
-    if requested == TypographyPair::Preferred && !preferred_pair_available(available_families) {
-        return Err(TypographyError::PreferredPairUnavailable);
+    requested: NowPlayingTitleFace,
+) -> Result<TypographySelection, TypographyError> {
+    if requested == NowPlayingTitleFace::Preferred
+        && !available_families.contains(PREFERRED_NOW_PLAYING_TITLE_FAMILY)
+    {
+        return Err(TypographyError::PreferredTitleUnavailable);
     }
 
-    Ok(requested)
+    Ok(TypographySelection {
+        now_playing_title: requested,
+        full_field: select_full_field_typography(available_families),
+    })
 }
 
-fn preferred_pair_available(available_families: &HashSet<String>) -> bool {
-    available_families.contains(PREFERRED_EDITORIAL_FAMILY)
-        && available_families.contains(PREFERRED_UTILITY_FAMILY)
+fn select_full_field_typography(available_families: &HashSet<String>) -> FullFieldTypographyPair {
+    if available_families.contains(PREFERRED_FULL_FIELD_EDITORIAL_FAMILY)
+        && available_families.contains(PREFERRED_FULL_FIELD_UTILITY_FAMILY)
+    {
+        FullFieldTypographyPair::Preferred
+    } else {
+        FullFieldTypographyPair::Fallback
+    }
 }
 
 pub fn register_packaged_fallback_fonts(renderer_root: &Path) -> Result<(), TypographyError> {
@@ -94,7 +146,7 @@ pub enum TypographyError {
     FontConfigurationUnavailable,
     InvalidFontPath(PathBuf),
     FontRegistrationFailed(PathBuf),
-    PreferredPairUnavailable,
+    PreferredTitleUnavailable,
 }
 
 impl fmt::Display for TypographyError {
@@ -117,8 +169,8 @@ impl fmt::Display for TypographyError {
                     path.display()
                 )
             }
-            Self::PreferredPairUnavailable => formatter.write_str(
-                "capture requested Palatino Linotype and Segoe UI, but both host fonts are not available",
+            Self::PreferredTitleUnavailable => formatter.write_str(
+                "capture requested Sitka Display for Now Playing Title, but the host font is unavailable",
             ),
         }
     }

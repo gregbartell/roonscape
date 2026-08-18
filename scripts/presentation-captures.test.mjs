@@ -147,7 +147,7 @@ test("plans explicit typography and adaptive diagnostics representatives", () =>
         (capture) =>
           capture.fixture === "src/shared/fixtures/glyph-fallback.json",
       ),
-    "both complete font pairs should visibly exercise Pango glyph fallback",
+    "both Title paths should visibly exercise Pango glyph fallback while supporting roles stay fixed",
   );
   assert.deepEqual(
     [

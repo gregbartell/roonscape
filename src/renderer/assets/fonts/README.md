@@ -1,8 +1,11 @@
-# Packaged fallback typography
+# Packaged typography
 
-RoonScape packages only its open fallback pair. The preferred Palatino
-Linotype and Segoe UI faces are host-provided and must not be copied into this
-directory or redistributed with RoonScape.
+RoonScape packages its open Libre Baskerville and IBM Plex Sans faces. Libre
+Baskerville is the Now Playing Title fallback, while IBM Plex Sans supplies
+every Now Playing supporting role. The preferred Sitka Display Title face is
+host-provided. Palatino Linotype and Segoe UI remain host-provided choices for
+existing Full-field typography. None of those proprietary faces may be copied
+into this directory or redistributed with RoonScape.
 
 The four variable TrueType files were copied without modification, with their
 two OFL notices, from the Google Fonts repository at commit
@@ -15,6 +18,6 @@ two OFL notices, from the Google Fonts repository at commit
 - `ofl/ibmplexsans/IBMPlexSans-Italic[wdth,wght].ttf`
 - `ofl/ibmplexsans/OFL.txt`
 
-At startup, the renderer registers these files as application fonts through
-Fontconfig. They remain private to the renderer process and require neither a
-network request nor a global host installation.
+At startup, the renderer registers the packaged files as application fonts
+through Fontconfig. They remain private to the renderer process and require
+neither a network request nor a global host installation.

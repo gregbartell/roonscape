@@ -12,7 +12,7 @@ use roonscape_renderer::{
     NowPlayingPresentation, NowPlayingRole, Presentation, PresentationActivity,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationStatus,
     PresentationStatusEmphasis, PresentationStatusLayout, PresentationStyleLayer,
-    PresentationTransition, PresentationTransitionStyles, TextOverflow, TypographyPair,
+    PresentationTransition, PresentationTransitionStyles, TextOverflow, TypographySelection,
     TypographyStyles, Viewport, metadata_layout, resolve_presentation,
 };
 
@@ -1083,7 +1083,7 @@ fn metadata_label(text: &str, class_name: &str) -> gtk::Label {
     label
 }
 
-pub(crate) fn install_style_providers(typography: TypographyPair) -> gtk::CssProvider {
+pub(crate) fn install_style_providers(typography: TypographySelection) -> gtk::CssProvider {
     let static_provider = gtk::CssProvider::new();
     static_provider.load_from_data(&format!(
         "{STYLES}\n{}",

@@ -88,17 +88,19 @@ remains present, while missing artwork retains the established quiet field.
 
 ## Typography
 
-Title and Album use an editorial serif voice; Artist, Presentation Status,
-progress, identities, explanations, and diagnostics use a clean sans serif.
-RoonScape selects the pair atomically so the two voices remain intentional:
+Now Playing typography is selected by role. Title uses bold, upright Sitka
+Display when that family is installed on the RoonScape Host and packaged Libre
+Baskerville otherwise. Artist, Album, Presentation Status, progress and
+activity copy, timing, and identities always use packaged IBM Plex Sans,
+independently of Title-face availability.
 
-- Palatino Linotype with Segoe UI when both host-provided families are
-  available.
-- Packaged Libre Baskerville with IBM Plex Sans otherwise.
-
-The packaged pair provides a consistent open fallback without a network font
-request or global installation. Pango may still select a readable glyph
-fallback for characters that are absent from the active pair.
+Full-field Presentation retains its existing atomic selection: Palatino
+Linotype with Segoe UI when both host-provided families are available, and
+packaged Libre Baskerville with IBM Plex Sans otherwise. Diagnostics retains
+the same utility-family selection. The packaged faces require neither a
+network request nor a global installation. Every selected family remains the
+first member of a Pango family stack so ordinary glyph fallback stays
+available for missing characters.
 
 ## Motion and inactivity
 

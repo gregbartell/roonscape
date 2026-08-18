@@ -86,20 +86,22 @@ At every representative viewport, the plan adds two typography captures, one
 identity capture, and three diagnostics captures beyond the Fixture Scenario
 matrix:
 
-- **Preferred typography** requests Palatino Linotype with Segoe UI. The
-  capture fails clearly unless both families are available.
-- **Fallback typography** forces the packaged Libre Baskerville and IBM Plex
-  Sans pair.
+- **Preferred typography** requests Sitka Display for Now Playing Title. The
+  capture fails clearly when the host family is unavailable; supporting roles
+  continue to use packaged IBM Plex Sans.
+- **Fallback typography** forces packaged Libre Baskerville for Now Playing
+  Title while supporting roles continue to use packaged IBM Plex Sans.
 - **Identity baselines** uses long Tracked Output and Tracked Zone names to
   expose single-line baseline alignment and defensive end ellipsis.
 - **Dark diagnostics**, **light diagnostics**, and **fixed-no-art
   diagnostics** exercise the overlay against each palette class.
 
 Both typography representatives append `月` to Album so Pango glyph fallback
-is visible. Confirm that each serif/sans pair changes atomically and that the
-extra character is readable without a missing-glyph box. Confirm that the
-diagnostics overlay is quiet, legible, inside the presentation field, and does
-not displace content. Normal matrix captures must not contain the overlay.
+is visible. Confirm that only Title changes between the two paths, every
+supporting role remains in IBM Plex Sans, and the extra character is readable
+without a missing-glyph box. Confirm that the diagnostics overlay is quiet,
+legible, inside the presentation field, and does not displace content. Normal
+matrix captures must not contain the overlay.
 
 ## Review checklist
 
