@@ -80,11 +80,11 @@ supported landscape size, the 1600×900 windowed Fixture Mode presentation,
 4:3, 16:10, ultrawide, 4K, and 3840×2400 fullscreen presentations without
 making one size the visual authority.
 
-## Typography, identity, and diagnostics representatives
+## Typography, palette, identity, and diagnostics representatives
 
 At every representative viewport, the plan adds two typography captures, one
-identity capture, and three diagnostics captures beyond the Fixture Scenario
-matrix:
+identity capture, three diagnostics captures, and two focused palette captures
+beyond the Fixture Scenario matrix:
 
 - **Preferred typography** requests Sitka Display for Now Playing Title. The
   capture fails clearly when the host family is unavailable; supporting roles
@@ -95,6 +95,10 @@ matrix:
   expose single-line baseline alignment and defensive end ellipsis.
 - **Dark diagnostics**, **light diagnostics**, and **fixed-no-art
   diagnostics** exercise the overlay against each palette class.
+- **Light matte restraint** uses the synthetic Cellout direction to expose the
+  luminance ceiling without depending on a host image decoder or network.
+- **Dark matte ownership** uses the synthetic Forever direction to confirm that
+  light-palette restraint does not flatten dark artwork or its teal accent.
 
 Both typography representatives append `月` to Album so Pango glyph fallback
 is visible. Confirm that only Title changes between the two paths, every
@@ -111,7 +115,11 @@ instead of approving a scenario at only one size.
 
 - **Composition and negative space:** The asymmetric artwork field and
   metadata column use the complete landscape field without letterboxing,
-  crowding, or panel-like blocks.
+  crowding, or panel-like blocks. Every information role uses one strict left
+  rail without gutter, print-plate, or artwork overhang. On ultrawide displays,
+  only Title, Artist, and Album use the approximately 72%-of-viewport-height
+  musical measure; status, progress or activity, timing, and identities retain
+  the complete utility width.
 - **Hierarchy:** Title is bold and upright with normal tracking and dominates;
   short single-line Titles use the larger optical tier. Artist and Album are
   upright IBM Plex Sans, with Artist stronger than Album, and remain a close
@@ -124,15 +132,24 @@ instead of approving a scenario at only one size.
   other content. Metadata uses no scrolling, marquee motion, or pagination and
   never shrinks below its readable font floors.
 - **Artwork fit and decoration:** The artwork column reserves the same
-  imaginary square for square, non-square, missing, and unusable artwork.
-  Square supplied artwork fills that reservation with its existing one-pixel
-  border and shadow. Non-square supplied artwork is centered and contained;
-  its surrounding reservation is transparent, and its visible surface,
-  one-pixel border, and shadow hug the image rectangle. Missing or unusable
-  artwork preserves a quiet decorated square field without an invented icon.
+  imaginary square for square, non-square, missing, and unusable artwork. Its
+  side is the lesser of 84% of viewport height and 56% of viewport width, and
+  the result remains vertically centered. Square supplied artwork fills that
+  reservation with its existing one-pixel border and artwork-surface shadow.
+  Non-square supplied artwork is centered and contained; its surrounding
+  reservation is transparent, and its visible surface, one-pixel border, and
+  shadow hug the image rectangle. Missing or unusable artwork preserves a
+  quiet decorated square field without an invented icon. One crisp same-size
+  accent plate keeps the established small offset behind the square, while the
+  unchanged shadow remains on the artwork surface rather than the combined
+  stack.
 - **Palette:** Dark and light artwork recolor the complete presentation. The
-  fixed no-art palette remains deliberate, and text, accent, progress, and
-  diagnostics roles remain readable.
+  gradient geometry remains stable, the fixed no-art palette stays deliberate,
+  and text, accent, progress, and diagnostics roles remain readable. The
+  synthetic Cellout direction demonstrates restrained bright-end luminance
+  without losing blue and plum chroma; the Forever direction retains its dark
+  field and teal ownership. Accent is limited to the print plate, active
+  Presentation Status, determinate progress fill, and indeterminate activity.
 - **Presentation Status:** Every condition has the correct circular symbol
   and bold uppercase label in both presentation forms. No condition has a glow
   or halo; Playing and Starting use the full artwork accent, Paused uses a

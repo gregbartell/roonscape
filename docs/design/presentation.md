@@ -14,6 +14,19 @@ its shadow to remain inside the display. The narrower right side is a dedicated
 metadata column ordered as Presentation Status, Title, Artist, Album, progress
 or indeterminate activity, and the Output and Zone identity row.
 
+The imaginary square artwork field is the lesser of 84% of viewport height and
+56% of viewport width, then is centered vertically. The continuous width cap
+protects the information area on 4:3 displays without introducing a named
+breakpoint or reducing artwork on wider displays.
+
+Every information role begins on one strict left rail; no Title, credit,
+status, progress, timing, activity, or identity content overhangs the gutter,
+print plate, or artwork. On ultrawide displays only the Title, Artist, and Album
+group is capped to a width of approximately 72% of viewport height. That
+musical measure remains on the strict rail, while Presentation Status,
+progress or activity, timing, and identities retain the complete utility
+width.
+
 Presentation Status begins a responsive inset below the imaginary square
 artwork field's top edge. The complete Output and Zone identity row ends the
 identical inset above its bottom edge. These symmetric anchors use the reserved
@@ -67,17 +80,35 @@ appearance. When Now Playing metadata exists without usable artwork, a
 restrained square field preserves the composition without inventing an icon or
 label.
 
+One solid accent print plate sits behind the complete imaginary square at the
+established small responsive down-and-right offset. It has the same footprint
+as the square and stays crisp, square, and unblurred. The one-pixel keyline and
+shadow remain attached to the visible artwork surface, including the contained
+rectangle for non-square artwork; the shadow does not move behind the combined
+artwork-and-plate stack. No additional plates, registration marks, grain, or
+depth effects are part of the presentation.
+
 Usable artwork supplies the color basis for the complete presentation,
 including its background, artwork field, metadata field, text, accent,
 progress, and diagnostics roles. Both dark and light results are valid when
 the selected roles remain readable. Presentations without usable artwork use
 a fixed navy, coral, and cream palette with the same role hierarchy.
 
+The artwork-derived gradient uses stable geometry across revisions: the
+artwork field holds through approximately the first fifth, transitions near
+the middle, and reaches the metadata field at the far edge on an angle near
+112 degrees. A luminance ceiling compresses only light results that would
+otherwise approach a room-filling near-white field. The calibrated reduction
+is approximately 8–12% at the bright end and retains the artwork's hue and
+chroma; it does not neutralize dark palettes or the teal direction represented
+by Forever and a Day.
+
 Presentation Status uses the artwork-derived accent without assigning fixed
 hues to playback or availability conditions. Playing and Starting use the
 full accent without a glow or halo; Paused uses a muted and desaturated form
 of the accent. The fixed no-art palette supplies the same roles when artwork
-is unavailable.
+is unavailable. Accent emphasis is reserved for the print plate, active
+Presentation Status, determinate progress fill, and indeterminate activity.
 
 ## Presentation Status
 

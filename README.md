@@ -29,6 +29,7 @@ host, aspect ratio, or resolution as canonical.
 - [Architecture decision](docs/adr/0001-use-a-native-renderer-behind-the-roon-bridge.md)
 - [Development](docs/development.md)
 - [Presentation design](docs/design/presentation.md)
+- [Now Playing refresh direction record](docs/design/now-playing-refresh/README.md)
 - [Presentation visual acceptance](docs/visual-acceptance/presentation.md)
 - [MIT license](LICENSE)
 
