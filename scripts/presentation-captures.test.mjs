@@ -173,7 +173,13 @@ test("plans explicit typography and adaptive diagnostics representatives", () =>
   for (const viewport of REPRESENTATIVE_VIEWPORTS) {
     assert.deepEqual(
       representatives
-        .filter((capture) => capture.viewport === viewport)
+        .filter(
+          (capture) =>
+            capture.viewport === viewport &&
+            !["light-matte-restraint", "dark-matte-ownership"].includes(
+              capture.scenario,
+            ),
+        )
         .map((capture) => capture.scenario),
       [
         "preferred-typography",
@@ -184,6 +190,43 @@ test("plans explicit typography and adaptive diagnostics representatives", () =>
         "fixed-no-art-diagnostics",
       ],
       `${viewport} should receive the same typography and diagnostics review`,
+    );
+  }
+});
+
+test("plans focused light-restraint and dark-ownership native captures", () => {
+  const representatives = buildPresentationCapturePlan().filter(
+    (capture) => capture.variant === "representative",
+  );
+
+  for (const viewport of REPRESENTATIVE_VIEWPORTS) {
+    assert.deepEqual(
+      representatives
+        .filter(
+          (capture) =>
+            capture.viewport === viewport &&
+            ["light-matte-restraint", "dark-matte-ownership"].includes(
+              capture.scenario,
+            ),
+        )
+        .map(({ scenario, fixture, palette }) => ({
+          scenario,
+          fixture,
+          palette,
+        })),
+      [
+        {
+          scenario: "light-matte-restraint",
+          fixture: "src/shared/fixtures/cellout-direction.json",
+          palette: "restrained-light",
+        },
+        {
+          scenario: "dark-matte-ownership",
+          fixture: "src/shared/fixtures/forever-direction.json",
+          palette: "dark-teal",
+        },
+      ],
+      `${viewport} should include focused light and dark Chromatic Matte evidence`,
     );
   }
 });

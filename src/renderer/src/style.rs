@@ -133,7 +133,7 @@ fn presentation_palette_styles(
     let accent_width = full_field_layout.accent_width_px;
     format!(
         ".{class_name} {{ background-color: {background}; color: {primary_text}; }}\n\
-         .{class_name}.now-playing {{ background-image: linear-gradient(118deg, {artwork_field} 0%, {background} 62%, {metadata_field} 100%); }}\n\
+         .{class_name}.now-playing {{ background-image: linear-gradient(112deg, {artwork_field} 0%, {artwork_field} 21%, {background} 57%, {metadata_field} 100%); }}\n\
          .{class_name} .artwork-print-plate {{ background-color: {accent}; }}\n\
          .{class_name} .artwork {{ border: {artwork_border_width}px solid alpha({primary_text}, 0.16); background-color: {artwork_field}; box-shadow: 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.72); }}\n\
          .{class_name} .artwork-missing {{ border-color: alpha({muted_text}, 0.22); background-image: linear-gradient(142deg, alpha({muted_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16), 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.72); }}\n\

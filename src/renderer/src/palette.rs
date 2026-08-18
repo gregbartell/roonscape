@@ -5,6 +5,8 @@ use std::path::Path;
 use gdk_pixbuf::Pixbuf;
 
 const SAMPLE_SIZE: i32 = 64;
+const LIGHT_TONE_LUMINANCE: f64 = 0.55;
+const BRIGHT_TONE_LUMINANCE: f64 = 0.65;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rgb {
@@ -139,7 +141,7 @@ struct ToneProfile {
 }
 
 impl PaletteTone {
-    fn profile(self) -> ToneProfile {
+    fn profile(self, artwork_luminance: f64) -> ToneProfile {
         match self {
             Self::Dark => ToneProfile {
                 background_lightness: 0.065,
@@ -150,15 +152,20 @@ impl PaletteTone {
                 accent_lightness: 0.58,
                 contrast_step: 0.02,
             },
-            Self::Light => ToneProfile {
-                background_lightness: 0.92,
-                metadata_lightness: 0.82,
-                artwork_lightness: 0.72,
-                primary_lightness: 0.14,
-                secondary_lightness: 0.28,
-                accent_lightness: 0.32,
-                contrast_step: -0.02,
-            },
+            Self::Light => {
+                let bright_end = ((artwork_luminance - LIGHT_TONE_LUMINANCE)
+                    / (BRIGHT_TONE_LUMINANCE - LIGHT_TONE_LUMINANCE))
+                    .clamp(0.0, 1.0);
+                ToneProfile {
+                    background_lightness: 0.64 + 0.18 * bright_end,
+                    metadata_lightness: 0.68 + 0.18 * bright_end,
+                    artwork_lightness: 0.53 + 0.04 * bright_end,
+                    primary_lightness: 0.14,
+                    secondary_lightness: 0.28,
+                    accent_lightness: 0.32,
+                    contrast_step: -0.02,
+                }
+            }
         }
     }
 }
@@ -228,31 +235,64 @@ impl PresentationPalette {
         let dominant_hsl = dominant.hsl();
         let vibrant_hsl = vibrant.hsl();
         let light_hsl = light.hsl();
-        let profile = palette_tone(&swatches).profile();
-        let background = dominant_hsl
-            .with_saturation_and_lightness(
-                dominant_hsl.saturation.clamp(0.12, 0.52),
-                profile.background_lightness,
-            )
-            .rgb();
-        let metadata_field = background.mix(
-            dominant_hsl
-                .with_saturation_and_lightness(
-                    dominant_hsl.saturation.clamp(0.14, 0.58),
-                    profile.metadata_lightness,
-                )
-                .rgb(),
-            0.34,
-        );
-        let artwork_field = background.mix(
-            vibrant_hsl
-                .with_saturation_and_lightness(
-                    vibrant_hsl.saturation.clamp(0.24, 0.72),
-                    profile.artwork_lightness,
-                )
-                .rgb(),
-            0.42,
-        );
+        let artwork_luminance = artwork_luminance(&swatches);
+        let tone = palette_tone(artwork_luminance);
+        let profile = tone.profile(artwork_luminance);
+        let (background, artwork_field, metadata_field, accent_hsl) = match tone {
+            PaletteTone::Dark => {
+                let background = dominant_hsl
+                    .with_saturation_and_lightness(
+                        dominant_hsl.saturation.clamp(0.12, 0.52),
+                        profile.background_lightness,
+                    )
+                    .rgb();
+                let metadata_field = background.mix(
+                    dominant_hsl
+                        .with_saturation_and_lightness(
+                            dominant_hsl.saturation.clamp(0.14, 0.58),
+                            profile.metadata_lightness,
+                        )
+                        .rgb(),
+                    0.34,
+                );
+                let artwork_field = background.mix(
+                    vibrant_hsl
+                        .with_saturation_and_lightness(
+                            vibrant_hsl.saturation.clamp(0.24, 0.72),
+                            profile.artwork_lightness,
+                        )
+                        .rgb(),
+                    0.42,
+                );
+                (background, artwork_field, metadata_field, vibrant_hsl)
+            }
+            PaletteTone::Light => {
+                let contrasting_hsl = contrasting_swatch(&swatches, vibrant)
+                    .unwrap_or(vibrant)
+                    .hsl();
+                let background = vibrant_hsl
+                    .with_saturation_and_lightness(
+                        vibrant_hsl.saturation.clamp(0.08, 0.18),
+                        profile.background_lightness,
+                    )
+                    .rgb();
+                let artwork_field = vibrant_hsl
+                    .with_saturation_and_lightness(
+                        vibrant_hsl.saturation.clamp(0.24, 0.45),
+                        profile.artwork_lightness,
+                    )
+                    .rgb();
+                let metadata_field = contrasting_hsl
+                    .with_saturation_and_lightness(
+                        contrasting_hsl.saturation.clamp(0.1, 0.22),
+                        profile.metadata_lightness,
+                    )
+                    .rgb();
+                let [background, artwork_field, metadata_field] =
+                    compress_bright_palette([background, artwork_field, metadata_field]);
+                (background, artwork_field, metadata_field, contrasting_hsl)
+            }
+        };
         let presentation_fields = [background, artwork_field, metadata_field];
         let primary_text = readable_tint(
             light_hsl.with_saturation_and_lightness(
@@ -282,8 +322,8 @@ impl PresentationPalette {
             profile.contrast_step,
         );
         let accent = readable_tint(
-            vibrant_hsl.with_saturation_and_lightness(
-                vibrant_hsl.saturation.clamp(0.48, 0.86),
+            accent_hsl.with_saturation_and_lightness(
+                accent_hsl.saturation.clamp(0.48, 0.86),
                 profile.accent_lightness,
             ),
             &presentation_fields,
@@ -402,12 +442,35 @@ fn swatch_score(swatch: &Swatch) -> f64 {
     hsl.saturation.powi(2) * useful_lightness.max(0.2) * (1.0 + f64::from(swatch.count).ln())
 }
 
+fn contrasting_swatch(swatches: &[Swatch], vibrant: Rgb) -> Option<Rgb> {
+    let vibrant_hue = vibrant.hsl().hue;
+    let minimum_count = swatches.iter().map(|swatch| swatch.count).sum::<u32>() / 256;
+
+    swatches
+        .iter()
+        .filter(|swatch| swatch.color != vibrant && swatch.count >= minimum_count.max(4))
+        .filter(|swatch| swatch.color.hsl().saturation >= 0.15)
+        .max_by(|first, second| {
+            contrasting_swatch_score(first, vibrant_hue)
+                .total_cmp(&contrasting_swatch_score(second, vibrant_hue))
+                .then_with(|| first.count.cmp(&second.count))
+        })
+        .map(|swatch| swatch.color)
+}
+
+fn contrasting_swatch_score(swatch: &Swatch, vibrant_hue: f64) -> f64 {
+    let hue = swatch.color.hsl().hue;
+    let hue_distance = (hue - vibrant_hue).abs();
+    let shortest_hue_distance = hue_distance.min(360.0 - hue_distance);
+    swatch_score(swatch) * (0.35 + shortest_hue_distance / 180.0)
+}
+
 fn text_score(swatch: &Swatch) -> f64 {
     let hsl = swatch.color.hsl();
     swatch.color.relative_luminance() + hsl.saturation * 0.18 + f64::from(swatch.count).ln() * 0.01
 }
 
-fn palette_tone(swatches: &[Swatch]) -> PaletteTone {
+fn artwork_luminance(swatches: &[Swatch]) -> f64 {
     let (weighted_luminance, pixel_count) =
         swatches
             .iter()
@@ -418,11 +481,33 @@ fn palette_tone(swatches: &[Swatch]) -> PaletteTone {
                     pixel_count + u64::from(swatch.count),
                 )
             });
-    if weighted_luminance / pixel_count as f64 >= 0.55 {
+    weighted_luminance / pixel_count as f64
+}
+
+fn palette_tone(artwork_luminance: f64) -> PaletteTone {
+    if artwork_luminance >= LIGHT_TONE_LUMINANCE {
         PaletteTone::Light
     } else {
         PaletteTone::Dark
     }
+}
+
+fn compress_bright_palette(mut fields: [Rgb; 3]) -> [Rgb; 3] {
+    const BRIGHT_FIELD_CEILING: f64 = 0.8;
+    const COMPRESSION_RATIO: f64 = 0.9;
+
+    if fields
+        .iter()
+        .all(|field| field.hsl().lightness <= BRIGHT_FIELD_CEILING)
+    {
+        return fields;
+    }
+    for field in &mut fields {
+        let mut hsl = field.hsl();
+        hsl.lightness *= COMPRESSION_RATIO;
+        *field = hsl.rgb();
+    }
+    fields
 }
 
 fn readable_tint(mut tint: Hsl, fields: &[Rgb], minimum_contrast: f64, contrast_step: f64) -> Rgb {

@@ -14,7 +14,7 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
 
     for declaration in [
         "background-color: #071522; color: #F3EAD7",
-        "linear-gradient(118deg, #142856 0%, #071522 62%, #0A1429 100%)",
+        "linear-gradient(112deg, #142856 0%, #142856 21%, #071522 57%, #0A1429 100%)",
         ".artist, .presentation-current .album, .presentation-current .time, .presentation-current .identity-name { color: #C9C5BD; }",
         ".identity-label { color: #9299A8; }",
         ".full-field .full-copy { border-left: 6px solid #FF7051; }",

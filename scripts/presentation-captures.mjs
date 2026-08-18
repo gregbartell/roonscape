@@ -56,6 +56,20 @@ const REPRESENTATIVES = [
     true,
     "fixed-no-art",
   ),
+  representative(
+    "light-matte-restraint",
+    "cellout-direction.json",
+    "automatic",
+    false,
+    "restrained-light",
+  ),
+  representative(
+    "dark-matte-ownership",
+    "forever-direction.json",
+    "automatic",
+    false,
+    "dark-teal",
+  ),
 ];
 
 export function buildPresentationCapturePlan({
