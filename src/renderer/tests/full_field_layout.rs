@@ -164,6 +164,33 @@ fn preserves_the_now_playing_identity_anchor_but_not_its_status_anchor() {
 }
 
 #[test]
+fn retains_full_field_horizontal_identity_geometry() {
+    let expected_geometry = [
+        (428, 26),
+        (536, 32),
+        (536, 32),
+        (643, 38),
+        (858, 51),
+        (1287, 77),
+        (1287, 77),
+    ];
+
+    for (viewport, (identity_width_px, identity_right_inset_px)) in
+        representative_viewports::REPRESENTATIVE_VIEWPORTS
+            .into_iter()
+            .zip(expected_geometry)
+    {
+        let layout = FullFieldLayout::for_viewport(viewport);
+
+        assert_eq!(
+            (layout.identity_width_px, layout.identity_right_inset_px),
+            (identity_width_px, identity_right_inset_px),
+            "Now Playing geometry must not reshape Full-field identities at {viewport:?}",
+        );
+    }
+}
+
+#[test]
 fn available_full_field_scenarios_use_the_shared_identity_anchor_and_unavailable_ones_omit_it() {
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
         let expected_anchor = NowPlayingLayout::for_viewport(viewport).identity_anchor;

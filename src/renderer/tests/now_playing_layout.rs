@@ -80,7 +80,7 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
             layout.outer_gutter_px * 2
                 + layout.artwork_column_width_px
                 + layout.column_gap_px
-                + layout.metadata_column_width_px,
+                + layout.information.utility_width_px,
             viewport.width_px,
             "the composition should use the complete viewport without letterboxing"
         );
@@ -96,7 +96,7 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
                 NowPlayingRole::Progress,
             ]
         );
-        assert!(layout.metadata_right_inset_px < layout.metadata_column_width_px);
+        assert!(layout.information.utility_width_px > 0);
         assert!(layout.typography.title.preferred_px >= layout.typography.title.reduced_px);
         assert!(layout.typography.title.reduced_px >= layout.typography.title.minimum_px);
         assert!(layout.typography.title.minimum_px >= 36);
@@ -109,9 +109,41 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
 }
 
 #[test]
+fn keeps_every_information_role_on_one_rail_with_only_musical_metadata_capped() {
+    let presentation = now_playing("playing.json");
+
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = NowPlayingLayout::for_presentation(&presentation, viewport);
+        let information = layout.information;
+        let expected_musical_metadata_width = information
+            .utility_width_px
+            .min(((viewport.height_px as f64) * 0.72).round() as u32);
+
+        assert_eq!(
+            information.left_viewport_x_px,
+            layout.outer_gutter_px + layout.artwork_column_width_px + layout.column_gap_px,
+            "the shared information rail should begin after artwork and gutter at {viewport:?}",
+        );
+        assert_eq!(
+            information.left_viewport_x_px + information.utility_width_px + layout.outer_gutter_px,
+            viewport.width_px,
+            "the utility rail should retain all space through the trailing gutter at {viewport:?}",
+        );
+        assert_eq!(
+            information.musical_metadata_width_px, expected_musical_metadata_width,
+            "only Title, Artist, and Album should use the height-led measure cap at {viewport:?}",
+        );
+    }
+}
+
+#[test]
 fn contains_the_artwork_and_its_depth_at_representative_landscape_viewports() {
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
         let layout = NowPlayingLayout::for_viewport(viewport);
+        let expected_artwork_size = ((viewport.height_px as f64) * 0.84)
+            .round()
+            .min(((viewport.width_px as f64) * 0.56).round())
+            as u32;
         let vertical_clearance = (viewport
             .height_px
             .saturating_sub(layout.artwork_field_height_px))
@@ -123,6 +155,14 @@ fn contains_the_artwork_and_its_depth_at_representative_landscape_viewports() {
             layout.artwork_field_width_px, layout.artwork_field_height_px,
             "artwork should retain its square field at {viewport:?}"
         );
+        assert_eq!(
+            layout.artwork_field_width_px, expected_artwork_size,
+            "artwork should use the lesser of 84% height and 56% width at {viewport:?}",
+        );
+        assert_eq!(
+            layout.artwork_field_anchors.artwork_top_viewport_y_px, vertical_clearance,
+            "the responsive artwork square should remain vertically centered at {viewport:?}",
+        );
         assert!(
             layout.artwork_field_width_px <= layout.artwork_column_width_px,
             "artwork should remain inside its column at {viewport:?}"
@@ -130,6 +170,34 @@ fn contains_the_artwork_and_its_depth_at_representative_landscape_viewports() {
         assert!(
             shadow_extent <= vertical_clearance,
             "artwork depth should remain inside the viewport at {viewport:?}"
+        );
+    }
+}
+
+#[test]
+fn offsets_one_same_footprint_print_plate_inside_the_artwork_gutter() {
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = NowPlayingLayout::for_viewport(viewport);
+        let plate = layout.artwork_print_plate;
+        let expected_offset_px = ((viewport.height_px as f64) * 0.0045)
+            .round()
+            .clamp(6.0, 12.0) as u32;
+
+        assert_eq!(
+            plate.footprint,
+            ArtworkDimensions::new(
+                layout.artwork_field_width_px,
+                layout.artwork_field_height_px,
+            ),
+            "the print plate should match the square artwork reservation at {viewport:?}",
+        );
+        assert_eq!(
+            plate.offset_px, expected_offset_px,
+            "the print plate should retain the accepted responsive offset at {viewport:?}",
+        );
+        assert!(
+            plate.offset_px < layout.column_gap_px,
+            "the strict information rail should remain clear of the print plate at {viewport:?}",
         );
     }
 }
@@ -229,6 +297,8 @@ fn keeps_the_square_reservation_invariant_across_artwork_conditions() {
             square_geometry.artwork_column_width_px,
             square_geometry.artwork_field_width_px,
             square_geometry.artwork_field_height_px,
+            square_geometry.artwork_print_plate,
+            square_geometry.information,
         );
         for (condition, presentation) in [
             ("non-square", &non_square),
@@ -241,6 +311,8 @@ fn keeps_the_square_reservation_invariant_across_artwork_conditions() {
                     geometry.artwork_column_width_px,
                     geometry.artwork_field_width_px,
                     geometry.artwork_field_height_px,
+                    geometry.artwork_print_plate,
+                    geometry.information,
                 ),
                 expected_reservation,
                 "{condition} artwork must not change the reserved square geometry at {viewport:?}",
@@ -264,7 +336,8 @@ fn anchors_status_and_identity_to_the_reserved_square_at_every_viewport() {
             let layout = NowPlayingLayout::for_presentation(presentation, viewport);
             let anchors = layout.artwork_field_anchors;
             let identity_anchor = layout.identity_anchor;
-            let expected_artwork_top_viewport_y_px = layout.outer_gutter_px;
+            let expected_artwork_top_viewport_y_px =
+                (viewport.height_px - layout.artwork_field_height_px) / 2;
             let expected_artwork_bottom_viewport_y_px =
                 expected_artwork_top_viewport_y_px + layout.artwork_field_height_px;
 
@@ -293,17 +366,17 @@ fn converts_the_square_anchors_to_metadata_container_margins() {
         let layout = NowPlayingLayout::for_viewport(viewport);
         let anchors = layout.artwork_field_anchors;
         let identity_anchor = layout.identity_anchor;
+        let artwork_top_clearance_px = anchors.artwork_top_viewport_y_px;
+        let artwork_bottom_clearance_px = viewport.height_px - anchors.artwork_bottom_viewport_y_px;
 
         assert_eq!(
-            anchors.presentation_status_margin_top_px(layout.outer_gutter_px),
-            anchors.responsive_inset_px,
+            anchors.presentation_status_margin_top_px(0),
+            artwork_top_clearance_px + anchors.responsive_inset_px,
             "the metadata container should preserve the status square inset at {viewport:?}",
         );
         assert_eq!(
-            identity_anchor.margin_bottom_px(layout.outer_gutter_px),
-            viewport.height_px + anchors.responsive_inset_px
-                - layout.outer_gutter_px * 2
-                - layout.artwork_field_height_px,
+            identity_anchor.margin_bottom_px(0),
+            artwork_bottom_clearance_px + anchors.responsive_inset_px,
             "the metadata container should preserve the identity square inset at {viewport:?}",
         );
     }
@@ -357,16 +430,8 @@ fn defensively_ellipsizes_long_identities_without_moving_the_footer() {
         );
         assert_eq!(long.identity_placement, IdentityPlacement::BottomRight);
         assert_eq!(
-            (
-                long.metadata_column_width_px,
-                long.metadata_right_inset_px,
-                long.identity_gap_px,
-            ),
-            (
-                ordinary.metadata_column_width_px,
-                ordinary.metadata_right_inset_px,
-                ordinary.identity_gap_px,
-            ),
+            (long.information, long.identity_gap_px,),
+            (ordinary.information, ordinary.identity_gap_px,),
             "identity content must not move or resize the footer at {viewport:?}"
         );
     }

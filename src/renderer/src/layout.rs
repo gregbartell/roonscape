@@ -138,6 +138,12 @@ pub enum ArtworkDecoration {
     QuietSquareField,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArtworkPrintPlateLayout {
+    pub footprint: ArtworkDimensions,
+    pub offset_px: u32,
+}
+
 pub(crate) const ARTWORK_DECORATION_BORDER_WIDTH_PX: u32 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -449,6 +455,8 @@ impl FullFieldLayout {
             heading_slot_top_viewport_y_px + heading_slot_height_px + explanation_spacing_px;
         let explanation_slot_height_px =
             ((explanation_font.preferred_px as f64) * 1.45).round() as u32;
+        let (identity_width_px, identity_right_inset_px) =
+            full_field_identity_geometry(viewport, outer_gutter_px);
         Self {
             outer_gutter_px,
             composition_width_px,
@@ -478,10 +486,8 @@ impl FullFieldLayout {
             explanation_font,
             explanation_line: FullFieldLineLayout::COMPLETE,
             identity_anchor: now_playing_layout.identity_anchor,
-            identity_width_px: now_playing_layout
-                .metadata_column_width_px
-                .saturating_sub(now_playing_layout.metadata_right_inset_px),
-            identity_right_inset_px: now_playing_layout.metadata_right_inset_px,
+            identity_width_px,
+            identity_right_inset_px,
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
             identity_px: scaled(viewport.width_px, 0.0072, 11, 27),
             identity_placement: IdentityPlacement::BottomRight,
@@ -504,19 +510,42 @@ impl FullFieldLayout {
     }
 }
 
+fn full_field_identity_geometry(viewport: Viewport, outer_gutter_px: u32) -> (u32, u32) {
+    // Full-field Presentations share the responsive vertical anchor only; their
+    // established horizontal identity grid is independent of Now Playing.
+    let column_gap_px = scaled(viewport.width_px, 0.05, 40, 192);
+    let content_width_px = viewport
+        .width_px
+        .saturating_sub(outer_gutter_px.saturating_mul(2))
+        .saturating_sub(column_gap_px);
+    let identity_column_width_px = content_width_px - rounded_fraction(content_width_px, 59, 100);
+    let identity_right_inset_px = scaled(viewport.width_px, 0.02, 24, 77);
+    (
+        identity_column_width_px.saturating_sub(identity_right_inset_px),
+        identity_right_inset_px,
+    )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NowPlayingInformationLayout {
+    pub left_viewport_x_px: u32,
+    pub utility_width_px: u32,
+    pub musical_metadata_width_px: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NowPlayingLayout {
     pub field: NowPlayingField,
     pub outer_gutter_px: u32,
     pub column_gap_px: u32,
     pub artwork_column_width_px: u32,
-    pub metadata_column_width_px: u32,
     pub artwork_field_width_px: u32,
     pub artwork_field_height_px: u32,
+    pub artwork_print_plate: ArtworkPrintPlateLayout,
     pub identity_placement: IdentityPlacement,
     pub identity_line: IdentityLineLayout,
     pub metadata_roles: Vec<NowPlayingRole>,
-    pub metadata_right_inset_px: u32,
+    pub information: NowPlayingInformationLayout,
     pub artwork_field_anchors: ArtworkFieldAnchors,
     pub identity_anchor: IdentityAnchor,
     pub artist_spacing_px: u32,
@@ -542,27 +571,32 @@ impl NowPlayingLayout {
     }
 
     pub fn for_viewport(viewport: Viewport) -> Self {
-        let outer_gutter_px = scaled(viewport.width_px, 0.042, 32, 160);
-        let column_gap_px = scaled(viewport.width_px, 0.05, 40, 192);
+        let outer_gutter_px = scaled(viewport.width_px, 0.0425, 32, 160);
+        let column_gap_px = scaled(viewport.width_px, 0.042, 40, 192);
         let content_width_px = viewport
             .width_px
             .saturating_sub(outer_gutter_px.saturating_mul(2))
             .saturating_sub(column_gap_px);
-        let artwork_column_width_px = ((content_width_px as f64) * 0.59).round() as u32;
-        let metadata_column_width_px = content_width_px - artwork_column_width_px;
-        let artwork_shadow_offset_px = scaled(viewport.height_px, 0.04, 36, 86);
-        let artwork_shadow_blur_px = scaled(viewport.height_px, 0.09, 81, 194);
-        let artwork_shadow_extent_px =
-            artwork_shadow_offset_px + artwork_shadow_blur_px.div_ceil(2);
-        let artwork_height_limit_px = viewport
-            .height_px
-            .saturating_sub(artwork_shadow_extent_px.saturating_mul(2));
-        let artwork_field_size_px = artwork_column_width_px
-            .min(((viewport.height_px as f64) * 0.81).round() as u32)
-            .min(artwork_height_limit_px);
+        let artwork_field_size_px = rounded_fraction(viewport.height_px, 84, 100)
+            .min(rounded_fraction(viewport.width_px, 56, 100));
+        let artwork_column_width_px = artwork_field_size_px;
+        let utility_width_px = content_width_px - artwork_column_width_px;
+        let information = NowPlayingInformationLayout {
+            left_viewport_x_px: outer_gutter_px + artwork_column_width_px + column_gap_px,
+            utility_width_px,
+            musical_metadata_width_px: utility_width_px.min(rounded_fraction(
+                viewport.height_px,
+                72,
+                100,
+            )),
+        };
+        let artwork_shadow_offset_px = scaled(viewport.height_px, 0.0085, 6, 20);
+        let artwork_shadow_blur_px = scaled(viewport.height_px, 0.017, 12, 41);
+        let artwork_top_viewport_y_px =
+            viewport.height_px.saturating_sub(artwork_field_size_px) / 2;
         let artwork_field_anchors = ArtworkFieldAnchors::for_artwork_field(
             viewport,
-            outer_gutter_px,
+            artwork_top_viewport_y_px,
             artwork_field_size_px,
         );
         let identity_anchor = IdentityAnchor::for_artwork_field(viewport, artwork_field_anchors);
@@ -593,13 +627,16 @@ impl NowPlayingLayout {
             outer_gutter_px,
             column_gap_px,
             artwork_column_width_px,
-            metadata_column_width_px,
             artwork_field_width_px: artwork_field_size_px,
             artwork_field_height_px: artwork_field_size_px,
+            artwork_print_plate: ArtworkPrintPlateLayout {
+                footprint: ArtworkDimensions::new(artwork_field_size_px, artwork_field_size_px),
+                offset_px: scaled(viewport.height_px, 0.0045, 6, 12),
+            },
             identity_placement: IdentityPlacement::BottomRight,
             identity_line: IdentityLineLayout::DEFENSIVE,
             metadata_roles: Vec::new(),
-            metadata_right_inset_px: scaled(viewport.width_px, 0.02, 24, 77),
+            information,
             artwork_field_anchors,
             identity_anchor,
             artist_spacing_px: scaled(viewport.height_px, 0.032, 26, 72),

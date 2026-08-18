@@ -47,9 +47,23 @@ fn reserves_the_complete_oled_movement_envelope_at_representative_landscape_view
                 now_playing.outer_gutter_px * 2
                     + now_playing.artwork_column_width_px
                     + now_playing.column_gap_px
-                    + now_playing.metadata_column_width_px,
+                    + now_playing.information.utility_width_px,
                 safe.content_viewport.width_px,
                 "Now Playing layout should fit the viewport left inside the OLED envelope"
+            );
+            assert_eq!(
+                now_playing.information.left_viewport_x_px
+                    + now_playing.information.utility_width_px
+                    + now_playing.outer_gutter_px,
+                safe.content_viewport.width_px,
+                "the complete information rail should stay inside the OLED envelope",
+            );
+            assert!(
+                now_playing.outer_gutter_px
+                    + now_playing.artwork_print_plate.footprint.width_px
+                    + now_playing.artwork_print_plate.offset_px
+                    < now_playing.information.left_viewport_x_px,
+                "the print plate should remain clear of the information rail",
             );
             let artwork_bottom_clearance =
                 (safe.content_viewport.height_px - now_playing.artwork_field_height_px) / 2;
@@ -58,6 +72,10 @@ fn reserves_the_complete_oled_movement_envelope_at_representative_landscape_view
             assert!(
                 shadow_bottom_extent <= artwork_bottom_clearance,
                 "the artwork shadow should remain inside the OLED-safe Now Playing layout"
+            );
+            assert!(
+                now_playing.artwork_print_plate.offset_px <= artwork_bottom_clearance,
+                "the print plate should remain inside the OLED-safe Now Playing layout",
             );
 
             let full_field = FullFieldLayout::for_viewport(safe.content_viewport);

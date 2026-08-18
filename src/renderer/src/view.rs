@@ -60,6 +60,7 @@ impl RenderedProgress {
 struct RenderedMetadata {
     root: gtk::Overlay,
     presentation_status: RenderedPresentationStatus,
+    musical_metadata_slot: gtk::ScrolledWindow,
     title: Option<RenderedMetadataLine>,
     artist: Option<RenderedMetadataLine>,
     album: Option<RenderedMetadataLine>,
@@ -77,7 +78,7 @@ struct RenderedActivity {
 
 struct RenderedNowPlaying {
     content: gtk::Box,
-    artwork_column: gtk::Box,
+    artwork_column: gtk::CenterBox,
     artwork: RenderedArtwork,
     metadata_slot: gtk::Box,
     metadata: RenderedMetadata,
@@ -85,6 +86,7 @@ struct RenderedNowPlaying {
 
 struct RenderedArtwork {
     reservation: gtk::AspectFrame,
+    print_plate: gtk::Box,
     decoration: gtk::AspectFrame,
     surface: gtk::Picture,
     source: Option<gdk_pixbuf::Pixbuf>,
@@ -443,12 +445,14 @@ fn now_playing(
     content.set_vexpand(true);
     surface.append(&content);
 
-    let artwork_column = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let artwork_column = gtk::CenterBox::new();
     artwork_column.add_css_class("artwork-column");
+    artwork_column.set_orientation(gtk::Orientation::Vertical);
     artwork_column.set_hexpand(false);
     artwork_column.set_vexpand(true);
+    artwork_column.set_overflow(gtk::Overflow::Visible);
     let artwork = artwork(presentation, repository_root);
-    artwork_column.append(&artwork.reservation);
+    artwork_column.set_center_widget(Some(&artwork.reservation));
 
     let metadata = metadata(presentation, &layout);
     let metadata_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -556,16 +560,38 @@ fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> Ren
     decoration.set_vexpand(true);
     decoration.set_child(Some(&picture));
 
+    let stage = gtk::Overlay::new();
+    stage.set_hexpand(true);
+    stage.set_vexpand(true);
+    stage.set_overflow(gtk::Overflow::Visible);
+    let stage_field = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    stage_field.set_hexpand(true);
+    stage_field.set_vexpand(true);
+    stage.set_child(Some(&stage_field));
+
+    let print_plate = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    print_plate.add_css_class("artwork-print-plate");
+    print_plate.set_halign(gtk::Align::Start);
+    print_plate.set_valign(gtk::Align::Start);
+    stage.add_overlay(&print_plate);
+    stage.set_clip_overlay(&print_plate, false);
+    stage.set_measure_overlay(&print_plate, false);
+    stage.add_overlay(&decoration);
+    stage.set_clip_overlay(&decoration, false);
+    stage.set_measure_overlay(&decoration, false);
+
     let reservation = gtk::AspectFrame::new(horizontal_alignment, vertical_alignment, 1.0, false);
     reservation.add_css_class("artwork-reservation");
     reservation.set_halign(gtk::Align::Start);
     reservation.set_valign(gtk::Align::Center);
     reservation.set_hexpand(false);
     reservation.set_vexpand(false);
-    reservation.set_child(Some(&decoration));
+    reservation.set_overflow(gtk::Overflow::Visible);
+    reservation.set_child(Some(&stage));
 
     RenderedArtwork {
         reservation,
+        print_plate,
         decoration,
         surface: picture,
         source,
@@ -590,7 +616,26 @@ fn metadata(
     let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
     copy.add_css_class("metadata-copy");
     copy.set_valign(gtk::Align::Center);
+    copy.set_hexpand(true);
     copy.set_vexpand(true);
+
+    let musical_metadata = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    musical_metadata.add_css_class("musical-metadata");
+    musical_metadata.set_halign(gtk::Align::Start);
+    musical_metadata.set_hexpand(false);
+    // This supplies a pixel maximum without exposing scrolling in the presentation.
+    let musical_metadata_slot = gtk::ScrolledWindow::new();
+    musical_metadata_slot.add_css_class("musical-metadata-slot");
+    musical_metadata_slot.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Never);
+    musical_metadata_slot.set_propagate_natural_width(true);
+    musical_metadata_slot.set_propagate_natural_height(true);
+    musical_metadata_slot.set_halign(gtk::Align::Start);
+    musical_metadata_slot.set_hexpand(false);
+    musical_metadata_slot.set_child(Some(&musical_metadata));
+    let musical_metadata_alignment = gtk::CenterBox::new();
+    musical_metadata_alignment.set_hexpand(true);
+    musical_metadata_alignment.set_start_widget(Some(&musical_metadata_slot));
+    copy.append(&musical_metadata_alignment);
 
     let rendered_status = presentation_status(&presentation.status);
 
@@ -614,13 +659,12 @@ fn metadata(
         match role {
             NowPlayingRole::PresentationStatus => root.add_overlay(&rendered_status.root),
             NowPlayingRole::Title => {
-                copy.append(&title.as_ref().expect("Title role requires a label").label)
+                musical_metadata.append(&title.as_ref().expect("Title role requires a label").label)
             }
-            NowPlayingRole::Artist => {
-                copy.append(&artist.as_ref().expect("Artist role requires a label").label)
-            }
+            NowPlayingRole::Artist => musical_metadata
+                .append(&artist.as_ref().expect("Artist role requires a label").label),
             NowPlayingRole::Album => {
-                copy.append(&album.as_ref().expect("Album role requires a label").label)
+                musical_metadata.append(&album.as_ref().expect("Album role requires a label").label)
             }
             NowPlayingRole::Progress => copy.append(
                 &progress
@@ -649,6 +693,7 @@ fn metadata(
     RenderedMetadata {
         root,
         presentation_status: rendered_status,
+        musical_metadata_slot,
         title,
         artist,
         album,
@@ -668,6 +713,8 @@ fn metadata_line(layout: &MetadataLineLayout, class_name: &str) -> RenderedMetad
     apply_text_overflow(&label, layout.overflow);
     label.set_wrap(true);
     label.set_wrap_mode(pango::WrapMode::WordChar);
+    // Keep a long label's natural width from overriding the explicit group measure.
+    label.set_max_width_chars(1);
     set_label_font_size(&label, layout.font_sizes.preferred_px);
 
     RenderedMetadataLine { label }
@@ -723,31 +770,33 @@ impl RenderedNowPlaying {
         let gutter = dimension(layout.outer_gutter_px);
         self.content.set_margin_start(gutter);
         self.content.set_margin_end(gutter);
-        self.content.set_margin_top(gutter);
-        self.content.set_margin_bottom(gutter);
+        self.content.set_margin_top(0);
+        self.content.set_margin_bottom(0);
         self.content.set_spacing(dimension(layout.column_gap_px));
 
         self.artwork_column
             .set_width_request(dimension(layout.artwork_column_width_px));
-        self.artwork.apply_layout(ArtworkDimensions::new(
-            layout.artwork_field_width_px,
-            layout.artwork_field_height_px,
-        ));
+        self.artwork.apply_layout(layout);
         self.metadata_slot
-            .set_width_request(dimension(layout.metadata_column_width_px));
-        self.metadata
-            .root
-            .set_margin_end(dimension(layout.metadata_right_inset_px));
+            .set_width_request(dimension(layout.information.utility_width_px));
         self.metadata.apply_layout(layout);
     }
 }
 
 impl RenderedArtwork {
-    fn apply_layout(&self, reservation: ArtworkDimensions) {
+    fn apply_layout(&self, now_playing: &NowPlayingLayout) {
+        let reservation = now_playing.artwork_print_plate.footprint;
         self.reservation.set_size_request(
             dimension(reservation.width_px),
             dimension(reservation.height_px),
         );
+        self.print_plate.set_size_request(
+            dimension(now_playing.artwork_print_plate.footprint.width_px),
+            dimension(now_playing.artwork_print_plate.footprint.height_px),
+        );
+        let plate_offset = dimension(now_playing.artwork_print_plate.offset_px);
+        self.print_plate.set_margin_start(plate_offset);
+        self.print_plate.set_margin_top(plate_offset);
         let visible = self.layout.visible_decoration(reservation);
         self.decoration
             .set_ratio(visible.width_px as f32 / visible.height_px as f32);
@@ -816,12 +865,17 @@ impl RenderedFullField {
 
 impl RenderedMetadata {
     fn apply_layout(&self, layout: &NowPlayingLayout) {
+        let musical_metadata_width = dimension(layout.information.musical_metadata_width_px);
+        self.musical_metadata_slot
+            .set_min_content_width(musical_metadata_width);
+        self.musical_metadata_slot
+            .set_max_content_width(musical_metadata_width);
         self.presentation_status
             .apply_layout(layout.presentation_status);
         self.presentation_status.root.set_margin_top(dimension(
             layout
                 .artwork_field_anchors
-                .presentation_status_margin_top_px(layout.outer_gutter_px),
+                .presentation_status_margin_top_px(0),
         ));
 
         if let Some(title) = self.title.as_ref() {
@@ -869,11 +923,9 @@ impl RenderedMetadata {
 
         self.identity
             .apply_layout(layout.identity_gap_px, layout.typography.identity_px);
-        self.identity.root.set_margin_bottom(dimension(
-            layout
-                .identity_anchor
-                .margin_bottom_px(layout.outer_gutter_px),
-        ));
+        self.identity
+            .root
+            .set_margin_bottom(dimension(layout.identity_anchor.margin_bottom_px(0)));
     }
 }
 

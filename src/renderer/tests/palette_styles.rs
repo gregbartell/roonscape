@@ -56,6 +56,28 @@ fn presentation_status_emphasis_uses_full_muted_and_glowing_accent_treatments() 
 }
 
 #[test]
+fn print_plate_uses_the_accent_while_depth_stays_on_the_artwork_surface() {
+    let palette = PresentationPalette::fallback();
+    let layout = NowPlayingLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
+    let full_field_layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
+
+    let styles =
+        PresentationTransitionStyles::new(palette, None).to_css(&layout, &full_field_layout);
+
+    assert!(
+        styles
+            .contains(".presentation-current .artwork-print-plate { background-color: #FF7051; }")
+    );
+    assert!(styles.contains(
+        ".presentation-current .artwork { border: 1px solid alpha(#F3EAD7, 0.16); background-color: #142856; box-shadow: 0 8px 15px alpha(#071522, 0.72); }"
+    ));
+    assert!(
+        !styles.contains(".artwork-print-plate { box-shadow:"),
+        "the shadow must not move behind the combined artwork-and-plate stack",
+    );
+}
+
+#[test]
 fn semantic_palette_roles_adapt_the_diagnostics_overlay() {
     let fallback = PresentationPalette::fallback();
     let dark = PresentationPalette {
