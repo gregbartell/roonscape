@@ -23,16 +23,24 @@ composition. Available Full-field Presentations share only the established
 bottom-right identity anchor; their Presentation Status uses the independent
 Full-field geometry described below.
 
-Title is the dominant text. Artist and Album step down in size, followed by
-Presentation Status, progress or activity copy, and identity labels. Missing
-metadata closes up cleanly instead of leaving placeholders. Long values use
-the first fitting preferred, reduced, or minimum readable font tier, then
-ellipsize at the end when content still exceeds bounds of five Title lines,
-three Artist lines, and three Album lines. Output and Zone names remain on one
-ellipsize only as a defensive fallback. Each identity label shares one text
-baseline with its name, and content length does not move or resize the stable
-row. Metadata uses no scrolling, marquee motion, or pagination and never
-shrinks below the established readable font floors.
+Title is the dominant text. Short single-line Titles use a larger optical tier.
+Longer Titles use deterministic balanced wrapping at word boundaries, without
+language parsing or content-specific breaks, and avoid a very short final line
+when a better-fitting arrangement exists. Two-line Titles use 0.94 leading;
+Titles of three or more lines use 0.98. Artist and Album form a close credit
+group beneath Title, with Artist stronger than Album and the Title-to-credit
+gap 30% tighter than the earlier presentation. Missing metadata closes up
+cleanly instead of leaving placeholders.
+
+Preferred metadata sizes derive primarily from viewport height and then fit to
+the musical metadata measure using the first fitting preferred, reduced, or
+minimum readable tier. Content ellipsizes at the end when it still exceeds
+bounds of five Title lines, three Artist lines, and three Album lines. Output
+and Zone names remain on one line and ellipsize only as a defensive fallback.
+Each identity label shares one text baseline with its name, and content length
+does not move or resize the stable row. Metadata uses no scrolling, marquee
+motion, or pagination and never shrinks below the established readable font
+floors.
 
 The composition uses the complete landscape field without letterboxing.
 Artwork and metadata keep their relative emphasis on ordinary, tall, wide,
@@ -89,10 +97,11 @@ remains present, while missing artwork retains the established quiet field.
 ## Typography
 
 Now Playing typography is selected by role. Title uses bold, upright Sitka
-Display when that family is installed on the RoonScape Host and packaged Libre
-Baskerville otherwise. Artist, Album, Presentation Status, progress and
-activity copy, timing, and identities always use packaged IBM Plex Sans,
-independently of Title-face availability.
+Display with normal tracking when that family is installed on the RoonScape
+Host and packaged Libre Baskerville otherwise. Artist and Album use normal
+upright IBM Plex Sans, with semibold Artist and regular Album. Presentation
+Status, progress and activity copy, timing, and identities also use packaged
+IBM Plex Sans, independently of Title-face availability.
 
 Full-field Presentation retains its existing atomic selection: Palatino
 Linotype with Segoe UI when both host-provided families are available, and

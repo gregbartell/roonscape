@@ -26,6 +26,7 @@ pub(crate) struct PresentationView {
     stack: gtk::Stack,
     transition: PresentationTransition<RenderedPresentation>,
     palette_provider: gtk::CssProvider,
+    typography: TypographySelection,
     display_viewport: Viewport,
     layout_viewport: Option<Viewport>,
     inactivity: InactivityTransform,
@@ -112,6 +113,8 @@ struct RenderedPresentationStatus {
 
 struct RenderedMetadataLine {
     label: gtk::Label,
+    layout: MetadataLineLayout,
+    font_family: &'static str,
 }
 
 struct RenderedIdentity {
@@ -128,9 +131,11 @@ impl PresentationView {
         presentation: &Presentation,
         repository_root: &Path,
         palette_provider: gtk::CssProvider,
+        typography: TypographySelection,
         diagnostics_text: Option<&str>,
     ) -> Self {
-        let rendered = render_presentation(presentation, repository_root, diagnostics_text);
+        let rendered =
+            render_presentation(presentation, repository_root, typography, diagnostics_text);
         rendered
             .root
             .add_css_class(PresentationStyleLayer::Current.class_name());
@@ -151,6 +156,7 @@ impl PresentationView {
             stack,
             transition,
             palette_provider,
+            typography,
             display_viewport: Viewport::WINDOWED_FIXTURE,
             layout_viewport: None,
             inactivity: InactivityTransform::default(),
@@ -265,7 +271,12 @@ impl PresentationView {
         repository_root: &Path,
     ) -> RenderedPresentation {
         let diagnostics_text = self.transition.current().value().diagnostics_text();
-        let rendered = render_current(presentation, repository_root, diagnostics_text.as_deref());
+        let rendered = render_current(
+            presentation,
+            repository_root,
+            self.typography,
+            diagnostics_text.as_deref(),
+        );
         if let Some(viewport) = self.layout_viewport {
             rendered.apply_viewport(viewport);
         }
@@ -320,9 +331,10 @@ impl RenderedPresentation {
 fn render_current(
     presentation: &Presentation,
     repository_root: &Path,
+    typography: TypographySelection,
     diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
-    let rendered = render_presentation(presentation, repository_root, diagnostics_text);
+    let rendered = render_presentation(presentation, repository_root, typography, diagnostics_text);
     rendered
         .root
         .add_css_class(PresentationStyleLayer::Current.class_name());
@@ -332,6 +344,7 @@ fn render_current(
 fn render_presentation(
     presentation: &Presentation,
     repository_root: &Path,
+    typography: TypographySelection,
     diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
     let resolved = resolve_presentation(presentation, repository_root);
@@ -341,6 +354,7 @@ fn render_presentation(
             presentation,
             repository_root,
             resolved.palette,
+            typography,
             diagnostics_text,
         ),
         Presentation::FullField(presentation) => {
@@ -432,6 +446,7 @@ fn now_playing(
     presentation: &NowPlayingPresentation,
     repository_root: &Path,
     palette: PresentationPalette,
+    typography: TypographySelection,
     diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
     let layout = NowPlayingLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE);
@@ -454,7 +469,7 @@ fn now_playing(
     let artwork = artwork(presentation, repository_root);
     artwork_column.set_center_widget(Some(&artwork.reservation));
 
-    let metadata = metadata(presentation, &layout);
+    let metadata = metadata(presentation, &layout, typography);
     let metadata_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
     metadata_slot.add_css_class("metadata-slot");
     metadata_slot.set_hexpand(false);
@@ -602,6 +617,7 @@ fn artwork(presentation: &NowPlayingPresentation, repository_root: &Path) -> Ren
 fn metadata(
     presentation: &NowPlayingPresentation,
     now_playing_layout: &NowPlayingLayout,
+    typography: TypographySelection,
 ) -> RenderedMetadata {
     let root = gtk::Overlay::new();
     root.add_css_class("metadata-column");
@@ -643,15 +659,15 @@ fn metadata(
     let title = layout
         .title
         .as_ref()
-        .map(|layout| metadata_line(layout, "title"));
+        .map(|layout| metadata_line(layout, "title", typography.now_playing_title_family()));
     let artist = layout
         .artist
         .as_ref()
-        .map(|layout| metadata_line(layout, "artist"));
+        .map(|layout| metadata_line(layout, "artist", typography.now_playing_supporting_family()));
     let album = layout
         .album
         .as_ref()
-        .map(|layout| metadata_line(layout, "album"));
+        .map(|layout| metadata_line(layout, "album", typography.now_playing_supporting_family()));
     let progress = presentation.progress.as_ref().map(progress_view);
     let activity = presentation.activity.as_deref().map(activity_view);
 
@@ -703,7 +719,11 @@ fn metadata(
     }
 }
 
-fn metadata_line(layout: &MetadataLineLayout, class_name: &str) -> RenderedMetadataLine {
+fn metadata_line(
+    layout: &MetadataLineLayout,
+    class_name: &str,
+    font_family: &'static str,
+) -> RenderedMetadataLine {
     let label = metadata_label(&layout.text, class_name);
     label.add_css_class(match layout.typography {
         MetadataTypography::EditorialSerif => "editorial-text",
@@ -712,12 +732,16 @@ fn metadata_line(layout: &MetadataLineLayout, class_name: &str) -> RenderedMetad
     label.set_lines(layout.maximum_lines as i32);
     apply_text_overflow(&label, layout.overflow);
     label.set_wrap(true);
-    label.set_wrap_mode(pango::WrapMode::WordChar);
+    label.set_wrap_mode(pango::WrapMode::Word);
     // Keep a long label's natural width from overriding the explicit group measure.
     label.set_max_width_chars(1);
     set_label_font_size(&label, layout.font_sizes.preferred_px);
 
-    RenderedMetadataLine { label }
+    RenderedMetadataLine {
+        label,
+        layout: layout.clone(),
+        font_family,
+    }
 }
 
 fn apply_text_overflow(label: &gtk::Label, overflow: TextOverflow) {
@@ -747,11 +771,15 @@ fn full_field_line(text: &str, class_name: &str) -> (gtk::Box, gtk::Label) {
 }
 
 fn set_label_font_size(label: &gtk::Label, font_size_px: u32) {
+    label.set_attributes(Some(&font_size_attributes(font_size_px)));
+}
+
+fn font_size_attributes(font_size_px: u32) -> pango::AttrList {
     let attributes = pango::AttrList::new();
     attributes.insert(pango::AttrSize::new_size_absolute(
         font_size_px as i32 * pango::SCALE,
     ));
-    label.set_attributes(Some(&attributes));
+    attributes
 }
 
 fn set_status_label_typography(label: &gtk::Label, font_size_px: u32, letter_spacing_px: u32) {
@@ -866,6 +894,8 @@ impl RenderedFullField {
 impl RenderedMetadata {
     fn apply_layout(&self, layout: &NowPlayingLayout) {
         let musical_metadata_width = dimension(layout.information.musical_metadata_width_px);
+        self.musical_metadata_slot.set_min_content_width(-1);
+        self.musical_metadata_slot.set_max_content_width(-1);
         self.musical_metadata_slot
             .set_min_content_width(musical_metadata_width);
         self.musical_metadata_slot
@@ -879,18 +909,24 @@ impl RenderedMetadata {
         ));
 
         if let Some(title) = self.title.as_ref() {
-            title.apply_font_sizes(layout.typography.title);
+            title.label.set_width_request(musical_metadata_width);
+            title.apply_title_layout(
+                layout.typography.title,
+                layout.information.musical_metadata_width_px,
+            );
         }
         if let Some(artist) = self.artist.as_ref() {
+            artist.label.set_width_request(musical_metadata_width);
             artist
                 .label
                 .set_margin_top(dimension(layout.artist_spacing_px));
             artist.apply_font_sizes(layout.typography.artist);
         }
         if let Some(album) = self.album.as_ref() {
-            album
-                .label
-                .set_margin_top(dimension(layout.album_spacing_px));
+            album.label.set_width_request(musical_metadata_width);
+            album.label.set_margin_top(dimension(
+                layout.spacing_before_album_px(self.artist.is_some()),
+            ));
             album.apply_font_sizes(layout.typography.album);
         }
         if let Some(progress) = self.progress.as_ref() {
@@ -952,6 +988,18 @@ impl RenderedIdentity {
 }
 
 impl RenderedMetadataLine {
+    fn apply_title_layout(&self, sizes: MetadataFontSizes, available_width_px: u32) {
+        let mut line_layout = self.layout.clone();
+        line_layout.font_sizes = sizes;
+        set_label_font_size(&self.label, line_layout.single_line_font_size_px());
+        let label = self.label.clone();
+        let font_family = self.font_family;
+        self.label.add_tick_callback(move |_, _| {
+            fit_balanced_title(&label, &line_layout, available_width_px, font_family);
+            gtk::glib::ControlFlow::Break
+        });
+    }
+
     fn apply_font_sizes(&self, sizes: MetadataFontSizes) {
         set_label_font_size(&self.label, sizes.preferred_px);
         let label = self.label.clone();
@@ -960,6 +1008,31 @@ impl RenderedMetadataLine {
             gtk::glib::ControlFlow::Break
         });
     }
+}
+
+fn fit_balanced_title(
+    label: &gtk::Label,
+    line_layout: &MetadataLineLayout,
+    available_width_px: u32,
+    font_family: &str,
+) {
+    let measurement = pango::Layout::new(&label.pango_context());
+    let mut font = pango::FontDescription::new();
+    font.set_family(font_family);
+    font.set_style(pango::Style::Normal);
+    font.set_weight(pango::Weight::Bold);
+    let plan = line_layout.fitting_line_plan(available_width_px, |text, font_size_px| {
+        font.set_absolute_size(f64::from(font_size_px * pango::SCALE as u32));
+        measurement.set_font_description(Some(&font));
+        measurement.set_text(text);
+        measurement.pixel_size().0.max(0) as u32
+    });
+    label.set_text(&plan.lines.join("\n"));
+    label.set_margin_top(dimension(plan.top_padding_px));
+    set_label_font_size(label, plan.font_size_px);
+    label
+        .layout()
+        .set_line_spacing(plan.line_height_percent as f32 / 100.0);
 }
 
 fn fit_metadata_line(label: &gtk::Label, sizes: MetadataFontSizes) {

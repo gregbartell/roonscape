@@ -570,6 +570,14 @@ impl NowPlayingLayout {
         layout
     }
 
+    pub fn spacing_before_album_px(&self, artist_is_present: bool) -> u32 {
+        if artist_is_present {
+            self.album_spacing_px
+        } else {
+            self.artist_spacing_px
+        }
+    }
+
     pub fn for_viewport(viewport: Viewport) -> Self {
         let outer_gutter_px = scaled(viewport.width_px, 0.0425, 32, 160);
         let column_gap_px = scaled(viewport.width_px, 0.042, 40, 192);
@@ -602,19 +610,49 @@ impl NowPlayingLayout {
         let identity_anchor = IdentityAnchor::for_artwork_field(viewport, artwork_field_anchors);
         let typography = NowPlayingTypography {
             title: MetadataFontSizes {
-                preferred_px: scaled(viewport.width_px, 0.046, 53, 168),
-                reduced_px: scaled(viewport.width_px, 0.0365, 40, 128),
-                minimum_px: scaled(viewport.width_px, 0.028, 36, 96),
+                preferred_px: scaled(viewport.height_px, 74.0 / 900.0, 53, 168),
+                reduced_px: scaled(viewport.height_px, 58.0 / 900.0, 40, 128).min(scaled(
+                    viewport.width_px,
+                    0.0365,
+                    40,
+                    128,
+                )),
+                minimum_px: scaled(viewport.height_px, 45.0 / 900.0, 36, 96).min(scaled(
+                    viewport.width_px,
+                    0.028,
+                    36,
+                    96,
+                )),
             },
             artist: MetadataFontSizes {
-                preferred_px: scaled(viewport.width_px, 0.0175, 22, 64),
-                reduced_px: scaled(viewport.width_px, 0.0146, 20, 56),
-                minimum_px: scaled(viewport.width_px, 0.0125, 18, 48),
+                preferred_px: scaled(viewport.height_px, 31.0 / 900.0, 24, 70),
+                reduced_px: scaled(viewport.height_px, 25.0 / 900.0, 20, 62).min(scaled(
+                    viewport.width_px,
+                    0.0146,
+                    20,
+                    56,
+                )),
+                minimum_px: scaled(viewport.height_px, 22.0 / 900.0, 18, 53).min(scaled(
+                    viewport.width_px,
+                    0.0125,
+                    18,
+                    48,
+                )),
             },
             album: MetadataFontSizes {
-                preferred_px: scaled(viewport.width_px, 0.0122, 17, 45),
-                reduced_px: scaled(viewport.width_px, 0.0106, 16, 40),
-                minimum_px: scaled(viewport.width_px, 0.0094, 15, 35),
+                preferred_px: scaled(viewport.height_px, 22.0 / 900.0, 19, 50),
+                reduced_px: scaled(viewport.height_px, 19.0 / 900.0, 16, 44).min(scaled(
+                    viewport.width_px,
+                    0.0106,
+                    16,
+                    40,
+                )),
+                minimum_px: scaled(viewport.height_px, 17.0 / 900.0, 15, 39).min(scaled(
+                    viewport.width_px,
+                    0.0094,
+                    15,
+                    35,
+                )),
             },
             time_px: scaled(viewport.width_px, 0.0072, 11, 26),
             activity_heading_px: scaled(viewport.width_px, 0.0094, 14, 34),
@@ -639,7 +677,7 @@ impl NowPlayingLayout {
             information,
             artwork_field_anchors,
             identity_anchor,
-            artist_spacing_px: scaled(viewport.height_px, 0.032, 26, 72),
+            artist_spacing_px: scaled(viewport.height_px, 0.0224, 18, 50),
             album_spacing_px: ((typography.album.preferred_px as f64) * 0.48).round() as u32,
             progress_spacing_px: scaled(viewport.height_px, 0.065, 45, 128),
             time_spacing_px: scaled(viewport.width_px, 0.0055, 7, 22),

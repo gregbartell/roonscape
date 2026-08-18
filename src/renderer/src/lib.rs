@@ -40,7 +40,9 @@ pub use layout::{
     NowPlayingLayout, NowPlayingRole, NowPlayingTypography, PresentationStatusLayout, TextOverflow,
     Viewport,
 };
-pub use metadata::{MetadataLayout, MetadataLineLayout, MetadataTypography, metadata_layout};
+pub use metadata::{
+    MetadataLayout, MetadataLineLayout, MetadataLinePlan, MetadataTypography, metadata_layout,
+};
 pub use palette::{PaletteError, PresentationPalette, Rgb};
 pub use presentation::{
     FullFieldPresentation, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform,

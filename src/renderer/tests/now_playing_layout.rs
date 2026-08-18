@@ -109,6 +109,42 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
 }
 
 #[test]
+fn tightens_the_title_to_credit_gap_by_thirty_percent() {
+    let expected_gaps = [18, 20, 27, 27, 24, 48, 50];
+
+    for (viewport, expected_gap_px) in representative_viewports::REPRESENTATIVE_VIEWPORTS
+        .into_iter()
+        .zip(expected_gaps)
+    {
+        let layout = NowPlayingLayout::for_viewport(viewport);
+
+        assert_eq!(layout.artist_spacing_px, expected_gap_px, "{viewport:?}");
+        assert!(
+            layout.album_spacing_px < layout.artist_spacing_px,
+            "{viewport:?}"
+        );
+    }
+}
+
+#[test]
+fn promotes_album_to_the_first_credit_spacing_when_artist_is_missing() {
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = NowPlayingLayout::for_viewport(viewport);
+
+        assert_eq!(
+            layout.spacing_before_album_px(false),
+            layout.artist_spacing_px,
+            "the surviving Album should use the Title-to-credit gap at {viewport:?}",
+        );
+        assert_eq!(
+            layout.spacing_before_album_px(true),
+            layout.album_spacing_px,
+            "Album should remain grouped with a preceding Artist at {viewport:?}",
+        );
+    }
+}
+
+#[test]
 fn keeps_every_information_role_on_one_rail_with_only_musical_metadata_capped() {
     let presentation = now_playing("playing.json");
 

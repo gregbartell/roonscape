@@ -112,13 +112,17 @@ instead of approving a scenario at only one size.
 - **Composition and negative space:** The asymmetric artwork field and
   metadata column use the complete landscape field without letterboxing,
   crowding, or panel-like blocks.
-- **Hierarchy:** Title dominates; Artist, Album, status, progress, and utility
-  text step down deliberately. Missing fields close up cleanly, and long or
-  extreme values select the first fitting established font tier, expose up to
-  five Title lines, three Artist lines, and three Album lines, then end-
-  ellipsize cleanly without overlapping other content. The Long metadata Title
-  is complete at every peer viewport. Metadata uses no scrolling, marquee
-  motion, or pagination and never shrinks below its readable font floors.
+- **Hierarchy:** Title is bold and upright with normal tracking and dominates;
+  short single-line Titles use the larger optical tier. Artist and Album are
+  upright IBM Plex Sans, with Artist stronger than Album, and remain a close
+  credit group beneath the tighter Title gap. Missing fields close up cleanly.
+  Long and punctuation-heavy Titles balance deterministically at word
+  boundaries without short final-line orphans; two-line Titles use 0.94
+  leading and denser Titles use 0.98. Long or extreme values select the first
+  fitting established font tier, expose up to five Title lines, three Artist
+  lines, and three Album lines, then end-ellipsize cleanly without overlapping
+  other content. Metadata uses no scrolling, marquee motion, or pagination and
+  never shrinks below its readable font floors.
 - **Artwork fit and decoration:** The artwork column reserves the same
   imaginary square for square, non-square, missing, and unusable artwork.
   Square supplied artwork fills that reservation with its existing one-pixel

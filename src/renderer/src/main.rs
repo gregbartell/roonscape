@@ -187,6 +187,7 @@ fn build_window(
         &initial_frame.presentation,
         repository_root,
         palette_provider,
+        typography,
         initial_diagnostics.as_deref(),
     )));
     presentation_view.borrow_mut().apply_viewport(viewport);
