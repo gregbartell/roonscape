@@ -37,12 +37,13 @@ pub use layout::{
     ArtworkFit, ArtworkLayout, ArtworkPrintPlateLayout, FullFieldFontSize, FullFieldLayout,
     FullFieldLineLayout, FullFieldSlot, IdentityAnchor, IdentityLineLayout,
     IdentityPhraseAlignment, IdentityPlacement, IdentityRowLayout, InactivityLayout,
-    MetadataFontSizes, NowPlayingField, NowPlayingFooterContent, NowPlayingInformationLayout,
-    NowPlayingLayout, NowPlayingRole, NowPlayingTypography, PresentationStatusDecoration,
-    PresentationStatusLayout, TextOverflow, Viewport,
+    MetadataFitting, MetadataFontSizes, NowPlayingField, NowPlayingFooterContent,
+    NowPlayingInformationLayout, NowPlayingLayout, NowPlayingRole, NowPlayingTypography,
+    PresentationStatusDecoration, PresentationStatusLayout, TextOverflow, Viewport,
 };
 pub use metadata::{
-    MetadataLayout, MetadataLineLayout, MetadataLinePlan, MetadataTypography, metadata_layout,
+    MetadataDensity, MetadataGroupPlan, MetadataLayout, MetadataLineLayout, MetadataLinePlan,
+    MetadataTypography, metadata_layout,
 };
 pub use palette::{PaletteError, PresentationPalette, Rgb};
 pub use presentation::{

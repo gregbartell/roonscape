@@ -8,7 +8,7 @@ use roonscape_renderer::{
     ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
     ArtworkLayout, FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, FullFieldPresentation,
     IdentityLineLayout, IdentityPhraseAlignment, IdentityPlacement, IdentityRowLayout,
-    InactivityLayout, InactivityTransform, MetadataFontSizes, MetadataLineLayout,
+    InactivityLayout, InactivityTransform, MetadataGroupPlan, MetadataLayout, MetadataLineLayout,
     MetadataTypography, NowPlayingField, NowPlayingFooterContent, NowPlayingLayout,
     NowPlayingPresentation, NowPlayingRole, Presentation, PresentationActivity,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationStatus,
@@ -60,7 +60,7 @@ impl RenderedProgress {
 }
 
 struct RenderedMetadata {
-    root: gtk::Overlay,
+    root: gtk::Box,
     presentation_status: RenderedPresentationStatus,
     musical_metadata_slot: gtk::ScrolledWindow,
     title: Option<RenderedMetadataLine>,
@@ -625,19 +625,14 @@ fn metadata(
     now_playing_layout: &NowPlayingLayout,
     typography: TypographySelection,
 ) -> RenderedMetadata {
-    let root = gtk::Overlay::new();
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("metadata-column");
     root.set_hexpand(true);
     root.set_vexpand(true);
 
-    let column = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    column.set_hexpand(true);
-    column.set_vexpand(true);
-    root.set_child(Some(&column));
-
-    let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let copy = gtk::CenterBox::new();
     copy.add_css_class("metadata-copy");
-    copy.set_valign(gtk::Align::Center);
+    copy.set_orientation(gtk::Orientation::Vertical);
     copy.set_hexpand(true);
     copy.set_vexpand(true);
 
@@ -649,20 +644,22 @@ fn metadata(
     let musical_metadata_slot = gtk::ScrolledWindow::new();
     musical_metadata_slot.add_css_class("musical-metadata-slot");
     musical_metadata_slot.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Never);
+    musical_metadata_slot.set_min_content_height(0);
     musical_metadata_slot.set_propagate_natural_width(true);
-    musical_metadata_slot.set_propagate_natural_height(true);
+    musical_metadata_slot.set_propagate_natural_height(false);
     musical_metadata_slot.set_halign(gtk::Align::Start);
     musical_metadata_slot.set_hexpand(false);
     musical_metadata_slot.set_child(Some(&musical_metadata));
     let musical_metadata_alignment = gtk::CenterBox::new();
     musical_metadata_alignment.set_hexpand(true);
     musical_metadata_alignment.set_start_widget(Some(&musical_metadata_slot));
-    copy.append(&musical_metadata_alignment);
+    copy.set_center_widget(Some(&musical_metadata_alignment));
 
     let rendered_status = presentation_status(
         &presentation.status,
         now_playing_layout.presentation_status.decoration,
     );
+    root.append(&rendered_status.root);
 
     let layout = metadata_layout(presentation, Viewport::WINDOWED_FIXTURE);
     let title = layout
@@ -685,7 +682,7 @@ fn metadata(
 
     for role in &now_playing_layout.metadata_roles {
         match role {
-            NowPlayingRole::PresentationStatus => root.add_overlay(&rendered_status.root),
+            NowPlayingRole::PresentationStatus => {}
             NowPlayingRole::Title => {
                 musical_metadata.append(&title.as_ref().expect("Title role requires a label").label)
             }
@@ -714,7 +711,7 @@ fn metadata(
         NowPlayingFooterContent::IdentityOnly => {}
     }
 
-    column.append(&copy);
+    root.append(&copy);
     let identity = tracked_identity(
         &presentation.tracked_output,
         &presentation.tracked_zone,
@@ -723,7 +720,7 @@ fn metadata(
     );
     identity.root.set_halign(gtk::Align::Fill);
     footer.append(&identity.root);
-    column.append(&footer);
+    root.append(&footer);
     RenderedMetadata {
         root,
         presentation_status: rendered_status,
@@ -746,7 +743,7 @@ fn metadata_line(
     let label = metadata_label(&layout.text, class_name);
     label.add_css_class(match layout.typography {
         MetadataTypography::EditorialSerif => "editorial-text",
-        MetadataTypography::UtilitySans => "utility-text",
+        MetadataTypography::ArtistSans | MetadataTypography::AlbumSans => "utility-text",
     });
     label.set_lines(layout.maximum_lines as i32);
     apply_text_overflow(&label, layout.overflow);
@@ -926,28 +923,17 @@ impl RenderedMetadata {
                 .artwork_field_anchors
                 .presentation_status_margin_top_px(0),
         ));
+        self.musical_metadata_slot.set_margin_bottom(dimension(
+            layout.metadata_optical_correction_px.saturating_mul(2),
+        ));
 
-        if let Some(title) = self.title.as_ref() {
-            title.label.set_width_request(musical_metadata_width);
-            title.apply_title_layout(
-                layout.typography.title,
-                layout.information.musical_metadata_width_px,
-            );
+        for line in [&self.title, &self.artist, &self.album]
+            .into_iter()
+            .flatten()
+        {
+            line.label.set_width_request(musical_metadata_width);
         }
-        if let Some(artist) = self.artist.as_ref() {
-            artist.label.set_width_request(musical_metadata_width);
-            artist
-                .label
-                .set_margin_top(dimension(layout.artist_spacing_px));
-            artist.apply_font_sizes(layout.typography.artist);
-        }
-        if let Some(album) = self.album.as_ref() {
-            album.label.set_width_request(musical_metadata_width);
-            album.label.set_margin_top(dimension(
-                layout.spacing_before_album_px(self.artist.is_some()),
-            ));
-            album.apply_font_sizes(layout.typography.album);
-        }
+        self.apply_group_fitting(layout);
         if let Some(progress) = self.progress.as_ref() {
             progress.root.set_margin_top(0);
             progress
@@ -977,6 +963,64 @@ impl RenderedMetadata {
             .set_margin_bottom(dimension(layout.identity_anchor.margin_bottom_px(0)));
         self.identity
             .apply_now_playing_layout(layout.identity_row, layout.typography.identity_px);
+    }
+
+    fn apply_group_fitting(&self, layout: &NowPlayingLayout) {
+        let metadata = MetadataLayout {
+            title: self
+                .title
+                .as_ref()
+                .map(|line| line.layout_with_font_sizes(layout.typography.title)),
+            artist: self
+                .artist
+                .as_ref()
+                .map(|line| line.layout_with_font_sizes(layout.typography.artist)),
+            album: self
+                .album
+                .as_ref()
+                .map(|line| line.layout_with_font_sizes(layout.typography.album)),
+        };
+        let plan = metadata.fitting_group_plan(
+            layout.information.musical_metadata_width_px,
+            layout.metadata_height_budget_px,
+            layout.metadata_fitting,
+            |typography, text, font_size_px| {
+                self.line(typography).measure_text_px(text, font_size_px)
+            },
+        );
+        self.apply_group_plan(&plan);
+        self.musical_metadata_slot
+            .set_height_request(dimension(plan.height_px));
+    }
+
+    fn line(&self, typography: MetadataTypography) -> &RenderedMetadataLine {
+        match typography {
+            MetadataTypography::EditorialSerif => self.title.as_ref(),
+            MetadataTypography::ArtistSans => self.artist.as_ref(),
+            MetadataTypography::AlbumSans => self.album.as_ref(),
+        }
+        .expect("a measured metadata role has a rendered line")
+    }
+
+    fn apply_group_plan(&self, plan: &MetadataGroupPlan) {
+        if let (Some(line), Some(line_plan)) = (self.title.as_ref(), plan.title.as_ref()) {
+            apply_metadata_line_plan(&line.label, line_plan, 0);
+        }
+        if let (Some(line), Some(line_plan)) = (self.artist.as_ref(), plan.artist.as_ref()) {
+            apply_metadata_line_plan(
+                &line.label,
+                line_plan,
+                u32::from(plan.title.is_some()) * plan.title_to_credit_gap_px,
+            );
+        }
+        if let (Some(line), Some(line_plan)) = (self.album.as_ref(), plan.album.as_ref()) {
+            let spacing_px = if plan.artist.is_some() {
+                plan.album_gap_px
+            } else {
+                u32::from(plan.title.is_some()) * plan.title_to_credit_gap_px
+            };
+            apply_metadata_line_plan(&line.label, line_plan, spacing_px);
+        }
     }
 }
 
@@ -1039,58 +1083,46 @@ impl RenderedIdentity {
 }
 
 impl RenderedMetadataLine {
-    fn apply_title_layout(&self, sizes: MetadataFontSizes, available_width_px: u32) {
-        let mut line_layout = self.layout.clone();
-        line_layout.font_sizes = sizes;
-        set_label_font_size(&self.label, line_layout.single_line_font_size_px());
-        let label = self.label.clone();
-        let font_family = self.font_family;
-        self.label.add_tick_callback(move |_, _| {
-            fit_balanced_title(&label, &line_layout, available_width_px, font_family);
-            gtk::glib::ControlFlow::Break
-        });
+    fn layout_with_font_sizes(
+        &self,
+        font_sizes: roonscape_renderer::MetadataFontSizes,
+    ) -> MetadataLineLayout {
+        MetadataLineLayout {
+            font_sizes,
+            ..self.layout.clone()
+        }
     }
 
-    fn apply_font_sizes(&self, sizes: MetadataFontSizes) {
-        set_label_font_size(&self.label, sizes.preferred_px);
-        let label = self.label.clone();
-        self.label.add_tick_callback(move |_, _| {
-            fit_metadata_line(&label, sizes);
-            gtk::glib::ControlFlow::Break
+    fn measure_text_px(&self, text: &str, font_size_px: u32) -> (u32, u32) {
+        let measurement = pango::Layout::new(&self.label.pango_context());
+        let mut font = pango::FontDescription::new();
+        font.set_family(self.font_family);
+        font.set_style(pango::Style::Normal);
+        font.set_weight(match self.layout.typography {
+            MetadataTypography::EditorialSerif => pango::Weight::Bold,
+            MetadataTypography::ArtistSans => pango::Weight::Semibold,
+            MetadataTypography::AlbumSans => pango::Weight::Normal,
         });
-    }
-}
-
-fn fit_balanced_title(
-    label: &gtk::Label,
-    line_layout: &MetadataLineLayout,
-    available_width_px: u32,
-    font_family: &str,
-) {
-    let measurement = pango::Layout::new(&label.pango_context());
-    let mut font = pango::FontDescription::new();
-    font.set_family(font_family);
-    font.set_style(pango::Style::Normal);
-    font.set_weight(pango::Weight::Bold);
-    let plan = line_layout.fitting_line_plan(available_width_px, |text, font_size_px| {
         font.set_absolute_size(f64::from(font_size_px * pango::SCALE as u32));
         measurement.set_font_description(Some(&font));
         measurement.set_text(text);
-        measurement.pixel_size().0.max(0) as u32
-    });
+        let (width_px, height_px) = measurement.pixel_size();
+        (width_px.max(0) as u32, height_px.max(0) as u32)
+    }
+}
+
+fn apply_metadata_line_plan(
+    label: &gtk::Label,
+    plan: &roonscape_renderer::MetadataLinePlan,
+    margin_top_px: u32,
+) {
     label.set_text(&plan.lines.join("\n"));
-    label.set_margin_top(dimension(plan.top_padding_px));
+    label.set_lines(plan.lines.len() as i32);
+    label.set_margin_top(dimension(margin_top_px));
     set_label_font_size(label, plan.font_size_px);
     label
         .layout()
         .set_line_spacing(plan.line_height_percent as f32 / 100.0);
-}
-
-fn fit_metadata_line(label: &gtk::Label, sizes: MetadataFontSizes) {
-    let _ = sizes.fitting_font_size(|font_size_px| {
-        set_label_font_size(label, font_size_px);
-        !label.layout().is_ellipsized()
-    });
 }
 
 fn apply_full_field_font_size(label: &gtk::Label, sizes: FullFieldFontSize) {

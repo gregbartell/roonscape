@@ -296,7 +296,7 @@ fn groups_progress_or_activity_with_equal_width_identities_in_one_footer() {
 
 #[test]
 fn tightens_the_title_to_credit_gap_by_thirty_percent() {
-    let expected_gaps = [18, 20, 27, 27, 24, 48, 50];
+    let expected_gaps = [22, 22, 22, 22, 22, 40, 40];
 
     for (viewport, expected_gap_px) in representative_viewports::REPRESENTATIVE_VIEWPORTS
         .into_iter()
@@ -305,9 +305,25 @@ fn tightens_the_title_to_credit_gap_by_thirty_percent() {
         let layout = NowPlayingLayout::for_viewport(viewport);
 
         assert_eq!(layout.artist_spacing_px, expected_gap_px, "{viewport:?}");
+        assert_eq!(
+            layout.metadata_fitting.normal_title_to_credit_gap_px, expected_gap_px,
+            "{viewport:?}",
+        );
+        assert_eq!(
+            layout.metadata_fitting.compact_title_to_credit_gap_px,
+            ((viewport.height_px as f64) * 0.014)
+                .round()
+                .clamp(14.0, 28.0) as u32,
+            "{viewport:?}",
+        );
         assert!(
             layout.album_spacing_px < layout.artist_spacing_px,
             "{viewport:?}"
+        );
+        assert_eq!(
+            layout.album_spacing_px,
+            ((layout.typography.album.preferred_px as f64) * 0.38).round() as u32,
+            "{viewport:?}",
         );
     }
 }
@@ -326,6 +342,21 @@ fn promotes_album_to_the_first_credit_spacing_when_artist_is_missing() {
             layout.spacing_before_album_px(true),
             layout.album_spacing_px,
             "Album should remain grouped with a preceding Artist at {viewport:?}",
+        );
+    }
+}
+
+#[test]
+fn applies_one_small_upward_optical_correction_to_the_centered_metadata_group() {
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = NowPlayingLayout::for_viewport(viewport);
+
+        assert_eq!(
+            layout.metadata_optical_correction_px,
+            ((viewport.height_px as f64) * 0.004)
+                .round()
+                .clamp(3.0, 10.0) as u32,
+            "{viewport:?}",
         );
     }
 }

@@ -4,12 +4,13 @@ mod support;
 
 use std::sync::OnceLock;
 
-use gtk::pango::prelude::FontFamilyExt;
+use gtk::pango::prelude::{FontExt, FontFamilyExt};
 use gtk::pango::{self, FontDescription, Layout};
 use gtk::prelude::FontMapExt;
 use roonscape_renderer::{
-    MetadataFontSizes, MetadataTypography, NowPlayingLayout, Presentation, TextOverflow, Viewport,
-    metadata_layout, parse_snapshot, presentation_from_snapshot, register_packaged_fallback_fonts,
+    MetadataDensity, MetadataFontSizes, MetadataTypography, NowPlayingLayout, Presentation,
+    TextOverflow, Viewport, metadata_layout, parse_snapshot, presentation_from_snapshot,
+    register_packaged_fallback_fonts,
 };
 
 const VIEWPORT: Viewport = Viewport::new(1920, 1200);
@@ -80,7 +81,7 @@ fn collapses_blank_optional_metadata_without_dead_spacing() {
 }
 
 #[test]
-fn retains_long_metadata_with_expanded_bounds_and_existing_readability_tiers() {
+fn uses_the_selected_responsive_metadata_typography() {
     let presentation = now_playing("long-metadata.json");
     let expected_title = presentation
         .title
@@ -88,39 +89,39 @@ fn retains_long_metadata_with_expanded_bounds_and_existing_readability_tiers() {
         .expect("long fixture should have a Title");
     let expected_tiers = [
         ExpectedFontTiers {
-            title: font_tiers(59, 46, 36),
-            artist: font_tiers(25, 20, 18),
-            album: font_tiers(19, 16, 15),
+            title: font_tiers(88, 68, 54),
+            artist: font_tiers(24, 18, 18),
+            album: font_tiers(20, 16, 16),
         },
         ExpectedFontTiers {
-            title: font_tiers(74, 58, 45),
-            artist: font_tiers(31, 23, 20),
-            album: font_tiers(22, 17, 15),
+            title: font_tiers(88, 68, 54),
+            artist: font_tiers(24, 18, 18),
+            album: font_tiers(20, 16, 16),
         },
         ExpectedFontTiers {
-            title: font_tiers(99, 58, 45),
-            artist: font_tiers(41, 23, 20),
-            album: font_tiers(29, 17, 15),
+            title: font_tiers(98, 68, 54),
+            artist: font_tiers(26, 22, 22),
+            album: font_tiers(21, 19, 19),
         },
         ExpectedFontTiers {
-            title: font_tiers(99, 70, 54),
-            artist: font_tiers(41, 28, 24),
-            album: font_tiers(29, 20, 18),
+            title: font_tiers(98, 77, 65),
+            artist: font_tiers(26, 22, 22),
+            album: font_tiers(21, 19, 19),
         },
         ExpectedFontTiers {
-            title: font_tiers(89, 70, 54),
-            artist: font_tiers(37, 30, 26),
-            album: font_tiers(26, 23, 20),
+            title: font_tiers(88, 76, 63),
+            artist: font_tiers(24, 19, 19),
+            album: font_tiers(20, 17, 17),
         },
         ExpectedFontTiers {
-            title: font_tiers(168, 128, 96),
-            artist: font_tiers(70, 56, 48),
-            album: font_tiers(50, 40, 35),
+            title: font_tiers(176, 151, 125),
+            artist: font_tiers(46, 38, 38),
+            album: font_tiers(38, 33, 33),
         },
         ExpectedFontTiers {
-            title: font_tiers(168, 128, 96),
-            artist: font_tiers(70, 56, 48),
-            album: font_tiers(50, 40, 35),
+            title: font_tiers(180, 154, 128),
+            artist: font_tiers(48, 38, 38),
+            album: font_tiers(40, 34, 34),
         },
     ];
 
@@ -232,11 +233,11 @@ fn assigns_editorial_and_utility_typography_roles() {
     );
     assert_eq!(
         layout.artist.map(|line| line.typography),
-        Some(MetadataTypography::UtilitySans)
+        Some(MetadataTypography::ArtistSans)
     );
     assert_eq!(
         layout.album.map(|line| line.typography),
-        Some(MetadataTypography::UtilitySans)
+        Some(MetadataTypography::AlbumSans)
     );
 }
 
@@ -252,11 +253,11 @@ fn scales_metadata_typography_primarily_from_viewport_height() {
                 .preferred_px
         });
 
-    assert_eq!(preferred_title_sizes, [59, 74, 99, 99, 89, 168, 168]);
+    assert_eq!(preferred_title_sizes, [88, 88, 98, 98, 88, 176, 180]);
 }
 
 #[test]
-fn gives_a_short_single_line_title_a_larger_optical_tier() {
+fn gives_a_short_single_line_title_the_calm_preferred_tier() {
     let font_map = metadata_font_map();
     let context = font_map.create_context();
     let viewport = Viewport::new(1600, 900);
@@ -271,12 +272,180 @@ fn gives_a_short_single_line_title_a_larger_optical_tier() {
         title_width(&context, text, font_size_px)
     });
 
-    assert_eq!(title.single_line_font_size_px(), 83);
-    assert!(title.single_line_font_size_px() > title.font_sizes.preferred_px);
+    assert_eq!(title.single_line_font_size_px(), 88);
+    assert_eq!(
+        title.single_line_font_size_px(),
+        title.font_sizes.preferred_px
+    );
     assert_eq!(plan.lines, ["Cellout"]);
     assert_eq!(plan.font_size_px, title.single_line_font_size_px());
-    assert_eq!(plan.line_height_percent, 100);
-    assert_eq!(plan.top_padding_px, 0);
+    assert_eq!(plan.line_height_percent, 94);
+}
+
+#[test]
+fn selects_the_largest_title_tier_that_fits_the_complete_metadata_budget() {
+    let viewport = Viewport::new(1600, 900);
+    let mut presentation = now_playing("playing.json");
+    presentation.title = Some("Alpha beta gamma delta epsilon zeta eta theta".to_owned());
+    presentation.artist = Some("An artist with several credited names".to_owned());
+    presentation.album = Some("An album with an unusually descriptive edition".to_owned());
+    let responsive = NowPlayingLayout::for_viewport(viewport);
+    let metadata = metadata_layout(&presentation, viewport);
+
+    let generous = metadata.fitting_group_plan(
+        540,
+        700,
+        responsive.metadata_fitting,
+        |_, text, font_size_px| (text.chars().count() as u32 * font_size_px / 2, font_size_px),
+    );
+    let constrained = metadata.fitting_group_plan(
+        540,
+        280,
+        responsive.metadata_fitting,
+        |_, text, font_size_px| (text.chars().count() as u32 * font_size_px / 2, font_size_px),
+    );
+
+    assert_eq!(generous.density, MetadataDensity::Normal);
+    assert_eq!(
+        generous.title.as_ref().map(|line| line.font_size_px),
+        Some(responsive.typography.title.preferred_px),
+    );
+    assert!(constrained.height_px <= 280);
+    assert!(
+        constrained
+            .title
+            .as_ref()
+            .is_some_and(|line| line.font_size_px < responsive.typography.title.preferred_px),
+    );
+}
+
+#[test]
+fn compact_credit_density_preserves_readable_floors_and_bounded_ellipsis() {
+    let viewport = Viewport::new(1280, 720);
+    let responsive = NowPlayingLayout::for_viewport(viewport);
+    let metadata = metadata_layout(&now_playing("extreme-metadata.json"), viewport);
+
+    let plan = metadata.fitting_group_plan(
+        responsive.information.musical_metadata_width_px,
+        330,
+        responsive.metadata_fitting,
+        |_, text, font_size_px| (text.chars().count() as u32 * font_size_px / 2, font_size_px),
+    );
+    assert_eq!(plan.density, MetadataDensity::CompactCredits);
+    assert!(plan.height_px <= 330);
+    assert_eq!(
+        plan.title.as_ref().map(|line| line.font_size_px),
+        Some(responsive.typography.title.minimum_px),
+    );
+    assert_eq!(
+        plan.artist.as_ref().map(|line| line.font_size_px),
+        Some(responsive.typography.artist.minimum_px),
+    );
+    assert_eq!(
+        plan.album.as_ref().map(|line| line.font_size_px),
+        Some(responsive.typography.album.minimum_px),
+    );
+    for line in [&plan.title, &plan.artist, &plan.album]
+        .into_iter()
+        .flatten()
+    {
+        assert!(line.ellipsized);
+    }
+}
+
+#[test]
+fn pango_group_fitting_covers_the_metadata_matrix_with_each_available_title_face() {
+    let font_map = metadata_font_map();
+    let context = font_map.create_context();
+    let viewport = Viewport::new(1280, 720);
+    let mut short = now_playing("playing.json");
+    short.title = Some("Cellout".to_owned());
+    let cases = [
+        ("ordinary", now_playing("playing.json")),
+        ("short", short),
+        ("missing", now_playing("missing-metadata.json")),
+        ("long", now_playing("long-metadata.json")),
+        ("extreme", now_playing("extreme-metadata.json")),
+    ];
+    let mut title_families = vec!["Libre Baskerville"];
+    if font_map
+        .list_families()
+        .iter()
+        .any(|family| family.name() == "Sitka Display")
+    {
+        title_families.insert(0, "Sitka Display");
+    }
+
+    for title_family in title_families {
+        assert_requested_family_resolved(&context, title_family);
+        for (case, presentation) in &cases {
+            let responsive = NowPlayingLayout::for_presentation(presentation, viewport);
+            let metadata = metadata_layout(presentation, viewport);
+            let plan = metadata.fitting_group_plan(
+                responsive.information.musical_metadata_width_px,
+                responsive.metadata_height_budget_px,
+                responsive.metadata_fitting,
+                |typography, text, font_size_px| {
+                    metadata_measurement(&context, title_family, typography, text, font_size_px)
+                },
+            );
+
+            assert!(
+                plan.height_px <= responsive.metadata_height_budget_px,
+                "{case} metadata with {title_family} exceeded the rail budget"
+            );
+            for (line, maximum_lines) in [(&plan.title, 5), (&plan.artist, 3), (&plan.album, 3)] {
+                assert!(
+                    line.as_ref()
+                        .is_none_or(|line| line.lines.len() <= maximum_lines),
+                    "{case} metadata with {title_family} exceeded its line bound"
+                );
+            }
+            let title = plan
+                .title
+                .as_ref()
+                .expect("every matrix fixture should retain its Title");
+            match *case {
+                "ordinary" | "short" | "missing" => {
+                    assert_eq!(title.font_size_px, responsive.typography.title.preferred_px);
+                    assert!(!title.ellipsized);
+                    assert_eq!(plan.density, MetadataDensity::Normal);
+                }
+                "long" | "extreme" => {
+                    assert_eq!(title.font_size_px, responsive.typography.title.minimum_px);
+                    assert!(title.ellipsized);
+                    assert_eq!(plan.density, MetadataDensity::CompactCredits);
+                }
+                _ => unreachable!("the matrix should contain only named metadata cases"),
+            }
+            if *case == "long" {
+                let expected_lines: &[&str] = if title_family == "Sitka Display" {
+                    &[
+                        "An Imaginary",
+                        "Catalogue of",
+                        "Constellations",
+                        "Observed Through the",
+                        "Longest Night of the…",
+                    ]
+                } else {
+                    &[
+                        "An Imaginary",
+                        "Catalogue of",
+                        "Constellations",
+                        "Observed",
+                        "Through the…",
+                    ]
+                };
+                assert_eq!(title.lines, expected_lines);
+            }
+            if *case == "extreme" {
+                assert!(
+                    plan.album.as_ref().is_some_and(|album| album.ellipsized),
+                    "extreme Album copy should end-ellipsize with {title_family}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -299,16 +468,16 @@ fn balances_long_titles_at_word_boundaries_with_fallback_typography() {
     assert_eq!(
         plan.lines,
         [
-            "An Imaginary Catalogue",
-            "of Constellations Observed",
-            "Through the Longest",
-            "Night of the Turning Year",
+            "An Imaginary",
+            "Catalogue of",
+            "Constellations",
+            "Observed Through the",
+            "Longest Night of the…",
         ]
     );
     assert_eq!(plan.font_size_px, title.font_sizes.minimum_px);
     assert_eq!(plan.line_height_percent, 98);
-    assert_eq!(plan.top_padding_px, 162);
-    assert!(!plan.ellipsized);
+    assert!(plan.ellipsized);
 }
 
 #[test]
@@ -329,9 +498,8 @@ fn preserves_the_readable_floor_and_clean_line_bound_at_four_by_three() {
     });
 
     assert_eq!(plan.lines.len(), 5);
-    assert_eq!(plan.font_size_px, 45);
+    assert_eq!(plan.font_size_px, 54);
     assert_eq!(plan.line_height_percent, 98);
-    assert_eq!(plan.top_padding_px, 135);
     assert!(plan.ellipsized);
     assert!(plan.lines.last().is_some_and(|line| line.ends_with('…')));
     assert!(
@@ -377,7 +545,6 @@ fn uses_tighter_leading_for_two_line_titles() {
         ["Punctuation! Heavy?", "Title: Still Balanced."]
     );
     assert_eq!(plan.line_height_percent, 94);
-    assert_eq!(plan.top_padding_px, 0);
 }
 
 #[test]
@@ -391,8 +558,7 @@ fn balances_three_line_titles_below_presentation_status() {
     let plan = title.fitting_line_plan(120, |text, _| text.chars().count() as u32 * 10);
 
     assert_eq!(plan.lines, ["Alpha beta", "gamma delta", "epsilon zeta"]);
-    assert_eq!(plan.line_height_percent, 98);
-    assert_eq!(plan.top_padding_px, plan.font_size_px * 2);
+    assert_eq!(plan.line_height_percent, 94);
 }
 
 #[test]
@@ -456,4 +622,42 @@ fn title_width(context: &pango::Context, text: &str, font_size_px: u32) -> u32 {
         .0
         .try_into()
         .expect("line width should be nonnegative")
+}
+
+fn assert_requested_family_resolved(context: &pango::Context, title_family: &str) {
+    let font = context
+        .load_font(&FontDescription::from_string(title_family))
+        .expect("the requested Title face should load");
+    assert_eq!(
+        font.describe().family().as_deref(),
+        Some(title_family),
+        "Pango silently substituted the requested Title face"
+    );
+}
+
+fn metadata_measurement(
+    context: &pango::Context,
+    title_family: &str,
+    typography: MetadataTypography,
+    text: &str,
+    font_size_px: u32,
+) -> (u32, u32) {
+    let line = Layout::new(context);
+    let mut font = FontDescription::from_string(match typography {
+        MetadataTypography::EditorialSerif => title_family,
+        MetadataTypography::ArtistSans | MetadataTypography::AlbumSans => "IBM Plex Sans",
+    });
+    font.set_weight(match typography {
+        MetadataTypography::EditorialSerif => pango::Weight::Bold,
+        MetadataTypography::ArtistSans => pango::Weight::Semibold,
+        MetadataTypography::AlbumSans => pango::Weight::Normal,
+    });
+    font.set_absolute_size(f64::from(font_size_px * pango::SCALE as u32));
+    line.set_font_description(Some(&font));
+    line.set_text(text);
+    let (width_px, height_px) = line.pixel_size();
+    (
+        width_px.try_into().expect("width should be nonnegative"),
+        height_px.try_into().expect("height should be nonnegative"),
+    )
 }

@@ -286,6 +286,14 @@ pub struct NowPlayingTypography {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MetadataFitting {
+    pub normal_title_to_credit_gap_px: u32,
+    pub compact_title_to_credit_gap_px: u32,
+    pub normal_album_gap_px: u32,
+    pub compact_album_gap_px: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NowPlayingFooterContent {
     DeterminateProgress,
     IndeterminateActivity,
@@ -602,6 +610,9 @@ pub struct NowPlayingLayout {
     pub artwork_shadow_offset_px: u32,
     pub artwork_shadow_blur_px: u32,
     pub typography: NowPlayingTypography,
+    pub metadata_fitting: MetadataFitting,
+    pub metadata_optical_correction_px: u32,
+    pub metadata_height_budget_px: u32,
 }
 
 impl NowPlayingLayout {
@@ -615,6 +626,7 @@ impl NowPlayingLayout {
         } else {
             NowPlayingFooterContent::IdentityOnly
         };
+        layout.refresh_metadata_height_budget();
         layout
     }
 
@@ -658,49 +670,29 @@ impl NowPlayingLayout {
         let identity_anchor = IdentityAnchor::for_artwork_field(viewport, artwork_field_anchors);
         let typography = NowPlayingTypography {
             title: MetadataFontSizes {
-                preferred_px: scaled(viewport.height_px, 74.0 / 900.0, 53, 168),
-                reduced_px: scaled(viewport.height_px, 58.0 / 900.0, 40, 128).min(scaled(
+                preferred_px: scaled(viewport.height_px, 0.0815, 88, 180),
+                reduced_px: scaled(viewport.height_px, 0.07, 68, 154).min(scaled(
                     viewport.width_px,
-                    0.0365,
-                    40,
-                    128,
+                    0.04,
+                    68,
+                    154,
                 )),
-                minimum_px: scaled(viewport.height_px, 45.0 / 900.0, 36, 96).min(scaled(
+                minimum_px: scaled(viewport.height_px, 0.058, 54, 128).min(scaled(
                     viewport.width_px,
-                    0.028,
-                    36,
-                    96,
+                    0.034,
+                    54,
+                    128,
                 )),
             },
             artist: MetadataFontSizes {
-                preferred_px: scaled(viewport.height_px, 31.0 / 900.0, 24, 70),
-                reduced_px: scaled(viewport.height_px, 25.0 / 900.0, 20, 62).min(scaled(
-                    viewport.width_px,
-                    0.0146,
-                    20,
-                    56,
-                )),
-                minimum_px: scaled(viewport.height_px, 22.0 / 900.0, 18, 53).min(scaled(
-                    viewport.width_px,
-                    0.0125,
-                    18,
-                    48,
-                )),
+                preferred_px: scaled(viewport.height_px, 0.0215, 24, 48),
+                reduced_px: scaled(viewport.height_px, 0.018, 18, 38),
+                minimum_px: scaled(viewport.height_px, 0.018, 18, 38),
             },
             album: MetadataFontSizes {
-                preferred_px: scaled(viewport.height_px, 22.0 / 900.0, 19, 50),
-                reduced_px: scaled(viewport.height_px, 19.0 / 900.0, 16, 44).min(scaled(
-                    viewport.width_px,
-                    0.0106,
-                    16,
-                    40,
-                )),
-                minimum_px: scaled(viewport.height_px, 17.0 / 900.0, 15, 39).min(scaled(
-                    viewport.width_px,
-                    0.0094,
-                    15,
-                    35,
-                )),
+                preferred_px: scaled(viewport.height_px, 0.0178, 20, 40),
+                reduced_px: scaled(viewport.height_px, 0.0155, 16, 34),
+                minimum_px: scaled(viewport.height_px, 0.0155, 16, 34),
             },
             time_px: scaled(viewport.height_px, 0.0148, 18, 32),
             activity_heading_px: scaled(viewport.height_px, 0.0148, 18, 32),
@@ -720,8 +712,14 @@ impl NowPlayingLayout {
             separator_size_px: identity_separator_size_px,
             phrase_alignment: IdentityPhraseAlignment::Baseline,
         };
+        let metadata_fitting = MetadataFitting {
+            normal_title_to_credit_gap_px: scaled(viewport.height_px, 0.0185, 22, 40),
+            compact_title_to_credit_gap_px: scaled(viewport.height_px, 0.014, 14, 28),
+            normal_album_gap_px: ((typography.album.preferred_px as f64) * 0.38).round() as u32,
+            compact_album_gap_px: ((typography.album.minimum_px as f64) * 0.38).round() as u32,
+        };
 
-        Self {
+        let mut layout = Self {
             field: NowPlayingField::Cohesive,
             outer_gutter_px,
             column_gap_px,
@@ -738,8 +736,8 @@ impl NowPlayingLayout {
             information,
             artwork_field_anchors,
             identity_anchor,
-            artist_spacing_px: scaled(viewport.height_px, 0.0224, 18, 50),
-            album_spacing_px: ((typography.album.preferred_px as f64) * 0.48).round() as u32,
+            artist_spacing_px: metadata_fitting.normal_title_to_credit_gap_px,
+            album_spacing_px: metadata_fitting.normal_album_gap_px,
             time_spacing_px: ((typography.time_px as f64) * 0.58).round() as u32,
             footer_content: NowPlayingFooterContent::IdentityOnly,
             footer_gap_px: scaled(viewport.height_px, 0.02, 17, 30),
@@ -752,7 +750,43 @@ impl NowPlayingLayout {
             artwork_shadow_offset_px,
             artwork_shadow_blur_px,
             typography,
-        }
+            metadata_fitting,
+            metadata_optical_correction_px: scaled(viewport.height_px, 0.004, 3, 10),
+            metadata_height_budget_px: 0,
+        };
+        layout.refresh_metadata_height_budget();
+        layout
+    }
+
+    fn refresh_metadata_height_budget(&mut self) {
+        let identity_height_px = rounded_fraction(self.typography.identity_px, 5, 4);
+        let footer_content_height_px = match self.footer_content {
+            NowPlayingFooterContent::DeterminateProgress => {
+                self.progress_height_px
+                    + self.time_spacing_px
+                    + rounded_fraction(self.typography.time_px, 5, 4)
+            }
+            NowPlayingFooterContent::IndeterminateActivity => self.activity_waveform_height_px,
+            NowPlayingFooterContent::IdentityOnly => 0,
+        };
+        let footer_gap_px = if self.footer_content == NowPlayingFooterContent::IdentityOnly {
+            0
+        } else {
+            self.footer_gap_px
+        };
+        let footer_height_px = footer_content_height_px + footer_gap_px + identity_height_px;
+        let footer_top_viewport_y_px = self
+            .identity_anchor
+            .bottom_viewport_y_px
+            .saturating_sub(footer_height_px);
+        let status_bottom_viewport_y_px = self
+            .artwork_field_anchors
+            .presentation_status_top_viewport_y_px
+            + self.presentation_status.symbol_size_px;
+        self.metadata_height_budget_px = footer_top_viewport_y_px
+            .saturating_sub(status_bottom_viewport_y_px)
+            .saturating_sub(self.presentation_status.font_px.saturating_mul(2))
+            .saturating_sub(self.metadata_optical_correction_px.saturating_mul(2));
     }
 }
 
