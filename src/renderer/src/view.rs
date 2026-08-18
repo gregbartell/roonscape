@@ -7,8 +7,9 @@ use gtk::prelude::*;
 use roonscape_renderer::{
     ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
     ArtworkLayout, FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, FullFieldPresentation,
-    IdentityLineLayout, IdentityPlacement, InactivityLayout, InactivityTransform,
-    MetadataFontSizes, MetadataLineLayout, MetadataTypography, NowPlayingField, NowPlayingLayout,
+    IdentityLineLayout, IdentityPhraseAlignment, IdentityPlacement, IdentityRowLayout,
+    InactivityLayout, InactivityTransform, MetadataFontSizes, MetadataLineLayout,
+    MetadataTypography, NowPlayingField, NowPlayingFooterContent, NowPlayingLayout,
     NowPlayingPresentation, NowPlayingRole, Presentation, PresentationActivity,
     PresentationPalette, PresentationProgress, PresentationRevision, PresentationStatus,
     PresentationStatusEmphasis, PresentationStatusLayout, PresentationStyleLayer,
@@ -67,6 +68,7 @@ struct RenderedMetadata {
     album: Option<RenderedMetadataLine>,
     progress: Option<RenderedProgress>,
     activity: Option<RenderedActivity>,
+    footer: gtk::Box,
     identity: RenderedIdentity,
 }
 
@@ -119,9 +121,11 @@ struct RenderedMetadataLine {
 
 struct RenderedIdentity {
     root: gtk::Grid,
+    output: gtk::Box,
     output_label: gtk::Label,
     output_name: gtk::Label,
     separator: gtk::Box,
+    zone: gtk::Box,
     zone_label: gtk::Label,
     zone_name: gtk::Label,
 }
@@ -381,7 +385,8 @@ fn full_field(
 
     let message = gtk::Box::new(gtk::Orientation::Vertical, 0);
     message.set_hexpand(true);
-    let rendered_status = presentation_status(&presentation.status);
+    let rendered_status =
+        presentation_status(&presentation.status, layout.presentation_status.decoration);
     message.append(&rendered_status.root);
 
     let (heading_slot, heading) = full_field_line(presentation.heading, "full-field-heading");
@@ -654,7 +659,10 @@ fn metadata(
     musical_metadata_alignment.set_start_widget(Some(&musical_metadata_slot));
     copy.append(&musical_metadata_alignment);
 
-    let rendered_status = presentation_status(&presentation.status);
+    let rendered_status = presentation_status(
+        &presentation.status,
+        now_playing_layout.presentation_status.decoration,
+    );
 
     let layout = metadata_layout(presentation, Viewport::WINDOWED_FIXTURE);
     let title = layout
@@ -671,6 +679,9 @@ fn metadata(
         .map(|layout| metadata_line(layout, "album", typography.now_playing_supporting_family()));
     let progress = presentation.progress.as_ref().map(progress_view);
     let activity = presentation.activity.as_deref().map(activity_view);
+    let footer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    footer.add_css_class("utility-footer");
+    footer.set_hexpand(true);
 
     for role in &now_playing_layout.metadata_roles {
         match role {
@@ -683,19 +694,24 @@ fn metadata(
             NowPlayingRole::Album => {
                 musical_metadata.append(&album.as_ref().expect("Album role requires a label").label)
             }
-            NowPlayingRole::Progress => copy.append(
-                &progress
-                    .as_ref()
-                    .expect("progress role requires a timeline")
-                    .root,
-            ),
-            NowPlayingRole::Activity => copy.append(
-                &activity
-                    .as_ref()
-                    .expect("activity role requires indeterminate activity")
-                    .root,
-            ),
+            NowPlayingRole::Progress | NowPlayingRole::Activity => {}
         }
+    }
+
+    match now_playing_layout.footer_content {
+        NowPlayingFooterContent::DeterminateProgress => footer.append(
+            &progress
+                .as_ref()
+                .expect("determinate footer requires a timeline")
+                .root,
+        ),
+        NowPlayingFooterContent::IndeterminateActivity => footer.append(
+            &activity
+                .as_ref()
+                .expect("indeterminate footer requires activity")
+                .root,
+        ),
+        NowPlayingFooterContent::IdentityOnly => {}
     }
 
     column.append(&copy);
@@ -706,7 +722,8 @@ fn metadata(
         now_playing_layout.identity_line,
     );
     identity.root.set_halign(gtk::Align::Fill);
-    column.append(&identity.root);
+    footer.append(&identity.root);
+    column.append(&footer);
     RenderedMetadata {
         root,
         presentation_status: rendered_status,
@@ -716,6 +733,7 @@ fn metadata(
         album,
         progress,
         activity,
+        footer,
         identity,
     }
 }
@@ -931,9 +949,7 @@ impl RenderedMetadata {
             album.apply_font_sizes(layout.typography.album);
         }
         if let Some(progress) = self.progress.as_ref() {
-            progress
-                .root
-                .set_margin_top(dimension(layout.progress_spacing_px));
+            progress.root.set_margin_top(0);
             progress
                 .bar
                 .set_height_request(dimension(layout.progress_height_px));
@@ -944,9 +960,7 @@ impl RenderedMetadata {
             set_label_font_size(&progress.remaining, layout.typography.time_px);
         }
         if let Some(activity) = self.activity.as_ref() {
-            activity
-                .root
-                .set_margin_top(dimension(layout.progress_spacing_px));
+            activity.root.set_margin_top(0);
             activity
                 .root
                 .set_spacing(dimension(layout.activity_copy_gap_px));
@@ -958,11 +972,11 @@ impl RenderedMetadata {
             set_label_font_size(&activity.detail, layout.typography.activity_detail_px);
         }
 
-        self.identity
-            .apply_layout(layout.identity_gap_px, layout.typography.identity_px);
-        self.identity
-            .root
+        self.footer.set_spacing(dimension(layout.footer_gap_px));
+        self.footer
             .set_margin_bottom(dimension(layout.identity_anchor.margin_bottom_px(0)));
+        self.identity
+            .apply_now_playing_layout(layout.identity_row, layout.typography.identity_px);
     }
 }
 
@@ -980,14 +994,47 @@ impl RenderedIdentity {
         self.root.set_column_spacing(gap_px.div_ceil(2));
         let label_px = ((name_px as f64) * 0.84).round() as u32;
         let separator_px = ((name_px * 3).div_ceil(17)).clamp(3, 5);
+        self.apply_typography(label_px, name_px, label_px / 2, separator_px);
+    }
+
+    fn apply_now_playing_layout(&self, layout: IdentityRowLayout, name_px: u32) {
+        self.root.set_column_spacing(layout.phrase_gap_px);
+        let label_px = ((name_px as f64) * 0.76).round() as u32;
+        self.apply_typography(
+            label_px,
+            name_px,
+            layout.label_gap_px,
+            layout.separator_size_px,
+        );
+        match layout.phrase_alignment {
+            IdentityPhraseAlignment::Baseline => {
+                for label in [
+                    &self.output_label,
+                    &self.output_name,
+                    &self.zone_label,
+                    &self.zone_name,
+                ] {
+                    label.set_valign(gtk::Align::Baseline);
+                }
+            }
+        }
+        for phrase in [&self.output, &self.zone] {
+            phrase.set_size_request(dimension(layout.phrase_width_px), -1);
+        }
+        self.output_name.set_hexpand(true);
+        self.zone_name.set_hexpand(true);
+        self.zone_name.set_xalign(0.0);
+    }
+
+    fn apply_typography(&self, label_px: u32, name_px: u32, label_gap_px: u32, separator_px: u32) {
         set_label_font_size(&self.output_label, label_px);
         set_label_font_size(&self.output_name, name_px);
         set_label_font_size(&self.zone_label, label_px);
         set_label_font_size(&self.zone_name, name_px);
         self.separator
             .set_size_request(dimension(separator_px), dimension(separator_px));
-        self.output_label.set_margin_end(dimension(label_px / 2));
-        self.zone_label.set_margin_end(dimension(label_px / 2));
+        self.output_label.set_margin_end(dimension(label_gap_px));
+        self.zone_label.set_margin_end(dimension(label_gap_px));
     }
 }
 
@@ -1073,7 +1120,10 @@ fn dimension(value: u32) -> i32 {
     i32::try_from(value).expect("supported viewport dimensions fit GTK's signed sizes")
 }
 
-fn presentation_status(status: &PresentationStatus) -> RenderedPresentationStatus {
+fn presentation_status(
+    status: &PresentationStatus,
+    decoration: roonscape_renderer::PresentationStatusDecoration,
+) -> RenderedPresentationStatus {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 14);
     row.add_css_class("presentation-status");
     row.add_css_class(match status.emphasis {
@@ -1083,7 +1133,7 @@ fn presentation_status(status: &PresentationStatus) -> RenderedPresentationStatu
     row.set_halign(gtk::Align::Start);
     row.set_valign(gtk::Align::Start);
 
-    let symbol = presentation_status_symbol(status);
+    let symbol = presentation_status_symbol(status, decoration);
     row.append(&symbol);
     let label = metadata_label(status.label, "status-label");
     row.append(&label);
@@ -1196,9 +1246,11 @@ fn tracked_identity(
     row.attach(&zone, 2, 0, 1, 1);
     RenderedIdentity {
         root: row,
+        output,
         output_label,
         output_name,
         separator,
+        zone,
         zone_label,
         zone_name,
     }
@@ -1238,4 +1290,18 @@ pub(crate) fn install_style_providers(typography: TypographySelection) -> gtk::C
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 1,
     );
     palette_provider
+}
+
+#[cfg(test)]
+mod tests {
+    use super::STYLES;
+
+    #[test]
+    fn removes_status_decoration_only_from_the_now_playing_circle_free_cell() {
+        assert!(STYLES.contains(
+            ".now-playing .status-symbol-circle-free {\n  border: 0;\n  border-radius: 0;\n  background-color: transparent;\n}"
+        ));
+        assert!(STYLES.contains(".status-symbol-container"));
+        assert!(STYLES.contains("border-radius: 999px;"));
+    }
 }

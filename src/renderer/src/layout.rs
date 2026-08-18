@@ -286,11 +286,39 @@ pub struct NowPlayingTypography {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NowPlayingFooterContent {
+    DeterminateProgress,
+    IndeterminateActivity,
+    IdentityOnly,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IdentityRowLayout {
+    pub phrase_width_px: u32,
+    pub phrase_gap_px: u32,
+    pub label_gap_px: u32,
+    pub separator_size_px: u32,
+    pub phrase_alignment: IdentityPhraseAlignment,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdentityPhraseAlignment {
+    Baseline,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PresentationStatusLayout {
     pub symbol_size_px: u32,
     pub symbol_gap_px: u32,
     pub font_px: u32,
     pub letter_spacing_px: u32,
+    pub decoration: PresentationStatusDecoration,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresentationStatusDecoration {
+    Circle,
+    CircleFree,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -348,12 +376,13 @@ impl IdentityAnchor {
 
 impl PresentationStatusLayout {
     fn for_now_playing(viewport: Viewport) -> Self {
-        let font_px = strengthened_height_led_size(viewport, 39.0 / 900.0, 0.022, 29, 42);
+        let font_px = scaled(viewport.height_px, 0.0178, 19, 38);
         Self {
-            symbol_size_px: strengthened_height_led_size(viewport, 68.0 / 900.0, 0.0385, 56, 96),
-            symbol_gap_px: strengthened_height_led_size(viewport, 20.0 / 900.0, 0.0115, 16, 44),
+            symbol_size_px: ((font_px as f64) * 1.42).round() as u32,
+            symbol_gap_px: ((font_px as f64) * 0.42).round() as u32,
             font_px,
-            letter_spacing_px: ((font_px as f64) * 0.055).round() as u32,
+            letter_spacing_px: ((font_px as f64) * 0.105).round() as u32,
+            decoration: PresentationStatusDecoration::CircleFree,
         }
     }
 
@@ -364,6 +393,7 @@ impl PresentationStatusLayout {
             symbol_gap_px: scaled(viewport.width_px, 0.0115, 16, 44),
             font_px,
             letter_spacing_px: ((font_px as f64) * 0.055).round() as u32,
+            decoration: PresentationStatusDecoration::Circle,
         }
     }
 }
@@ -560,9 +590,10 @@ pub struct NowPlayingLayout {
     pub identity_anchor: IdentityAnchor,
     pub artist_spacing_px: u32,
     pub album_spacing_px: u32,
-    pub progress_spacing_px: u32,
     pub time_spacing_px: u32,
-    pub identity_gap_px: u32,
+    pub footer_content: NowPlayingFooterContent,
+    pub footer_gap_px: u32,
+    pub identity_row: IdentityRowLayout,
     pub presentation_status: PresentationStatusLayout,
     pub progress_height_px: u32,
     pub activity_waveform_width_px: u32,
@@ -577,6 +608,13 @@ impl NowPlayingLayout {
     pub fn for_presentation(presentation: &NowPlayingPresentation, viewport: Viewport) -> Self {
         let mut layout = Self::for_viewport(viewport);
         layout.metadata_roles = metadata_roles(presentation);
+        layout.footer_content = if presentation.progress.is_some() {
+            NowPlayingFooterContent::DeterminateProgress
+        } else if presentation.activity.is_some() {
+            NowPlayingFooterContent::IndeterminateActivity
+        } else {
+            NowPlayingFooterContent::IdentityOnly
+        };
         layout
     }
 
@@ -664,22 +702,23 @@ impl NowPlayingLayout {
                     35,
                 )),
             },
-            time_px: strengthened_height_led_size(viewport, 13.0 / 900.0, 0.0072, 11, 26),
-            activity_heading_px: strengthened_height_led_size(
-                viewport,
-                17.0 / 900.0,
-                0.0094,
-                14,
-                34,
-            ),
-            activity_detail_px: strengthened_height_led_size(
-                viewport,
-                13.0 / 900.0,
-                0.0072,
-                11,
-                26,
-            ),
-            identity_px: strengthened_height_led_size(viewport, 13.0 / 900.0, 0.0072, 11, 27),
+            time_px: scaled(viewport.height_px, 0.0148, 18, 32),
+            activity_heading_px: scaled(viewport.height_px, 0.0148, 18, 32),
+            activity_detail_px: scaled(viewport.height_px, 0.0148, 18, 32),
+            identity_px: scaled(viewport.height_px, 0.0148, 18, 32),
+        };
+        let identity_phrase_gap_px = ((typography.identity_px as f64) * 1.1).round() as u32;
+        let identity_separator_size_px = ((typography.identity_px * 3).div_ceil(17)).clamp(3, 5);
+        let identity_fixed_width_px = identity_phrase_gap_px * 2 + identity_separator_size_px;
+        let identity_row = IdentityRowLayout {
+            phrase_width_px: information
+                .utility_width_px
+                .saturating_sub(identity_fixed_width_px)
+                / 2,
+            phrase_gap_px: identity_phrase_gap_px,
+            label_gap_px: ((typography.identity_px as f64) * 0.42).round() as u32,
+            separator_size_px: identity_separator_size_px,
+            phrase_alignment: IdentityPhraseAlignment::Baseline,
         };
 
         Self {
@@ -701,11 +740,12 @@ impl NowPlayingLayout {
             identity_anchor,
             artist_spacing_px: scaled(viewport.height_px, 0.0224, 18, 50),
             album_spacing_px: ((typography.album.preferred_px as f64) * 0.48).round() as u32,
-            progress_spacing_px: scaled(viewport.height_px, 0.065, 45, 128),
-            time_spacing_px: scaled(viewport.width_px, 0.0055, 7, 22),
-            identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
+            time_spacing_px: ((typography.time_px as f64) * 0.58).round() as u32,
+            footer_content: NowPlayingFooterContent::IdentityOnly,
+            footer_gap_px: scaled(viewport.height_px, 0.02, 17, 30),
+            identity_row,
             presentation_status: PresentationStatusLayout::for_now_playing(viewport),
-            progress_height_px: scaled(viewport.width_px, 0.0016, 3, 6),
+            progress_height_px: scaled(viewport.width_px, 0.002, 3, 5),
             activity_waveform_width_px: scaled(viewport.width_px, 0.058, 74, 180),
             activity_waveform_height_px: scaled(viewport.height_px, 0.065, 46, 96),
             activity_copy_gap_px: scaled(viewport.width_px, 0.012, 15, 42),
@@ -742,36 +782,7 @@ fn scaled(axis_px: u32, ratio: f64, minimum_px: u32, maximum_px: u32) -> u32 {
         .clamp(minimum_px as f64, maximum_px as f64) as u32
 }
 
-fn strengthened_height_led_size(
-    viewport: Viewport,
-    height_ratio: f64,
-    shipped_width_ratio: f64,
-    shipped_minimum_px: u32,
-    shipped_maximum_px: u32,
-) -> u32 {
-    let shipped_px = scaled(
-        viewport.width_px,
-        shipped_width_ratio,
-        shipped_minimum_px,
-        shipped_maximum_px,
-    );
-    let strengthened_minimum_px = ceiling_fraction(shipped_px, 108, 100);
-    let strengthened_maximum_px = rounded_fraction(shipped_px, 112, 100);
-    let height_led_px = scaled(
-        viewport.height_px,
-        height_ratio,
-        ceiling_fraction(shipped_minimum_px, 108, 100),
-        rounded_fraction(shipped_maximum_px, 112, 100),
-    );
-    height_led_px.clamp(strengthened_minimum_px, strengthened_maximum_px)
-}
-
 fn rounded_fraction(value: u32, numerator: u32, denominator: u32) -> u32 {
     let scaled = u64::from(value) * u64::from(numerator);
     ((scaled + u64::from(denominator) / 2) / u64::from(denominator)) as u32
-}
-
-fn ceiling_fraction(value: u32, numerator: u32, denominator: u32) -> u32 {
-    let scaled = u64::from(value) * u64::from(numerator);
-    scaled.div_ceil(u64::from(denominator)) as u32
 }

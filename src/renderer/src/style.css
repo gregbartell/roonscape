@@ -8,6 +8,12 @@ window {
   background-color: alpha(currentColor, 0.08);
 }
 
+.now-playing .status-symbol-circle-free {
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
 .status-label {
   font-weight: 700;
 }
@@ -42,6 +48,12 @@ progressbar progress {
 
 .identity-name {
   font-weight: 600;
+}
+
+.now-playing .time,
+.now-playing .identity-name,
+.now-playing .activity-detail {
+  font-weight: 560;
 }
 
 .identity-separator {

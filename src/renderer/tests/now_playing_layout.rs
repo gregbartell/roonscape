@@ -6,8 +6,9 @@ use std::{fs, path::Path};
 
 use roonscape_renderer::{
     ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
-    ArtworkLayout, ArtworkReference, IdentityLineLayout, IdentityPlacement, NowPlayingField,
-    NowPlayingLayout, NowPlayingRole, Presentation, TextOverflow, parse_snapshot,
+    ArtworkLayout, ArtworkReference, IdentityLineLayout, IdentityPhraseAlignment,
+    IdentityPlacement, NowPlayingField, NowPlayingFooterContent, NowPlayingLayout, NowPlayingRole,
+    Presentation, PresentationStatusDecoration, TextOverflow, parse_snapshot,
     presentation_from_snapshot, resolve_presentation,
 };
 
@@ -118,63 +119,63 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
 }
 
 #[test]
-fn strengthens_height_led_status_timing_activity_and_identities() {
+fn uses_selected_responsive_status_and_utility_sizes() {
     let expected = [
         UtilitySizeExpectation {
-            symbol_px: 61,
-            status_px: 32,
-            time_px: 12,
-            activity_heading_px: 16,
-            activity_detail_px: 12,
-            identity_px: 12,
+            symbol_px: 27,
+            status_px: 19,
+            time_px: 18,
+            activity_heading_px: 18,
+            activity_detail_px: 18,
+            identity_px: 18,
         },
         UtilitySizeExpectation {
-            symbol_px: 68,
-            status_px: 39,
-            time_px: 13,
-            activity_heading_px: 17,
-            activity_detail_px: 13,
-            identity_px: 13,
+            symbol_px: 27,
+            status_px: 19,
+            time_px: 18,
+            activity_heading_px: 18,
+            activity_detail_px: 18,
+            identity_px: 18,
         },
         UtilitySizeExpectation {
-            symbol_px: 69,
-            status_px: 39,
-            time_px: 13,
-            activity_heading_px: 17,
-            activity_detail_px: 13,
-            identity_px: 13,
+            symbol_px: 30,
+            status_px: 21,
+            time_px: 18,
+            activity_heading_px: 18,
+            activity_detail_px: 18,
+            identity_px: 18,
         },
         UtilitySizeExpectation {
-            symbol_px: 83,
-            status_px: 47,
-            time_px: 16,
-            activity_heading_px: 20,
-            activity_detail_px: 16,
-            identity_px: 16,
+            symbol_px: 30,
+            status_px: 21,
+            time_px: 18,
+            activity_heading_px: 18,
+            activity_detail_px: 18,
+            identity_px: 18,
         },
         UtilitySizeExpectation {
-            symbol_px: 104,
-            status_px: 47,
-            time_px: 20,
-            activity_heading_px: 26,
-            activity_detail_px: 20,
-            identity_px: 20,
+            symbol_px: 27,
+            status_px: 19,
+            time_px: 18,
+            activity_heading_px: 18,
+            activity_detail_px: 18,
+            identity_px: 18,
         },
         UtilitySizeExpectation {
-            symbol_px: 108,
-            status_px: 47,
-            time_px: 29,
-            activity_heading_px: 38,
-            activity_detail_px: 29,
-            identity_px: 30,
+            symbol_px: 54,
+            status_px: 38,
+            time_px: 32,
+            activity_heading_px: 32,
+            activity_detail_px: 32,
+            identity_px: 32,
         },
         UtilitySizeExpectation {
-            symbol_px: 108,
-            status_px: 47,
-            time_px: 29,
-            activity_heading_px: 38,
-            activity_detail_px: 29,
-            identity_px: 30,
+            symbol_px: 54,
+            status_px: 38,
+            time_px: 32,
+            activity_heading_px: 32,
+            activity_detail_px: 32,
+            identity_px: 32,
         },
     ];
 
@@ -187,6 +188,21 @@ fn strengthens_height_led_status_timing_activity_and_identities() {
         assert_eq!(
             layout.presentation_status.symbol_size_px, expected.symbol_px,
             "{viewport:?}"
+        );
+        assert_eq!(
+            layout.presentation_status.decoration,
+            PresentationStatusDecoration::CircleFree,
+            "Now Playing should use the compact circle-free treatment at {viewport:?}",
+        );
+        assert_eq!(
+            layout.presentation_status.symbol_gap_px,
+            ((expected.status_px as f64) * 0.42).round() as u32,
+            "the glyph-to-label gap should remain approximately 0.42 em at {viewport:?}",
+        );
+        assert_eq!(
+            layout.presentation_status.letter_spacing_px,
+            ((expected.status_px as f64) * 0.105).round() as u32,
+            "status tracking should remain approximately 0.105 em at {viewport:?}",
         );
         assert_eq!(
             layout.presentation_status.font_px, expected.status_px,
@@ -204,6 +220,76 @@ fn strengthens_height_led_status_timing_activity_and_identities() {
         assert_eq!(
             layout.typography.identity_px, expected.identity_px,
             "{viewport:?}"
+        );
+    }
+}
+
+#[test]
+fn groups_progress_or_activity_with_equal_width_identities_in_one_footer() {
+    let determinate = now_playing("playing.json");
+    let indeterminate = now_playing("indeterminate-progress.json");
+
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let determinate = NowPlayingLayout::for_presentation(&determinate, viewport);
+        let indeterminate = NowPlayingLayout::for_presentation(&indeterminate, viewport);
+
+        assert_eq!(
+            determinate.footer_content,
+            NowPlayingFooterContent::DeterminateProgress,
+        );
+        assert_eq!(
+            indeterminate.footer_content,
+            NowPlayingFooterContent::IndeterminateActivity,
+        );
+        assert_eq!(
+            (
+                determinate.footer_gap_px,
+                determinate.identity_row,
+                determinate.information,
+            ),
+            (
+                indeterminate.footer_gap_px,
+                indeterminate.identity_row,
+                indeterminate.information,
+            ),
+            "determinate and indeterminate content should use the same footer geometry at {viewport:?}",
+        );
+        assert_eq!(
+            determinate.footer_gap_px,
+            ((viewport.height_px as f64) * 0.02)
+                .round()
+                .clamp(17.0, 30.0) as u32,
+            "footer content and identities should use the selected responsive gap at {viewport:?}",
+        );
+        assert_eq!(
+            determinate.progress_height_px,
+            ((viewport.width_px as f64) * 0.002).round().clamp(3.0, 5.0) as u32,
+            "progress should use the selected flat track at {viewport:?}",
+        );
+        assert_eq!(
+            determinate.time_spacing_px,
+            ((determinate.typography.time_px as f64) * 0.58).round() as u32,
+            "timing should follow progress by approximately 0.58 em at {viewport:?}",
+        );
+
+        let identity = determinate.identity_row;
+        assert_eq!(
+            identity.phrase_alignment,
+            IdentityPhraseAlignment::Baseline,
+            "each identity label and name should share a baseline at {viewport:?}",
+        );
+        assert!(
+            determinate.information.utility_width_px.saturating_sub(
+                identity.phrase_width_px * 2
+                    + identity.separator_size_px
+                    + identity.phrase_gap_px * 2,
+            ) <= 1,
+            "identity phrases should split the width remaining after gaps and separator at {viewport:?}",
+        );
+        assert_eq!(
+            identity.label_gap_px,
+            ((determinate.typography.identity_px as f64) * 0.42).round() as u32,
+            "identity labels should sit approximately 0.42 em before their names at {viewport:?}",
         );
     }
 }
@@ -566,8 +652,12 @@ fn defensively_ellipsizes_long_identities_without_moving_the_footer() {
         );
         assert_eq!(long.identity_placement, IdentityPlacement::BottomRight);
         assert_eq!(
-            (long.information, long.identity_gap_px,),
-            (ordinary.information, ordinary.identity_gap_px,),
+            (long.information, long.identity_row, long.footer_gap_px),
+            (
+                ordinary.information,
+                ordinary.identity_row,
+                ordinary.footer_gap_px,
+            ),
             "identity content must not move or resize the footer at {viewport:?}"
         );
     }

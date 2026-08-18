@@ -35,10 +35,11 @@ pub use keyboard::{NavigationIntent, RendererAction, RendererKey, RendererKeyboa
 pub use layout::{
     ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFieldAnchors,
     ArtworkFit, ArtworkLayout, ArtworkPrintPlateLayout, FullFieldFontSize, FullFieldLayout,
-    FullFieldLineLayout, FullFieldSlot, IdentityAnchor, IdentityLineLayout, IdentityPlacement,
-    InactivityLayout, MetadataFontSizes, NowPlayingField, NowPlayingInformationLayout,
-    NowPlayingLayout, NowPlayingRole, NowPlayingTypography, PresentationStatusLayout, TextOverflow,
-    Viewport,
+    FullFieldLineLayout, FullFieldSlot, IdentityAnchor, IdentityLineLayout,
+    IdentityPhraseAlignment, IdentityPlacement, IdentityRowLayout, InactivityLayout,
+    MetadataFontSizes, NowPlayingField, NowPlayingFooterContent, NowPlayingInformationLayout,
+    NowPlayingLayout, NowPlayingRole, NowPlayingTypography, PresentationStatusDecoration,
+    PresentationStatusLayout, TextOverflow, Viewport,
 };
 pub use metadata::{
     MetadataLayout, MetadataLineLayout, MetadataLinePlan, MetadataTypography, metadata_layout,

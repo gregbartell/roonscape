@@ -4,14 +4,28 @@ use std::rc::Rc;
 
 use gtk::cairo::{Context, LineCap, LineJoin};
 use gtk::prelude::*;
-use roonscape_renderer::{PresentationStatus, PresentationStatusMotion, PresentationStatusSymbol};
+use roonscape_renderer::{
+    PresentationStatus, PresentationStatusDecoration, PresentationStatusMotion,
+    PresentationStatusSymbol,
+};
 
 const GLYPH_GRID: f64 = 32.0;
-const GLYPH_SCALE: f64 = 0.44;
+const CIRCULAR_GLYPH_SCALE: f64 = 0.44;
 
-pub(crate) fn presentation_status_symbol(status: &PresentationStatus) -> gtk::Box {
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DecorationStyle {
+    class_name: &'static str,
+    glyph_scale: f64,
+}
+
+pub(crate) fn presentation_status_symbol(
+    status: &PresentationStatus,
+    decoration: PresentationStatusDecoration,
+) -> gtk::Box {
+    let decoration = decoration_style(decoration);
     let container = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     container.add_css_class("status-symbol-container");
+    container.add_css_class(decoration.class_name);
     container.set_halign(gtk::Align::Center);
     container.set_valign(gtk::Align::Center);
 
@@ -21,8 +35,17 @@ pub(crate) fn presentation_status_symbol(status: &PresentationStatus) -> gtk::Bo
     let rotation = Rc::new(Cell::new(0.0));
     let draw_rotation = rotation.clone();
     let symbol = status.symbol;
+    let glyph_scale = decoration.glyph_scale;
     drawing.set_draw_func(move |drawing, context, width, height| {
-        draw_symbol(drawing, context, width, height, symbol, draw_rotation.get());
+        draw_symbol(
+            drawing,
+            context,
+            width,
+            height,
+            symbol,
+            draw_rotation.get(),
+            glyph_scale,
+        );
     });
 
     if let PresentationStatusMotion::ContinuousRotation { period } = status.motion {
@@ -54,6 +77,7 @@ fn draw_symbol(
     height: i32,
     symbol: PresentationStatusSymbol,
     rotation: f64,
+    glyph_scale: f64,
 ) {
     let color = drawing.style_context().color();
     context.set_source_rgba(
@@ -62,7 +86,7 @@ fn draw_symbol(
         f64::from(color.blue()),
         f64::from(color.alpha()),
     );
-    let extent = f64::from(width.min(height)) * GLYPH_SCALE;
+    let extent = f64::from(width.min(height)) * glyph_scale;
     context.translate(
         (f64::from(width) - extent) / 2.0,
         (f64::from(height) - extent) / 2.0,
@@ -79,6 +103,19 @@ fn draw_symbol(
         PresentationStatusSymbol::PairingRequired => draw_pairing_required(context),
         PresentationStatusSymbol::Disconnected => draw_disconnected(context),
         PresentationStatusSymbol::OutputUnavailable => draw_output_unavailable(context),
+    }
+}
+
+fn decoration_style(decoration: PresentationStatusDecoration) -> DecorationStyle {
+    match decoration {
+        PresentationStatusDecoration::Circle => DecorationStyle {
+            class_name: "status-symbol-circle",
+            glyph_scale: CIRCULAR_GLYPH_SCALE,
+        },
+        PresentationStatusDecoration::CircleFree => DecorationStyle {
+            class_name: "status-symbol-circle-free",
+            glyph_scale: 1.0,
+        },
     }
 }
 
@@ -210,6 +247,24 @@ fn rounded_rectangle(context: &Context, x: f64, y: f64, width: f64, height: f64,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fills_the_circle_free_cell_without_changing_the_circular_glyph_scale() {
+        assert_eq!(
+            decoration_style(PresentationStatusDecoration::CircleFree),
+            DecorationStyle {
+                class_name: "status-symbol-circle-free",
+                glyph_scale: 1.0,
+            }
+        );
+        assert_eq!(
+            decoration_style(PresentationStatusDecoration::Circle),
+            DecorationStyle {
+                class_name: "status-symbol-circle",
+                glyph_scale: CIRCULAR_GLYPH_SCALE,
+            }
+        );
+    }
 
     #[test]
     fn uses_butt_caps_for_starting_and_round_caps_only_for_unavailable_symbols() {

@@ -7,8 +7,8 @@ use gtk::pango::{self, FontDescription, Layout};
 use gtk::prelude::FontMapExt;
 use roonscape_renderer::{
     FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, IdentityLineLayout, IdentityPlacement,
-    NowPlayingLayout, Presentation, TextOverflow, Viewport, parse_snapshot,
-    presentation_from_snapshot, register_packaged_fallback_fonts,
+    NowPlayingLayout, Presentation, PresentationStatusDecoration, TextOverflow, Viewport,
+    parse_snapshot, presentation_from_snapshot, register_packaged_fallback_fonts,
 };
 
 const FULL_FIELD_FIXTURES: [(&str, bool, bool); 7] = [
@@ -201,6 +201,11 @@ fn retains_full_field_status_and_identity_sizes() {
         .enumerate()
     {
         let layout = FullFieldLayout::for_viewport(viewport);
+        assert_eq!(
+            layout.presentation_status.decoration,
+            PresentationStatusDecoration::Circle,
+            "Full-field Presentation Status should retain its circular treatment at {viewport:?}",
+        );
         assert_eq!(
             layout.presentation_status.symbol_size_px, expected_symbol_sizes[index],
             "Full-field status symbol size should remain unchanged at {viewport:?}",
