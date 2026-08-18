@@ -44,6 +44,10 @@ progressbar progress {
   font-weight: 600;
 }
 
+.identity-separator {
+  border-radius: 999px;
+}
+
 .full-copy {
   border-left-style: solid;
 }

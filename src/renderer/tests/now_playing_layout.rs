@@ -11,6 +11,15 @@ use roonscape_renderer::{
     presentation_from_snapshot, resolve_presentation,
 };
 
+struct UtilitySizeExpectation {
+    symbol_px: u32,
+    status_px: u32,
+    time_px: u32,
+    activity_heading_px: u32,
+    activity_detail_px: u32,
+    identity_px: u32,
+}
+
 fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation {
     let snapshot = parse_snapshot(&support::fixture(fixture_name))
         .expect("Now Playing layout fixture should be a valid shared snapshot");
@@ -105,6 +114,97 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
         assert!(layout.presentation_status.font_px >= 12);
         assert!(layout.typography.time_px >= 11);
         assert!(layout.typography.identity_px >= 11);
+    }
+}
+
+#[test]
+fn strengthens_height_led_status_timing_activity_and_identities() {
+    let expected = [
+        UtilitySizeExpectation {
+            symbol_px: 61,
+            status_px: 32,
+            time_px: 12,
+            activity_heading_px: 16,
+            activity_detail_px: 12,
+            identity_px: 12,
+        },
+        UtilitySizeExpectation {
+            symbol_px: 68,
+            status_px: 39,
+            time_px: 13,
+            activity_heading_px: 17,
+            activity_detail_px: 13,
+            identity_px: 13,
+        },
+        UtilitySizeExpectation {
+            symbol_px: 69,
+            status_px: 39,
+            time_px: 13,
+            activity_heading_px: 17,
+            activity_detail_px: 13,
+            identity_px: 13,
+        },
+        UtilitySizeExpectation {
+            symbol_px: 83,
+            status_px: 47,
+            time_px: 16,
+            activity_heading_px: 20,
+            activity_detail_px: 16,
+            identity_px: 16,
+        },
+        UtilitySizeExpectation {
+            symbol_px: 104,
+            status_px: 47,
+            time_px: 20,
+            activity_heading_px: 26,
+            activity_detail_px: 20,
+            identity_px: 20,
+        },
+        UtilitySizeExpectation {
+            symbol_px: 108,
+            status_px: 47,
+            time_px: 29,
+            activity_heading_px: 38,
+            activity_detail_px: 29,
+            identity_px: 30,
+        },
+        UtilitySizeExpectation {
+            symbol_px: 108,
+            status_px: 47,
+            time_px: 29,
+            activity_heading_px: 38,
+            activity_detail_px: 29,
+            identity_px: 30,
+        },
+    ];
+
+    for (viewport, expected) in representative_viewports::REPRESENTATIVE_VIEWPORTS
+        .into_iter()
+        .zip(expected)
+    {
+        let layout = NowPlayingLayout::for_viewport(viewport);
+
+        assert_eq!(
+            layout.presentation_status.symbol_size_px, expected.symbol_px,
+            "{viewport:?}"
+        );
+        assert_eq!(
+            layout.presentation_status.font_px, expected.status_px,
+            "{viewport:?}"
+        );
+        assert_eq!(layout.typography.time_px, expected.time_px, "{viewport:?}");
+        assert_eq!(
+            layout.typography.activity_heading_px, expected.activity_heading_px,
+            "{viewport:?}"
+        );
+        assert_eq!(
+            layout.typography.activity_detail_px, expected.activity_detail_px,
+            "{viewport:?}"
+        );
+        assert_eq!(
+            layout.typography.identity_px, expected.identity_px,
+            "{viewport:?}"
+        );
     }
 }
 

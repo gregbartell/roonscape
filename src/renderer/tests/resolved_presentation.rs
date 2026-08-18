@@ -18,7 +18,7 @@ fn resolves_canonical_presentation_status_for_every_fixture_condition_and_form()
             "PLAYING",
             PresentationStatusSymbol::Playing,
             PresentationStatusMotion::Static,
-            PresentationStatusEmphasis::FullAccentWithGlow,
+            PresentationStatusEmphasis::FullAccent,
             false,
         ),
         (

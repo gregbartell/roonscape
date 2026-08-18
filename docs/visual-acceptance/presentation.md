@@ -134,12 +134,21 @@ instead of approving a scenario at only one size.
   fixed no-art palette remains deliberate, and text, accent, progress, and
   diagnostics roles remain readable.
 - **Presentation Status:** Every condition has the correct circular symbol
-  and bold uppercase label in both presentation forms. Playing alone glows,
-  Paused uses a muted artwork accent, Starting uses the full accent, and no
-  status row contains secondary detail. In Now Playing, the row begins at its
-  responsive imaginary-square inset. Across Full-field Presentations, it
-  occupies one separate stable slot above the centered heading slot and aligns
-  with the accent's top edge.
+  and bold uppercase label in both presentation forms. No condition has a glow
+  or halo; Playing and Starting use the full artwork accent, Paused uses a
+  muted artwork accent, and no status row contains secondary detail. In Now
+  Playing, the row begins at its responsive imaginary-square inset. Across
+  Full-field Presentations, it occupies one separate stable slot above the
+  centered heading slot and aligns with the accent's top edge.
+- **Progress and utility typography:** In Now Playing, Presentation Status,
+  timing, activity copy, and identities are visibly stronger while remaining
+  subordinate to Title. Preferred sizes follow viewport height, stay within
+  the accepted 8–12% strengthening band, and fit available width at all peer
+  viewports. Now Playing Presentation Status, timing, and identities are
+  mildly condensed through the IBM Plex width axis where available and remain
+  normal-width otherwise. Full-field status and identity sizes remain
+  unchanged. Determinate progress stays a minimal non-interactive line, and
+  elapsed and remaining timing remain tabular and stable as values change.
 - **Indeterminate activity:** Playing without meaningful timing retains its
   supplied artwork and replaces the complete determinate timeline with seven
   rounded activity bars followed by `Audio active` and `Timing unavailable`
@@ -150,9 +159,10 @@ instead of approving a scenario at only one size.
 - **Identities:** Output and Zone share one stable bottom-right row in
   available states. The complete row ends the same inset above the imaginary
   square's bottom edge that Presentation Status uses below its top edge. Each
-  identity label and name share one text baseline. Ordinary names fit
-  comfortably, long names remain on one line and end-ellipsize without moving
-  or resizing the row, and unavailable states expose no stale identities.
+  identity label and name share one text baseline. A small muted dot separates
+  Output and Zone without becoming an accent. Ordinary names fit comfortably,
+  long names remain on one line and end-ellipsize without moving or resizing
+  the row, and unavailable states expose no stale identities.
 - **Full-field grammar:** Idle, Starting without content, details unavailable,
   Awaiting Roon Authorization, disconnected, and output-unavailable states
   share the accent-bar language while retaining distinct meanings. At every

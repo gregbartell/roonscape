@@ -121,6 +121,7 @@ struct RenderedIdentity {
     root: gtk::Grid,
     output_label: gtk::Label,
     output_name: gtk::Label,
+    separator: gtk::Box,
     zone_label: gtk::Label,
     zone_name: gtk::Label,
 }
@@ -976,12 +977,15 @@ impl RenderedPresentationStatus {
 
 impl RenderedIdentity {
     fn apply_layout(&self, gap_px: u32, name_px: u32) {
-        self.root.set_column_spacing(gap_px);
+        self.root.set_column_spacing(gap_px.div_ceil(2));
         let label_px = ((name_px as f64) * 0.84).round() as u32;
+        let separator_px = ((name_px * 3).div_ceil(17)).clamp(3, 5);
         set_label_font_size(&self.output_label, label_px);
         set_label_font_size(&self.output_name, name_px);
         set_label_font_size(&self.zone_label, label_px);
         set_label_font_size(&self.zone_name, name_px);
+        self.separator
+            .set_size_request(dimension(separator_px), dimension(separator_px));
         self.output_label.set_margin_end(dimension(label_px / 2));
         self.zone_label.set_margin_end(dimension(label_px / 2));
     }
@@ -1073,7 +1077,6 @@ fn presentation_status(status: &PresentationStatus) -> RenderedPresentationStatu
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 14);
     row.add_css_class("presentation-status");
     row.add_css_class(match status.emphasis {
-        PresentationStatusEmphasis::FullAccentWithGlow => "status-glow",
         PresentationStatusEmphasis::FullAccent => "status-full",
         PresentationStatusEmphasis::MutedAccent => "status-muted",
     });
@@ -1153,7 +1156,7 @@ fn tracked_identity(
 ) -> RenderedIdentity {
     let row = gtk::Grid::new();
     row.add_css_class("tracked-identity");
-    row.set_column_homogeneous(true);
+    row.set_column_homogeneous(false);
     row.set_hexpand(true);
     match placement {
         IdentityPlacement::BottomRight => {
@@ -1173,6 +1176,7 @@ fn tracked_identity(
     output.append(&output_name);
 
     let zone = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    zone.set_hexpand(true);
     zone.set_halign(gtk::Align::End);
     let zone_label = metadata_label("ZONE", "identity-label");
     let zone_name = identity_name(tracked_zone, line_layout);
@@ -1182,12 +1186,19 @@ fn tracked_identity(
     zone.append(&zone_label);
     zone.append(&zone_name);
 
+    let separator = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    separator.add_css_class("identity-separator");
+    separator.set_halign(gtk::Align::Center);
+    separator.set_valign(gtk::Align::Center);
+
     row.attach(&output, 0, 0, 1, 1);
-    row.attach(&zone, 1, 0, 1, 1);
+    row.attach(&separator, 1, 0, 1, 1);
+    row.attach(&zone, 2, 0, 1, 1);
     RenderedIdentity {
         root: row,
         output_label,
         output_name,
+        separator,
         zone_label,
         zone_name,
     }

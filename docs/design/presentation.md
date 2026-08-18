@@ -36,11 +36,17 @@ Preferred metadata sizes derive primarily from viewport height and then fit to
 the musical metadata measure using the first fitting preferred, reduced, or
 minimum readable tier. Content ellipsizes at the end when it still exceeds
 bounds of five Title lines, three Artist lines, and three Album lines. Output
-and Zone names remain on one line and ellipsize only as a defensive fallback.
-Each identity label shares one text baseline with its name, and content length
-does not move or resize the stable row. Metadata uses no scrolling, marquee
-motion, or pagination and never shrinks below the established readable font
-floors.
+and Zone names remain on one line, separated by a small muted dot, and
+ellipsize only as a defensive fallback. Each identity label shares one text
+baseline with its name, and content length does not move or resize the stable
+row. Metadata uses no scrolling, marquee motion, or pagination and never
+shrinks below the established readable font floors.
+
+In Now Playing, Presentation Status, timing, activity copy, and identities are
+approximately 8–12% stronger than the earlier presentation. Their preferred
+sizes derive from viewport height and remain within a width-led fitting band
+without lowering the readable floors. Full-field Presentation retains its
+established status and identity sizes.
 
 The composition uses the complete landscape field without letterboxing.
 Artwork and metadata keep their relative emphasis on ordinary, tall, wide,
@@ -68,10 +74,10 @@ the selected roles remain readable. Presentations without usable artwork use
 a fixed navy, coral, and cream palette with the same role hierarchy.
 
 Presentation Status uses the artwork-derived accent without assigning fixed
-hues to playback or availability conditions. Playing uses the full accent with
-a restrained glow, Paused uses a muted and desaturated form of the accent, and
-Starting uses the full accent. The fixed no-art palette supplies the same
-roles when artwork is unavailable.
+hues to playback or availability conditions. Playing and Starting use the
+full accent without a glow or halo; Paused uses a muted and desaturated form
+of the accent. The fixed no-art palette supplies the same roles when artwork
+is unavailable.
 
 ## Presentation Status
 
@@ -85,6 +91,10 @@ and Output unavailable uses a speaker followed by an `X`.
 Presentation Status contains only its symbol and label. Elapsed time,
 held-time copy, preparation copy, and other secondary detail do not appear in
 the status row; determinate time remains in the progress area.
+
+Determinate progress remains a minimal linear track and fill without scrub,
+transport, hover, or other control affordances. Elapsed and remaining timing
+use tabular numerals so updates do not shift their alignment.
 
 Playing without meaningful duration uses that progress area for a compact
 activity treatment instead of fabricating a timeline. Seven rounded vertical
@@ -102,6 +112,11 @@ Host and packaged Libre Baskerville otherwise. Artist and Album use normal
 upright IBM Plex Sans, with semibold Artist and regular Album. Presentation
 Status, progress and activity copy, timing, and identities also use packaged
 IBM Plex Sans, independently of Title-face availability.
+
+Now Playing Presentation Status, timing, and identities request IBM Plex's
+`wdth=88` variation through Pango. When the active face does not expose that
+axis, Pango ignores the request and leaves the text at normal width; RoonScape
+never applies synthetic geometric compression.
 
 Full-field Presentation retains its existing atomic selection: Palatino
 Linotype with Segoe UI when both host-provided families are available, and

@@ -76,7 +76,6 @@ pub enum PresentationStatusMotion {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PresentationStatusEmphasis {
-    FullAccentWithGlow,
     FullAccent,
     MutedAccent,
 }
@@ -616,7 +615,7 @@ fn presentation_status_for_playback(playback: Playback) -> PresentationStatus {
             label: "PLAYING",
             symbol: PresentationStatusSymbol::Playing,
             motion: PresentationStatusMotion::Static,
-            emphasis: PresentationStatusEmphasis::FullAccentWithGlow,
+            emphasis: PresentationStatusEmphasis::FullAccent,
         },
         Playback::Paused => PresentationStatus {
             label: "PAUSED",

@@ -53,7 +53,9 @@ impl TypographyStyles {
             ".now-playing .title {{ font-family: \"{}\"{}, serif; font-style: normal; font-weight: 700; }}\n\
              .now-playing .artist, .now-playing .album, .now-playing .status-label, .now-playing .time, .now-playing .activity-heading, .now-playing .activity-detail, .now-playing .identity-label, .now-playing .identity-name {{ font-family: \"{}\", sans-serif; }}\n\
              .full-field .editorial-text, .full-field-heading {{ font-family: \"{}\", serif; }}\n\
-             .full-field .utility-text, .full-field .status-label, .full-field .identity-label, .full-field .identity-name, .full-field .full-field-explanation, .diagnostics {{ font-family: \"{}\", sans-serif; }}\n",
+             .full-field .utility-text, .full-field .status-label, .full-field .identity-label, .full-field .identity-name, .full-field .full-field-explanation, .diagnostics {{ font-family: \"{}\", sans-serif; }}\n\
+             .now-playing .status-label, .now-playing .time, .now-playing .identity-label, .now-playing .identity-name {{ font-variation-settings: \"wdth\" 88; }}\n\
+             .time {{ font-variant-numeric: tabular-nums; }}\n",
             self.typography.now_playing_title_family(),
             title_fallback,
             self.typography.now_playing_supporting_family(),
@@ -138,15 +140,15 @@ fn presentation_palette_styles(
          .{class_name} .artwork {{ border: {artwork_border_width}px solid alpha({primary_text}, 0.16); background-color: {artwork_field}; box-shadow: 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.72); }}\n\
          .{class_name} .artwork-missing {{ border-color: alpha({muted_text}, 0.22); background-image: linear-gradient(142deg, alpha({muted_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16), 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.72); }}\n\
          .{class_name}.full-field .full-copy {{ border-left: {accent_width}px solid {accent}; }}\n\
-         .{class_name} .status-full, .{class_name} .status-glow {{ color: {accent}; }}\n\
+         .{class_name} .status-full {{ color: {accent}; }}\n\
          .{class_name} .status-muted {{ color: {muted_accent}; }}\n\
-         .{class_name} .status-glow .status-symbol-container {{ box-shadow: 0 0 34px alpha({accent}, 0.72); }}\n\
          .{class_name} .title, .{class_name} .full-field-heading {{ color: {primary_text}; }}\n\
          .{class_name} .artist, .{class_name} .album, .{class_name} .time, .{class_name} .identity-name {{ color: {secondary_text}; }}\n\
          .{class_name} .activity-waveform {{ color: {accent}; }}\n\
          .{class_name} .activity-heading {{ color: {primary_text}; }}\n\
          .{class_name} .activity-detail, .{class_name} .full-field-explanation {{ color: {muted_text}; }}\n\
          .{class_name} .identity-label {{ color: {muted_text}; }}\n\
+         .{class_name} .identity-separator {{ background-color: {muted_text}; }}\n\
          .{class_name} progressbar trough {{ background-color: {progress_track}; }}\n\
          .{class_name} progressbar progress {{ background-color: {progress_fill}; }}\n"
     )

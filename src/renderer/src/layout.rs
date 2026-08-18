@@ -347,7 +347,17 @@ impl IdentityAnchor {
 }
 
 impl PresentationStatusLayout {
-    fn for_viewport(viewport: Viewport) -> Self {
+    fn for_now_playing(viewport: Viewport) -> Self {
+        let font_px = strengthened_height_led_size(viewport, 39.0 / 900.0, 0.022, 29, 42);
+        Self {
+            symbol_size_px: strengthened_height_led_size(viewport, 68.0 / 900.0, 0.0385, 56, 96),
+            symbol_gap_px: strengthened_height_led_size(viewport, 20.0 / 900.0, 0.0115, 16, 44),
+            font_px,
+            letter_spacing_px: ((font_px as f64) * 0.055).round() as u32,
+        }
+    }
+
+    fn for_full_field(viewport: Viewport) -> Self {
         let font_px = scaled(viewport.width_px, 0.022, 29, 42);
         Self {
             symbol_size_px: scaled(viewport.width_px, 0.0385, 56, 96),
@@ -429,6 +439,7 @@ pub struct FullFieldLayout {
 impl FullFieldLayout {
     pub fn for_viewport(viewport: Viewport) -> Self {
         let now_playing_layout = NowPlayingLayout::for_viewport(viewport);
+        let presentation_status = PresentationStatusLayout::for_full_field(viewport);
         let outer_gutter_px = scaled(viewport.width_px, 0.042, 32, 160);
         let composition_width_px = rounded_fraction(viewport.width_px, 3, 5);
         let composition_left_viewport_x_px =
@@ -444,8 +455,7 @@ impl FullFieldLayout {
         let heading_slot_height_px = rounded_fraction(heading_font.preferred_px, 5, 4);
         let heading_slot_top_viewport_y_px =
             viewport.height_px.saturating_sub(heading_slot_height_px) / 2;
-        let presentation_status_slot_height_px =
-            now_playing_layout.presentation_status.symbol_size_px;
+        let presentation_status_slot_height_px = presentation_status.symbol_size_px;
         let status_spacing_px = scaled(viewport.height_px, 0.036, 29, 80);
         let presentation_status_top_viewport_y_px = heading_slot_top_viewport_y_px
             .saturating_sub(status_spacing_px)
@@ -467,7 +477,7 @@ impl FullFieldLayout {
                 + accent_width_px
                 + accent_padding_px,
             status_spacing_px,
-            presentation_status: PresentationStatusLayout::for_viewport(viewport),
+            presentation_status,
             presentation_status_slot: FullFieldSlot {
                 top_viewport_y_px: presentation_status_top_viewport_y_px,
                 height_px: presentation_status_slot_height_px,
@@ -654,10 +664,22 @@ impl NowPlayingLayout {
                     35,
                 )),
             },
-            time_px: scaled(viewport.width_px, 0.0072, 11, 26),
-            activity_heading_px: scaled(viewport.width_px, 0.0094, 14, 34),
-            activity_detail_px: scaled(viewport.width_px, 0.0072, 11, 26),
-            identity_px: scaled(viewport.width_px, 0.0072, 11, 27),
+            time_px: strengthened_height_led_size(viewport, 13.0 / 900.0, 0.0072, 11, 26),
+            activity_heading_px: strengthened_height_led_size(
+                viewport,
+                17.0 / 900.0,
+                0.0094,
+                14,
+                34,
+            ),
+            activity_detail_px: strengthened_height_led_size(
+                viewport,
+                13.0 / 900.0,
+                0.0072,
+                11,
+                26,
+            ),
+            identity_px: strengthened_height_led_size(viewport, 13.0 / 900.0, 0.0072, 11, 27),
         };
 
         Self {
@@ -682,7 +704,7 @@ impl NowPlayingLayout {
             progress_spacing_px: scaled(viewport.height_px, 0.065, 45, 128),
             time_spacing_px: scaled(viewport.width_px, 0.0055, 7, 22),
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
-            presentation_status: PresentationStatusLayout::for_viewport(viewport),
+            presentation_status: PresentationStatusLayout::for_now_playing(viewport),
             progress_height_px: scaled(viewport.width_px, 0.0016, 3, 6),
             activity_waveform_width_px: scaled(viewport.width_px, 0.058, 74, 180),
             activity_waveform_height_px: scaled(viewport.height_px, 0.065, 46, 96),
@@ -720,7 +742,36 @@ fn scaled(axis_px: u32, ratio: f64, minimum_px: u32, maximum_px: u32) -> u32 {
         .clamp(minimum_px as f64, maximum_px as f64) as u32
 }
 
+fn strengthened_height_led_size(
+    viewport: Viewport,
+    height_ratio: f64,
+    shipped_width_ratio: f64,
+    shipped_minimum_px: u32,
+    shipped_maximum_px: u32,
+) -> u32 {
+    let shipped_px = scaled(
+        viewport.width_px,
+        shipped_width_ratio,
+        shipped_minimum_px,
+        shipped_maximum_px,
+    );
+    let strengthened_minimum_px = ceiling_fraction(shipped_px, 108, 100);
+    let strengthened_maximum_px = rounded_fraction(shipped_px, 112, 100);
+    let height_led_px = scaled(
+        viewport.height_px,
+        height_ratio,
+        ceiling_fraction(shipped_minimum_px, 108, 100),
+        rounded_fraction(shipped_maximum_px, 112, 100),
+    );
+    height_led_px.clamp(strengthened_minimum_px, strengthened_maximum_px)
+}
+
 fn rounded_fraction(value: u32, numerator: u32, denominator: u32) -> u32 {
     let scaled = u64::from(value) * u64::from(numerator);
     ((scaled + u64::from(denominator) / 2) / u64::from(denominator)) as u32
+}
+
+fn ceiling_fraction(value: u32, numerator: u32, denominator: u32) -> u32 {
+    let scaled = u64::from(value) * u64::from(numerator);
+    scaled.div_ceil(u64::from(denominator)) as u32
 }

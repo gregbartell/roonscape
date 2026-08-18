@@ -191,6 +191,32 @@ fn retains_full_field_horizontal_identity_geometry() {
 }
 
 #[test]
+fn retains_full_field_status_and_identity_sizes() {
+    let expected_symbol_sizes = [56, 62, 62, 74, 96, 96, 96];
+    let expected_status_sizes = [29, 35, 35, 42, 42, 42, 42];
+    let expected_identity_sizes = [11, 12, 12, 14, 18, 27, 27];
+
+    for (index, viewport) in representative_viewports::REPRESENTATIVE_VIEWPORTS
+        .into_iter()
+        .enumerate()
+    {
+        let layout = FullFieldLayout::for_viewport(viewport);
+        assert_eq!(
+            layout.presentation_status.symbol_size_px, expected_symbol_sizes[index],
+            "Full-field status symbol size should remain unchanged at {viewport:?}",
+        );
+        assert_eq!(
+            layout.presentation_status.font_px, expected_status_sizes[index],
+            "Full-field status text size should remain unchanged at {viewport:?}",
+        );
+        assert_eq!(
+            layout.identity_px, expected_identity_sizes[index],
+            "Full-field identity size should remain unchanged at {viewport:?}",
+        );
+    }
+}
+
+#[test]
 fn available_full_field_scenarios_use_the_shared_identity_anchor_and_unavailable_ones_omit_it() {
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
         let expected_anchor = NowPlayingLayout::for_viewport(viewport).identity_anchor;

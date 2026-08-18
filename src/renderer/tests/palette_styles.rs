@@ -17,8 +17,9 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
         "linear-gradient(112deg, #142856 0%, #142856 21%, #071522 57%, #0A1429 100%)",
         ".artist, .presentation-current .album, .presentation-current .time, .presentation-current .identity-name { color: #C9C5BD; }",
         ".identity-label { color: #9299A8; }",
+        ".identity-separator { background-color: #9299A8; }",
         ".full-field .full-copy { border-left: 6px solid #FF7051; }",
-        ".presentation-current .status-full, .presentation-current .status-glow { color: #FF7051; }",
+        ".presentation-current .status-full { color: #FF7051; }",
         ".full-field-heading { color: #F3EAD7; }",
         ".full-field-explanation { color: #9299A8; }",
         ".activity-waveform { color: #FF7051; }",
@@ -35,7 +36,7 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
 }
 
 #[test]
-fn presentation_status_emphasis_uses_full_muted_and_glowing_accent_treatments() {
+fn presentation_status_emphasis_uses_full_and_muted_accent_without_glow() {
     let palette = PresentationPalette::fallback();
     let layout = NowPlayingLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
     let full_field_layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
@@ -44,15 +45,22 @@ fn presentation_status_emphasis_uses_full_muted_and_glowing_accent_treatments() 
         PresentationTransitionStyles::new(palette, None).to_css(&layout, &full_field_layout);
 
     for declaration in [
-        ".presentation-current .status-full, .presentation-current .status-glow { color: #FF7051; }",
+        ".presentation-current .status-full { color: #FF7051; }",
         ".presentation-current .status-muted { color: #C38781; }",
-        ".presentation-current .status-glow .status-symbol-container { box-shadow: 0 0 34px alpha(#FF7051, 0.72); }",
     ] {
         assert!(
             styles.contains(declaration),
             "Presentation Status styles should contain {declaration:?}",
         );
     }
+    let status_uses_shadow = styles
+        .lines()
+        .any(|rule| rule.contains("status") && rule.contains("shadow"));
+    assert!(!styles.contains("glow"));
+    assert!(
+        !status_uses_shadow,
+        "generated Presentation Status styles must contain no shadow or halo CSS",
+    );
 }
 
 #[test]
