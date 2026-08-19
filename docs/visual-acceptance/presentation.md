@@ -95,9 +95,9 @@ beyond the Fixture Scenario matrix:
   expose single-line baseline alignment and defensive end ellipsis.
 - **Dark diagnostics**, **light diagnostics**, and **fixed-no-art
   diagnostics** exercise the overlay against each palette class.
-- **Light matte restraint** uses the synthetic Cellout direction to expose the
+- **Light matte restraint** uses a synthetic light palette to expose the
   luminance ceiling without depending on a host image decoder or network.
-- **Dark matte ownership** uses the synthetic Forever direction to confirm that
+- **Dark matte ownership** uses a synthetic dark palette to confirm that
   light-palette restraint does not flatten dark artwork or its teal accent.
 
 Both typography representatives append `月` to Album so Pango glyph fallback
@@ -121,51 +121,57 @@ instead of approving a scenario at only one size.
   musical measure; status, progress or activity, timing, and identities retain
   the complete utility width.
 - **Hierarchy:** Title is bold and upright with normal tracking and dominates;
-  short single-line Titles use the larger optical tier. Artist and Album are
-  upright IBM Plex Sans, with Artist stronger than Album, and remain a close
-  credit group beneath the tighter Title gap. Missing fields close up cleanly.
-  Long and punctuation-heavy Titles balance deterministically at word
-  boundaries without short final-line orphans; two-line Titles use 0.94
-  leading and denser Titles use 0.98. Long or extreme values select the first
-  fitting established font tier, expose up to five Title lines, three Artist
-  lines, and three Album lines, then end-ellipsize cleanly without overlapping
-  other content. Metadata uses no scrolling, marquee motion, or pagination and
-  never shrinks below its readable font floors.
+  short single-line Titles use the same calm preferred tier as other fitting
+  Titles. Artist and Album are upright IBM Plex Sans, with Artist stronger than
+  Album, and remain a close credit group beneath the calibrated Title gap.
+  Missing fields close up cleanly. Long and punctuation-heavy Titles balance
+  deterministically at word boundaries without short final-line orphans. Long
+  or extreme values select the first tier that fits the complete metadata
+  group's width and height, use compact-credit density only when necessary,
+  expose up to five Title lines, three Artist lines, and three Album lines, then
+  end-ellipsize cleanly without overlapping status or footer. The complete
+  metadata group stays vertically centered with its small optical correction.
+  Metadata uses no scrolling, marquee motion, or pagination and never shrinks
+  below its readable font floors.
 - **Artwork fit and decoration:** The artwork column reserves the same
   imaginary square for square, non-square, missing, and unusable artwork. Its
   side is the lesser of 84% of viewport height and 56% of viewport width, and
   the result remains vertically centered. Square supplied artwork fills that
-  reservation with its existing one-pixel border and artwork-surface shadow.
+  reservation with its one-pixel border and artwork-surface shadow.
   Non-square supplied artwork is centered and contained; its surrounding
   reservation is transparent, and its visible surface, one-pixel border, and
   shadow hug the image rectangle. Missing or unusable artwork preserves a
   quiet decorated square field without an invented icon. One crisp same-size
-  accent plate keeps the established small offset behind the square, while the
-  unchanged shadow remains on the artwork surface rather than the combined
+  accent plate keeps its small offset behind the square, while the shadow
+  remains on the artwork surface rather than the combined
   stack.
 - **Palette:** Dark and light artwork recolor the complete presentation. The
   gradient geometry remains stable, the fixed no-art palette stays deliberate,
   and text, accent, progress, and diagnostics roles remain readable. The
-  synthetic Cellout direction demonstrates restrained bright-end luminance
-  without losing blue and plum chroma; the Forever direction retains its dark
-  field and teal ownership. Accent is limited to the print plate, active
-  Presentation Status, determinate progress fill, and indeterminate activity.
-- **Presentation Status:** Every condition has the correct circular symbol
-  and bold uppercase label in both presentation forms. No condition has a glow
-  or halo; Playing and Starting use the full artwork accent, Paused uses a
-  muted artwork accent, and no status row contains secondary detail. In Now
-  Playing, the row begins at its responsive imaginary-square inset. Across
-  Full-field Presentations, it occupies one separate stable slot above the
-  centered heading slot and aligns with the accent's top edge.
-- **Progress and utility typography:** In Now Playing, Presentation Status,
-  timing, activity copy, and identities are visibly stronger while remaining
-  subordinate to Title. Preferred sizes follow viewport height, stay within
-  the accepted 8–12% strengthening band, and fit available width at all peer
-  viewports. Now Playing Presentation Status, timing, and identities are
-  mildly condensed through the IBM Plex width axis where available and remain
-  normal-width otherwise. Full-field status and identity sizes remain
-  unchanged. Determinate progress stays a minimal non-interactive line, and
-  elapsed and remaining timing remain tabular and stable as values change.
+  light-matte representative demonstrates restrained bright-end luminance
+  without losing blue and plum chroma; the dark-matte representative
+  preserves its dark field and teal ownership. Accent is limited to the print
+  plate, active Presentation Status, determinate progress fill, and
+  indeterminate activity.
+- **Presentation Status:** In Now Playing, every condition has the correct
+  circle-free symbol in one fixed cell and a bold uppercase label beginning at
+  one fixed horizontal position. It has no border, circle, glow, or halo;
+  Playing and Starting use the full artwork accent, Paused uses a muted artwork
+  accent, and no status row contains secondary detail. The row begins at its
+  responsive imaginary-square inset. Full-field Presentations use the
+  circular symbol and stable slot above the centered heading, aligned with the
+  accent's top edge.
+- **Unified footer and utility typography:** In Now Playing, progress or
+  activity occupies the complete rail width and the identity row follows as
+  part of the same low, optically raised footer. Presentation Status, timing,
+  activity copy, and identities remain subordinate to Title but readable at
+  distance. Their preferred sizes follow viewport height and preserve their
+  floors at all peer viewports. Now Playing Presentation Status, timing, and
+  identities are mildly condensed through the IBM Plex width axis where
+  available and remain normal-width otherwise. Full-field status and identity
+  sizes use their dedicated layout. Determinate progress stays a minimal
+  non-interactive line, and elapsed and remaining timing remain tabular and
+  stable as values change.
 - **Indeterminate activity:** Playing without meaningful timing retains its
   supplied artwork and replaces the complete determinate timeline with seven
   rounded activity bars followed by `Audio active` and `Timing unavailable`
@@ -173,13 +179,13 @@ instead of approving a scenario at only one size.
   visibly symmetrical in a settled frame, and the timing explanation is muted.
   The dedicated missing-artwork Fixture Scenario continues to show the quiet
   artwork fallback independently.
-- **Identities:** Output and Zone share one stable bottom-right row in
-  available states. The complete row ends the same inset above the imaginary
-  square's bottom edge that Presentation Status uses below its top edge. Each
-  identity label and name share one text baseline. A small muted dot separates
-  Output and Zone without becoming an accent. Ordinary names fit comfortably,
-  long names remain on one line and end-ellipsize without moving or resizing
-  the row, and unavailable states expose no stale identities.
+- **Identities:** Output and Zone share one stable row in the Now Playing
+  footer. Each label and name share one text baseline, each phrase receives at
+  most its bounded share, and a small muted dot stays centered between them
+  without participating in their baseline. Ordinary names fit comfortably;
+  long names remain on one line and end-ellipsize independently without moving
+  the separator or resizing the footer. Available Full-field Presentations use
+  their bottom-right row, and unavailable states expose no stale identities.
 - **Full-field grammar:** Idle, Starting without content, details unavailable,
   Awaiting Roon Authorization, disconnected, and output-unavailable states
   share the accent-bar language while retaining distinct meanings. At every
@@ -202,7 +208,7 @@ instead of approving a scenario at only one size.
   diagnostics, shadows, and the reserved OLED movement envelope stay inside
   every viewport. In Now Playing, status and identity anchors remain tied to
   the imaginary square for square, non-square, missing, and unusable artwork.
-  Available Full-field Presentations retain the same bottom-right identity
+  Available Full-field Presentations use the same bottom-right identity
   anchor while using their independent centered status-and-copy geometry.
 
 Static captures establish settled endpoints. To review motion, launch Fixture
@@ -215,8 +221,10 @@ npm run fixture
 Keep the renderer window focused and use Left and Right to move between Fixture
 Scenarios. Confirm that artwork, metadata, palette, identities, and diagnostics
 crossfade as one layer; progress alone updates in place; availability loss and
-disconnection use the same crossfade; and no transition exposes clipped or
-stale boundary states.
+disconnection use the same crossfade; rapid revisions settle on the newest
+presentation; Fixture navigation visits the maintained catalog in order; and
+no transition exposes clipped or stale boundary states. Toggle diagnostics
+while navigating and confirm that the overlay remains non-displacing.
 
 Confirm that only the complete Starting ring rotates, with a steady linear
 revolution of about 1.8 seconds. With the platform animation preference
@@ -226,7 +234,21 @@ staggered ease-in-out phases over about 1.1 seconds and scale toward 28% without
 collapsing. With animation disabled, confirm that the reference-height waveform
 remains meaningful and both activity lines remain present.
 
-Do not commit captures as goldens or add screenshot comparisons to CI.
+Exercise inactivity with the configured grace period and reposition cadence
+shortened for review. Confirm that eligible Paused, Idle, and unavailable
+presentations dim and follow the bounded movement sequence without changing
+the established production timing defaults, while Playing and Starting remain
+at full opacity and their normal position. At every movement position, every
+Now Playing and Full-field element, including shadow and diagnostics, must
+remain inside the reserved safe field.
+
+Review every Full-field Fixture Scenario at all seven peer viewports as
+regression evidence. Its approved copy, circular status treatment,
+typography, accent-bar geometry, and identity-presence rules must not change
+with the Now Playing composition.
+
+Do not commit generated captures as goldens or add screenshot comparisons to
+CI.
 Automated checks belong at the shared fixture, layout, typography,
 palette-contrast, transition, and preserved-behavior seams; the PNGs remain
 temporary evidence for human visual judgment.

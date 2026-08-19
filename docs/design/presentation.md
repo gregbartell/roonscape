@@ -8,11 +8,13 @@ part of the supported presentation range.
 
 ## Composition and hierarchy
 
-The artwork field occupies the larger left side of the presentation. It has
-enough surrounding space for the artwork to read as an album sleeve and for
-its shadow to remain inside the display. The narrower right side is a dedicated
-metadata column ordered as Presentation Status, Title, Artist, Album, progress
-or indeterminate activity, and the Output and Zone identity row.
+The artwork field occupies the larger left side of the Now Playing
+presentation. It has enough surrounding space for the artwork to read as an
+album sleeve and for its shadow to remain inside the display. The narrower
+right side is one information rail with three stable vertical regions: compact
+Presentation Status, a vertically centered Title/Artist/Album group, and a
+unified footer containing progress or indeterminate activity followed by the
+Output and Zone identity row.
 
 The imaginary square artwork field is the lesser of 84% of viewport height and
 56% of viewport width, then is centered vertically. The continuous width cap
@@ -27,39 +29,43 @@ musical measure remains on the strict rail, while Presentation Status,
 progress or activity, timing, and identities retain the complete utility
 width.
 
-Presentation Status begins a responsive inset below the imaginary square
-artwork field's top edge. The complete Output and Zone identity row ends the
-identical inset above its bottom edge. These symmetric anchors use the reserved
-square, not the viewport or the visible bounds of supplied artwork. They remain
-stable for square, non-square, missing, and unusable artwork in the Now Playing
-composition. Available Full-field Presentations share only the established
-bottom-right identity anchor; their Presentation Status uses the independent
-Full-field geometry described below.
+Presentation Status begins at a fixed responsive inset below the imaginary
+square artwork field's top edge. The footer sits low in the rail but is
+optically raised from the square's bottom edge. These anchors use the reserved
+square, not the viewport or the visible bounds of supplied artwork, and leave
+the entire composition inside the reserved inactivity-movement field. They
+remain stable for square, non-square, missing, and unusable artwork. Available
+Full-field Presentations use independent status-and-copy geometry and a
+bottom-right identity anchor.
 
-Title is the dominant text. Short single-line Titles use a larger optical tier.
+Title is the dominant text. Short single-line Titles use the calm preferred
+scale shared by other fitting Titles.
 Longer Titles use deterministic balanced wrapping at word boundaries, without
 language parsing or content-specific breaks, and avoid a very short final line
-when a better-fitting arrangement exists. Two-line Titles use 0.94 leading;
-Titles of three or more lines use 0.98. Artist and Album form a close credit
-group beneath Title, with Artist stronger than Album and the Title-to-credit
-gap 30% tighter than the earlier presentation. Missing metadata closes up
-cleanly instead of leaving placeholders.
+when a better-fitting arrangement exists. The complete metadata group is
+vertically centered in the middle rail region with a small upward optical
+correction. Artist and Album form a close credit group beneath Title, with
+Artist stronger than Album and a calibrated Title-to-credit gap. Missing
+metadata closes up cleanly instead of leaving placeholders.
 
 Preferred metadata sizes derive primarily from viewport height and then fit to
-the musical metadata measure using the first fitting preferred, reduced, or
-minimum readable tier. Content ellipsizes at the end when it still exceeds
-bounds of five Title lines, three Artist lines, and three Album lines. Output
-and Zone names remain on one line, separated by a small muted dot, and
-ellipsize only as a defensive fallback. Each identity label shares one text
-baseline with its name, and content length does not move or resize the stable
-row. Metadata uses no scrolling, marquee motion, or pagination and never
-shrinks below the established readable font floors.
+both the musical metadata measure and the vertical space between status and
+footer. The planner chooses the first fitting preferred, reduced, or minimum
+Title tier for the complete Title/Artist/Album group. If that group still does
+not fit, one deterministic compact-credit density preserves readable Artist
+and Album floors. Content ellipsizes at the end when it still exceeds bounds of
+five Title lines, three Artist lines, and three Album lines. Metadata uses no
+scrolling, marquee motion, pagination, or content-specific exceptions.
 
-In Now Playing, Presentation Status, timing, activity copy, and identities are
-approximately 8–12% stronger than the earlier presentation. Their preferred
-sizes derive from viewport height and remain within a width-led fitting band
-without lowering the readable floors. Full-field Presentation retains its
-established status and identity sizes.
+Progress or activity uses the complete rail width at the top of the unified
+footer. The identity row follows at a responsive gap and contains two compact
+inline phrases separated by a small muted dot: `OUTPUT <Tracked Output>` and
+`ZONE <Tracked Zone>`. Each label shares one baseline with its name. The two
+phrases receive bounded shares of the row, so names ellipsize independently
+without moving the separator or footer. Presentation Status, timing, activity
+copy, and identities derive their sizes from viewport height while preserving
+readable floors. Full-field Presentation uses its own status and identity
+sizes.
 
 The composition uses the complete landscape field without letterboxing.
 Artwork and metadata keep their relative emphasis on ordinary, tall, wide,
@@ -99,9 +105,8 @@ artwork field holds through approximately the first fifth, transitions near
 the middle, and reaches the metadata field at the far edge on an angle near
 112 degrees. A luminance ceiling compresses only light results that would
 otherwise approach a room-filling near-white field. The calibrated reduction
-is approximately 8–12% at the bright end and retains the artwork's hue and
-chroma; it does not neutralize dark palettes or the teal direction represented
-by Forever and a Day.
+is approximately 8–12% at the bright end and preserves the artwork's hue and
+chroma; it does not neutralize dark or teal-heavy palettes.
 
 Presentation Status uses the artwork-derived accent without assigning fixed
 hues to playback or availability conditions. Playing and Starting use the
@@ -112,28 +117,31 @@ Presentation Status, determinate progress fill, and indeterminate activity.
 
 ## Presentation Status
 
-Every Now Playing and full-field presentation uses one compact circular
-symbol container beside a bold uppercase Presentation Status label. Playing,
-Paused, Starting, and Idle use the approved play triangle, pause bars,
-segmented ring with center point, and rounded square silhouettes. Pairing
-required uses interlocking chain links, Disconnected uses crossed Wi-Fi arcs,
-and Output unavailable uses a speaker followed by an `X`.
+Now Playing uses a compact, circle-free Presentation Status. Every approved
+symbol occupies the same fixed cell beside a bold uppercase label, so the
+label begins at one stable position as playback changes. There is no border,
+filled circle, glow, halo, or secondary detail. Full-field Presentation uses a
+circular status treatment. Playing, Paused, Starting, and Idle use a play
+triangle, pause bars, segmented ring with center point, and rounded square
+silhouettes. Pairing required uses interlocking chain links, Disconnected uses
+crossed Wi-Fi arcs, and Output unavailable uses a speaker followed by an `X`.
 
 Presentation Status contains only its symbol and label. Elapsed time,
 held-time copy, preparation copy, and other secondary detail do not appear in
 the status row; determinate time remains in the progress area.
 
 Determinate progress remains a minimal linear track and fill without scrub,
-transport, hover, or other control affordances. Elapsed and remaining timing
-use tabular numerals so updates do not shift their alignment.
+transport, hover, or other control affordances. It spans the footer utility
+width, with elapsed and remaining timing beneath it in tabular numerals so
+updates do not shift their alignment.
 
-Playing without meaningful duration uses that progress area for a compact
+Playing without meaningful duration uses the same footer role for a compact
 activity treatment instead of fabricating a timeline. Seven rounded vertical
 bars use symmetrical reference heights of 30%, 70%, 100%, 48%, 100%, 70%, and
 30%, followed by `Audio active` and `Timing unavailable` on separate lines.
 The waveform uses the current accent and the timing explanation uses muted
 text. This treatment is independent of artwork availability: supplied artwork
-remains present, while missing artwork retains the established quiet field.
+remains present, while missing artwork uses the quiet field.
 
 ## Typography
 
@@ -149,13 +157,13 @@ Now Playing Presentation Status, timing, and identities request IBM Plex's
 axis, Pango ignores the request and leaves the text at normal width; RoonScape
 never applies synthetic geometric compression.
 
-Full-field Presentation retains its existing atomic selection: Palatino
-Linotype with Segoe UI when both host-provided families are available, and
-packaged Libre Baskerville with IBM Plex Sans otherwise. Diagnostics retains
-the same utility-family selection. The packaged faces require neither a
-network request nor a global installation. Every selected family remains the
-first member of a Pango family stack so ordinary glyph fallback stays
-available for missing characters.
+Full-field Presentation atomically selects Palatino Linotype with Segoe UI
+when both host-provided families are available, and packaged Libre Baskerville
+with IBM Plex Sans otherwise. Diagnostics uses the utility-family selection.
+The packaged faces require neither a network request nor a global
+installation. Every selected family remains the first member of a Pango
+family stack so ordinary glyph fallback stays available for missing
+characters.
 
 ## Motion and inactivity
 
@@ -200,15 +208,15 @@ occupies one complete line across the supported landscape range.
 
 Available states show the Tracked Output and current Tracked Zone at one
 stable bottom-right position, under the viewer-facing labels **Output** and
-**Zone**. The row stays in that position across Now Playing and available
-Full-field Presentations. Awaiting Roon Authorization, disconnected, and
+**Zone**. This is the Full-field anchor; Now Playing places the row in its
+raised unified footer. Awaiting Roon Authorization, disconnected, and
 output-unavailable states omit the row so potentially stale identities are
 never shown.
 
 The accent bar and copy form a centered composition that occupies 60% of the
 layout viewport. The accent is its stable left edge. Presentation Status, the
 heading, and any explanation are left-aligned to one shared text edge after the
-existing responsive accent inset. The composition remains independent of the
+responsive accent inset. The composition remains independent of the
 bottom-right identity row.
 
 The heading occupies a fixed-height slot whose center is the viewport's
