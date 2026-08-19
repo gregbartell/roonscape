@@ -37,9 +37,33 @@ struct RenderedPresentation {
     root: gtk::Widget,
     progress: Option<RenderedProgress>,
     palette: PresentationPalette,
+    layout_source: PresentationLayoutSource,
     now_playing: Option<RenderedNowPlaying>,
     full_field: Option<RenderedFullField>,
     diagnostics: Option<gtk::Label>,
+}
+
+enum PresentationLayoutSource {
+    NowPlaying(Box<NowPlayingPresentation>),
+    FullField,
+}
+
+impl PresentationLayoutSource {
+    fn for_presentation(presentation: &Presentation) -> Self {
+        match presentation {
+            Presentation::NowPlaying(presentation) => {
+                Self::NowPlaying(Box::new(presentation.clone()))
+            }
+            Presentation::FullField(_) => Self::FullField,
+        }
+    }
+
+    fn now_playing(&self, viewport: Viewport) -> Option<NowPlayingLayout> {
+        let Self::NowPlaying(presentation) = self else {
+            return None;
+        };
+        Some(NowPlayingLayout::for_presentation(presentation, viewport))
+    }
 }
 
 #[derive(Clone)]
@@ -314,8 +338,11 @@ impl PresentationView {
 
 impl RenderedPresentation {
     fn apply_viewport(&self, viewport: Viewport) {
-        if let Some(now_playing) = self.now_playing.as_ref() {
-            now_playing.apply_layout(&NowPlayingLayout::for_viewport(viewport));
+        if let (Some(now_playing), Some(layout)) = (
+            self.now_playing.as_ref(),
+            self.layout_source.now_playing(viewport),
+        ) {
+            now_playing.apply_layout(&layout);
         }
         if let Some(full_field) = self.full_field.as_ref() {
             full_field.apply_layout(&FullFieldLayout::for_viewport(viewport));
@@ -355,24 +382,30 @@ fn render_presentation(
     diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
     let resolved = resolve_presentation(presentation, repository_root);
+    let layout_source = PresentationLayoutSource::for_presentation(&resolved.presentation);
 
     match &resolved.presentation {
         Presentation::NowPlaying(presentation) => now_playing(
             presentation,
             repository_root,
             resolved.palette,
+            layout_source,
             typography,
             diagnostics_text,
         ),
-        Presentation::FullField(presentation) => {
-            full_field(presentation, resolved.palette, diagnostics_text)
-        }
+        Presentation::FullField(presentation) => full_field(
+            presentation,
+            resolved.palette,
+            layout_source,
+            diagnostics_text,
+        ),
     }
 }
 
 fn full_field(
     presentation: &FullFieldPresentation,
     palette: PresentationPalette,
+    layout_source: PresentationLayoutSource,
     diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
     let layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
@@ -425,6 +458,7 @@ fn full_field(
         root: root.upcast(),
         progress: None,
         palette,
+        layout_source,
         now_playing: None,
         full_field: Some(RenderedFullField {
             copy,
@@ -454,6 +488,7 @@ fn now_playing(
     presentation: &NowPlayingPresentation,
     repository_root: &Path,
     palette: PresentationPalette,
+    layout_source: PresentationLayoutSource,
     typography: TypographySelection,
     diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
@@ -502,6 +537,7 @@ fn now_playing(
         root: root.upcast(),
         progress,
         palette,
+        layout_source,
         now_playing: Some(now_playing),
         full_field: None,
         diagnostics,
@@ -1350,7 +1386,30 @@ pub(crate) fn install_style_providers(typography: TypographySelection) -> gtk::C
 
 #[cfg(test)]
 mod tests {
-    use super::STYLES;
+    use super::{PresentationLayoutSource, STYLES};
+    use roonscape_renderer::{
+        NowPlayingFooterContent, Viewport, parse_snapshot, presentation_from_snapshot,
+    };
+
+    #[test]
+    fn keeps_the_current_footer_geometry_when_the_viewport_changes() {
+        let snapshot = parse_snapshot(include_str!("../../shared/fixtures/playing.json"))
+            .expect("Playing fixture should satisfy the shared contract");
+        let presentation = presentation_from_snapshot(&snapshot)
+            .expect("Playing fixture should produce a presentation");
+        let layout = PresentationLayoutSource::for_presentation(&presentation)
+            .now_playing(Viewport::new(3_840, 2_160))
+            .expect("Playing should retain a Now Playing layout");
+
+        assert_eq!(
+            layout.footer_content,
+            NowPlayingFooterContent::DeterminateProgress,
+        );
+        assert_eq!(
+            layout.metadata_region_bottom_viewport_y_px,
+            layout.footer_anchor.bottom_viewport_y_px - layout.footer_height_px,
+        );
+    }
 
     #[test]
     fn removes_status_decoration_only_from_the_now_playing_circle_free_cell() {
