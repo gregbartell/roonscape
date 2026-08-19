@@ -225,7 +225,7 @@ fn uses_selected_responsive_status_and_utility_sizes() {
 }
 
 #[test]
-fn groups_progress_or_activity_with_equal_width_identities_in_one_footer() {
+fn groups_progress_or_activity_with_compact_bounded_identities_in_one_footer() {
     let determinate = now_playing("playing.json");
     let indeterminate = now_playing("indeterminate-progress.json");
 
@@ -279,12 +279,11 @@ fn groups_progress_or_activity_with_equal_width_identities_in_one_footer() {
             "each identity label and name should share a baseline at {viewport:?}",
         );
         assert!(
-            determinate.information.utility_width_px.saturating_sub(
-                identity.phrase_width_px * 2
-                    + identity.separator_size_px
-                    + identity.phrase_gap_px * 2,
-            ) <= 1,
-            "identity phrases should split the width remaining after gaps and separator at {viewport:?}",
+            identity.phrase_max_width_px * 2
+                + identity.separator_size_px
+                + identity.phrase_gap_px * 2
+                <= determinate.information.utility_width_px,
+            "identity phrases should be capped at half of the usable row at {viewport:?}",
         );
         assert_eq!(
             identity.label_gap_px,
@@ -357,6 +356,40 @@ fn applies_one_small_upward_optical_correction_to_the_centered_metadata_group() 
                 .round()
                 .clamp(3.0, 10.0) as u32,
             "{viewport:?}",
+        );
+    }
+}
+
+#[test]
+fn centers_metadata_between_status_and_the_visually_raised_footer() {
+    let presentation = now_playing("playing.json");
+
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = NowPlayingLayout::for_presentation(&presentation, viewport);
+        let expected_top = layout
+            .artwork_field_anchors
+            .presentation_status_top_viewport_y_px
+            + layout.presentation_status.symbol_size_px;
+        let visual_footer_top = layout.footer_anchor.bottom_viewport_y_px - layout.footer_height_px;
+
+        assert_eq!(layout.metadata_region_top_viewport_y_px, expected_top);
+        assert_eq!(
+            layout.metadata_region_bottom_viewport_y_px, visual_footer_top,
+            "the centered metadata region should end at the visible footer at {viewport:?}",
+        );
+        assert!(
+            layout.metadata_region_bottom_viewport_y_px > layout.metadata_region_top_viewport_y_px,
+            "the centered metadata region should remain usable at {viewport:?}",
+        );
+        let example_group_height_px = layout.metadata_height_budget_px / 3;
+        assert_eq!(
+            layout.metadata_group_offset_px(example_group_height_px),
+            (layout.metadata_region_bottom_viewport_y_px
+                - layout.metadata_region_top_viewport_y_px
+                - example_group_height_px)
+                / 2
+                - layout.metadata_optical_correction_px,
+            "the complete metadata group should receive one centered offset at {viewport:?}",
         );
     }
 }

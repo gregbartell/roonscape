@@ -60,7 +60,9 @@ impl RenderedProgress {
 }
 
 struct RenderedMetadata {
-    root: gtk::Box,
+    root: gtk::Overlay,
+    copy: gtk::Box,
+    musical_metadata_alignment: gtk::CenterBox,
     presentation_status: RenderedPresentationStatus,
     musical_metadata_slot: gtk::ScrolledWindow,
     title: Option<RenderedMetadataLine>,
@@ -625,16 +627,18 @@ fn metadata(
     now_playing_layout: &NowPlayingLayout,
     typography: TypographySelection,
 ) -> RenderedMetadata {
-    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let root = gtk::Overlay::new();
     root.add_css_class("metadata-column");
     root.set_hexpand(true);
     root.set_vexpand(true);
+    let field = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    field.set_hexpand(true);
+    field.set_vexpand(true);
+    root.set_child(Some(&field));
 
-    let copy = gtk::CenterBox::new();
+    let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
     copy.add_css_class("metadata-copy");
-    copy.set_orientation(gtk::Orientation::Vertical);
     copy.set_hexpand(true);
-    copy.set_vexpand(true);
 
     let musical_metadata = gtk::Box::new(gtk::Orientation::Vertical, 0);
     musical_metadata.add_css_class("musical-metadata");
@@ -653,13 +657,16 @@ fn metadata(
     let musical_metadata_alignment = gtk::CenterBox::new();
     musical_metadata_alignment.set_hexpand(true);
     musical_metadata_alignment.set_start_widget(Some(&musical_metadata_slot));
-    copy.set_center_widget(Some(&musical_metadata_alignment));
+    copy.append(&musical_metadata_alignment);
 
     let rendered_status = presentation_status(
         &presentation.status,
         now_playing_layout.presentation_status.decoration,
     );
-    root.append(&rendered_status.root);
+    rendered_status.root.set_halign(gtk::Align::Start);
+    rendered_status.root.set_valign(gtk::Align::Start);
+    root.add_overlay(&rendered_status.root);
+    root.set_measure_overlay(&rendered_status.root, false);
 
     let layout = metadata_layout(presentation, Viewport::WINDOWED_FIXTURE);
     let title = layout
@@ -711,7 +718,10 @@ fn metadata(
         NowPlayingFooterContent::IdentityOnly => {}
     }
 
-    root.append(&copy);
+    copy.set_halign(gtk::Align::Fill);
+    copy.set_valign(gtk::Align::Start);
+    root.add_overlay(&copy);
+    root.set_measure_overlay(&copy, false);
     let identity = tracked_identity(
         &presentation.tracked_output,
         &presentation.tracked_zone,
@@ -720,9 +730,14 @@ fn metadata(
     );
     identity.root.set_halign(gtk::Align::Fill);
     footer.append(&identity.root);
-    root.append(&footer);
+    footer.set_halign(gtk::Align::Fill);
+    footer.set_valign(gtk::Align::End);
+    root.add_overlay(&footer);
+    root.set_measure_overlay(&footer, false);
     RenderedMetadata {
         root,
+        copy,
+        musical_metadata_alignment,
         presentation_status: rendered_status,
         musical_metadata_slot,
         title,
@@ -923,10 +938,13 @@ impl RenderedMetadata {
                 .artwork_field_anchors
                 .presentation_status_margin_top_px(0),
         ));
-        self.musical_metadata_slot.set_margin_bottom(dimension(
-            layout.metadata_optical_correction_px.saturating_mul(2),
+        self.copy
+            .set_margin_top(dimension(layout.metadata_region_top_viewport_y_px));
+        self.copy.set_height_request(dimension(
+            layout
+                .metadata_region_bottom_viewport_y_px
+                .saturating_sub(layout.metadata_region_top_viewport_y_px),
         ));
-
         for line in [&self.title, &self.artist, &self.album]
             .into_iter()
             .flatten()
@@ -989,6 +1007,8 @@ impl RenderedMetadata {
             },
         );
         self.apply_group_plan(&plan);
+        self.musical_metadata_alignment
+            .set_margin_top(dimension(layout.metadata_group_offset_px(plan.height_px)));
         self.musical_metadata_slot
             .set_height_request(dimension(plan.height_px));
     }
@@ -1063,8 +1083,12 @@ impl RenderedIdentity {
             }
         }
         for phrase in [&self.output, &self.zone] {
-            phrase.set_size_request(dimension(layout.phrase_width_px), -1);
+            phrase.set_hexpand(false);
+            phrase.set_size_request(-1, -1);
+            let (_, natural_width, _, _) = phrase.measure(gtk::Orientation::Horizontal, -1);
+            phrase.set_size_request(natural_width.min(dimension(layout.phrase_max_width_px)), -1);
         }
+        self.zone.set_halign(gtk::Align::Start);
         self.output_name.set_hexpand(true);
         self.zone_name.set_hexpand(true);
         self.zone_name.set_xalign(0.0);

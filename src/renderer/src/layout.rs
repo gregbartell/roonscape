@@ -302,7 +302,7 @@ pub enum NowPlayingFooterContent {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IdentityRowLayout {
-    pub phrase_width_px: u32,
+    pub phrase_max_width_px: u32,
     pub phrase_gap_px: u32,
     pub label_gap_px: u32,
     pub separator_size_px: u32,
@@ -622,6 +622,7 @@ pub struct NowPlayingLayout {
     pub footer_content: NowPlayingFooterContent,
     pub footer_gap_px: u32,
     pub footer_optical_raise_px: u32,
+    pub footer_height_px: u32,
     pub identity_row: IdentityRowLayout,
     pub presentation_status: PresentationStatusLayout,
     pub progress_height_px: u32,
@@ -634,6 +635,8 @@ pub struct NowPlayingLayout {
     pub metadata_fitting: MetadataFitting,
     pub metadata_optical_correction_px: u32,
     pub metadata_height_budget_px: u32,
+    pub metadata_region_top_viewport_y_px: u32,
+    pub metadata_region_bottom_viewport_y_px: u32,
 }
 
 impl NowPlayingLayout {
@@ -726,7 +729,7 @@ impl NowPlayingLayout {
         let identity_separator_size_px = ((typography.identity_px * 3).div_ceil(17)).clamp(3, 5);
         let identity_fixed_width_px = identity_phrase_gap_px * 2 + identity_separator_size_px;
         let identity_row = IdentityRowLayout {
-            phrase_width_px: information
+            phrase_max_width_px: information
                 .utility_width_px
                 .saturating_sub(identity_fixed_width_px)
                 / 2,
@@ -765,6 +768,7 @@ impl NowPlayingLayout {
             footer_content: NowPlayingFooterContent::IdentityOnly,
             footer_gap_px: scaled(viewport.height_px, 0.02, 17, 30),
             footer_optical_raise_px,
+            footer_height_px: 0,
             identity_row,
             presentation_status: PresentationStatusLayout::for_now_playing(viewport),
             progress_height_px: scaled(viewport.width_px, 0.002, 3, 5),
@@ -777,6 +781,8 @@ impl NowPlayingLayout {
             metadata_fitting,
             metadata_optical_correction_px: scaled(viewport.height_px, 0.004, 3, 10),
             metadata_height_budget_px: 0,
+            metadata_region_top_viewport_y_px: 0,
+            metadata_region_bottom_viewport_y_px: 0,
         };
         layout.refresh_metadata_height_budget();
         layout
@@ -798,19 +804,30 @@ impl NowPlayingLayout {
         } else {
             self.footer_gap_px
         };
-        let footer_height_px = footer_content_height_px + footer_gap_px + identity_height_px;
-        let footer_top_viewport_y_px = self
-            .footer_anchor
-            .bottom_viewport_y_px
-            .saturating_sub(footer_height_px);
+        self.footer_height_px = footer_content_height_px + footer_gap_px + identity_height_px;
         let status_bottom_viewport_y_px = self
             .artwork_field_anchors
             .presentation_status_top_viewport_y_px
             + self.presentation_status.symbol_size_px;
+        let footer_top_viewport_y_px = self
+            .footer_anchor
+            .bottom_viewport_y_px
+            .saturating_sub(self.footer_height_px);
+        self.metadata_region_top_viewport_y_px = status_bottom_viewport_y_px;
+        self.metadata_region_bottom_viewport_y_px = footer_top_viewport_y_px;
         self.metadata_height_budget_px = footer_top_viewport_y_px
             .saturating_sub(status_bottom_viewport_y_px)
             .saturating_sub(self.presentation_status.font_px.saturating_mul(2))
             .saturating_sub(self.metadata_optical_correction_px.saturating_mul(2));
+    }
+
+    pub fn metadata_group_offset_px(&self, group_height_px: u32) -> u32 {
+        (self
+            .metadata_region_bottom_viewport_y_px
+            .saturating_sub(self.metadata_region_top_viewport_y_px)
+            .saturating_sub(group_height_px)
+            / 2)
+        .saturating_sub(self.metadata_optical_correction_px)
     }
 }
 
