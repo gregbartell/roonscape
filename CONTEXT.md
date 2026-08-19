@@ -52,6 +52,11 @@ _Avoid_: Live version, production mode
 The Roon-provided content currently associated with the Tracked Zone.
 _Avoid_: Now-playing presentation, current content
 
+**Presentation Capture**:
+A screenshot artifact of a Fixture Scenario generated for repeatable human
+review of RoonScape's presentation.
+_Avoid_: Fixture screenshot, screen capture
+
 **Presentation Status**:
 The viewer-facing condition label that identifies RoonScape's current
 playback or availability condition, such as Playing, Paused, Idle, or
