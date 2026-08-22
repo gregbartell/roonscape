@@ -1,5 +1,3 @@
-import { spawn } from "node:child_process";
-import { once } from "node:events";
 import {
   access,
   mkdir,
@@ -13,6 +11,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildPresentationCapturePlan } from "./presentation-captures.mjs";
+import {
+  assertProcessRunning,
+  runMonitoredProcess,
+  startMonitoredProcess,
+  startXvfbDisplay,
+  stopProcess,
+  waitFor,
+} from "./process-harness.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const scratchRoot = "/tmp/codex/roonscape";
@@ -57,20 +63,14 @@ async function capturePresentations({
 
   for (const captures of viewportGroups.values()) {
     const [firstCapture] = captures;
-    const displayNumber = await availableDisplayNumber();
-    const display = `:${displayNumber}`;
-    const displaySocket = `/tmp/.X11-unix/X${displayNumber}`;
-    const xvfb = startLongRunning("Xvfb", [
-      display,
-      "-screen",
-      "0",
-      `${firstCapture.width}x${firstCapture.height}x24`,
-      "-nolisten",
-      "tcp",
-    ]);
+    const { display, xvfb } = await startXvfbDisplay({
+      width: firstCapture.width,
+      height: firstCapture.height,
+      cwd: repositoryRoot,
+      description: "the native capture display",
+    });
 
     try {
-      await waitForPath(displaySocket, xvfb, "the native capture display");
       for (const capture of captures) {
         completed += 1;
         process.stdout.write(
@@ -84,7 +84,7 @@ async function capturePresentations({
         );
       }
     } finally {
-      await stop(xvfb);
+      await stopProcess(xvfb);
     }
   }
 
@@ -144,7 +144,12 @@ async function captureFixture(
       environment,
     );
     await publisher.spawned;
-    await waitForPath(socketPath, publisher, "the fixture publisher");
+    await waitFor(
+      () => access(socketPath),
+      publisher,
+      "the fixture publisher",
+      { retryMilliseconds: 25 },
+    );
     renderer = startLongRunning(
       "cargo",
       [
@@ -166,7 +171,7 @@ async function captureFixture(
       capture.height,
     );
     await delay(settleMilliseconds);
-    assertRunning(renderer, "the native renderer");
+    assertProcessRunning(renderer, "the native renderer");
 
     const capturePath = path.join(outputDirectory, capture.fileName);
     await run(
@@ -176,72 +181,24 @@ async function captureFixture(
     );
     await verifyPngDimensions(capturePath, capture.width, capture.height);
   } finally {
-    await Promise.all([stop(renderer), stop(publisher)]);
+    await Promise.all([stopProcess(renderer), stopProcess(publisher)]);
     await rm(runtimeDirectory, { force: true, recursive: true });
   }
 }
 
 function startLongRunning(command, arguments_, environment = process.env) {
-  const child = spawn(command, arguments_, {
+  return startMonitoredProcess(command, arguments_, {
     cwd: repositoryRoot,
-    env: environment,
-    stdio: ["ignore", "pipe", "pipe"],
+    environment,
   });
-  child.capturedError = undefined;
-  child.capturedStandardOutput = "";
-  child.capturedStandardError = "";
-  child.spawned = new Promise((resolve, reject) => {
-    child.once("spawn", resolve);
-    child.once("error", reject);
-  });
-  child.on("error", (error) => {
-    child.capturedError = error;
-  });
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    child.capturedStandardOutput += chunk;
-  });
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk) => {
-    child.capturedStandardError += chunk;
-  });
-  return child;
 }
 
 async function run(command, arguments_, environment) {
-  const child = startLongRunning(command, arguments_, environment);
-  await child.spawned;
-  const [exitCode, signal] = await once(child, "close");
-  if (exitCode !== 0) {
-    throw childFailure(command, child, exitCode, signal);
-  }
-  return child.capturedStandardOutput;
-}
-
-async function stop(child) {
-  if (
-    child === undefined ||
-    child.exitCode !== null ||
-    child.signalCode !== null ||
-    child.capturedError !== undefined
-  ) {
-    return;
-  }
-
-  const closed = once(child, "close");
-  child.kill("SIGTERM");
-  const stopped = await Promise.race([
-    closed.then(() => true),
-    delay(2_000).then(() => false),
-  ]);
-  if (!stopped) {
-    if (child.exitCode !== null || child.signalCode !== null) {
-      return;
-    }
-    const killed = once(child, "close");
-    child.kill("SIGKILL");
-    await killed;
-  }
+  return runMonitoredProcess(command, arguments_, {
+    cwd: repositoryRoot,
+    environment,
+    timeoutMilliseconds: 5_000,
+  });
 }
 
 async function waitForRoonScapeWindow(
@@ -252,7 +209,7 @@ async function waitForRoonScapeWindow(
 ) {
   let lastWindow;
   for (let attempt = 0; attempt < 300; attempt += 1) {
-    assertRunning(renderer, "the native renderer");
+    assertProcessRunning(renderer, "the native renderer");
     try {
       const output = await run(
         "xwininfo",
@@ -303,40 +260,6 @@ function parseWindowInformation(output) {
   return { id, width, height };
 }
 
-async function waitForPath(filePath, child, description) {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    assertRunning(child, description);
-    try {
-      await access(filePath);
-      return;
-    } catch (error) {
-      if (error?.code !== "ENOENT") {
-        throw error;
-      }
-    }
-    await delay(25);
-  }
-
-  throw new Error(`timed out waiting for ${description}`);
-}
-
-function assertRunning(child, description) {
-  if (child.capturedError !== undefined) {
-    throw child.capturedError;
-  }
-  if (child.exitCode !== null || child.signalCode !== null) {
-    throw childFailure(description, child, child.exitCode, child.signalCode);
-  }
-}
-
-function childFailure(description, child, exitCode, signal) {
-  const outcome = signal ?? exitCode ?? "unknown status";
-  const details = child.capturedStandardError.trim();
-  return new Error(
-    `${description} exited with ${outcome}${details.length === 0 ? "" : `: ${details}`}`,
-  );
-}
-
 async function verifyPngDimensions(filePath, expectedWidth, expectedHeight) {
   const header = await readFile(filePath);
   const pngSignature = "89504e470d0a1a0a";
@@ -379,31 +302,6 @@ async function prepareOutputDirectory(requestedOutput) {
     }
   }
   return outputDirectory;
-}
-
-async function availableDisplayNumber() {
-  for (let displayNumber = 90; displayNumber < 200; displayNumber += 1) {
-    const socket = `/tmp/.X11-unix/X${displayNumber}`;
-    const lock = `/tmp/.X${displayNumber}-lock`;
-    if (!(await exists(socket)) && !(await exists(lock))) {
-      return displayNumber;
-    }
-  }
-  throw new Error(
-    "no free X11 display number is available for native captures",
-  );
-}
-
-async function exists(filePath) {
-  try {
-    await access(filePath);
-    return true;
-  } catch (error) {
-    if (error?.code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
 }
 
 function delay(milliseconds) {

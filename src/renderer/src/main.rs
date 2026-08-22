@@ -251,7 +251,7 @@ fn build_window(
     install_diagnostics_updates(&window, diagnostics, presentation_view);
 
     if capture_configuration.viewport.is_none() && env::var_os("ROONSCAPE_WINDOWED").is_none() {
-        window.fullscreen();
+        present_fullscreen(&window);
     }
 
     if let Some(milliseconds) = env::var("ROONSCAPE_FIXTURE_AUTO_CLOSE_MS")
@@ -266,6 +266,19 @@ fn build_window(
 
     window.present();
     Ok(())
+}
+
+fn present_fullscreen(window: &gtk::ApplicationWindow) {
+    let monitors = gtk::prelude::WidgetExt::display(window).monitors();
+    if monitors.n_items() == 1
+        && let Some(monitor) = monitors.item(0).and_downcast::<gtk::gdk::Monitor>()
+    {
+        let geometry = monitor.geometry();
+        window.set_default_size(geometry.width(), geometry.height());
+        window.fullscreen_on_monitor(&monitor);
+    } else {
+        window.fullscreen();
+    }
 }
 
 fn renderer_key(key: gtk::gdk::Key) -> RendererKey {
