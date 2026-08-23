@@ -990,19 +990,28 @@ fn apply_now_playing_gradient<T: NowPlayingGradientTarget>(
 
 impl RenderedArtwork {
     fn apply_layout(&self, now_playing: &NowPlayingLayout) {
-        let reservation = now_playing.artwork_print_plate.footprint;
+        let reservation = ArtworkDimensions::new(
+            now_playing.artwork_field_width_px,
+            now_playing.artwork_field_height_px,
+        );
         self.reservation.set_size_request(
             dimension(reservation.width_px),
             dimension(reservation.height_px),
         );
-        self.print_plate.set_size_request(
-            dimension(now_playing.artwork_print_plate.footprint.width_px),
-            dimension(now_playing.artwork_print_plate.footprint.height_px),
+        let plate = self.layout.print_plate_geometry(
+            reservation,
+            now_playing.artwork_border_width_px,
+            now_playing.artwork_print_plate,
         );
-        let plate_offset = dimension(now_playing.artwork_print_plate.offset_px);
-        self.print_plate.set_margin_start(plate_offset);
-        self.print_plate.set_margin_top(plate_offset);
-        let visible = self.layout.visible_decoration(reservation);
+        self.print_plate.set_size_request(
+            dimension(plate.footprint.width_px),
+            dimension(plate.footprint.height_px),
+        );
+        self.print_plate.set_margin_start(dimension(plate.left_px));
+        self.print_plate.set_margin_top(dimension(plate.top_px));
+        let visible = self
+            .layout
+            .visible_decoration_with_border(reservation, now_playing.artwork_border_width_px);
         self.decoration
             .set_ratio(visible.width_px as f32 / visible.height_px as f32);
         self.surface
@@ -1010,7 +1019,7 @@ impl RenderedArtwork {
         if let Some(source) = self.source.as_ref() {
             let image = self
                 .layout
-                .fitted_image(reservation)
+                .fitted_image_with_border(reservation, now_playing.artwork_border_width_px)
                 .expect("supplied artwork should have fitted image dimensions");
             let scaled = source
                 .scale_simple(

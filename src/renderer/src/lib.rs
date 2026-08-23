@@ -36,8 +36,8 @@ pub use ipc::{
 pub use keyboard::{NavigationIntent, RendererAction, RendererKey, RendererKeyboard};
 pub use layout::{
     ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFieldAnchors,
-    ArtworkFit, ArtworkLayout, ArtworkPrintPlateLayout, BottomAnchor, FullFieldFontSize,
-    FullFieldLayout, FullFieldLineLayout, FullFieldSlot, IdentityLineLayout,
+    ArtworkFit, ArtworkLayout, ArtworkPrintPlateGeometry, ArtworkPrintPlateLayout, BottomAnchor,
+    FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, FullFieldSlot, IdentityLineLayout,
     IdentityPhraseAlignment, IdentityPlacement, IdentityRowLayout, InactivityLayout,
     MetadataFitting, MetadataFontSizes, NowPlayingField, NowPlayingFooterContent,
     NowPlayingInformationLayout, NowPlayingLayout, NowPlayingRole, NowPlayingTypography,

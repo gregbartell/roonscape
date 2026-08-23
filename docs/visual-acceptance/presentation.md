@@ -137,14 +137,17 @@ instead of approving a scenario at only one size.
   imaginary square for square, non-square, missing, and unusable artwork. Its
   side is the lesser of 84% of viewport height and 56% of viewport width, and
   the result remains vertically centered. Square supplied artwork fills that
-  reservation with its one-pixel border and artwork-surface shadow.
+  reservation with its responsive one-to-two-pixel border and quiet
+  artwork-surface shadow.
   Non-square supplied artwork is centered and contained; its surrounding
-  reservation is transparent, and its visible surface, one-pixel border, and
-  shadow hug the image rectangle. Missing or unusable artwork preserves a
-  quiet decorated square field without an invented icon. One crisp same-size
-  accent plate keeps its small offset behind the square, while the shadow
-  remains on the artwork surface rather than the combined
-  stack.
+  reservation is transparent, and its visible surface, border, shadow, and
+  matching accent plate hug the image rectangle. The plate is centered on the
+  same visible bounds before its responsive right/down offset is applied; at
+  3840×2160 that offset is approximately 24/16 px. Missing or unusable artwork
+  preserves a quiet decorated square field with a square plate and no invented
+  icon. The fully opaque plate stays flat, crisp, square-cornered, and free of
+  shadow, blur, texture, rotation, grain, or registration marks, while the
+  shadow remains on the artwork surface rather than the combined stack.
 - **Palette:** Dark and light artwork recolor the complete presentation. The
   gradient geometry remains stable, the fixed no-art palette stays deliberate,
   and text, accent, progress, and diagnostics roles remain readable. The

@@ -140,11 +140,16 @@ pub enum ArtworkDecoration {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArtworkPrintPlateLayout {
-    pub footprint: ArtworkDimensions,
-    pub offset_px: u32,
+    pub offset_x_px: u32,
+    pub offset_y_px: u32,
 }
 
-pub(crate) const ARTWORK_DECORATION_BORDER_WIDTH_PX: u32 = 1;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArtworkPrintPlateGeometry {
+    pub footprint: ArtworkDimensions,
+    pub left_px: u32,
+    pub top_px: u32,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArtworkLayout {
@@ -178,8 +183,43 @@ impl ArtworkLayout {
         }
     }
 
-    pub fn fitted_image(self, reservation: ArtworkDimensions) -> Option<ArtworkDimensions> {
-        let border_extent_px = self.border_extent_px();
+    pub fn print_plate_geometry(
+        self,
+        reservation: ArtworkDimensions,
+        border_width_px: u32,
+        layout: ArtworkPrintPlateLayout,
+    ) -> ArtworkPrintPlateGeometry {
+        let footprint = self.visible_decoration_with_border(reservation, border_width_px);
+        ArtworkPrintPlateGeometry {
+            footprint,
+            left_px: (reservation.width_px - footprint.width_px) / 2 + layout.offset_x_px,
+            top_px: (reservation.height_px - footprint.height_px) / 2 + layout.offset_y_px,
+        }
+    }
+
+    pub fn visible_decoration_with_border(
+        self,
+        reservation: ArtworkDimensions,
+        border_width_px: u32,
+    ) -> ArtworkDimensions {
+        match self.fitted_image_with_border(reservation, border_width_px) {
+            Some(image) => {
+                let border_extent_px = border_width_px * 2;
+                ArtworkDimensions::new(
+                    image.width_px + border_extent_px,
+                    image.height_px + border_extent_px,
+                )
+            }
+            None => reservation,
+        }
+    }
+
+    pub fn fitted_image_with_border(
+        self,
+        reservation: ArtworkDimensions,
+        border_width_px: u32,
+    ) -> Option<ArtworkDimensions> {
+        let border_extent_px = border_width_px * 2;
         assert!(
             reservation.width_px > border_extent_px,
             "artwork reservation must contain its border"
@@ -197,23 +237,6 @@ impl ArtworkLayout {
             }
             (ArtworkFit::Contain, ArtworkDecoration::QuietSquareField) => None,
         }
-    }
-
-    pub fn visible_decoration(self, reservation: ArtworkDimensions) -> ArtworkDimensions {
-        match self.fitted_image(reservation) {
-            Some(image) => {
-                let border_extent_px = self.border_extent_px();
-                ArtworkDimensions::new(
-                    image.width_px + border_extent_px,
-                    image.height_px + border_extent_px,
-                )
-            }
-            None => reservation,
-        }
-    }
-
-    fn border_extent_px(self) -> u32 {
-        ARTWORK_DECORATION_BORDER_WIDTH_PX * 2
     }
 }
 
@@ -644,6 +667,7 @@ pub struct NowPlayingLayout {
     pub activity_copy_gap_px: u32,
     pub artwork_shadow_offset_px: u32,
     pub artwork_shadow_blur_px: u32,
+    pub artwork_border_width_px: u32,
     pub typography: NowPlayingTypography,
     pub metadata_fitting: MetadataFitting,
     pub metadata_optical_correction_px: u32,
@@ -695,8 +719,9 @@ impl NowPlayingLayout {
                 100,
             )),
         };
-        let artwork_shadow_offset_px = scaled(viewport.height_px, 0.0085, 6, 20);
-        let artwork_shadow_blur_px = scaled(viewport.height_px, 0.017, 12, 41);
+        let artwork_shadow_offset_px = scaled(viewport.height_px, 0.0028, 2, 7);
+        let artwork_shadow_blur_px = scaled(viewport.height_px, 0.013, 10, 31);
+        let artwork_border_width_px = scaled(viewport.height_px, 0.0009, 1, 2);
         let artwork_top_viewport_y_px =
             viewport.height_px.saturating_sub(artwork_field_size_px) / 2;
         let artwork_field_anchors = ArtworkFieldAnchors::for_artwork_field(
@@ -780,8 +805,8 @@ impl NowPlayingLayout {
             artwork_field_width_px: artwork_field_size_px,
             artwork_field_height_px: artwork_field_size_px,
             artwork_print_plate: ArtworkPrintPlateLayout {
-                footprint: ArtworkDimensions::new(artwork_field_size_px, artwork_field_size_px),
-                offset_px: scaled(viewport.height_px, 0.0045, 6, 12),
+                offset_x_px: scaled(viewport.height_px, 0.011, 8, 28),
+                offset_y_px: scaled(viewport.height_px, 0.0074, 6, 18),
             },
             identity_placement: IdentityPlacement::BottomRight,
             identity_line: IdentityLineLayout::DEFENSIVE,
@@ -804,6 +829,7 @@ impl NowPlayingLayout {
             activity_copy_gap_px: scaled(viewport.width_px, 0.012, 15, 42),
             artwork_shadow_offset_px,
             artwork_shadow_blur_px,
+            artwork_border_width_px,
             typography,
             metadata_fitting,
             metadata_optical_correction_px: scaled(viewport.height_px, 0.004, 3, 10),

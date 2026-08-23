@@ -60,8 +60,8 @@ fn reserves_the_complete_oled_movement_envelope_at_representative_landscape_view
             );
             assert!(
                 now_playing.outer_gutter_px
-                    + now_playing.artwork_print_plate.footprint.width_px
-                    + now_playing.artwork_print_plate.offset_px
+                    + now_playing.artwork_field_width_px
+                    + now_playing.artwork_print_plate.offset_x_px
                     < now_playing.information.left_viewport_x_px,
                 "the print plate should remain clear of the information rail",
             );
@@ -74,7 +74,7 @@ fn reserves_the_complete_oled_movement_envelope_at_representative_landscape_view
                 "the artwork shadow should remain inside the OLED-safe Now Playing layout"
             );
             assert!(
-                now_playing.artwork_print_plate.offset_px <= artwork_bottom_clearance,
+                now_playing.artwork_print_plate.offset_y_px <= artwork_bottom_clearance,
                 "the print plate should remain inside the OLED-safe Now Playing layout",
             );
 

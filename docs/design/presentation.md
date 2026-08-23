@@ -87,19 +87,24 @@ Artwork composition always reserves the same imaginary square field. Supplied
 artwork is shown completely within that square: square images fill it, while
 non-square images are centered and contained without cropping. The unused area
 around a supplied non-square image is transparent. Its visible surface,
-one-pixel border, and shadow follow the contained image rectangle rather than
-revealing the reserved square. Square supplied artwork keeps the same framed
-appearance. When Now Playing metadata exists without usable artwork, a
-restrained square field preserves the composition without inventing an icon or
-label.
+responsive one-to-two-pixel border, and shadow follow the contained image
+rectangle rather than revealing the reserved square. Square supplied artwork
+keeps the same framed appearance. When Now Playing metadata exists without
+usable artwork, a restrained square field preserves the composition without
+inventing an icon or label.
 
-One solid accent print plate sits behind the complete imaginary square at the
-established small responsive down-and-right offset. It has the same footprint
-as the square and stays crisp, square, and unblurred. The one-pixel keyline and
-shadow remain attached to the visible artwork surface, including the contained
-rectangle for non-square artwork; the shadow does not move behind the combined
-artwork-and-plate stack. No additional plates, registration marks, grain, or
-depth effects are part of the presentation.
+One solid accent print plate sits behind the visible decorated artwork
+rectangle at a deliberately misregistered responsive down-and-right offset. At
+3840×2160 the offset is approximately 24 px right and 16 px down. Supplied
+non-square artwork receives a matching non-square plate centered on the same
+visible bounds before the offset is applied; the imaginary square reservation
+and every information-rail anchor remain unchanged. Missing or unusable artwork
+keeps a square plate behind its quiet square field. The plate stays fully
+opaque, flat, crisp, square-cornered, and unblurred. The responsive keyline and
+quieter artwork-surface shadow remain attached to the visible artwork
+rectangle; the shadow does not move behind the combined artwork-and-plate
+stack. No additional plates, registration marks, grain, rotation, or depth
+effects are part of the presentation.
 
 Usable artwork supplies the color basis for the complete presentation,
 including its background, artwork field, metadata field, text, accent,

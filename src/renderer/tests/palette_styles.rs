@@ -80,12 +80,26 @@ fn print_plate_uses_the_accent_while_depth_stays_on_the_artwork_surface() {
             .contains(".presentation-current .artwork-print-plate { background-color: #FF7051; }")
     );
     assert!(styles.contains(
-        ".presentation-current .artwork { border: 1px solid alpha(#F3EAD7, 0.16); background-color: #142856; box-shadow: 0 8px 15px alpha(#071522, 0.72); }"
+        ".presentation-current .artwork { border: 1px solid alpha(#F3EAD7, 0.16); background-color: #142856; box-shadow: 0 3px 12px alpha(#071522, 0.38); }"
     ));
     assert!(
         !styles.contains(".artwork-print-plate { box-shadow:"),
         "the shadow must not move behind the combined artwork-and-plate stack",
     );
+}
+
+#[test]
+fn artwork_keyline_and_shadow_reach_the_approved_television_geometry() {
+    let palette = PresentationPalette::fallback();
+    let layout = NowPlayingLayout::for_viewport(Viewport::new(3_840, 2_160));
+    let full_field_layout = FullFieldLayout::for_viewport(Viewport::new(3_840, 2_160));
+
+    let styles =
+        PresentationTransitionStyles::new(palette, None).to_css(&layout, &full_field_layout);
+
+    assert!(styles.contains(
+        ".presentation-current .artwork { border: 2px solid alpha(#F3EAD7, 0.16); background-color: #142856; box-shadow: 0 6px 28px alpha(#071522, 0.38); }"
+    ));
 }
 
 #[test]

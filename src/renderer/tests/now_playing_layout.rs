@@ -547,7 +547,23 @@ fn keeps_every_information_role_on_one_rail_with_only_musical_metadata_capped() 
 
 #[test]
 fn contains_the_artwork_and_its_depth_at_representative_landscape_viewports() {
-    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+    let expected_border_widths_px = [1, 1, 1, 1, 1, 2, 2];
+    let expected_shadows_px = [
+        (2, 10),
+        (3, 12),
+        (3, 16),
+        (3, 16),
+        (3, 14),
+        (6, 28),
+        (7, 31),
+    ];
+
+    for ((viewport, expected_border_width_px), expected_shadow_px) in
+        representative_viewports::REPRESENTATIVE_VIEWPORTS
+            .into_iter()
+            .zip(expected_border_widths_px)
+            .zip(expected_shadows_px)
+    {
         let layout = NowPlayingLayout::for_viewport(viewport);
         let expected_artwork_size = ((viewport.height_px as f64) * 0.84)
             .round()
@@ -571,6 +587,18 @@ fn contains_the_artwork_and_its_depth_at_representative_landscape_viewports() {
         assert_eq!(
             layout.artwork_field_anchors.artwork_top_viewport_y_px, vertical_clearance,
             "the responsive artwork square should remain vertically centered at {viewport:?}",
+        );
+        assert_eq!(
+            layout.artwork_border_width_px, expected_border_width_px,
+            "the keyline should stay crisp and gain a second pixel only at television scale at {viewport:?}",
+        );
+        assert_eq!(
+            (
+                layout.artwork_shadow_offset_px,
+                layout.artwork_shadow_blur_px
+            ),
+            expected_shadow_px,
+            "the artwork surface should use the quieter responsive shadow at {viewport:?}",
         );
         assert!(
             layout.artwork_field_width_px <= layout.artwork_column_width_px,
@@ -601,31 +629,62 @@ fn scales_the_identity_label_tracking_across_peer_viewports() {
 }
 
 #[test]
-fn offsets_one_same_footprint_print_plate_inside_the_artwork_gutter() {
-    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+fn uses_distinct_responsive_print_plate_offsets_inside_the_artwork_gutter() {
+    let expected_offsets_px = [
+        (8, 6),
+        (10, 7),
+        (13, 9),
+        (13, 9),
+        (12, 8),
+        (24, 16),
+        (26, 18),
+    ];
+
+    for (viewport, expected_offsets_px) in representative_viewports::REPRESENTATIVE_VIEWPORTS
+        .into_iter()
+        .zip(expected_offsets_px)
+    {
         let layout = NowPlayingLayout::for_viewport(viewport);
         let plate = layout.artwork_print_plate;
-        let expected_offset_px = ((viewport.height_px as f64) * 0.0045)
-            .round()
-            .clamp(6.0, 12.0) as u32;
 
         assert_eq!(
-            plate.footprint,
-            ArtworkDimensions::new(
-                layout.artwork_field_width_px,
-                layout.artwork_field_height_px,
-            ),
-            "the print plate should match the square artwork reservation at {viewport:?}",
-        );
-        assert_eq!(
-            plate.offset_px, expected_offset_px,
-            "the print plate should retain the accepted responsive offset at {viewport:?}",
+            (plate.offset_x_px, plate.offset_y_px),
+            expected_offsets_px,
+            "the print plate should use the selected asymmetric offset at {viewport:?}",
         );
         assert!(
-            plate.offset_px < layout.column_gap_px,
+            plate.offset_x_px < layout.column_gap_px,
             "the strict information rail should remain clear of the print plate at {viewport:?}",
         );
     }
+}
+
+#[test]
+fn positions_the_print_plate_on_the_visible_artwork_rectangle() {
+    let non_square = now_playing("non-square-artwork.json");
+    let square = now_playing("playing.json");
+    let missing = now_playing("missing-artwork.json");
+    let reservation = ArtworkDimensions::new(800, 800);
+    let plate = roonscape_renderer::ArtworkPrintPlateLayout {
+        offset_x_px: 24,
+        offset_y_px: 16,
+    };
+
+    let non_square =
+        ArtworkLayout::for_presentation(&non_square, Some(artwork_dimensions("non-square.svg")))
+            .print_plate_geometry(reservation, 2, plate);
+    assert_eq!(non_square.footprint, ArtworkDimensions::new(800, 452));
+    assert_eq!((non_square.left_px, non_square.top_px), (24, 190));
+
+    let square = ArtworkLayout::for_presentation(&square, Some(artwork_dimensions("playing.svg")))
+        .print_plate_geometry(reservation, 2, plate);
+    assert_eq!(square.footprint, reservation);
+    assert_eq!((square.left_px, square.top_px), (24, 16));
+
+    let missing =
+        ArtworkLayout::for_presentation(&missing, None).print_plate_geometry(reservation, 2, plate);
+    assert_eq!(missing.footprint, reservation);
+    assert_eq!((missing.left_px, missing.top_px), (24, 16));
 }
 
 #[test]
@@ -648,12 +707,12 @@ fn fits_supplied_decoration_to_the_actual_image_bounds() {
         }
     );
     assert_eq!(
-        layout.fitted_image(ArtworkDimensions::new(800, 800)),
+        layout.fitted_image_with_border(ArtworkDimensions::new(800, 800), 1),
         Some(ArtworkDimensions::new(798, 449)),
         "the image should fit inside its one-pixel border",
     );
     assert_eq!(
-        layout.visible_decoration(ArtworkDimensions::new(800, 800)),
+        layout.visible_decoration_with_border(ArtworkDimensions::new(800, 800), 1),
         ArtworkDimensions::new(800, 451),
         "the visible decoration should add the border around the contained image",
     );
@@ -675,7 +734,8 @@ fn keeps_extreme_fitted_dimensions_visible() {
         ),
     ] {
         assert_eq!(
-            ArtworkLayout::for_presentation(&non_square, Some(intrinsic)).fitted_image(reservation),
+            ArtworkLayout::for_presentation(&non_square, Some(intrinsic))
+                .fitted_image_with_border(reservation, 1),
             Some(expected),
             "valid artwork should retain at least one visible pixel on each axis",
         );
@@ -697,14 +757,15 @@ fn preserves_square_decoration_for_square_and_missing_artwork() {
         }
     );
     assert_eq!(
-        ArtworkLayout::for_presentation(&missing, None).visible_decoration(reservation),
+        ArtworkLayout::for_presentation(&missing, None)
+            .visible_decoration_with_border(reservation, 1),
         reservation,
         "the quiet fallback should decorate the complete square field",
     );
     let square_dimensions = artwork_dimensions("playing.svg");
     assert_eq!(
         ArtworkLayout::for_presentation(&square, Some(square_dimensions))
-            .visible_decoration(reservation),
+            .visible_decoration_with_border(reservation, 1),
         reservation,
         "square supplied artwork should retain its framed dimensions",
     );
