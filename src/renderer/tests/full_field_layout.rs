@@ -201,10 +201,10 @@ fn retains_full_field_horizontal_identity_geometry() {
 }
 
 #[test]
-fn uses_distance_legible_full_field_status_and_retains_identity_sizes() {
+fn uses_distance_legible_full_field_status_and_identity_sizes() {
     let expected_symbol_sizes = [56, 62, 62, 74, 96, 96, 96];
     let expected_status_sizes = [29, 35, 35, 42, 52, 52, 52];
-    let expected_identity_sizes = [11, 12, 12, 14, 18, 27, 27];
+    let expected_identity_sizes = [20, 20, 20, 24, 32, 48, 48];
 
     for (index, viewport) in representative_viewports::REPRESENTATIVE_VIEWPORTS
         .into_iter()
@@ -226,7 +226,7 @@ fn uses_distance_legible_full_field_status_and_retains_identity_sizes() {
         );
         assert_eq!(
             layout.identity_px, expected_identity_sizes[index],
-            "Full-field identity size should remain unchanged at {viewport:?}",
+            "Full-field identities should remain readable at {viewport:?}",
         );
     }
 }

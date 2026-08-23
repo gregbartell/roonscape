@@ -60,12 +60,19 @@ scrolling, marquee motion, pagination, or content-specific exceptions.
 Progress or activity uses the complete rail width at the top of the unified
 footer. The identity row follows at a responsive gap and contains two compact
 inline phrases separated by a small muted dot: `OUTPUT <Tracked Output>` and
-`ZONE <Tracked Zone>`. Each label shares one baseline with its name. The two
-phrases receive bounded shares of the row, so names ellipsize independently
-without moving the separator or footer. Presentation Status, timing, activity
-copy, and identities derive their sizes from viewport height while preserving
-readable floors. Full-field Presentation uses its own status and identity
-sizes.
+`ZONE <Tracked Zone>`. Each semibold uppercase label uses slight positive
+tracking and shares one baseline with its name. The two phrases receive bounded
+shares of the row, so names ellipsize independently without moving the
+separator or footer. Presentation Status, timing, and activity copy derive
+their sizes from viewport height while preserving readable floors. Identity
+size also respects a viewport-width ceiling so ordinary names remain complete
+on tall displays. At
+3840×2160, Artist is approximately 68 px, Album 56 px, Presentation Status
+58 px, elapsed and remaining time and both activity lines 56 px, and identity
+names 52 px. Identity labels remain subordinate at approximately 46 px, while
+the muted separator scales to approximately 10 px. Full-field Presentation
+uses its own status and identity sizes, with television-scale caps aligned to
+the same utility hierarchy.
 
 The composition uses the complete landscape field without letterboxing.
 Artwork and metadata keep their relative emphasis on ordinary, tall, wide,

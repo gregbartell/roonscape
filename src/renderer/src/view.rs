@@ -898,7 +898,7 @@ fn font_size_attributes(font_size_px: u32) -> pango::AttrList {
     attributes
 }
 
-fn set_status_label_typography(label: &gtk::Label, font_size_px: u32, letter_spacing_px: u32) {
+fn set_tracked_label_typography(label: &gtk::Label, font_size_px: u32, letter_spacing_px: u32) {
     let attributes = pango::AttrList::new();
     attributes.insert(pango::AttrSize::new_size_absolute(
         font_size_px as i32 * pango::SCALE,
@@ -1195,7 +1195,7 @@ impl RenderedPresentationStatus {
         self.root.set_spacing(dimension(layout.symbol_gap_px));
         let symbol_size = dimension(layout.symbol_size_px);
         self.symbol.set_size_request(symbol_size, symbol_size);
-        set_status_label_typography(&self.label, layout.font_px, layout.letter_spacing_px);
+        set_tracked_label_typography(&self.label, layout.font_px, layout.letter_spacing_px);
     }
 }
 
@@ -1203,18 +1203,25 @@ impl RenderedIdentity {
     fn apply_layout(&self, gap_px: u32, name_px: u32) {
         self.root.set_column_spacing(gap_px.div_ceil(2));
         let label_px = ((name_px as f64) * 0.84).round() as u32;
-        let separator_px = ((name_px * 3).div_ceil(17)).clamp(3, 5);
-        self.apply_typography(label_px, name_px, label_px / 2, separator_px);
+        let separator_px = IdentityRowLayout::separator_diameter_px(name_px);
+        let label_letter_spacing_px = IdentityRowLayout::tracked_label_letter_spacing_px(label_px);
+        self.apply_typography(
+            label_px,
+            name_px,
+            label_px / 2,
+            separator_px,
+            label_letter_spacing_px,
+        );
     }
 
     fn apply_now_playing_layout(&self, layout: IdentityRowLayout, name_px: u32) {
         self.root.set_column_spacing(layout.phrase_gap_px);
-        let label_px = ((name_px as f64) * 0.76).round() as u32;
         self.apply_typography(
-            label_px,
+            layout.label_px,
             name_px,
             layout.label_gap_px,
             layout.separator_size_px,
+            layout.label_letter_spacing_px,
         );
         match layout.phrase_alignment {
             IdentityPhraseAlignment::Baseline => {
@@ -1228,11 +1235,14 @@ impl RenderedIdentity {
                 }
             }
         }
-        for phrase in [&self.output, &self.zone] {
+        for (phrase, maximum_width_px) in [
+            (&self.output, layout.output_phrase_max_width_px),
+            (&self.zone, layout.zone_phrase_max_width_px),
+        ] {
             phrase.set_hexpand(false);
             phrase.set_size_request(-1, -1);
             let (_, natural_width, _, _) = phrase.measure(gtk::Orientation::Horizontal, -1);
-            phrase.set_size_request(natural_width.min(dimension(layout.phrase_max_width_px)), -1);
+            phrase.set_size_request(natural_width.min(dimension(maximum_width_px)), -1);
         }
         self.zone.set_halign(gtk::Align::Start);
         self.output_name.set_hexpand(true);
@@ -1240,10 +1250,17 @@ impl RenderedIdentity {
         self.zone_name.set_xalign(0.0);
     }
 
-    fn apply_typography(&self, label_px: u32, name_px: u32, label_gap_px: u32, separator_px: u32) {
-        set_label_font_size(&self.output_label, label_px);
+    fn apply_typography(
+        &self,
+        label_px: u32,
+        name_px: u32,
+        label_gap_px: u32,
+        separator_px: u32,
+        label_letter_spacing_px: u32,
+    ) {
+        set_tracked_label_typography(&self.output_label, label_px, label_letter_spacing_px);
         set_label_font_size(&self.output_name, name_px);
-        set_label_font_size(&self.zone_label, label_px);
+        set_tracked_label_typography(&self.zone_label, label_px, label_letter_spacing_px);
         set_label_font_size(&self.zone_name, name_px);
         self.separator
             .set_size_request(dimension(separator_px), dimension(separator_px));

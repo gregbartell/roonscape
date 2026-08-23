@@ -180,12 +180,14 @@ instead of approving a scenario at only one size.
   The dedicated missing-artwork Fixture Scenario continues to show the quiet
   artwork fallback independently.
 - **Identities:** Output and Zone share one stable row in the Now Playing
-  footer. Each label and name share one text baseline, each phrase receives at
-  most its bounded share, and a small muted dot stays centered between them
-  without participating in their baseline. Ordinary names fit comfortably;
-  long names remain on one line and end-ellipsize independently without moving
-  the separator or resizing the footer. Available Full-field Presentations use
-  their bottom-right row, and unavailable states expose no stale identities.
+  footer. Each semibold, slightly tracked uppercase label shares one baseline
+  with its more prominent name, each phrase receives at most its bounded share,
+  and a muted dot scaling to approximately 10 px at 3840×2160 stays centered
+  between them without participating in their baseline. Ordinary names fit
+  comfortably; long names remain on one line and end-ellipsize independently
+  without moving the separator or resizing the footer. Available Full-field
+  Presentations use their bottom-right row, and unavailable states expose no
+  stale identities.
 - **Full-field grammar:** Idle, Starting without content, details unavailable,
   Awaiting Roon Authorization, disconnected, and output-unavailable states
   share the accent-bar language while retaining distinct meanings. At every

@@ -4,12 +4,14 @@ mod support;
 
 use std::{fs, path::Path};
 
+use gtk::pango::{self, FontDescription, Layout};
+use gtk::prelude::FontMapExt;
 use roonscape_renderer::{
     ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
     ArtworkLayout, ArtworkReference, IdentityLineLayout, IdentityPhraseAlignment,
     IdentityPlacement, NowPlayingField, NowPlayingFooterContent, NowPlayingLayout, NowPlayingRole,
     Presentation, PresentationStatusDecoration, TextOverflow, parse_snapshot,
-    presentation_from_snapshot, resolve_presentation,
+    presentation_from_snapshot, register_packaged_fallback_fonts, resolve_presentation,
 };
 
 struct UtilitySizeExpectation {
@@ -19,6 +21,8 @@ struct UtilitySizeExpectation {
     activity_heading_px: u32,
     activity_detail_px: u32,
     identity_px: u32,
+    identity_label_px: u32,
+    separator_px: u32,
 }
 
 fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation {
@@ -114,7 +118,7 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
         assert!(layout.typography.album.minimum_px >= 18);
         assert!(layout.presentation_status.font_px >= 20);
         assert!(layout.typography.time_px >= 20);
-        assert!(layout.typography.identity_px >= 11);
+        assert!(layout.typography.identity_px >= 20);
     }
 }
 
@@ -127,7 +131,9 @@ fn uses_selected_responsive_status_and_utility_sizes() {
             time_px: 22,
             activity_heading_px: 22,
             activity_detail_px: 21,
-            identity_px: 18,
+            identity_px: 22,
+            identity_label_px: 19,
+            separator_px: 5,
         },
         UtilitySizeExpectation {
             symbol_px: 34,
@@ -135,7 +141,9 @@ fn uses_selected_responsive_status_and_utility_sizes() {
             time_px: 23,
             activity_heading_px: 23,
             activity_detail_px: 23,
-            identity_px: 18,
+            identity_px: 22,
+            identity_label_px: 19,
+            separator_px: 5,
         },
         UtilitySizeExpectation {
             symbol_px: 45,
@@ -143,7 +151,9 @@ fn uses_selected_responsive_status_and_utility_sizes() {
             time_px: 31,
             activity_heading_px: 31,
             activity_detail_px: 31,
-            identity_px: 18,
+            identity_px: 22,
+            identity_label_px: 19,
+            separator_px: 5,
         },
         UtilitySizeExpectation {
             symbol_px: 45,
@@ -151,7 +161,9 @@ fn uses_selected_responsive_status_and_utility_sizes() {
             time_px: 31,
             activity_heading_px: 31,
             activity_detail_px: 31,
-            identity_px: 18,
+            identity_px: 27,
+            identity_label_px: 24,
+            separator_px: 6,
         },
         UtilitySizeExpectation {
             symbol_px: 41,
@@ -159,7 +171,9 @@ fn uses_selected_responsive_status_and_utility_sizes() {
             time_px: 28,
             activity_heading_px: 28,
             activity_detail_px: 28,
-            identity_px: 18,
+            identity_px: 26,
+            identity_label_px: 23,
+            separator_px: 5,
         },
         UtilitySizeExpectation {
             symbol_px: 82,
@@ -167,7 +181,9 @@ fn uses_selected_responsive_status_and_utility_sizes() {
             time_px: 56,
             activity_heading_px: 56,
             activity_detail_px: 56,
-            identity_px: 32,
+            identity_px: 52,
+            identity_label_px: 46,
+            separator_px: 10,
         },
         UtilitySizeExpectation {
             symbol_px: 82,
@@ -175,7 +191,9 @@ fn uses_selected_responsive_status_and_utility_sizes() {
             time_px: 56,
             activity_heading_px: 56,
             activity_detail_px: 56,
-            identity_px: 32,
+            identity_px: 52,
+            identity_label_px: 46,
+            separator_px: 10,
         },
     ];
 
@@ -221,7 +239,81 @@ fn uses_selected_responsive_status_and_utility_sizes() {
             layout.typography.identity_px, expected.identity_px,
             "{viewport:?}"
         );
+        assert_eq!(
+            layout.identity_row.label_px, expected.identity_label_px,
+            "{viewport:?}"
+        );
+        assert_eq!(
+            layout.identity_row.separator_size_px, expected.separator_px,
+            "{viewport:?}"
+        );
     }
+}
+
+#[test]
+fn keeps_ordinary_identity_names_complete_at_every_peer_viewport() {
+    let renderer_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    register_packaged_fallback_fonts(renderer_root)
+        .expect("packaged identity fonts should register");
+    let font_map = pangocairo::FontMap::new();
+    font_map.changed();
+    let context = font_map.create_context();
+
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = NowPlayingLayout::for_viewport(viewport);
+        for (label, name, maximum_width_px) in [
+            (
+                "OUTPUT",
+                "Speaker System",
+                layout.identity_row.output_phrase_max_width_px,
+            ),
+            (
+                "ZONE",
+                "Living Room",
+                layout.identity_row.zone_phrase_max_width_px,
+            ),
+        ] {
+            let label_width_px = identity_text_width(
+                &context,
+                label,
+                layout.identity_row.label_px,
+                layout.identity_row.label_letter_spacing_px,
+            );
+            let name_width_px =
+                identity_text_width(&context, name, layout.typography.identity_px, 0);
+            let phrase_width_px = label_width_px + layout.identity_row.label_gap_px + name_width_px;
+
+            assert!(
+                phrase_width_px <= maximum_width_px,
+                "{label} {name} should remain complete at {viewport:?}: {label_width_px}px + {}px + {name_width_px}px = {phrase_width_px}px exceeds {}px",
+                layout.identity_row.label_gap_px,
+                maximum_width_px,
+            );
+        }
+    }
+}
+
+fn identity_text_width(
+    context: &pango::Context,
+    text: &str,
+    font_size_px: u32,
+    letter_spacing_px: u32,
+) -> u32 {
+    let line = Layout::new(context);
+    let mut font = FontDescription::from_string("IBM Plex Sans");
+    font.set_absolute_size(f64::from(font_size_px * pango::SCALE as u32));
+    font.set_weight(pango::Weight::Semibold);
+    font.set_variations(Some("wdth=96"));
+    line.set_font_description(Some(&font));
+    line.set_text(text);
+    if letter_spacing_px > 0 {
+        let attributes = pango::AttrList::new();
+        attributes.insert(pango::AttrInt::new_letter_spacing(
+            letter_spacing_px as i32 * pango::SCALE,
+        ));
+        line.set_attributes(Some(&attributes));
+    }
+    line.pixel_size().0 as u32
 }
 
 #[test]
@@ -279,7 +371,8 @@ fn groups_progress_or_activity_with_compact_bounded_identities_in_one_footer() {
             "each identity label and name should share a baseline at {viewport:?}",
         );
         assert!(
-            identity.phrase_max_width_px * 2
+            identity.output_phrase_max_width_px
+                + identity.zone_phrase_max_width_px
                 + identity.separator_size_px
                 + identity.phrase_gap_px * 2
                 <= determinate.information.utility_width_px,
@@ -289,6 +382,11 @@ fn groups_progress_or_activity_with_compact_bounded_identities_in_one_footer() {
             identity.label_gap_px,
             ((determinate.typography.identity_px as f64) * 0.42).round() as u32,
             "identity labels should sit approximately 0.42 em before their names at {viewport:?}",
+        );
+        assert_eq!(
+            identity.label_px,
+            ((determinate.typography.identity_px as f64) * 0.885).round() as u32,
+            "identity labels should remain subordinate but comfortably readable at {viewport:?}",
         );
     }
 }
@@ -481,6 +579,23 @@ fn contains_the_artwork_and_its_depth_at_representative_landscape_viewports() {
         assert!(
             shadow_extent <= vertical_clearance,
             "artwork depth should remain inside the viewport at {viewport:?}"
+        );
+    }
+}
+
+#[test]
+fn scales_the_identity_label_tracking_across_peer_viewports() {
+    let expected_letter_spacing_px = [1, 1, 1, 1, 1, 2, 2];
+
+    for (viewport, letter_spacing_px) in representative_viewports::REPRESENTATIVE_VIEWPORTS
+        .into_iter()
+        .zip(expected_letter_spacing_px)
+    {
+        let layout = NowPlayingLayout::for_viewport(viewport);
+
+        assert_eq!(
+            layout.identity_row.label_letter_spacing_px, letter_spacing_px,
+            "identity labels should use slight positive tracking at {viewport:?}",
         );
     }
 }

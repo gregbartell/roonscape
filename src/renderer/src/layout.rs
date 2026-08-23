@@ -302,11 +302,24 @@ pub enum NowPlayingFooterContent {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IdentityRowLayout {
-    pub phrase_max_width_px: u32,
+    pub output_phrase_max_width_px: u32,
+    pub zone_phrase_max_width_px: u32,
     pub phrase_gap_px: u32,
+    pub label_px: u32,
+    pub label_letter_spacing_px: u32,
     pub label_gap_px: u32,
     pub separator_size_px: u32,
     pub phrase_alignment: IdentityPhraseAlignment,
+}
+
+impl IdentityRowLayout {
+    pub fn tracked_label_letter_spacing_px(label_px: u32) -> u32 {
+        ((label_px as f64) * 0.04).round() as u32
+    }
+
+    pub fn separator_diameter_px(name_px: u32) -> u32 {
+        ((name_px * 5).div_ceil(26)).clamp(4, 10)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -557,7 +570,7 @@ impl FullFieldLayout {
             identity_width_px,
             identity_right_inset_px,
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
-            identity_px: scaled(viewport.width_px, 0.0072, 11, 27),
+            identity_px: scaled(viewport.width_px, 0.0125, 20, 48),
             identity_placement: IdentityPlacement::BottomRight,
             identity_line: IdentityLineLayout::DEFENSIVE,
         }
@@ -723,17 +736,31 @@ impl NowPlayingLayout {
             time_px: scaled(viewport.height_px, 0.0259, 22, 56),
             activity_heading_px: scaled(viewport.height_px, 0.0259, 22, 56),
             activity_detail_px: scaled(viewport.height_px, 0.0259, 21, 56),
-            identity_px: scaled(viewport.height_px, 0.0148, 18, 32),
+            identity_px: scaled(viewport.height_px, 0.0241, 22, 52).min(scaled(
+                viewport.width_px,
+                0.014,
+                22,
+                52,
+            )),
         };
         let identity_phrase_gap_px = ((typography.identity_px as f64) * 1.1).round() as u32;
-        let identity_separator_size_px = ((typography.identity_px * 3).div_ceil(17)).clamp(3, 5);
+        let identity_label_px = ((typography.identity_px as f64) * 0.885).round() as u32;
+        let identity_separator_size_px =
+            IdentityRowLayout::separator_diameter_px(typography.identity_px);
         let identity_fixed_width_px = identity_phrase_gap_px * 2 + identity_separator_size_px;
+        let identity_phrase_width_px = information
+            .utility_width_px
+            .saturating_sub(identity_fixed_width_px);
+        let output_phrase_max_width_px = rounded_fraction(identity_phrase_width_px, 57, 100);
         let identity_row = IdentityRowLayout {
-            phrase_max_width_px: information
-                .utility_width_px
-                .saturating_sub(identity_fixed_width_px)
-                / 2,
+            output_phrase_max_width_px,
+            zone_phrase_max_width_px: identity_phrase_width_px
+                .saturating_sub(output_phrase_max_width_px),
             phrase_gap_px: identity_phrase_gap_px,
+            label_px: identity_label_px,
+            label_letter_spacing_px: IdentityRowLayout::tracked_label_letter_spacing_px(
+                identity_label_px,
+            ),
             label_gap_px: ((typography.identity_px as f64) * 0.42).round() as u32,
             separator_size_px: identity_separator_size_px,
             phrase_alignment: IdentityPhraseAlignment::Baseline,
