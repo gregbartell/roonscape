@@ -661,7 +661,8 @@ pub struct NowPlayingLayout {
     pub footer_height_px: u32,
     pub identity_row: IdentityRowLayout,
     pub presentation_status: PresentationStatusLayout,
-    pub progress_height_px: u32,
+    pub progress_fill_height_px: u32,
+    pub progress_track_height_px: u32,
     pub activity_waveform_width_px: u32,
     pub activity_waveform_height_px: u32,
     pub activity_copy_gap_px: u32,
@@ -823,7 +824,8 @@ impl NowPlayingLayout {
             footer_height_px: 0,
             identity_row,
             presentation_status: PresentationStatusLayout::for_now_playing(viewport),
-            progress_height_px: scaled(viewport.width_px, 0.002, 3, 5),
+            progress_fill_height_px: scaled(viewport.width_px, 0.003125, 4, 12),
+            progress_track_height_px: scaled(viewport.width_px, 0.00156, 2, 6),
             activity_waveform_width_px: scaled(viewport.width_px, 0.058, 74, 180),
             activity_waveform_height_px: scaled(viewport.height_px, 0.065, 46, 96),
             activity_copy_gap_px: scaled(viewport.width_px, 0.012, 15, 42),
@@ -845,7 +847,7 @@ impl NowPlayingLayout {
         let identity_height_px = rounded_fraction(self.typography.identity_px, 5, 4);
         let footer_content_height_px = match self.footer_content {
             NowPlayingFooterContent::DeterminateProgress => {
-                self.progress_height_px
+                self.progress_fill_height_px
                     + self.time_spacing_px
                     + rounded_fraction(self.typography.time_px, 5, 4)
             }

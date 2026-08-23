@@ -125,7 +125,7 @@ test("derives the visual acceptance matrix from the Fixture Scenario catalog", a
   }
 });
 
-test("plans explicit typography and adaptive diagnostics representatives", () => {
+test("plans explicit typography, progress, and diagnostics representatives", () => {
   const representatives = buildPresentationCapturePlan().filter(
     (capture) => capture.variant === "representative",
   );
@@ -185,6 +185,9 @@ test("plans explicit typography and adaptive diagnostics representatives", () =>
         "preferred-typography",
         "fallback-typography",
         "identity-baselines",
+        "progress-early",
+        "progress-middle",
+        "progress-near-complete",
         "dark-diagnostics",
         "light-diagnostics",
         "fixed-no-art-diagnostics",
@@ -227,6 +230,47 @@ test("plans focused light-restraint and dark-ownership native captures", () => {
         },
       ],
       `${viewport} should include focused light and dark Chromatic Matte evidence`,
+    );
+  }
+});
+
+test("plans early middle and near-complete progress evidence", async () => {
+  const representatives = buildPresentationCapturePlan().filter(
+    (capture) =>
+      capture.variant === "representative" &&
+      ["progress-early", "progress-middle", "progress-near-complete"].includes(
+        capture.scenario,
+      ),
+  );
+
+  for (const viewport of REPRESENTATIVE_VIEWPORTS) {
+    const progression = representatives.filter(
+      (capture) => capture.viewport === viewport,
+    );
+    assert.deepEqual(
+      progression.map((capture) => capture.scenario),
+      ["progress-early", "progress-middle", "progress-near-complete"],
+      `${viewport} should expose the complete determinate progression`,
+    );
+
+    const fractions = await Promise.all(
+      progression.map(async (capture) => {
+        const fixture = JSON.parse(
+          await readFile(new URL(`../${capture.fixture}`, import.meta.url)),
+        );
+        return (
+          fixture.progress.positionSeconds / fixture.progress.durationSeconds
+        );
+      }),
+    );
+    assert.ok(fractions[0] < 0.2, "the early rail should remain below 20%");
+    assert.ok(
+      fractions[1] > 0.4 && fractions[1] < 0.8,
+      "the middle rail should remain visibly intermediate",
+    );
+    assert.ok(
+      fractions[2] > 0.9 && fractions[2] < 1,
+      "the near-complete rail should retain a visible remaining track",
     );
   }
 });
@@ -275,7 +319,7 @@ test("capture command orchestrates one native fixture capture and records its ma
   );
   await executable(
     path.join(binDirectory, "scrot"),
-    '#!/bin/sh\n[ "$1" = "--window" ] && [ "$2" = "$ROONSCAPE_CAPTURE_TEST_WINDOW_ID" ] && [ "$3" = "--overwrite" ] || exit 2\ncp "$ROONSCAPE_CAPTURE_TEST_PNG" "$4"\n',
+    '#!/bin/sh\n[ "$1" = "--window" ] && [ "$2" = "$ROONSCAPE_CAPTURE_TEST_WINDOW_ID" ] && [ "$3" = "--overwrite" ] || exit 2\n[ -S "$ROONSCAPE_SOCKET" ] || exit 3\ncp "$ROONSCAPE_CAPTURE_TEST_PNG" "$4"\n',
   );
 
   try {
@@ -329,8 +373,8 @@ test("capture command orchestrates one native fixture capture and records its ma
     );
     assert.equal(
       await readFile(rendererEnvironment, "utf8"),
-      "1280x720||0|unset|ready\n",
-      "the fixture publisher should be ready before the renderer starts",
+      "1280x720||0|unset|missing\n",
+      "the renderer should be ready before the fixture progress clock starts",
     );
     assert.equal(
       await readFile(windowInspectionAttempts, "utf8"),

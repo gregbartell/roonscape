@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 2,
+  "revision": 36,
+  "availability": "available",
+  "playback": "playing",
+  "trackedOutput": {
+    "name": "Speaker System"
+  },
+  "trackedZone": {
+    "name": "Living Room"
+  },
+  "nowPlaying": {
+    "title": "Last Light on Phobos",
+    "artist": "Evelyn Lark & The Orbital Choir",
+    "album": "Signals from the Quiet Sea"
+  },
+  "progress": {
+    "positionSeconds": 250,
+    "durationSeconds": 266,
+    "sampledAt": "2026-08-15T19:20:00Z"
+  },
+  "artwork": {
+    "revision": 3,
+    "path": "src/shared/fixtures/artwork/playing.svg"
+  }
+}

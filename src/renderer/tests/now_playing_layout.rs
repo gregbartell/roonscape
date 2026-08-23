@@ -320,8 +320,13 @@ fn identity_text_width(
 fn groups_progress_or_activity_with_compact_bounded_identities_in_one_footer() {
     let determinate = now_playing("playing.json");
     let indeterminate = now_playing("indeterminate-progress.json");
+    let expected_rail_heights_px = [(4, 2), (5, 2), (5, 2), (6, 3), (8, 4), (12, 6), (12, 6)];
 
-    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+    for (viewport, (fill_height_px, track_height_px)) in
+        representative_viewports::REPRESENTATIVE_VIEWPORTS
+            .into_iter()
+            .zip(expected_rail_heights_px)
+    {
         let determinate = NowPlayingLayout::for_presentation(&determinate, viewport);
         let indeterminate = NowPlayingLayout::for_presentation(&indeterminate, viewport);
 
@@ -354,9 +359,16 @@ fn groups_progress_or_activity_with_compact_bounded_identities_in_one_footer() {
             "footer content and identities should use the selected responsive gap at {viewport:?}",
         );
         assert_eq!(
-            determinate.progress_height_px,
-            ((viewport.width_px as f64) * 0.002).round().clamp(3.0, 5.0) as u32,
-            "progress should use the selected flat track at {viewport:?}",
+            (
+                determinate.progress_fill_height_px,
+                determinate.progress_track_height_px,
+            ),
+            (fill_height_px, track_height_px),
+            "determinate progress should use the selected two-weight rail at {viewport:?}",
+        );
+        assert!(
+            determinate.progress_fill_height_px > determinate.progress_track_height_px,
+            "the played segment should remain heavier than the track at {viewport:?}",
         );
         assert_eq!(
             determinate.time_spacing_px,

@@ -41,6 +41,21 @@ const REPRESENTATIVES = [
     false,
     "dark",
   ),
+  representative(
+    "progress-early",
+    "progress-early.json",
+    "automatic",
+    false,
+    "dark",
+  ),
+  representative("progress-middle", "playing.json", "automatic", false, "dark"),
+  representative(
+    "progress-near-complete",
+    "progress-near-complete.json",
+    "automatic",
+    false,
+    "dark",
+  ),
   representative("dark-diagnostics", "playing.json", "automatic", true, "dark"),
   representative(
     "light-diagnostics",

@@ -31,13 +31,18 @@ window {
   font-weight: 600;
 }
 
-progressbar trough {
-  border: 0;
+.progress-track {
   border-radius: 0;
 }
 
-progressbar progress {
-  min-width: 4px;
+progressbar.progress-fill trough {
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+progressbar.progress-fill progress {
+  min-width: 0;
   border: 0;
   border-radius: 0;
 }

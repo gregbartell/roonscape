@@ -138,18 +138,6 @@ async function captureFixture(
   let publisher;
   let renderer;
   try {
-    publisher = startLongRunning(
-      process.execPath,
-      [path.join(repositoryRoot, "src/bridge/dist/src/fixture.js")],
-      environment,
-    );
-    await publisher.spawned;
-    await waitFor(
-      () => access(socketPath),
-      publisher,
-      "the fixture publisher",
-      { retryMilliseconds: 25 },
-    );
     renderer = startLongRunning(
       "cargo",
       [
@@ -169,6 +157,18 @@ async function captureFixture(
       environment,
       capture.width,
       capture.height,
+    );
+    publisher = startLongRunning(
+      process.execPath,
+      [path.join(repositoryRoot, "src/bridge/dist/src/fixture.js")],
+      environment,
+    );
+    await publisher.spawned;
+    await waitFor(
+      () => access(socketPath),
+      publisher,
+      "the fixture publisher",
+      { retryMilliseconds: 25 },
     );
     await delay(settleMilliseconds);
     assertProcessRunning(renderer, "the native renderer");

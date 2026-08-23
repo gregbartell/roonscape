@@ -93,6 +93,10 @@ beyond the Fixture Scenario matrix:
   Title while supporting roles continue to use packaged IBM Plex Sans.
 - **Identity baselines** uses long Tracked Output and Tracked Zone names to
   expose single-line baseline alignment and defensive end ellipsis.
+- **Progress early**, **progress middle**, and **progress near complete** keep
+  the played fraction visibly below 20%, between 40–80%, and above 90% while
+  retaining a visible remaining track. Together they expose the determinate
+  rail's direct contrast, redundant weight, and square transition encoding.
 - **Dark diagnostics**, **light diagnostics**, and **fixed-no-art
   diagnostics** exercise the overlay against each palette class.
 - **Light matte restraint** uses a synthetic light palette to expose the
@@ -151,6 +155,9 @@ instead of approving a scenario at only one size.
 - **Palette:** Dark and light artwork recolor the complete presentation. The
   gradient geometry remains stable, the fixed no-art palette stays deliberate,
   and text, accent, progress, and diagnostics roles remain readable. The
+  determinate fill is immediately distinct from the track in dark, light, and
+  low-chroma palettes; the complete track remains visible against the metadata
+  field while subordinate to the full artwork-derived accent fill. The
   light-matte representative demonstrates restrained bright-end luminance
   without losing blue and plum chroma; the dark-matte representative
   preserves its dark field and teal ownership. Accent is limited to the print
@@ -172,9 +179,11 @@ instead of approving a scenario at only one size.
   floors at all peer viewports. Now Playing Presentation Status, timing, and
   identities are mildly condensed through the IBM Plex width axis where
   available and remain normal-width otherwise. Full-field status and identity
-  sizes use their dedicated layout. Determinate progress stays a minimal
-  non-interactive line, and elapsed and remaining timing remain tabular and
-  stable as values change.
+  sizes use their dedicated layout. Determinate progress uses a heavier played
+  segment over a centered, lighter remaining track, with square ends and a
+  square transition at the current position. It has no thumb, endpoint marker,
+  or other interactive affordance. Elapsed and remaining timing remain tabular
+  and stable as values change.
 - **Indeterminate activity:** Playing without meaningful timing retains its
   supplied artwork and replaces the complete determinate timeline with seven
   rounded activity bars followed by `Audio active` and `Timing unavailable`

@@ -198,7 +198,7 @@ impl PresentationPalette {
             muted_text: Rgb::new(0x92, 0x99, 0xa8),
             accent: Rgb::new(0xff, 0x70, 0x51),
             status_muted_accent: Rgb::new(0xc3, 0x87, 0x81),
-            progress_track: Rgb::new(0x92, 0x99, 0xa8),
+            progress_track: Rgb::new(0x2f, 0x36, 0x45),
             progress_fill: Rgb::new(0xff, 0x70, 0x51),
             diagnostics_field: Rgb::new(0x0a, 0x14, 0x29),
             diagnostics_text: Rgb::new(0xf3, 0xea, 0xd7),
@@ -332,6 +332,7 @@ impl PresentationPalette {
             profile.contrast_step,
         );
         let status_muted_accent = accent.mix(muted_text, 0.55);
+        let progress_track = progress_track(metadata_field, primary_text, accent);
 
         Ok(Self {
             background,
@@ -342,7 +343,7 @@ impl PresentationPalette {
             muted_text,
             accent,
             status_muted_accent,
-            progress_track: muted_text,
+            progress_track,
             progress_fill: accent,
             diagnostics_field: metadata_field,
             diagnostics_text: primary_text,
@@ -356,6 +357,16 @@ impl PresentationPalette {
             None => Self::fallback(),
         }
     }
+}
+
+fn progress_track(metadata_field: Rgb, primary_text: Rgb, progress_fill: Rgb) -> Rgb {
+    (1..=100)
+        .map(|step| metadata_field.mix(primary_text, f64::from(step) / 100.0))
+        .find(|track| {
+            track.contrast_ratio(metadata_field) >= 1.5
+                && track.contrast_ratio(progress_fill) >= 3.0
+        })
+        .expect("palette contrast guarantees a progress track")
 }
 
 #[derive(Debug)]

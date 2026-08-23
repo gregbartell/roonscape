@@ -121,7 +121,7 @@ fn uses_the_fixed_no_art_palette_without_artwork() {
     assert_eq!(palette.muted_text.to_hex(), "#9299A8");
     assert_eq!(palette.accent.to_hex(), "#FF7051");
     assert_eq!(palette.status_muted_accent.to_hex(), "#C38781");
-    assert_eq!(palette.progress_track.to_hex(), "#9299A8");
+    assert_eq!(palette.progress_track.to_hex(), "#2F3645");
     assert_eq!(palette.progress_fill.to_hex(), "#FF7051");
     assert_eq!(palette.diagnostics_field.to_hex(), "#0A1429");
     assert_eq!(palette.diagnostics_text.to_hex(), "#F3EAD7");
@@ -369,5 +369,53 @@ fn every_semantic_text_and_accent_role_meets_its_field_contrast() {
                 "{source} {role} must have at least {minimum}:1 contrast against the diagnostics field"
             );
         }
+    }
+}
+
+#[test]
+fn progress_roles_preserve_fill_track_and_field_contrast() {
+    let directory = tempdir().expect("a temporary artwork directory should be available");
+    let representative_artwork_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/playing.svg");
+    let light_artwork_path = synthetic_artwork(&directory, "light.svg", "#f4e7c5", "#e59a73");
+    let low_chroma_artwork_path =
+        synthetic_artwork(&directory, "low-chroma.svg", "#62656a", "#8b817c");
+    let palettes = [
+        ("fallback", PresentationPalette::fallback()),
+        (
+            "representative dark artwork",
+            PresentationPalette::from_artwork(&representative_artwork_path)
+                .expect("representative artwork should produce a palette"),
+        ),
+        (
+            "light artwork",
+            PresentationPalette::from_artwork(&light_artwork_path)
+                .expect("light artwork should produce a palette"),
+        ),
+        (
+            "low-chroma artwork",
+            PresentationPalette::from_artwork(&low_chroma_artwork_path)
+                .expect("low-chroma artwork should produce a palette"),
+        ),
+    ];
+
+    for (source, palette) in palettes {
+        let fill_track_contrast = palette.progress_fill.contrast_ratio(palette.progress_track);
+        let track_field_contrast = palette
+            .progress_track
+            .contrast_ratio(palette.metadata_field);
+
+        assert!(
+            fill_track_contrast >= 3.0,
+            "{source} progress fill and track must differ by at least 3:1; got {fill_track_contrast:.2}:1",
+        );
+        assert!(
+            (1.5..=2.0).contains(&track_field_contrast),
+            "{source} progress track should remain a restrained 1.5–2:1 against the metadata field; got {track_field_contrast:.2}:1",
+        );
+        assert_eq!(
+            palette.progress_fill, palette.accent,
+            "{source} progress fill should retain the full artwork-derived accent",
+        );
     }
 }

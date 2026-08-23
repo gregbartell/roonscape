@@ -125,6 +125,7 @@ fn presentation_palette_styles(
     let muted_accent = palette.status_muted_accent.to_hex();
     let progress_track = palette.progress_track.to_hex();
     let progress_fill = palette.progress_fill.to_hex();
+    let progress_fill_height = layout.progress_fill_height_px;
     let shadow_offset = layout.artwork_shadow_offset_px;
     let shadow_blur = layout.artwork_shadow_blur_px;
     let artwork_border_width = layout.artwork_border_width_px;
@@ -144,8 +145,9 @@ fn presentation_palette_styles(
          .{class_name} .activity-detail, .{class_name} .full-field-explanation {{ color: {muted_text}; }}\n\
          .{class_name} .identity-label {{ color: {muted_text}; }}\n\
          .{class_name} .identity-separator {{ background-color: {muted_text}; }}\n\
-         .{class_name} progressbar trough {{ background-color: {progress_track}; }}\n\
-         .{class_name} progressbar progress {{ background-color: {progress_fill}; }}\n"
+         .{class_name} .progress-track {{ background-color: {progress_track}; }}\n\
+         .{class_name} .progress-fill trough, .{class_name} .progress-fill progress {{ min-height: {progress_fill_height}px; }}\n\
+         .{class_name} .progress-fill progress {{ background-color: {progress_fill}; }}\n"
     )
 }
 

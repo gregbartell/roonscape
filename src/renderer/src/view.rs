@@ -71,7 +71,9 @@ impl PresentationLayoutSource {
 #[derive(Clone)]
 struct RenderedProgress {
     root: gtk::Box,
-    bar: gtk::ProgressBar,
+    rail: gtk::Overlay,
+    track: gtk::Box,
+    fill: gtk::ProgressBar,
     times: gtk::Box,
     elapsed: gtk::Label,
     remaining: gtk::Label,
@@ -79,7 +81,7 @@ struct RenderedProgress {
 
 impl RenderedProgress {
     fn update(&self, progress: &PresentationProgress) {
-        self.bar.set_fraction(progress.fraction);
+        self.fill.set_fraction(progress.fraction);
         self.elapsed.set_text(&progress.elapsed);
         self.remaining.set_text(&progress.remaining);
     }
@@ -1110,8 +1112,14 @@ impl RenderedMetadata {
         if let Some(progress) = self.progress.as_ref() {
             progress.root.set_margin_top(0);
             progress
-                .bar
-                .set_height_request(dimension(layout.progress_height_px));
+                .rail
+                .set_height_request(dimension(layout.progress_fill_height_px));
+            progress
+                .track
+                .set_height_request(dimension(layout.progress_track_height_px));
+            progress
+                .fill
+                .set_height_request(dimension(layout.progress_fill_height_px));
             progress
                 .times
                 .set_margin_top(dimension(layout.time_spacing_px));
@@ -1376,10 +1384,24 @@ fn progress_view(progress: &PresentationProgress) -> RenderedProgress {
     let group = gtk::Box::new(gtk::Orientation::Vertical, 0);
     group.add_css_class("progress-group");
 
-    let bar = gtk::ProgressBar::new();
-    bar.set_fraction(progress.fraction);
-    bar.set_show_text(false);
-    group.append(&bar);
+    let rail = gtk::Overlay::new();
+    rail.add_css_class("progress-rail");
+    rail.set_hexpand(true);
+    let track = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    track.add_css_class("progress-track");
+    track.set_halign(gtk::Align::Fill);
+    track.set_valign(gtk::Align::Center);
+    rail.set_child(Some(&track));
+    let fill = gtk::ProgressBar::new();
+    fill.add_css_class("progress-fill");
+    fill.set_fraction(progress.fraction);
+    fill.set_show_text(false);
+    fill.set_hexpand(true);
+    fill.set_halign(gtk::Align::Fill);
+    fill.set_valign(gtk::Align::Center);
+    rail.add_overlay(&fill);
+    rail.set_measure_overlay(&fill, true);
+    group.append(&rail);
 
     let times = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     times.add_css_class("times");
@@ -1392,7 +1414,9 @@ fn progress_view(progress: &PresentationProgress) -> RenderedProgress {
     group.append(&times);
     RenderedProgress {
         root: group,
-        bar,
+        rail,
+        track,
+        fill,
         times,
         elapsed,
         remaining,
@@ -1654,5 +1678,14 @@ mod tests {
         ));
         assert!(STYLES.contains(".status-symbol-container"));
         assert!(STYLES.contains("border-radius: 999px;"));
+    }
+
+    #[test]
+    fn gives_the_determinate_rail_square_noninteractive_layers() {
+        assert!(STYLES.contains(".progress-track"));
+        assert!(STYLES.contains("progressbar.progress-fill trough"));
+        assert!(STYLES.contains("background-color: transparent;"));
+        assert!(STYLES.contains("border-radius: 0;"));
+        assert!(!STYLES.contains("min-width: 4px;"));
     }
 }

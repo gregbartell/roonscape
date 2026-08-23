@@ -24,8 +24,9 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
         ".activity-waveform { color: #FF7051; }",
         ".activity-heading { color: #F3EAD7; }",
         ".activity-detail, .presentation-current .full-field-explanation { color: #9299A8; }",
-        "progressbar trough { background-color: #9299A8; }",
-        "progressbar progress { background-color: #FF7051; }",
+        ".progress-track { background-color: #2F3645; }",
+        ".progress-fill trough, .presentation-current .progress-fill progress { min-height: 5px; }",
+        ".progress-fill progress { background-color: #FF7051; }",
     ] {
         assert!(
             styles.contains(declaration),
@@ -64,6 +65,33 @@ fn presentation_status_emphasis_uses_full_and_muted_accent_without_glow() {
         !status_uses_shadow,
         "generated Presentation Status styles must contain no shadow or halo CSS",
     );
+}
+
+#[test]
+fn transition_layers_keep_their_own_progress_palette_roles() {
+    let current = PresentationPalette::fallback();
+    let outgoing = PresentationPalette {
+        progress_track: rgb(0x40, 0x45, 0x50),
+        progress_fill: rgb(0xd8, 0xb0, 0x32),
+        ..current
+    };
+    let layout = NowPlayingLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
+    let full_field_layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
+
+    let styles = PresentationTransitionStyles::new(current, Some(outgoing))
+        .to_css(&layout, &full_field_layout);
+
+    for declaration in [
+        ".presentation-current .progress-track { background-color: #2F3645; }",
+        ".presentation-current .progress-fill progress { background-color: #FF7051; }",
+        ".presentation-outgoing .progress-track { background-color: #404550; }",
+        ".presentation-outgoing .progress-fill progress { background-color: #D8B032; }",
+    ] {
+        assert!(
+            styles.contains(declaration),
+            "each transition layer should retain {declaration:?}",
+        );
+    }
 }
 
 #[test]

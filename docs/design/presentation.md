@@ -125,6 +125,12 @@ the background and metadata fields used by the information rail. Their hue
 and relative emphasis remain derived from the artwork. The fixed no-art
 palette retains its established role colors.
 
+Determinate progress uses a field-relative neutral track rather than a text
+role. The track remains approximately 1.5–2:1 against the local metadata field,
+while the full artwork-derived accent fill differs from the track by at least
+3:1. This direct relationship is guaranteed independently of either color's
+contrast with the surrounding field.
+
 Presentation Status uses the artwork-derived accent without assigning fixed
 hues to playback or availability conditions. Playing and Starting use the
 full accent without a glow or halo; Paused uses a muted and desaturated form
@@ -150,7 +156,13 @@ the status row; determinate time remains in the progress area.
 Determinate progress remains a minimal linear track and fill without scrub,
 transport, hover, or other control affordances. It spans the footer utility
 width, with elapsed and remaining timing beneath it in tabular numerals so
-updates do not shift their alignment.
+updates do not shift their alignment. The played segment is heavier than the
+remaining track, and the remaining track is vertically centered behind it.
+Both use square ends with an abrupt square transition at the current position.
+At 3840×2160, the played segment is approximately 12 px high, the remaining
+track is approximately 6 px high, and the gap between progress or activity and
+identities is approximately 40 px; these values scale responsively across peer
+viewports.
 
 Playing without meaningful duration uses the same footer role for a compact
 activity treatment instead of fabricating a timeline. Seven rounded vertical
