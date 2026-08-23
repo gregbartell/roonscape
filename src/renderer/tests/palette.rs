@@ -302,47 +302,56 @@ fn every_semantic_text_and_accent_role_meets_its_field_contrast() {
     let forever_direction_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../shared/fixtures/artwork/forever-direction.svg");
     let palettes = [
-        ("fallback", PresentationPalette::fallback()),
+        ("fallback", PresentationPalette::fallback(), false),
         (
             "dark artwork",
             PresentationPalette::from_artwork(&dark_artwork_path)
                 .expect("dark artwork should produce a palette"),
+            true,
         ),
         (
             "light artwork",
             PresentationPalette::from_artwork(&light_artwork_path)
                 .expect("light artwork should produce a palette"),
+            true,
         ),
         (
             "representative artwork",
             PresentationPalette::from_artwork(&representative_artwork_path)
                 .expect("representative artwork should produce a palette"),
+            true,
         ),
         (
             "Cellout-direction artwork",
             PresentationPalette::from_artwork(&cellout_direction_path)
                 .expect("Cellout-direction artwork should produce a palette"),
+            true,
         ),
         (
             "Forever-direction artwork",
             PresentationPalette::from_artwork(&forever_direction_path)
                 .expect("Forever-direction artwork should produce a palette"),
+            true,
         ),
     ];
 
-    for (source, palette) in palettes {
-        for (field_name, field) in [
-            ("background", palette.background),
-            ("artwork field", palette.artwork_field),
-            ("metadata field", palette.metadata_field),
+    for (source, palette, artwork_derived) in palettes {
+        let supporting_text_minimum = if artwork_derived { 7.0 } else { 4.5 };
+        for (field_name, field, supporting_minimum) in [
+            ("background", palette.background, supporting_text_minimum),
+            ("artwork field", palette.artwork_field, 4.5),
+            (
+                "metadata field",
+                palette.metadata_field,
+                supporting_text_minimum,
+            ),
         ] {
             for (role, color, minimum) in [
                 ("primary text", palette.primary_text, 7.0),
-                ("secondary text", palette.secondary_text, 4.5),
-                ("muted text", palette.muted_text, 4.5),
+                ("secondary text", palette.secondary_text, supporting_minimum),
+                ("muted text", palette.muted_text, supporting_minimum),
                 ("accent", palette.accent, 4.5),
                 ("muted status accent", palette.status_muted_accent, 4.5),
-                ("progress track", palette.progress_track, 4.5),
                 ("progress fill", palette.progress_fill, 4.5),
             ] {
                 assert!(

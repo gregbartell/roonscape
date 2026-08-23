@@ -294,6 +294,7 @@ impl PresentationPalette {
             }
         };
         let presentation_fields = [background, artwork_field, metadata_field];
+        let supporting_text_fields = [background, metadata_field];
         let primary_text = readable_tint(
             light_hsl.with_saturation_and_lightness(
                 light_hsl.saturation.clamp(0.08, 0.24),
@@ -308,8 +309,8 @@ impl PresentationPalette {
                 dominant_hsl.saturation.clamp(0.12, 0.3),
                 profile.secondary_lightness,
             ),
-            &presentation_fields,
-            4.5,
+            &supporting_text_fields,
+            7.0,
             profile.contrast_step,
         );
         let muted_text = readable_tint(
@@ -317,8 +318,8 @@ impl PresentationPalette {
                 dominant_hsl.saturation.clamp(0.08, 0.2),
                 profile.secondary_lightness,
             ),
-            &presentation_fields,
-            4.5,
+            &supporting_text_fields,
+            7.0,
             profile.contrast_step,
         );
         let accent = readable_tint(

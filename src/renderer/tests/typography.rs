@@ -66,7 +66,7 @@ fn generated_styles_assign_now_playing_roles_without_changing_full_field_roles()
     ));
     assert!(styles.contains(NOW_PLAYING_SUPPORTING_RULE));
     assert!(styles.contains(
-        ".now-playing .status-label, .now-playing .time, .now-playing .identity-label, .now-playing .identity-name { font-variation-settings: \"wdth\" 88; }"
+        ".now-playing .status-label, .now-playing .time, .now-playing .identity-label, .now-playing .identity-name { font-variation-settings: \"wdth\" 96; }"
     ));
     assert!(styles.contains(".time { font-variant-numeric: tabular-nums; }"));
     assert!(styles.contains(

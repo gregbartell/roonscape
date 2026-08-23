@@ -110,10 +110,10 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
         assert!(layout.typography.title.preferred_px >= layout.typography.title.reduced_px);
         assert!(layout.typography.title.reduced_px >= layout.typography.title.minimum_px);
         assert!(layout.typography.title.minimum_px >= 36);
-        assert!(layout.typography.artist.minimum_px >= 18);
-        assert!(layout.typography.album.minimum_px >= 15);
-        assert!(layout.presentation_status.font_px >= 12);
-        assert!(layout.typography.time_px >= 11);
+        assert!(layout.typography.artist.minimum_px >= 20);
+        assert!(layout.typography.album.minimum_px >= 18);
+        assert!(layout.presentation_status.font_px >= 20);
+        assert!(layout.typography.time_px >= 20);
         assert!(layout.typography.identity_px >= 11);
     }
 }
@@ -122,59 +122,59 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
 fn uses_selected_responsive_status_and_utility_sizes() {
     let expected = [
         UtilitySizeExpectation {
-            symbol_px: 27,
-            status_px: 19,
-            time_px: 18,
-            activity_heading_px: 18,
-            activity_detail_px: 18,
+            symbol_px: 31,
+            status_px: 22,
+            time_px: 22,
+            activity_heading_px: 22,
+            activity_detail_px: 21,
             identity_px: 18,
         },
         UtilitySizeExpectation {
-            symbol_px: 27,
-            status_px: 19,
-            time_px: 18,
-            activity_heading_px: 18,
-            activity_detail_px: 18,
+            symbol_px: 34,
+            status_px: 24,
+            time_px: 23,
+            activity_heading_px: 23,
+            activity_detail_px: 23,
             identity_px: 18,
         },
         UtilitySizeExpectation {
-            symbol_px: 30,
-            status_px: 21,
-            time_px: 18,
-            activity_heading_px: 18,
-            activity_detail_px: 18,
+            symbol_px: 45,
+            status_px: 32,
+            time_px: 31,
+            activity_heading_px: 31,
+            activity_detail_px: 31,
             identity_px: 18,
         },
         UtilitySizeExpectation {
-            symbol_px: 30,
-            status_px: 21,
-            time_px: 18,
-            activity_heading_px: 18,
-            activity_detail_px: 18,
+            symbol_px: 45,
+            status_px: 32,
+            time_px: 31,
+            activity_heading_px: 31,
+            activity_detail_px: 31,
             identity_px: 18,
         },
         UtilitySizeExpectation {
-            symbol_px: 27,
-            status_px: 19,
-            time_px: 18,
-            activity_heading_px: 18,
-            activity_detail_px: 18,
+            symbol_px: 41,
+            status_px: 29,
+            time_px: 28,
+            activity_heading_px: 28,
+            activity_detail_px: 28,
             identity_px: 18,
         },
         UtilitySizeExpectation {
-            symbol_px: 54,
-            status_px: 38,
-            time_px: 32,
-            activity_heading_px: 32,
-            activity_detail_px: 32,
+            symbol_px: 82,
+            status_px: 58,
+            time_px: 56,
+            activity_heading_px: 56,
+            activity_detail_px: 56,
             identity_px: 32,
         },
         UtilitySizeExpectation {
-            symbol_px: 54,
-            status_px: 38,
-            time_px: 32,
-            activity_heading_px: 32,
-            activity_detail_px: 32,
+            symbol_px: 82,
+            status_px: 58,
+            time_px: 56,
+            activity_heading_px: 56,
+            activity_detail_px: 56,
             identity_px: 32,
         },
     ];
@@ -256,9 +256,9 @@ fn groups_progress_or_activity_with_compact_bounded_identities_in_one_footer() {
         );
         assert_eq!(
             determinate.footer_gap_px,
-            ((viewport.height_px as f64) * 0.02)
+            ((viewport.height_px as f64) * 0.0185)
                 .round()
-                .clamp(17.0, 30.0) as u32,
+                .clamp(18.0, 40.0) as u32,
             "footer content and identities should use the selected responsive gap at {viewport:?}",
         );
         assert_eq!(
@@ -289,6 +289,31 @@ fn groups_progress_or_activity_with_compact_bounded_identities_in_one_footer() {
             identity.label_gap_px,
             ((determinate.typography.identity_px as f64) * 0.42).round() as u32,
             "identity labels should sit approximately 0.42 em before their names at {viewport:?}",
+        );
+    }
+}
+
+#[test]
+fn budgets_the_complete_stacked_activity_copy_in_the_footer() {
+    let indeterminate = now_playing("indeterminate-progress.json");
+
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        let layout = NowPlayingLayout::for_presentation(&indeterminate, viewport);
+        let heading_line_height_px = (layout.typography.activity_heading_px * 5 + 2) / 4;
+        let detail_line_height_px = (layout.typography.activity_detail_px * 5 + 2) / 4;
+        let activity_copy_height_px = heading_line_height_px + detail_line_height_px;
+        let activity_height_px = activity_copy_height_px.max(layout.activity_waveform_height_px);
+        let identity_height_px = (layout.typography.identity_px * 5 + 2) / 4;
+
+        assert_eq!(
+            layout.footer_height_px,
+            activity_height_px + layout.footer_gap_px + identity_height_px,
+            "the footer should reserve both rendered activity lines and the waveform at {viewport:?}",
+        );
+        assert_eq!(
+            layout.metadata_region_bottom_viewport_y_px,
+            layout.footer_anchor.bottom_viewport_y_px - layout.footer_height_px,
+            "metadata should stop above the complete activity footer at {viewport:?}",
         );
     }
 }

@@ -201,9 +201,9 @@ fn retains_full_field_horizontal_identity_geometry() {
 }
 
 #[test]
-fn retains_full_field_status_and_identity_sizes() {
+fn uses_distance_legible_full_field_status_and_retains_identity_sizes() {
     let expected_symbol_sizes = [56, 62, 62, 74, 96, 96, 96];
-    let expected_status_sizes = [29, 35, 35, 42, 42, 42, 42];
+    let expected_status_sizes = [29, 35, 35, 42, 52, 52, 52];
     let expected_identity_sizes = [11, 12, 12, 14, 18, 27, 27];
 
     for (index, viewport) in representative_viewports::REPRESENTATIVE_VIEWPORTS
@@ -222,13 +222,20 @@ fn retains_full_field_status_and_identity_sizes() {
         );
         assert_eq!(
             layout.presentation_status.font_px, expected_status_sizes[index],
-            "Full-field status text size should remain unchanged at {viewport:?}",
+            "Full-field status text should remain readable at {viewport:?}",
         );
         assert_eq!(
             layout.identity_px, expected_identity_sizes[index],
             "Full-field identity size should remain unchanged at {viewport:?}",
         );
     }
+}
+
+#[test]
+fn raises_the_full_field_explanation_cap_for_television_distance() {
+    let layout = FullFieldLayout::for_viewport(Viewport::new(3_840, 2_160));
+
+    assert_eq!(layout.explanation_font.preferred_px, 48);
 }
 
 #[test]

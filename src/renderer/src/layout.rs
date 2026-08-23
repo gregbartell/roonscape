@@ -401,7 +401,7 @@ impl BottomAnchor {
 
 impl PresentationStatusLayout {
     fn for_now_playing(viewport: Viewport) -> Self {
-        let font_px = scaled(viewport.height_px, 0.0178, 19, 38);
+        let font_px = scaled(viewport.height_px, 0.02685, 22, 58);
         Self {
             symbol_size_px: ((font_px as f64) * 1.42).round() as u32,
             symbol_gap_px: ((font_px as f64) * 0.42).round() as u32,
@@ -412,7 +412,7 @@ impl PresentationStatusLayout {
     }
 
     fn for_full_field(viewport: Viewport) -> Self {
-        let font_px = scaled(viewport.width_px, 0.022, 29, 42);
+        let font_px = scaled(viewport.width_px, 0.022, 29, 52);
         Self {
             symbol_size_px: scaled(viewport.width_px, 0.0385, 56, 96),
             symbol_gap_px: scaled(viewport.width_px, 0.0115, 16, 44),
@@ -505,7 +505,7 @@ impl FullFieldLayout {
             preferred_px: scaled(viewport.width_px, 0.05, 51, 160),
         };
         let explanation_font = FullFieldFontSize {
-            preferred_px: scaled(viewport.width_px, 0.0135, 16, 46),
+            preferred_px: scaled(viewport.width_px, 0.0135, 16, 48),
         };
         let heading_slot_height_px = rounded_fraction(heading_font.preferred_px, 5, 4);
         let heading_slot_top_viewport_y_px =
@@ -711,18 +711,18 @@ impl NowPlayingLayout {
                 )),
             },
             artist: MetadataFontSizes {
-                preferred_px: scaled(viewport.height_px, 0.0215, 24, 48),
-                reduced_px: scaled(viewport.height_px, 0.018, 18, 38),
-                minimum_px: scaled(viewport.height_px, 0.018, 18, 38),
+                preferred_px: scaled(viewport.height_px, 0.032, 26, 68),
+                reduced_px: scaled(viewport.height_px, 0.026, 22, 56),
+                minimum_px: scaled(viewport.height_px, 0.022, 20, 48),
             },
             album: MetadataFontSizes {
-                preferred_px: scaled(viewport.height_px, 0.0178, 20, 40),
-                reduced_px: scaled(viewport.height_px, 0.0155, 16, 34),
-                minimum_px: scaled(viewport.height_px, 0.0155, 16, 34),
+                preferred_px: scaled(viewport.height_px, 0.026, 22, 56),
+                reduced_px: scaled(viewport.height_px, 0.022, 19, 48),
+                minimum_px: scaled(viewport.height_px, 0.019, 18, 42),
             },
-            time_px: scaled(viewport.height_px, 0.0148, 18, 32),
-            activity_heading_px: scaled(viewport.height_px, 0.0148, 18, 32),
-            activity_detail_px: scaled(viewport.height_px, 0.0148, 18, 32),
+            time_px: scaled(viewport.height_px, 0.0259, 22, 56),
+            activity_heading_px: scaled(viewport.height_px, 0.0259, 22, 56),
+            activity_detail_px: scaled(viewport.height_px, 0.0259, 21, 56),
             identity_px: scaled(viewport.height_px, 0.0148, 18, 32),
         };
         let identity_phrase_gap_px = ((typography.identity_px as f64) * 1.1).round() as u32;
@@ -766,7 +766,7 @@ impl NowPlayingLayout {
             album_spacing_px: metadata_fitting.normal_album_gap_px,
             time_spacing_px: ((typography.time_px as f64) * 0.58).round() as u32,
             footer_content: NowPlayingFooterContent::IdentityOnly,
-            footer_gap_px: scaled(viewport.height_px, 0.02, 17, 30),
+            footer_gap_px: scaled(viewport.height_px, 0.0185, 18, 40),
             footer_optical_raise_px,
             footer_height_px: 0,
             identity_row,
@@ -796,7 +796,9 @@ impl NowPlayingLayout {
                     + self.time_spacing_px
                     + rounded_fraction(self.typography.time_px, 5, 4)
             }
-            NowPlayingFooterContent::IndeterminateActivity => self.activity_waveform_height_px,
+            NowPlayingFooterContent::IndeterminateActivity => self
+                .activity_waveform_height_px
+                .max(self.activity_copy_height_px()),
             NowPlayingFooterContent::IdentityOnly => 0,
         };
         let footer_gap_px = if self.footer_content == NowPlayingFooterContent::IdentityOnly {
@@ -819,6 +821,11 @@ impl NowPlayingLayout {
             .saturating_sub(status_bottom_viewport_y_px)
             .saturating_sub(self.presentation_status.font_px.saturating_mul(2))
             .saturating_sub(self.metadata_optical_correction_px.saturating_mul(2));
+    }
+
+    fn activity_copy_height_px(&self) -> u32 {
+        rounded_fraction(self.typography.activity_heading_px, 5, 4)
+            + rounded_fraction(self.typography.activity_detail_px, 5, 4)
     }
 
     pub fn metadata_group_offset_px(&self, group_height_px: u32) -> u32 {

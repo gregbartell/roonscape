@@ -54,7 +54,7 @@ impl TypographyStyles {
              .now-playing .artist, .now-playing .album, .now-playing .status-label, .now-playing .time, .now-playing .activity-heading, .now-playing .activity-detail, .now-playing .identity-label, .now-playing .identity-name {{ font-family: \"{}\", sans-serif; }}\n\
              .full-field .editorial-text, .full-field-heading {{ font-family: \"{}\", serif; }}\n\
              .full-field .utility-text, .full-field .status-label, .full-field .identity-label, .full-field .identity-name, .full-field .full-field-explanation, .diagnostics {{ font-family: \"{}\", sans-serif; }}\n\
-             .now-playing .status-label, .now-playing .time, .now-playing .identity-label, .now-playing .identity-name {{ font-variation-settings: \"wdth\" 88; }}\n\
+             .now-playing .status-label, .now-playing .time, .now-playing .identity-label, .now-playing .identity-name {{ font-variation-settings: \"wdth\" 96; }}\n\
              .time {{ font-variant-numeric: tabular-nums; }}\n",
             self.typography.now_playing_title_family(),
             title_fallback,

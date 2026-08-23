@@ -108,6 +108,11 @@ otherwise approach a room-filling near-white field. The calibrated reduction
 is approximately 8–12% at the bright end and preserves the artwork's hue and
 chroma; it does not neutralize dark or teal-heavy palettes.
 
+Artwork-derived secondary and muted text target at least 7:1 contrast against
+the background and metadata fields used by the information rail. Their hue
+and relative emphasis remain derived from the artwork. The fixed no-art
+palette retains its established role colors.
+
 Presentation Status uses the artwork-derived accent without assigning fixed
 hues to playback or availability conditions. Playing and Starting use the
 full accent without a glow or halo; Paused uses a muted and desaturated form
@@ -153,7 +158,7 @@ Status, progress and activity copy, timing, and identities also use packaged
 IBM Plex Sans, independently of Title-face availability.
 
 Now Playing Presentation Status, timing, and identities request IBM Plex's
-`wdth=88` variation through Pango. When the active face does not expose that
+`wdth=96` variation through Pango. When the active face does not expose that
 axis, Pango ignores the request and leaves the text at normal width; RoonScape
 never applies synthetic geometric compression.
 

@@ -90,38 +90,38 @@ fn uses_the_selected_responsive_metadata_typography() {
     let expected_tiers = [
         ExpectedFontTiers {
             title: font_tiers(88, 68, 54),
-            artist: font_tiers(24, 18, 18),
-            album: font_tiers(20, 16, 16),
+            artist: font_tiers(26, 22, 20),
+            album: font_tiers(22, 19, 18),
         },
         ExpectedFontTiers {
             title: font_tiers(88, 68, 54),
-            artist: font_tiers(24, 18, 18),
-            album: font_tiers(20, 16, 16),
+            artist: font_tiers(29, 23, 20),
+            album: font_tiers(23, 20, 18),
         },
         ExpectedFontTiers {
             title: font_tiers(98, 68, 54),
-            artist: font_tiers(26, 22, 22),
-            album: font_tiers(21, 19, 19),
+            artist: font_tiers(38, 31, 26),
+            album: font_tiers(31, 26, 23),
         },
         ExpectedFontTiers {
             title: font_tiers(98, 77, 65),
-            artist: font_tiers(26, 22, 22),
-            album: font_tiers(21, 19, 19),
+            artist: font_tiers(38, 31, 26),
+            album: font_tiers(31, 26, 23),
         },
         ExpectedFontTiers {
             title: font_tiers(88, 76, 63),
-            artist: font_tiers(24, 19, 19),
-            album: font_tiers(20, 17, 17),
+            artist: font_tiers(35, 28, 24),
+            album: font_tiers(28, 24, 21),
         },
         ExpectedFontTiers {
             title: font_tiers(176, 151, 125),
-            artist: font_tiers(46, 38, 38),
-            album: font_tiers(38, 33, 33),
+            artist: font_tiers(68, 56, 48),
+            album: font_tiers(56, 48, 41),
         },
         ExpectedFontTiers {
             title: font_tiers(180, 154, 128),
-            artist: font_tiers(48, 38, 38),
-            album: font_tiers(40, 34, 34),
+            artist: font_tiers(68, 56, 48),
+            album: font_tiers(56, 48, 42),
         },
     ];
 
@@ -432,8 +432,7 @@ fn pango_group_fitting_covers_the_metadata_matrix_with_each_available_title_face
                         "An Imaginary",
                         "Catalogue of",
                         "Constellations",
-                        "Observed",
-                        "Through the…",
+                        "Observed…",
                     ]
                 };
                 assert_eq!(title.lines, expected_lines);
