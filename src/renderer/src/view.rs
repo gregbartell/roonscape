@@ -1,4 +1,6 @@
+use std::cell::Cell;
 use std::path::Path;
+use std::rc::Rc;
 use std::time::Duration;
 
 use gtk::gdk;
@@ -9,12 +11,12 @@ use roonscape_renderer::{
     ArtworkLayout, FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, FullFieldPresentation,
     IdentityLineLayout, IdentityPhraseAlignment, IdentityPlacement, IdentityRowLayout,
     InactivityLayout, InactivityTransform, MetadataGroupPlan, MetadataLayout, MetadataLineLayout,
-    MetadataTypography, NowPlayingField, NowPlayingFooterContent, NowPlayingLayout,
-    NowPlayingPresentation, NowPlayingRole, Presentation, PresentationActivity,
-    PresentationPalette, PresentationProgress, PresentationRevision, PresentationStatus,
-    PresentationStatusEmphasis, PresentationStatusLayout, PresentationStyleLayer,
-    PresentationTransition, PresentationTransitionStyles, TextOverflow, TypographySelection,
-    TypographyStyles, Viewport, metadata_layout, resolve_presentation,
+    MetadataTypography, NowPlayingField, NowPlayingFooterContent, NowPlayingGradient,
+    NowPlayingGradientCacheKey, NowPlayingLayout, NowPlayingPresentation, NowPlayingRole,
+    Presentation, PresentationActivity, PresentationPalette, PresentationProgress,
+    PresentationRevision, PresentationStatus, PresentationStatusEmphasis, PresentationStatusLayout,
+    PresentationStyleLayer, PresentationTransition, PresentationTransitionStyles, TextOverflow,
+    TypographySelection, TypographyStyles, Viewport, metadata_layout, resolve_presentation,
 };
 
 use crate::activity_waveform::activity_waveform;
@@ -106,11 +108,54 @@ struct RenderedActivity {
 }
 
 struct RenderedNowPlaying {
+    background: RenderedNowPlayingBackground,
     content: gtk::Box,
     artwork_column: gtk::CenterBox,
     artwork: RenderedArtwork,
     metadata_slot: gtk::Box,
     metadata: RenderedMetadata,
+}
+
+struct RenderedNowPlayingBackground {
+    picture: gtk::Picture,
+    palette: PresentationPalette,
+    cache_key: Rc<Cell<Option<NowPlayingGradientCacheKey>>>,
+}
+
+struct RenderedNowPlayingGradient {
+    logical_viewport: Viewport,
+    physical_viewport: Viewport,
+    stride_bytes: usize,
+    rgba8: Vec<u8>,
+}
+
+trait NowPlayingGradientTarget {
+    fn scale_factor(&self) -> u32;
+
+    fn install_gradient(&self, gradient: RenderedNowPlayingGradient);
+}
+
+impl NowPlayingGradientTarget for gtk::Picture {
+    fn scale_factor(&self) -> u32 {
+        u32::try_from(gtk::prelude::WidgetExt::scale_factor(self))
+            .expect("GTK display scale factor must be positive")
+    }
+
+    fn install_gradient(&self, gradient: RenderedNowPlayingGradient) {
+        let bytes = gtk::glib::Bytes::from_owned(gradient.rgba8);
+        let texture = gdk::MemoryTexture::new(
+            dimension(gradient.physical_viewport.width_px),
+            dimension(gradient.physical_viewport.height_px),
+            gdk::MemoryFormat::R8g8b8a8,
+            &bytes,
+            gradient.stride_bytes,
+        );
+        self.set_size_request(
+            dimension(gradient.logical_viewport.width_px),
+            dimension(gradient.logical_viewport.height_px),
+        );
+        self.set_paintable(Some(&texture));
+    }
 }
 
 struct RenderedArtwork {
@@ -342,7 +387,7 @@ impl RenderedPresentation {
             self.now_playing.as_ref(),
             self.layout_source.now_playing(viewport),
         ) {
-            now_playing.apply_layout(&layout);
+            now_playing.apply_layout(&layout, viewport);
         }
         if let Some(full_field) = self.full_field.as_ref() {
             full_field.apply_layout(&FullFieldLayout::for_viewport(viewport));
@@ -493,15 +538,18 @@ fn now_playing(
     diagnostics_text: Option<&str>,
 ) -> RenderedPresentation {
     let layout = NowPlayingLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE);
-    let surface = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let surface = gtk::Overlay::new();
     surface.set_hexpand(true);
     surface.set_vexpand(true);
+
+    let background = RenderedNowPlayingBackground::new(palette);
+    surface.set_child(Some(&background.picture));
 
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     content.add_css_class("now-playing-content");
     content.set_hexpand(true);
     content.set_vexpand(true);
-    surface.append(&content);
+    surface.add_overlay(&content);
 
     let artwork_column = gtk::CenterBox::new();
     artwork_column.add_css_class("artwork-column");
@@ -523,6 +571,7 @@ fn now_playing(
     content.append(&metadata_slot);
     let progress = metadata.progress.clone();
     let now_playing = RenderedNowPlaying {
+        background,
         content,
         artwork_column,
         artwork,
@@ -861,7 +910,8 @@ fn set_status_label_typography(label: &gtk::Label, font_size_px: u32, letter_spa
 }
 
 impl RenderedNowPlaying {
-    fn apply_layout(&self, layout: &NowPlayingLayout) {
+    fn apply_layout(&self, layout: &NowPlayingLayout, viewport: Viewport) {
+        self.background.apply_viewport(viewport);
         let gutter = dimension(layout.outer_gutter_px);
         self.content.set_margin_start(gutter);
         self.content.set_margin_end(gutter);
@@ -876,6 +926,66 @@ impl RenderedNowPlaying {
             .set_width_request(dimension(layout.information.utility_width_px));
         self.metadata.apply_layout(layout);
     }
+}
+
+impl RenderedNowPlayingBackground {
+    fn new(palette: PresentationPalette) -> Self {
+        let picture = gtk::Picture::new();
+        picture.set_can_shrink(false);
+        picture.set_keep_aspect_ratio(false);
+        picture.set_hexpand(true);
+        picture.set_vexpand(true);
+        let cache_key = Rc::new(Cell::new(None::<NowPlayingGradientCacheKey>));
+        picture.connect_scale_factor_notify({
+            let cache_key = Rc::clone(&cache_key);
+            move |picture| {
+                let Some(current_key) = cache_key.get() else {
+                    return;
+                };
+                apply_now_playing_gradient(
+                    picture,
+                    palette,
+                    &cache_key,
+                    current_key.logical_viewport(),
+                );
+            }
+        });
+        Self {
+            picture,
+            palette,
+            cache_key,
+        }
+    }
+
+    fn apply_viewport(&self, viewport: Viewport) {
+        apply_now_playing_gradient(&self.picture, self.palette, &self.cache_key, viewport);
+    }
+}
+
+fn apply_now_playing_gradient<T: NowPlayingGradientTarget>(
+    target: &T,
+    palette: PresentationPalette,
+    cache_key: &Cell<Option<NowPlayingGradientCacheKey>>,
+    logical_viewport: Viewport,
+) {
+    let scale_factor = target.scale_factor();
+    let next_key = NowPlayingGradientCacheKey::new(logical_viewport, scale_factor);
+    if cache_key.get() == Some(next_key) {
+        return;
+    }
+
+    // GTK lays widgets out in logical pixels, then rasterizes them at the
+    // widget scale factor. Giving the Picture one texture pixel per physical
+    // output pixel avoids resampling the spatial dither during rasterization.
+    let physical_viewport = next_key.physical_viewport();
+    let gradient = NowPlayingGradient::new(palette, physical_viewport);
+    target.install_gradient(RenderedNowPlayingGradient {
+        logical_viewport,
+        physical_viewport,
+        stride_bytes: physical_viewport.width_px as usize * 4,
+        rgba8: gradient.into_rgba8(),
+    });
+    cache_key.set(Some(next_key));
 }
 
 impl RenderedArtwork {
@@ -1386,10 +1496,110 @@ pub(crate) fn install_style_providers(typography: TypographySelection) -> gtk::C
 
 #[cfg(test)]
 mod tests {
-    use super::{PresentationLayoutSource, STYLES};
-    use roonscape_renderer::{
-        NowPlayingFooterContent, Viewport, parse_snapshot, presentation_from_snapshot,
+    use std::cell::{Cell, RefCell};
+
+    use super::{
+        NowPlayingGradientTarget, PresentationLayoutSource, RenderedNowPlayingGradient, STYLES,
+        apply_now_playing_gradient,
     };
+    use roonscape_renderer::{
+        NowPlayingFooterContent, NowPlayingGradientCacheKey, PresentationPalette, Viewport,
+        parse_snapshot, presentation_from_snapshot,
+    };
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct GradientInstallation {
+        logical_viewport: Viewport,
+        physical_viewport: Viewport,
+        stride_bytes: usize,
+        byte_count: usize,
+    }
+
+    struct RecordingGradientTarget {
+        scale_factor: Cell<u32>,
+        installations: RefCell<Vec<GradientInstallation>>,
+    }
+
+    impl RecordingGradientTarget {
+        fn new(scale_factor: u32) -> Self {
+            Self {
+                scale_factor: Cell::new(scale_factor),
+                installations: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl NowPlayingGradientTarget for RecordingGradientTarget {
+        fn scale_factor(&self) -> u32 {
+            self.scale_factor.get()
+        }
+
+        fn install_gradient(&self, gradient: RenderedNowPlayingGradient) {
+            self.installations.borrow_mut().push(GradientInstallation {
+                logical_viewport: gradient.logical_viewport,
+                physical_viewport: gradient.physical_viewport,
+                stride_bytes: gradient.stride_bytes,
+                byte_count: gradient.rgba8.len(),
+            });
+        }
+    }
+
+    #[test]
+    fn installs_and_caches_the_physical_now_playing_gradient() {
+        let target = RecordingGradientTarget::new(2);
+        let cache_key = Cell::new(None::<NowPlayingGradientCacheKey>);
+        let first_viewport = Viewport::new(16, 9);
+
+        apply_now_playing_gradient(
+            &target,
+            PresentationPalette::fallback(),
+            &cache_key,
+            first_viewport,
+        );
+        assert_eq!(
+            *target.installations.borrow(),
+            [GradientInstallation {
+                logical_viewport: first_viewport,
+                physical_viewport: Viewport::new(32, 18),
+                stride_bytes: 32 * 4,
+                byte_count: 32 * 18 * 4,
+            }]
+        );
+
+        apply_now_playing_gradient(
+            &target,
+            PresentationPalette::fallback(),
+            &cache_key,
+            first_viewport,
+        );
+        assert_eq!(target.installations.borrow().len(), 1);
+
+        let second_viewport = Viewport::new(20, 12);
+        apply_now_playing_gradient(
+            &target,
+            PresentationPalette::fallback(),
+            &cache_key,
+            second_viewport,
+        );
+        assert_eq!(target.installations.borrow().len(), 2);
+
+        target.scale_factor.set(3);
+        apply_now_playing_gradient(
+            &target,
+            PresentationPalette::fallback(),
+            &cache_key,
+            second_viewport,
+        );
+        assert_eq!(
+            target.installations.borrow().last(),
+            Some(&GradientInstallation {
+                logical_viewport: second_viewport,
+                physical_viewport: Viewport::new(60, 36),
+                stride_bytes: 60 * 4,
+                byte_count: 60 * 36 * 4,
+            })
+        );
+    }
 
     #[test]
     fn keeps_the_current_footer_geometry_when_the_viewport_changes() {

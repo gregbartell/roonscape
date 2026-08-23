@@ -2,6 +2,7 @@ mod contract;
 mod diagnostics;
 mod display_configuration;
 mod fixture_navigation;
+mod gradient;
 mod ipc;
 mod keyboard;
 mod layout;
@@ -27,6 +28,7 @@ pub use display_configuration::{
     reject_removed_display_configuration_override,
 };
 pub use fixture_navigation::FixtureNavigation;
+pub use gradient::{NowPlayingGradient, NowPlayingGradientCacheKey};
 pub use ipc::{
     ConnectionState, SnapshotEvent, SnapshotReader, SnapshotSocketError, SnapshotSubscription,
     read_snapshot_from_socket,
