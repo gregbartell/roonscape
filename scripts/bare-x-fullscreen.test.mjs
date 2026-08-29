@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { once } from "node:events";
 import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -20,6 +21,65 @@ const rendererPath = path.join(
   repositoryRoot,
   "target/debug/roonscape-renderer",
 );
+
+test("determinate progress renders without invalid GTK measurements", async () => {
+  await access(rendererPath);
+  await mkdir(scratchRoot, { recursive: true });
+  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const socketPath = path.join(taskDirectory, "roonscape.sock");
+  const environment = {
+    ...process.env,
+    GDK_BACKEND: "x11",
+    NO_AT_BRIDGE: "1",
+    ROONSCAPE_CAPTURE_VIEWPORT: "1600x900",
+    ROONSCAPE_FIXTURE: "src/shared/fixtures/playing.json",
+    ROONSCAPE_FIXTURE_AUTO_CLOSE_MS: "2000",
+    ROONSCAPE_SOCKET: socketPath,
+  };
+  const { display, xvfb } = await startXvfbDisplay({
+    width: 1600,
+    height: 900,
+    cwd: repositoryRoot,
+  });
+  environment.DISPLAY = display;
+  let publisher;
+  let renderer;
+
+  try {
+    publisher = monitoredProcess(
+      process.execPath,
+      ["src/bridge/dist/src/fixture.js"],
+      environment,
+    );
+    await publisher.spawned;
+    await waitFor(
+      () => access(socketPath),
+      publisher,
+      "fixture publisher socket",
+    );
+
+    renderer = monitoredProcess(
+      rendererPath,
+      ["--config", path.join(taskDirectory, "display.json")],
+      environment,
+    );
+    const closed = once(renderer, "close");
+    await renderer.spawned;
+    const [exitCode, signal] = await closed;
+
+    assert.equal(signal, null);
+    assert.equal(exitCode, 0);
+    assert.doesNotMatch(
+      renderer.capturedStandardError,
+      /reported min width -2/,
+    );
+  } finally {
+    await stopProcess(renderer);
+    await stopProcess(publisher);
+    await stopProcess(xvfb);
+    await rm(taskDirectory, { recursive: true });
+  }
+});
 
 test("Live Mode fills its sole display without a window manager", async () => {
   await assertRendererGeometry({}, "display");
