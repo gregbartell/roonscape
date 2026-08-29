@@ -4,6 +4,7 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 pub const FALLBACK_FONT_FILES: [&str; 4] = [
     "assets/fonts/LibreBaskerville-Variable.ttf",
@@ -22,6 +23,10 @@ const PREFERRED_FULL_FIELD_EDITORIAL_FAMILY: &str = "Palatino Linotype";
 const PREFERRED_FULL_FIELD_UTILITY_FAMILY: &str = "Segoe UI";
 const FALLBACK_EDITORIAL_FAMILY: &str = "Libre Baskerville";
 const PACKAGED_SUPPORTING_FAMILY: &str = "IBM Plex Sans";
+
+// Fontconfig's current configuration is process-global and cannot be mutated concurrently.
+static PACKAGED_FONT_ROOT: OnceLock<PathBuf> = OnceLock::new();
+static PACKAGED_FONT_REGISTRATION: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NowPlayingTitleFace {
@@ -122,6 +127,22 @@ fn select_full_field_typography(available_families: &HashSet<String>) -> FullFie
 }
 
 pub fn register_packaged_fallback_fonts(renderer_root: &Path) -> Result<(), TypographyError> {
+    let _registration = PACKAGED_FONT_REGISTRATION
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let renderer_root = renderer_root
+        .canonicalize()
+        .map_err(|_| TypographyError::RendererRootUnavailable(renderer_root.to_owned()))?;
+    if let Some(registered_root) = PACKAGED_FONT_ROOT.get() {
+        if registered_root == &renderer_root {
+            return Ok(());
+        }
+        return Err(TypographyError::RendererRootChanged {
+            registered: registered_root.clone(),
+            requested: renderer_root,
+        });
+    }
+
     let configuration = unsafe { FcConfigGetCurrent() };
     if configuration.is_null() {
         return Err(TypographyError::FontConfigurationUnavailable);
@@ -138,6 +159,9 @@ pub fn register_packaged_fallback_fonts(renderer_root: &Path) -> Result<(), Typo
         }
     }
 
+    PACKAGED_FONT_ROOT
+        .set(renderer_root)
+        .expect("packaged font registration is serialized");
     Ok(())
 }
 
@@ -146,6 +170,11 @@ pub enum TypographyError {
     FontConfigurationUnavailable,
     InvalidFontPath(PathBuf),
     FontRegistrationFailed(PathBuf),
+    RendererRootChanged {
+        registered: PathBuf,
+        requested: PathBuf,
+    },
+    RendererRootUnavailable(PathBuf),
     PreferredTitleUnavailable,
 }
 
@@ -169,6 +198,20 @@ impl fmt::Display for TypographyError {
                     path.display()
                 )
             }
+            Self::RendererRootChanged {
+                registered,
+                requested,
+            } => write!(
+                formatter,
+                "fallback fonts were already registered from {}; cannot register from {}",
+                registered.display(),
+                requested.display(),
+            ),
+            Self::RendererRootUnavailable(path) => write!(
+                formatter,
+                "renderer root is unavailable: {}",
+                path.display(),
+            ),
             Self::PreferredTitleUnavailable => formatter.write_str(
                 "capture requested Sitka Display for Now Playing Title, but the host font is unavailable",
             ),
