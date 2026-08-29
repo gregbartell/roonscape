@@ -234,11 +234,15 @@ npm run fixture
 
 Keep the renderer window focused and use Left and Right to move between Fixture
 Scenarios. Confirm that artwork, metadata, palette, identities, and diagnostics
-crossfade as one layer; progress alone updates in place; availability loss and
-disconnection use the same crossfade; rapid revisions settle on the newest
-presentation; Fixture navigation visits the maintained catalog in order; and
-no transition exposes clipped or stale boundary states. Toggle diagnostics
-while navigating and confirm that the overlay remains non-displacing.
+crossfade as one layer when the composition changes; playback-only changes to
+the same composition update Presentation Status and progress immediately in
+place; simultaneous playback and Now Playing changes take the composition
+crossfade; a Playing Track A to Paused Track B update never exposes Track A's
+artwork with Track B's metadata; availability loss and disconnection use the
+same crossfade; rapid revisions settle on the newest presentation; Fixture
+navigation visits the maintained catalog in order; and no transition exposes
+clipped or stale boundary states. Toggle diagnostics while navigating and
+confirm that the overlay remains non-displacing.
 
 Confirm that only the complete Starting ring rotates, with a steady linear
 revolution of about 1.8 seconds. With the platform animation preference

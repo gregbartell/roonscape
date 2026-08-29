@@ -67,6 +67,11 @@ impl<T> PresentationTransition<T> {
         &self.current
     }
 
+    pub fn update_current(&mut self, revision: u64, update: impl FnOnce(&mut T)) {
+        self.current.revision = revision;
+        update(&mut self.current.value);
+    }
+
     pub fn outgoing(&self) -> Option<&PresentationRevision<T>> {
         self.outgoing.as_ref()
     }

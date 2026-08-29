@@ -50,7 +50,7 @@ fn tracked_output_only_display_configuration_remains_valid_with_optional_diagnos
 }
 
 #[test]
-fn revision_crossfade_enters_inactivity_and_playing_restores_during_the_transition() {
+fn playback_updates_in_place_and_a_new_composition_crossfades_from_its_latest_revision() {
     let playing = snapshot("playing.json", 7);
     let mut state = PresentationState::new_with_inactivity(
         playing,
@@ -68,19 +68,21 @@ fn revision_crossfade_enters_inactivity_and_playing_restores_during_the_transiti
         state
             .update(paused, presentation_time(10))
             .expect("Paused should update the presentation state"),
-        PresentationUpdate::TransitionRequired
+        PresentationUpdate::InPlace
     );
     let paused_frame = state
         .frame_at(Duration::from_millis(10))
         .expect("Paused should remain fully visible at first");
     assert_eq!(paused_frame.inactivity, InactivityTransform::default());
-    transition.begin(8, paused_frame.presentation, Duration::from_millis(10));
+    transition.update_current(8, |presentation| {
+        *presentation = paused_frame.presentation;
+    });
 
     let inactive_frame = state
         .frame_at(Duration::from_millis(110))
         .expect("Paused should enter inactivity after grace");
     assert_eq!(inactive_frame.inactivity.opacity, 0.3);
-    assert!(transition.is_active());
+    assert!(!transition.is_active());
 
     let resumed = snapshot("artwork-revision-changed.json", 9);
     assert_eq!(
@@ -98,10 +100,8 @@ fn revision_crossfade_enters_inactivity_and_playing_restores_during_the_transiti
     };
     assert_eq!(now_playing.status.label, "PLAYING");
 
-    let discarded = transition
-        .begin(9, restored.presentation, Duration::from_millis(120))
-        .expect("a rapid revision should discard the obsolete outgoing layer");
-    assert_eq!(discarded.revision(), 7);
+    let discarded = transition.begin(9, restored.presentation, Duration::from_millis(120));
+    assert!(discarded.is_none());
     assert_eq!(transition.current().revision(), 9);
     assert_eq!(transition.outgoing().map(|layer| layer.revision()), Some(8));
 }

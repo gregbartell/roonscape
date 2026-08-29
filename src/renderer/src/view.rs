@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::path::Path;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::Instant;
 
 use gtk::gdk;
 use gtk::pango;
@@ -33,6 +33,7 @@ pub(crate) struct PresentationView {
     display_viewport: Viewport,
     layout_viewport: Option<Viewport>,
     inactivity: InactivityTransform,
+    transition_clock: Instant,
 }
 
 struct RenderedPresentation {
@@ -184,6 +185,8 @@ struct RenderedPresentationStatus {
     root: gtk::Box,
     symbol: gtk::Box,
     label: gtk::Label,
+    decoration: roonscape_renderer::PresentationStatusDecoration,
+    status: PresentationStatus,
 }
 
 struct RenderedMetadataLine {
@@ -238,6 +241,7 @@ impl PresentationView {
             display_viewport: Viewport::WINDOWED_FIXTURE,
             layout_viewport: None,
             inactivity: InactivityTransform::default(),
+            transition_clock: Instant::now(),
         };
         view.apply_layout();
         view
@@ -293,12 +297,12 @@ impl PresentationView {
         revision: u64,
         presentation: &Presentation,
         repository_root: &Path,
-        started_at: Duration,
     ) {
         if let Some(discarded) = self.transition.discard_outgoing() {
             self.remove_layer(discarded);
         }
         let rendered = self.render_current_at_viewport(presentation, repository_root);
+        let started_at = self.transition_clock.elapsed();
         let discarded = self.transition.begin(revision, rendered, started_at);
         debug_assert!(discarded.is_none());
 
@@ -317,7 +321,8 @@ impl PresentationView {
         self.reveal_current();
     }
 
-    pub(crate) fn finish_transition(&mut self, now: Duration) {
+    pub(crate) fn finish_transition(&mut self) {
+        let now = self.transition_clock.elapsed();
         let Some(outgoing) = self.transition.finish(now) else {
             return;
         };
@@ -330,6 +335,12 @@ impl PresentationView {
         if let Some(rendered_progress) = self.transition.current().value().progress.as_ref() {
             rendered_progress.update(progress);
         }
+    }
+
+    pub(crate) fn update_in_place(&mut self, revision: u64, presentation: &Presentation) {
+        self.transition.update_current(revision, |current| {
+            current.update_in_place(presentation);
+        });
     }
 
     pub(crate) fn update_diagnostics(&self, text: &str) {
@@ -384,6 +395,33 @@ impl PresentationView {
 }
 
 impl RenderedPresentation {
+    fn update_in_place(&mut self, presentation: &Presentation) {
+        match (
+            self.now_playing.as_mut(),
+            self.full_field.as_mut(),
+            presentation,
+        ) {
+            (Some(rendered), None, Presentation::NowPlaying(presentation)) => {
+                rendered
+                    .metadata
+                    .presentation_status
+                    .update(&presentation.status);
+                if let (Some(rendered), Some(progress)) =
+                    (self.progress.as_ref(), presentation.progress.as_ref())
+                {
+                    rendered.update(progress);
+                }
+            }
+            (None, Some(rendered), Presentation::FullField(presentation)) => {
+                rendered.presentation_status.update(&presentation.status);
+            }
+            _ => debug_assert!(
+                false,
+                "in-place updates must preserve presentation composition"
+            ),
+        }
+    }
+
     fn apply_viewport(&self, viewport: Viewport) {
         if let (Some(now_playing), Some(layout)) = (
             self.now_playing.as_ref(),
@@ -1208,6 +1246,29 @@ impl RenderedMetadata {
 }
 
 impl RenderedPresentationStatus {
+    fn update(&mut self, status: &PresentationStatus) {
+        if self.status == *status {
+            return;
+        }
+
+        self.root.remove_css_class("status-full");
+        self.root.remove_css_class("status-muted");
+        self.root.add_css_class(match status.emphasis {
+            PresentationStatusEmphasis::FullAccent => "status-full",
+            PresentationStatusEmphasis::MutedAccent => "status-muted",
+        });
+        self.label.set_text(status.label);
+
+        let width = self.symbol.width_request();
+        let height = self.symbol.height_request();
+        self.root.remove(&self.symbol);
+        let symbol = presentation_status_symbol(status, self.decoration);
+        symbol.set_size_request(width, height);
+        self.root.prepend(&symbol);
+        self.symbol = symbol;
+        self.status = *status;
+    }
+
     fn apply_layout(&self, layout: PresentationStatusLayout) {
         self.root.set_spacing(dimension(layout.symbol_gap_px));
         let symbol_size = dimension(layout.symbol_size_px);
@@ -1377,6 +1438,8 @@ fn presentation_status(
         root: row,
         symbol,
         label,
+        decoration,
+        status: *status,
     }
 }
 

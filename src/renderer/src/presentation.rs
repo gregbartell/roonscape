@@ -180,7 +180,7 @@ pub struct PresentationError(&'static str);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PresentationUpdate {
-    ProgressOnly,
+    InPlace,
     TransitionRequired,
 }
 
@@ -297,12 +297,15 @@ impl PresentationState {
         anchored_at: PresentationTime,
         restart_inactivity: bool,
     ) -> Result<PresentationUpdate, PresentationError> {
-        presentation_from_snapshot(&snapshot)?;
-        let update = if !transition_content_changed(&self.snapshot, &snapshot) {
-            PresentationUpdate::ProgressOnly
-        } else {
-            PresentationUpdate::TransitionRequired
-        };
+        let previous_presentation = presentation_from_snapshot(&self.snapshot)
+            .expect("PresentationState retains a validated snapshot");
+        let next_presentation = presentation_from_snapshot(&snapshot)?;
+        let update =
+            if !presentation_composition_changed(&previous_presentation, &next_presentation) {
+                PresentationUpdate::InPlace
+            } else {
+                PresentationUpdate::TransitionRequired
+            };
         let next_inactivity_condition = inactivity_condition(&snapshot);
         let has_new_source_sample = self.snapshot.playback != snapshot.playback
             || self.snapshot.progress != snapshot.progress;
@@ -322,7 +325,12 @@ impl PresentationState {
 
     pub fn disconnect(&mut self, anchored_at: Duration) -> PresentationUpdate {
         let snapshot = disconnected_snapshot(self.snapshot.revision);
-        let content_changed = transition_content_changed(&self.snapshot, &snapshot);
+        let previous_presentation = presentation_from_snapshot(&self.snapshot)
+            .expect("PresentationState retains a validated snapshot");
+        let next_presentation =
+            presentation_from_snapshot(&snapshot).expect("the disconnected snapshot is valid");
+        let content_changed =
+            presentation_composition_changed(&previous_presentation, &next_presentation);
         let next_inactivity_condition = inactivity_condition(&snapshot);
         if self.inactivity_condition != next_inactivity_condition {
             self.inactivity_condition = next_inactivity_condition;
@@ -334,7 +342,7 @@ impl PresentationState {
         if content_changed {
             PresentationUpdate::TransitionRequired
         } else {
-            PresentationUpdate::ProgressOnly
+            PresentationUpdate::InPlace
         }
     }
 
@@ -381,17 +389,21 @@ impl PresentationState {
     }
 }
 
-fn transition_content_changed(
-    previous: &PresentationSnapshot,
-    next: &PresentationSnapshot,
-) -> bool {
-    previous.availability != next.availability
-        || previous.playback != next.playback
-        || previous.tracked_output != next.tracked_output
-        || previous.tracked_zone != next.tracked_zone
-        || previous.now_playing != next.now_playing
-        || previous.progress.is_some() != next.progress.is_some()
-        || previous.artwork != next.artwork
+fn presentation_composition_changed(previous: &Presentation, next: &Presentation) -> bool {
+    let mut comparable = previous.clone();
+    match (&mut comparable, next) {
+        (Presentation::NowPlaying(previous), Presentation::NowPlaying(next)) => {
+            previous.status = next.status;
+            if previous.progress.is_some() && next.progress.is_some() {
+                previous.progress.clone_from(&next.progress);
+            }
+        }
+        (Presentation::FullField(previous), Presentation::FullField(next)) => {
+            previous.status = next.status;
+        }
+        _ => return true,
+    }
+    comparable != *next
 }
 
 fn inactivity_condition(snapshot: &PresentationSnapshot) -> Option<InactivityCondition> {

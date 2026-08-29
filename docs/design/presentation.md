@@ -198,9 +198,14 @@ characters.
 
 Motion is restrained to information that changes over time or protects the
 display. Determinate progress advances in place while Playing and remains
-frozen while Paused. Every presentation change, including availability loss
-and disconnection, crossfades artwork, metadata, and the full palette as one
-coordinated layer.
+frozen while Paused. A playback-only change that preserves the current
+composition updates Presentation Status and progress in place. A composition
+change crossfades artwork, metadata, identities, and the full palette as one
+coordinated layer, including when Now Playing and playback change together.
+Availability loss and disconnection also replace the composition through that
+crossfade. Composition identity is determined from the resolved content and
+artwork reference, never inferred from playback state, so a Paused update with
+changed Now Playing content cannot be mistaken for a playback-only update.
 
 Paused, Idle, and unavailable presentations retain their normal appearance
 during the configured inactivity grace period, then dim and move periodically

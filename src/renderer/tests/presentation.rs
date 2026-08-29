@@ -465,7 +465,7 @@ fn distinguishes_progress_samples_from_visual_revision_changes() {
             presentation_time(1, PLAYING_SAMPLED_AT + 1),
         )
         .expect("progress sample should update the presentation");
-    assert_eq!(progress_update, PresentationUpdate::ProgressOnly);
+    assert_eq!(progress_update, PresentationUpdate::InPlace);
 
     let mut indeterminate =
         parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
@@ -498,12 +498,56 @@ fn distinguishes_progress_samples_from_visual_revision_changes() {
 }
 
 #[test]
-fn every_visual_snapshot_field_requests_one_coordinated_transition() {
+fn playback_only_updates_the_current_composition_in_place() {
+    let playing =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    let mut state = PresentationState::new(playing, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("Playing snapshot should anchor a presentation");
+    let paused =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
+
+    assert_eq!(
+        state
+            .update(paused, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+            .expect("Paused snapshot should update the presentation"),
+        PresentationUpdate::InPlace,
+    );
+}
+
+#[test]
+fn simultaneous_playback_and_now_playing_changes_require_a_transition() {
+    let playing =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    let mut state = PresentationState::new(playing, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("Playing snapshot should anchor a presentation");
+    let mut paused_track_b =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
+    paused_track_b.revision = 30;
+    paused_track_b
+        .now_playing
+        .as_mut()
+        .expect("Paused fixture should contain Now Playing")
+        .title = Some("A different track".to_owned());
+    let artwork = paused_track_b
+        .artwork
+        .as_mut()
+        .expect("Paused fixture should reference artwork");
+    artwork.revision = 12;
+    artwork.path = "src/shared/fixtures/artwork/revised.svg".to_owned();
+
+    assert_eq!(
+        state
+            .update(paused_track_b, presentation_time(1, PLAYING_SAMPLED_AT + 1),)
+            .expect("new paused Now Playing should update the presentation"),
+        PresentationUpdate::TransitionRequired,
+    );
+}
+
+#[test]
+fn every_composition_field_requests_one_coordinated_transition() {
     let playing_snapshot = || {
         parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid")
     };
-    let mut playback = playing_snapshot();
-    playback.playback = Some(Playback::Paused);
     let mut identity = playing_snapshot();
     identity
         .tracked_zone
@@ -527,7 +571,6 @@ fn every_visual_snapshot_field_requests_one_coordinated_transition() {
     artwork_reference.path = "src/shared/fixtures/artwork/revised.svg".to_owned();
 
     for (index, (field, mut changed)) in [
-        ("playback", playback),
         ("identity", identity),
         ("metadata", metadata),
         ("progress presence", progress_presence),
@@ -594,64 +637,19 @@ fn unavailable_snapshots_request_a_coordinated_transition() {
 }
 
 #[test]
-fn fixture_scenario_jumps_always_request_a_transition() {
-    let catalog: serde_json::Value = serde_json::from_str(include_str!(
-        "../../shared/fixtures/fixture-scenario-catalog.json"
-    ))
-    .expect("Fixture Scenario catalog should be valid JSON");
-    let scenarios = catalog["scenarios"]
-        .as_array()
-        .expect("Fixture Scenario catalog should contain scenarios");
-    let mut missing_transitions = Vec::new();
+fn fixture_playback_only_selection_updates_the_current_composition_in_place() {
+    let playing =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    let mut state = PresentationState::new(playing, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("Playing snapshot should anchor a presentation");
+    let paused =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
 
-    for current_index in 0..scenarios.len() {
-        for selected_index in [
-            (current_index + 1) % scenarios.len(),
-            (current_index + scenarios.len() - 1) % scenarios.len(),
-        ] {
-            let current = &scenarios[current_index];
-            let selected = &scenarios[selected_index];
-            let current_fixture = current["fixture"]
-                .as_str()
-                .and_then(|fixture| fixture.rsplit('/').next())
-                .expect("Fixture Scenario should name a fixture file");
-            let selected_fixture = selected["fixture"]
-                .as_str()
-                .and_then(|fixture| fixture.rsplit('/').next())
-                .expect("Fixture Scenario should name a fixture file");
-            let current_label = current["label"]
-                .as_str()
-                .expect("Fixture Scenario should have a label");
-            let selected_label = selected["label"]
-                .as_str()
-                .expect("Fixture Scenario should have a label");
-            let mut current_snapshot = parse_snapshot(&support::fixture(current_fixture))
-                .expect("current Fixture Scenario should be valid");
-            current_snapshot.revision = 1;
-            let mut selected_snapshot = parse_snapshot(&support::fixture(selected_fixture))
-                .expect("selected Fixture Scenario should be valid");
-            selected_snapshot.revision = 2;
-            let mut state =
-                PresentationState::new(current_snapshot, presentation_time(0, PLAYING_SAMPLED_AT))
-                    .expect("current Fixture Scenario should be presentable");
-
-            let update = state
-                .update_for_fixture_selection(
-                    selected_snapshot,
-                    presentation_time(1, PLAYING_SAMPLED_AT + 1),
-                )
-                .expect("selected Fixture Scenario should be presentable");
-
-            if update != PresentationUpdate::TransitionRequired {
-                missing_transitions.push(format!("{current_label} -> {selected_label}"));
-            }
-        }
-    }
-
-    assert!(
-        missing_transitions.is_empty(),
-        "Fixture Mode did not request transitions for: {}",
-        missing_transitions.join(", ")
+    assert_eq!(
+        state
+            .update_for_fixture_selection(paused, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+            .expect("Paused Fixture Scenario should update the presentation"),
+        PresentationUpdate::InPlace,
     );
 }
 

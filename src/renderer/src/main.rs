@@ -339,7 +339,7 @@ impl PresentationRuntime {
         let now = self.progress_clock.elapsed();
         let presentation_update = self.apply_snapshot_events(now);
         self.render(now, presentation_update);
-        self.presentation_view.borrow_mut().finish_transition(now);
+        self.presentation_view.borrow_mut().finish_transition();
     }
 
     fn apply_viewport(&self) {
@@ -396,11 +396,7 @@ impl PresentationRuntime {
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             };
             if let Some(update) = update {
-                presentation_update = combine_presentation_update(
-                    presentation_update,
-                    update,
-                    self.fixture_navigation_enabled,
-                );
+                presentation_update = combine_presentation_update(presentation_update, update);
             }
         }
         presentation_update
@@ -421,10 +417,15 @@ impl PresentationRuntime {
                     self.presentation.borrow().revision(),
                     &current_frame.presentation,
                     &self.repository_root,
-                    now,
                 );
             }
-            Some(PresentationUpdate::ProgressOnly) | None => {
+            Some(PresentationUpdate::InPlace) => {
+                self.presentation_view.borrow_mut().update_in_place(
+                    self.presentation.borrow().revision(),
+                    &current_frame.presentation,
+                );
+            }
+            None => {
                 if let Presentation::NowPlaying(current_presentation) = &current_frame.presentation
                     && let Some(progress) = current_presentation.progress.as_ref()
                 {
@@ -441,17 +442,11 @@ impl PresentationRuntime {
 fn combine_presentation_update(
     current: Option<PresentationUpdate>,
     next: PresentationUpdate,
-    fixture_navigation_enabled: bool,
 ) -> Option<PresentationUpdate> {
-    if fixture_navigation_enabled {
-        // Rapid navigation renders only its final selection.
-        return Some(next);
-    }
-
     Some(match (current, next) {
         (Some(PresentationUpdate::TransitionRequired), _)
         | (_, PresentationUpdate::TransitionRequired) => PresentationUpdate::TransitionRequired,
-        _ => PresentationUpdate::ProgressOnly,
+        _ => PresentationUpdate::InPlace,
     })
 }
 
@@ -516,24 +511,11 @@ mod tests {
     use super::{PresentationUpdate, combine_presentation_update};
 
     #[test]
-    fn fixture_navigation_uses_the_final_selections_update() {
+    fn batch_preserves_a_composition_change_before_a_final_in_place_update() {
         assert_eq!(
             combine_presentation_update(
                 Some(PresentationUpdate::TransitionRequired),
-                PresentationUpdate::ProgressOnly,
-                true,
-            ),
-            Some(PresentationUpdate::ProgressOnly)
-        );
-    }
-
-    #[test]
-    fn live_mode_retains_the_strongest_update_in_a_batch() {
-        assert_eq!(
-            combine_presentation_update(
-                Some(PresentationUpdate::TransitionRequired),
-                PresentationUpdate::ProgressOnly,
-                false,
+                PresentationUpdate::InPlace,
             ),
             Some(PresentationUpdate::TransitionRequired)
         );
