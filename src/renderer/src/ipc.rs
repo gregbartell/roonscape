@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt;
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{self, BufRead, BufReader, Read, Write};
+use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError, sync_channel};
@@ -29,6 +30,7 @@ pub enum SnapshotEvent {
 
 pub struct SnapshotSubscription {
     events: Receiver<SnapshotEvent>,
+    wakeup: UnixStream,
 }
 
 #[derive(Debug)]
@@ -86,13 +88,20 @@ impl SnapshotReader {
 impl SnapshotSubscription {
     pub fn start(socket_path: PathBuf, retry_delay: Duration) -> Self {
         let (sender, events) = sync_channel(1);
+        let (wakeup, mut notifier) =
+            UnixStream::pair().expect("the renderer should create a local wakeup socket pair");
+        wakeup
+            .set_nonblocking(true)
+            .expect("the renderer should configure nonblocking wakeup reads");
+        notifier
+            .set_nonblocking(true)
+            .expect("the renderer should configure nonblocking wakeup writes");
         thread::spawn(move || {
-            if sender
-                .send(SnapshotEvent::ConnectionChanged(
-                    ConnectionState::Disconnected,
-                ))
-                .is_err()
-            {
+            if !notify(
+                &sender,
+                &mut notifier,
+                SnapshotEvent::ConnectionChanged(ConnectionState::Disconnected),
+            ) {
                 return;
             }
 
@@ -101,20 +110,22 @@ impl SnapshotSubscription {
                     thread::sleep(retry_delay);
                     continue;
                 };
-                if sender
-                    .send(SnapshotEvent::ConnectionChanged(ConnectionState::Connected))
-                    .is_err()
-                {
+                if !notify(
+                    &sender,
+                    &mut notifier,
+                    SnapshotEvent::ConnectionChanged(ConnectionState::Connected),
+                ) {
                     return;
                 }
 
                 loop {
                     match reader.read_snapshot() {
                         Ok(snapshot) => {
-                            if sender
-                                .send(SnapshotEvent::Snapshot(Box::new(snapshot)))
-                                .is_err()
-                            {
+                            if !notify(
+                                &sender,
+                                &mut notifier,
+                                SnapshotEvent::Snapshot(Box::new(snapshot)),
+                            ) {
                                 return;
                             }
                         }
@@ -125,19 +136,18 @@ impl SnapshotSubscription {
                     }
                 }
 
-                if sender
-                    .send(SnapshotEvent::ConnectionChanged(
-                        ConnectionState::Disconnected,
-                    ))
-                    .is_err()
-                {
+                if !notify(
+                    &sender,
+                    &mut notifier,
+                    SnapshotEvent::ConnectionChanged(ConnectionState::Disconnected),
+                ) {
                     return;
                 }
                 thread::sleep(retry_delay);
             }
         });
 
-        Self { events }
+        Self { events, wakeup }
     }
 
     pub fn try_recv(&self) -> Result<SnapshotEvent, TryRecvError> {
@@ -146,6 +156,40 @@ impl SnapshotSubscription {
 
     pub fn recv_timeout(&self, timeout: Duration) -> Result<SnapshotEvent, RecvTimeoutError> {
         self.events.recv_timeout(timeout)
+    }
+
+    pub fn wakeup_fd(&self) -> RawFd {
+        self.wakeup.as_raw_fd()
+    }
+
+    pub fn clear_wakeup(&self) -> io::Result<bool> {
+        let mut signaled = false;
+        let mut buffer = [0_u8; 64];
+        let mut wakeup = &self.wakeup;
+        loop {
+            match wakeup.read(&mut buffer) {
+                Ok(0) => return Ok(signaled),
+                Ok(_) => signaled = true,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(signaled),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(error),
+            }
+        }
+    }
+}
+
+fn notify(
+    sender: &std::sync::mpsc::SyncSender<SnapshotEvent>,
+    notifier: &mut UnixStream,
+    event: SnapshotEvent,
+) -> bool {
+    if sender.send(event).is_err() {
+        return false;
+    }
+    match notifier.write_all(&[1]) {
+        Ok(()) => true,
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => true,
+        Err(_) => false,
     }
 }
 

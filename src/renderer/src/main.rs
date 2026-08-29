@@ -233,7 +233,7 @@ fn build_window(
         keyboard.borrow_mut().set_focused(window.is_active());
     });
 
-    let runtime = PresentationRuntime {
+    let runtime = Rc::new(PresentationRuntime {
         presentation,
         presentation_view: presentation_view.clone(),
         updates: connections.snapshots,
@@ -242,9 +242,23 @@ fn build_window(
         repository_root: repository_root.to_path_buf(),
         progress_clock,
         fixture_navigation_enabled: connections.fixture_navigation.is_some(),
-    };
+    });
+    let wakeup_runtime = Rc::clone(&runtime);
+    glib::source::unix_fd_add_local(
+        runtime.updates.wakeup_fd(),
+        glib::IOCondition::IN,
+        move |_, _| {
+            if let Err(error) = wakeup_runtime.updates.clear_wakeup() {
+                eprintln!("RoonScape renderer: could not clear snapshot wakeup: {error}");
+                return glib::ControlFlow::Break;
+            }
+            wakeup_runtime.apply_pending_updates();
+            glib::ControlFlow::Continue
+        },
+    );
+    let timer_runtime = Rc::clone(&runtime);
     glib::timeout_add_local(Duration::from_millis(50), move || {
-        runtime.tick();
+        timer_runtime.tick();
         glib::ControlFlow::Continue
     });
 
@@ -340,6 +354,13 @@ impl PresentationRuntime {
         let presentation_update = self.apply_snapshot_events(now);
         self.render(now, presentation_update);
         self.presentation_view.borrow_mut().finish_transition();
+    }
+
+    fn apply_pending_updates(&self) {
+        self.apply_viewport();
+        let now = self.progress_clock.elapsed();
+        let presentation_update = self.apply_snapshot_events(now);
+        self.render(now, presentation_update);
     }
 
     fn apply_viewport(&self) {

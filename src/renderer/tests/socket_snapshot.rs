@@ -136,6 +136,39 @@ fn reconnects_when_the_publisher_starts_later_and_replays_its_current_snapshot()
 }
 
 #[test]
+fn signals_the_main_loop_when_a_subscription_event_arrives() {
+    let runtime_directory = runtime_directory();
+    let subscription = SnapshotSubscription::start(
+        runtime_directory.path().join("missing.sock"),
+        Duration::from_secs(1),
+    );
+
+    assert_eq!(
+        subscription
+            .recv_timeout(Duration::from_secs(1))
+            .expect("renderer should begin disconnected"),
+        SnapshotEvent::ConnectionChanged(ConnectionState::Disconnected)
+    );
+    let mut signaled = false;
+    for _ in 0..100 {
+        signaled = subscription
+            .clear_wakeup()
+            .expect("the subscription wakeup should be readable");
+        if signaled {
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    assert!(signaled);
+    assert!(subscription.wakeup_fd() >= 0);
+    assert!(
+        !subscription
+            .clear_wakeup()
+            .expect("clearing the wakeup should drain it")
+    );
+}
+
+#[test]
 fn rejects_malformed_and_oversized_frames_then_recovers_current_state() {
     let runtime_directory = runtime_directory();
     let socket_path = runtime_directory.path().join("roonscape.sock");

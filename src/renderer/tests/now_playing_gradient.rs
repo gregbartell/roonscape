@@ -199,6 +199,20 @@ fn generation_is_byte_deterministic_for_the_same_palette_and_viewport() {
 }
 
 #[test]
+fn representative_gradient_bytes_remain_stable() {
+    let gradient =
+        NowPlayingGradient::new(PresentationPalette::fallback(), Viewport::new(257, 113));
+    let hash = gradient
+        .rgba8()
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+
+    assert_eq!(hash, 0x2925_0765_f591_dd73);
+}
+
+#[test]
 fn light_gradient_stays_within_one_lsb_of_its_palette_field_bounds() {
     let viewport = Viewport::new(320, 180);
     let palette = gradient_palette(rgb(198, 210, 232), rgb(238, 224, 201), rgb(210, 198, 226));

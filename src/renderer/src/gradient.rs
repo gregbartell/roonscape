@@ -108,7 +108,7 @@ fn fill_pixels(
     let worker_count = if rgba8.len() >= 4_000_000 {
         std::thread::available_parallelism()
             .map_or(1, usize::from)
-            .min(4)
+            .min(2)
     } else {
         1
     };
