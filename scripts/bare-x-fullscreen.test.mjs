@@ -74,7 +74,11 @@ async function assertRendererGeometry(environment, expected) {
     );
     await renderer.spawned;
 
-    const root = await xGeometry(display, ["-root"]);
+    const root = await waitFor(
+      () => xGeometry(display, ["-root"]),
+      xvfb,
+      "X root window",
+    );
     const window = await waitFor(
       async () => {
         const geometry = await xGeometry(display, ["-name", "RoonScape"]);
