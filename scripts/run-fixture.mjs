@@ -3,6 +3,15 @@ import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 
+const arguments_ = process.argv.slice(2);
+if (
+  arguments_.length > 1 ||
+  (arguments_[0] !== undefined && arguments_[0] !== "--release")
+) {
+  throw new Error(`unknown fixture option: ${arguments_[0]}`);
+}
+const releaseRenderer = arguments_[0] === "--release";
+
 const scratchRoot = "/tmp/codex/roonscape";
 await mkdir(scratchRoot, { recursive: true });
 const runtimeDirectory = await mkdtemp(path.join(scratchRoot, "fixture."));
@@ -66,7 +75,13 @@ try {
   }
   renderer = spawn(
     "cargo",
-    ["run", "--quiet", "--package", "roonscape-renderer"],
+    [
+      "run",
+      "--quiet",
+      ...(releaseRenderer ? ["--release"] : []),
+      "--package",
+      "roonscape-renderer",
+    ],
     { env: environment, stdio: "inherit" },
   );
   const [exitCode, signal] = await once(renderer, "exit");

@@ -45,6 +45,22 @@ test("an explicit single-fixture session does not activate navigation", async ()
   });
 });
 
+test("the release option runs the optimized renderer profile", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const { rendererArguments } = await launchFixture(taskDirectory, {}, [
+      "--release",
+    ]);
+
+    assert.deepEqual(rendererArguments, [
+      "run",
+      "--quiet",
+      "--release",
+      "--package",
+      "roonscape-renderer",
+    ]);
+  });
+});
+
 async function withTaskDirectory(run) {
   await mkdir(scratchRoot, { recursive: true });
   const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
@@ -55,7 +71,11 @@ async function withTaskDirectory(run) {
   }
 }
 
-async function launchFixture(taskDirectory, environmentOverrides = {}) {
+async function launchFixture(
+  taskDirectory,
+  environmentOverrides = {},
+  launcherArguments = [],
+) {
   const binDirectory = path.join(taskDirectory, "bin");
   const environmentRecord = path.join(taskDirectory, "renderer-environment");
   await mkdir(binDirectory);
@@ -63,21 +83,25 @@ async function launchFixture(taskDirectory, environmentOverrides = {}) {
   const cargoStub = path.join(binDirectory, "cargo");
   await writeFile(
     cargoStub,
-    '#!/bin/sh\nprintf "%s\\n%s\\n" "$ROONSCAPE_SOCKET" "${ROONSCAPE_FIXTURE_CONTROL-unset}" > "$ROONSCAPE_FIXTURE_TEST_ENVIRONMENT"\n',
+    '#!/bin/sh\nprintf "%s\\n%s\\n%s\\n" "$ROONSCAPE_SOCKET" "${ROONSCAPE_FIXTURE_CONTROL-unset}" "$*" > "$ROONSCAPE_FIXTURE_TEST_ENVIRONMENT"\n',
   );
   await chmod(cargoStub, 0o755);
 
-  const launcher = spawn(process.execPath, ["scripts/run-fixture.mjs"], {
-    cwd: repositoryRoot,
-    detached: true,
-    env: {
-      ...process.env,
-      ...environmentOverrides,
-      PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
-      ROONSCAPE_FIXTURE_TEST_ENVIRONMENT: environmentRecord,
+  const launcher = spawn(
+    process.execPath,
+    ["scripts/run-fixture.mjs", ...launcherArguments],
+    {
+      cwd: repositoryRoot,
+      detached: true,
+      env: {
+        ...process.env,
+        ...environmentOverrides,
+        PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+        ROONSCAPE_FIXTURE_TEST_ENVIRONMENT: environmentRecord,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
     },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  );
   assert.notEqual(launcher.pid, undefined);
 
   let standardOutput = "";
@@ -99,14 +123,19 @@ async function launchFixture(taskDirectory, environmentOverrides = {}) {
       `fixture launcher exited via ${signal ?? "no signal"}\n${standardOutput}${standardError}`,
     );
 
-    const [socketPath, controlSocketPath] = (
+    const [socketPath, controlSocketPath, rendererArguments] = (
       await readFile(environmentRecord, "utf8")
     )
       .trimEnd()
       .split("\n");
     assert.ok(socketPath);
     assert.ok(controlSocketPath);
-    return { socketPath, controlSocketPath, processId: launcher.pid };
+    return {
+      socketPath,
+      controlSocketPath,
+      rendererArguments: rendererArguments.split(" "),
+      processId: launcher.pid,
+    };
   } finally {
     stopProcessGroup(launcher.pid);
   }

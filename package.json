@@ -15,6 +15,7 @@
     "check:versions": "node scripts/check-versions.mjs",
     "configure": "npm run build --workspace @roonscape/bridge && node src/bridge/dist/src/configure.js",
     "fixture": "npm run build && node scripts/run-fixture.mjs",
+    "fixture:release": "npm run build && node scripts/run-fixture.mjs --release",
     "format": "prettier --write src/bridge/src src/bridge/test src/renderer/src/style.css scripts eslint.config.js package.json src/bridge/package.json src/bridge/tsconfig.json src/shared .github && cargo fmt --all",
     "format:check": "prettier --check src/bridge/src src/bridge/test src/renderer/src/style.css scripts eslint.config.js package.json src/bridge/package.json src/bridge/tsconfig.json src/shared .github && cargo fmt --all -- --check",
     "lint": "eslint src/bridge/src src/bridge/test scripts eslint.config.js && cargo clippy --workspace --all-targets -- -D warnings",
