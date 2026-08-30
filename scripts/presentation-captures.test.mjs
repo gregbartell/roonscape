@@ -52,6 +52,20 @@ const REQUIRED_SCENARIOS = [
   "non-square-artwork",
   "light-artwork",
 ];
+const ORDINARY_SCENARIOS = REQUIRED_SCENARIOS.filter(
+  (scenario) => !["light-artwork", "non-square-artwork"].includes(scenario),
+);
+const CUSTOM_ARTWORK_SCENARIOS = new Set([
+  "playing",
+  "paused",
+  "loading-with-content",
+  "missing-metadata",
+  "missing-artist",
+  "missing-album",
+  "long-metadata",
+  "extreme-metadata",
+  "indeterminate-progress",
+]);
 
 test("plans every visual acceptance scenario at every representative viewport", () => {
   const plan = buildPresentationCapturePlan();
@@ -386,6 +400,10 @@ test("focused capture rejects invalid resolutions and option combinations before
       arguments: ["--list-scenarios", "--overwrite"],
       diagnostic: /--list-scenarios cannot be combined with capture options/,
     },
+    {
+      arguments: ["--all", "--scenario", "playing"],
+      diagnostic: /--all and --scenario cannot be combined/,
+    },
   ];
 
   for (const invocation of invalidInvocations) {
@@ -615,6 +633,273 @@ test("visual-acceptance profile publishes its maintained plan through reusable p
       "1280x720--paused.png",
       "1280x720--playing.png",
     ]);
+    assert.deepEqual(await readdir(runtimeRoot), []);
+  } finally {
+    await Promise.all([
+      rm(taskDirectory, { force: true, recursive: true }),
+      rm(runtimeRoot, { force: true, recursive: true }),
+    ]);
+  }
+});
+
+test("ordinary all-scenario capture publishes its maintained set through one painted session per resolution", async () => {
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-all-capture-test."),
+  );
+  const binDirectory = path.join(taskDirectory, "bin");
+  const outputDirectory = path.join(taskDirectory, "captures");
+  const fakePngDirectory = path.join(taskDirectory, "pngs");
+  const processLog = path.join(taskDirectory, "processes");
+  const failureMarker = path.join(taskDirectory, "fail-all");
+  const customArtwork = path.join(taskDirectory, "Maintainer Cover.svg");
+  const runtimeRoot = await mkdtemp(path.join(tmpdir(), "rsc."));
+  await Promise.all([
+    mkdir(binDirectory),
+    mkdir(outputDirectory),
+    mkdir(fakePngDirectory),
+  ]);
+  await Promise.all([
+    writeFile(
+      path.join(fakePngDirectory, "1280x720.png"),
+      pngHeader(1280, 720),
+    ),
+    writeFile(
+      path.join(fakePngDirectory, "1920x1080.png"),
+      pngHeader(1920, 1080),
+    ),
+    writeFile(
+      path.join(fakePngDirectory, "3840x2160.png"),
+      pngHeader(3840, 2160),
+    ),
+    writeFile(
+      customArtwork,
+      await readFile(
+        new URL("../src/shared/fixtures/artwork/light.svg", import.meta.url),
+      ),
+    ),
+  ]);
+  await installFakeCaptureDisplay(binDirectory);
+  await executable(
+    path.join(binDirectory, "cargo"),
+    '#!/bin/sh\nif [ "$1" = "build" ]; then exit 0; fi\nprintf "renderer|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\nexec "${NODE:-node}" "$ROONSCAPE_CAPTURE_TEST_RENDERER"\n',
+  );
+  await executable(
+    path.join(binDirectory, "scrot"),
+    '#!/bin/sh\nprintf "scrot|%s|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "$4" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n[ "$1" = "--window" ] && [ "$2" = "4242" ] && [ "$3" = "--overwrite" ] || exit 2\ncp "$ROONSCAPE_CAPTURE_TEST_PNG_DIRECTORY/$ROONSCAPE_CAPTURE_VIEWPORT.png" "$4"\n',
+  );
+  const fakeRenderer = path.join(taskDirectory, "renderer.mjs");
+  await writeFile(
+    fakeRenderer,
+    '#!/usr/bin/env node\nimport { once } from "node:events";\nimport { existsSync } from "node:fs";\nimport { appendFile } from "node:fs/promises";\nimport { createConnection } from "node:net";\nimport { createInterface } from "node:readline";\nconst connection = createConnection(process.env.ROONSCAPE_CAPTURE_CONTROL);\nawait once(connection, "connect");\nfor await (const line of createInterface({ input: connection })) {\n  const selection = JSON.parse(line);\n  const artwork = selection.snapshot.artwork?.path ?? "none";\n  await appendFile(process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG, `selection|${selection.scenario}|${selection.revision}|${artwork}\\n`);\n  if (existsSync(process.env.ROONSCAPE_CAPTURE_TEST_FAILURE_MARKER) && selection.scenario === "loading-with-content") process.exit(9);\n  await appendFile(process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG, `painted|${selection.scenario}|${selection.revision}\\n`);\n  connection.write(`${JSON.stringify({ type: "painted", scenario: selection.scenario, revision: selection.revision })}\\n`);\n}\n',
+  );
+  const runAll = (...arguments_) =>
+    execFileAsync(
+      process.execPath,
+      [
+        path.join(
+          new URL("..", import.meta.url).pathname,
+          "scripts/capture-presentations.mjs",
+        ),
+        "--all",
+        "--output",
+        outputDirectory,
+        ...arguments_,
+      ],
+      {
+        cwd: taskDirectory,
+        env: {
+          ...process.env,
+          PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+          TMPDIR: runtimeRoot,
+          ROONSCAPE_CAPTURE_TEST_FAILURE_MARKER: failureMarker,
+          ROONSCAPE_CAPTURE_TEST_PNG_DIRECTORY: fakePngDirectory,
+          ROONSCAPE_CAPTURE_TEST_PROCESS_LOG: processLog,
+          ROONSCAPE_CAPTURE_TEST_RENDERER: fakeRenderer,
+        },
+      },
+    );
+
+  try {
+    const { stdout } = await runAll();
+    const canonicalPaths = ORDINARY_SCENARIOS.map((scenario) =>
+      path.join(outputDirectory, `3840x2160--${scenario}.png`),
+    );
+    assert.equal(stdout, `${canonicalPaths.join("\n")}\n`);
+    let processes = await readFile(processLog, "utf8");
+    const canonicalArtworkByScenario = new Map(
+      await Promise.all(
+        buildPresentationCapturePlan()
+          .filter(
+            (capture) =>
+              capture.variant === "matrix" &&
+              capture.viewport === "3840x2160" &&
+              ORDINARY_SCENARIOS.includes(capture.scenario),
+          )
+          .map(async (capture) => [
+            capture.scenario,
+            JSON.parse(
+              await readFile(
+                new URL(`../${capture.fixture}`, import.meta.url),
+                "utf8",
+              ),
+            ).artwork?.path ?? "none",
+          ]),
+      ),
+    );
+    assert.deepEqual(
+      [...processes.matchAll(/^selection\|([^|]+)\|(\d+)\|(.+)$/gm)].map(
+        ([, scenario, revision, artwork]) => ({
+          scenario,
+          revision: Number(revision),
+          artwork,
+        }),
+      ),
+      ORDINARY_SCENARIOS.map((scenario, index) => ({
+        scenario,
+        revision: index + 1,
+        artwork: canonicalArtworkByScenario.get(scenario),
+      })),
+    );
+    assert.equal((processes.match(/^renderer\|/gm) ?? []).length, 1);
+    assert.equal((processes.match(/^painted\|/gm) ?? []).length, 17);
+    assert.equal((processes.match(/^scrot\|/gm) ?? []).length, 17);
+
+    await rm(outputDirectory, { force: true, recursive: true });
+    await mkdir(outputDirectory);
+    await writeFile(processLog, "");
+    const artworkHash = createHash("sha256")
+      .update(await readFile(customArtwork))
+      .digest("hex")
+      .slice(0, 12);
+    const { stdout: customStdout } = await runAll(
+      "--artwork",
+      customArtwork,
+      "--resolution",
+      "1280x720",
+      "--resolution",
+      "1920x1080",
+    );
+    const expectedCustomPaths = ["1280x720", "1920x1080"].flatMap((viewport) =>
+      ORDINARY_SCENARIOS.map((scenario) =>
+        path.join(
+          outputDirectory,
+          `${viewport}--${scenario}${
+            CUSTOM_ARTWORK_SCENARIOS.has(scenario)
+              ? `--maintainer-cover-svg--${artworkHash}`
+              : ""
+          }.png`,
+        ),
+      ),
+    );
+    assert.equal(customStdout, `${expectedCustomPaths.join("\n")}\n`);
+    processes = await readFile(processLog, "utf8");
+    assert.deepEqual(
+      [...processes.matchAll(/^renderer\|(.+)$/gm)].map((match) => match[1]),
+      ["1280x720", "1920x1080"],
+    );
+    const selections = [
+      ...processes.matchAll(/^selection\|([^|]+)\|(\d+)\|(.+)$/gm),
+    ].map(([, scenario, revision, artwork]) => ({
+      scenario,
+      revision: Number(revision),
+      artwork,
+      customArtwork: artwork.startsWith(runtimeRoot),
+    }));
+    assert.deepEqual(
+      selections.map(({ scenario }) => scenario),
+      [ORDINARY_SCENARIOS, ORDINARY_SCENARIOS].flat(),
+    );
+    assert.deepEqual(
+      selections.map(({ revision }) => revision),
+      [
+        ORDINARY_SCENARIOS.map((_, index) => index + 1),
+        ORDINARY_SCENARIOS.map((_, index) => index + 1),
+      ].flat(),
+    );
+    assert.ok(
+      selections
+        .filter(({ scenario }) => !CUSTOM_ARTWORK_SCENARIOS.has(scenario))
+        .every(
+          ({ scenario, artwork }) =>
+            artwork === canonicalArtworkByScenario.get(scenario),
+        ),
+      "the eight incompatible scenarios should retain canonical fixture content",
+    );
+    assert.deepEqual(
+      processes
+        .split("\n")
+        .filter((line) => /^(selection|painted|scrot)\|/.test(line))
+        .map((line) => line.slice(0, line.indexOf("|"))),
+      Array.from({ length: 34 }, () => [
+        "selection",
+        "painted",
+        "scrot",
+      ]).flat(),
+      "each scenario should paint before its capture is published",
+    );
+    assert.deepEqual(
+      selections
+        .filter(({ customArtwork: custom }) => custom)
+        .map(({ scenario }) => scenario),
+      [
+        ORDINARY_SCENARIOS.filter((scenario) =>
+          CUSTOM_ARTWORK_SCENARIOS.has(scenario),
+        ),
+        ORDINARY_SCENARIOS.filter((scenario) =>
+          CUSTOM_ARTWORK_SCENARIOS.has(scenario),
+        ),
+      ].flat(),
+    );
+    assert.deepEqual(
+      (await readdir(outputDirectory)).toSorted(),
+      [
+        ...expectedCustomPaths.map((capturePath) => path.basename(capturePath)),
+      ].toSorted(),
+    );
+
+    await rm(outputDirectory, { force: true, recursive: true });
+    await mkdir(outputDirectory);
+    await writeFile(processLog, "");
+    await writeFile(failureMarker, "fail");
+    await assert.rejects(runAll("--resolution", "1280x720"), (error) => {
+      assert.equal(
+        error.stdout,
+        `${path.join(outputDirectory, "1280x720--playing.png")}\n${path.join(outputDirectory, "1280x720--paused.png")}\n`,
+      );
+      assert.match(
+        error.stderr,
+        /All-scenario capture is incomplete \(2\/17 captures completed\)/,
+      );
+      assert.match(error.stderr, /Completed captures:/);
+      return true;
+    });
+    assert.deepEqual((await readdir(outputDirectory)).toSorted(), [
+      "1280x720--paused.png",
+      "1280x720--playing.png",
+    ]);
+
+    for (const scenario of ORDINARY_SCENARIOS.slice(2)) {
+      await writeFile(
+        path.join(outputDirectory, `1280x720--${scenario}.png`),
+        "stale",
+      );
+    }
+    await assert.rejects(
+      runAll("--resolution", "1280x720", "--overwrite"),
+      /All-scenario capture is incomplete \(2\/17 captures completed\)/,
+    );
+    assert.deepEqual(
+      await readFile(path.join(outputDirectory, "1280x720--playing.png")),
+      await readFile(path.join(fakePngDirectory, "1280x720.png")),
+    );
+    assert.equal(
+      await readFile(
+        path.join(outputDirectory, "1280x720--loading-with-content.png"),
+        "utf8",
+      ),
+      "stale",
+      "a failed overwrite may leave an intentionally incomplete mixture of refreshed and stale captures",
+    );
     assert.deepEqual(await readdir(runtimeRoot), []);
   } finally {
     await Promise.all([
@@ -916,6 +1201,38 @@ test("focused capture rejects an unknown Fixture Scenario before launching tools
       return true;
     },
   );
+});
+
+test("focused capture keeps the two ordinary-set omissions individually selectable", async () => {
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-omitted-scenario-test."),
+  );
+
+  try {
+    for (const scenario of ["light-artwork", "non-square-artwork"]) {
+      await assert.rejects(
+        execFileAsync(
+          process.execPath,
+          [
+            path.join(
+              new URL("..", import.meta.url).pathname,
+              "scripts/capture-presentations.mjs",
+            ),
+            "--scenario",
+            scenario,
+          ],
+          { cwd: taskDirectory, env: { ...process.env, PATH: "" } },
+        ),
+        (error) => {
+          assert.match(error.stderr, /Presentation Capture preflight failed/);
+          assert.doesNotMatch(error.stderr, /unknown Fixture Scenario/);
+          return true;
+        },
+      );
+    }
+  } finally {
+    await rm(taskDirectory, { force: true, recursive: true });
+  }
 });
 
 test("focused capture rejects custom artwork for incompatible Fixture Scenarios", async () => {

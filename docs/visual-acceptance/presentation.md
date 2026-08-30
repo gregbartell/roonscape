@@ -36,6 +36,41 @@ Inspect the complete plan without launching GTK:
 npm run capture:presentations -- --list
 ```
 
+For an ordinary review set, capture the 17 maintained nonduplicate Fixture
+Scenarios at 4K into an explicit directory:
+
+```sh
+npm run capture:presentations -- --all --output /path/to/presentation-review
+```
+
+`--all` follows catalog order and omits only `light-artwork` and
+`non-square-artwork`; either remains available through `--scenario`. Add one or
+more `--resolution WIDTHxHEIGHT` options to produce the complete set at each
+requested resolution. The command reuses one renderer session per resolution,
+waits for each Fixture Scenario's painted revision, validates its PNG, and then
+publishes and prints that capture's final path before advancing.
+
+`--artwork /path/to/image` substitutes one validated image into Playing,
+Paused, Starting with content, missing metadata, missing Artist, missing Album,
+long metadata, extreme metadata, and indeterminate progress. The other eight
+ordinary Fixture Scenarios retain their canonical content. Custom-artwork
+filenames include the sanitized artwork basename and a content hash.
+
+Existing destination files stop the run during preflight unless `--overwrite`
+is supplied. A later capture failure exits nonzero, explicitly reports the set
+as incomplete, lists every completed final path, and preserves those valid
+captures. In an overwrite run this progressive behavior can leave a partially
+refreshed set: paths completed before the failure contain new captures, while
+later existing paths can still contain captures from the previous run.
+
+For one individually selected Fixture Scenario, use `--scenario`; it cannot be
+combined with `--all`:
+
+```sh
+npm run capture:presentations -- --scenario light-artwork --output /path/to/presentation-review
+npm run capture:presentations -- --scenario non-square-artwork --output /path/to/presentation-review
+```
+
 For focused review, filter by one scenario, one viewport, or both. An explicit
 output directory must be absent or empty:
 

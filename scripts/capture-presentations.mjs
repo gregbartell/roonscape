@@ -55,6 +55,10 @@ const customArtworkScenarios = new Set([
   "extreme-metadata",
   "indeterminate-progress",
 ]);
+const ordinaryScenarioOmissions = new Set([
+  "light-artwork",
+  "non-square-artwork",
+]);
 const captureDisplayConfiguration = {
   trackedOutputId: "visual-acceptance-capture",
   inactivity: {
@@ -77,6 +81,8 @@ if (options.listScenarios) {
   );
 } else if (options.profile !== undefined) {
   await captureVisualAcceptanceProfile(options);
+} else if (options.all) {
+  await captureOrdinaryScenarioSet(options);
 } else if (options.scenario !== undefined) {
   await captureFocusedScenario(options);
 } else {
@@ -90,13 +96,29 @@ async function captureFocusedScenario(options) {
   }
 }
 
+async function captureOrdinaryScenarioSet(options) {
+  const captures = await preflightOrdinaryScenarioSet(options);
+  const sessions = Map.groupBy(
+    captures,
+    (capture) => capture.viewport,
+  ).values();
+  await captureProgressiveSet(captures, sessions, "All-scenario capture");
+}
+
 async function captureVisualAcceptanceProfile(options) {
   const captures = await preflightVisualAcceptanceProfile(options);
-  const sessionGroups = groupCompatibleCaptures(captures);
+  await captureProgressiveSet(
+    captures,
+    groupCompatibleCaptures(captures),
+    "Visual-acceptance profile",
+  );
+}
+
+async function captureProgressiveSet(captures, sessions, incompleteSetName) {
   const completedPaths = [];
 
   try {
-    for (const sessionCaptures of sessionGroups) {
+    for (const sessionCaptures of sessions) {
       await captureControlledSession(sessionCaptures, completedPaths);
     }
   } catch (error) {
@@ -105,7 +127,7 @@ async function captureVisualAcceptanceProfile(options) {
         ? "none"
         : completedPaths.map((capturePath) => `- ${capturePath}`).join("\n");
     throw new Error(
-      `Visual-acceptance profile is incomplete (${completedPaths.length}/${captures.length} captures completed).\nCompleted captures:\n${completed}\nFailure: ${errorMessage(error)}`,
+      `${incompleteSetName} is incomplete (${completedPaths.length}/${captures.length} captures completed).\nCompleted captures:\n${completed}\nFailure: ${errorMessage(error)}`,
       { cause: error },
     );
   }
@@ -341,19 +363,7 @@ async function preflightFocusedCapture({
   }
   const customArtwork =
     artwork === undefined ? undefined : await validateCustomArtwork(artwork);
-  const requestedResolutions =
-    resolutions.length === 0
-      ? [presentationCaptureResolution(3840, 2160)]
-      : resolutions;
-  const duplicateResolution = requestedResolutions.find(
-    ({ viewport }, index) =>
-      requestedResolutions.findIndex(
-        (candidate) => candidate.viewport === viewport,
-      ) !== index,
-  );
-  if (duplicateResolution !== undefined) {
-    throw new Error(`duplicate --resolution: ${duplicateResolution.viewport}`);
-  }
+  const requestedResolutions = normalizeCaptureResolutions(resolutions);
 
   const outputDirectory = path.resolve(process.cwd(), output ?? ".");
   const captures = requestedResolutions.map((resolution) => {
@@ -399,6 +409,91 @@ async function preflightFocusedCapture({
     snapshot: selectedSnapshot,
     customArtwork,
   }));
+}
+
+async function preflightOrdinaryScenarioSet({
+  artwork,
+  output,
+  overwrite,
+  resolutions,
+}) {
+  const selectedScenarios = buildPresentationCapturePlan().filter(
+    (capture) =>
+      capture.variant === "matrix" &&
+      capture.viewport === "3840x2160" &&
+      !ordinaryScenarioOmissions.has(capture.scenario),
+  );
+  const customArtwork =
+    artwork === undefined ? undefined : await validateCustomArtwork(artwork);
+  const requestedResolutions = normalizeCaptureResolutions(resolutions);
+
+  const outputDirectory = path.resolve(process.cwd(), output ?? ".");
+  const failures = [];
+  const snapshots = new Map();
+  const runtimeInputPaths = new Set(captureFontPaths);
+  for (const selected of selectedScenarios) {
+    runtimeInputPaths.add(selected.fixture);
+    try {
+      const snapshot = JSON.parse(
+        await readFile(path.join(repositoryRoot, selected.fixture), "utf8"),
+      );
+      snapshots.set(selected.fixture, snapshot);
+      if (
+        (!customArtworkScenarios.has(selected.scenario) ||
+          customArtwork === undefined) &&
+        typeof snapshot.artwork?.path === "string"
+      ) {
+        runtimeInputPaths.add(snapshot.artwork.path);
+      }
+    } catch (error) {
+      failures.push(
+        `required Fixture Scenario snapshot is invalid: ${selected.fixture}: ${errorMessage(error)}`,
+      );
+    }
+  }
+  const captures = requestedResolutions.flatMap((resolution) =>
+    selectedScenarios.map((selected) => {
+      const substitutesArtwork =
+        customArtwork !== undefined &&
+        customArtworkScenarios.has(selected.scenario);
+      const artworkIdentity = substitutesArtwork
+        ? `--${customArtwork.sanitizedBasename}--${customArtwork.contentHash}`
+        : "";
+      const fileName = `${resolution.viewport}--${selected.scenario}${artworkIdentity}.png`;
+      return {
+        ...selected,
+        ...resolution,
+        fileName,
+        finalCapturePath: path.join(outputDirectory, fileName),
+        snapshot: snapshots.get(selected.fixture),
+        customArtwork: substitutesArtwork ? customArtwork : undefined,
+      };
+    }),
+  );
+
+  const availableExecutables = await addMissingExecutableFailures(failures);
+  await addUnreadableInputFailures(runtimeInputPaths, failures);
+  await addDestinationFailures(captures, outputDirectory, overwrite, failures);
+  await addRendererBuildFailure(availableExecutables, failures);
+  assertCapturePreflightSucceeded(failures);
+  return captures;
+}
+
+function normalizeCaptureResolutions(resolutions) {
+  const requestedResolutions =
+    resolutions.length === 0
+      ? [presentationCaptureResolution(3840, 2160)]
+      : resolutions;
+  const duplicateResolution = requestedResolutions.find(
+    ({ viewport }, index) =>
+      requestedResolutions.findIndex(
+        (candidate) => candidate.viewport === viewport,
+      ) !== index,
+  );
+  if (duplicateResolution !== undefined) {
+    throw new Error(`duplicate --resolution: ${duplicateResolution.viewport}`);
+  }
+  return requestedResolutions;
 }
 
 async function validateCustomArtwork(requestedPath) {
@@ -962,26 +1057,38 @@ function parseArguments(arguments_) {
       );
     }
   }
+  if (parsed.all && parsed.scenario !== undefined) {
+    throw new Error("--all and --scenario cannot be combined");
+  }
+  if (parsed.all && parsed.legacyOption) {
+    throw new Error("--all cannot be combined with legacy capture options");
+  }
   if (parsed.scenario !== undefined && (parsed.list || parsed.legacyOption)) {
     throw new Error(
       "--scenario cannot be combined with legacy capture options",
     );
   }
-  if (parsed.scenario === undefined && parsed.resolutions.length > 0) {
+  if (
+    parsed.scenario === undefined &&
+    !parsed.all &&
+    parsed.resolutions.length > 0
+  ) {
     throw new Error("--resolution requires --scenario");
   }
   if (
     parsed.scenario === undefined &&
+    !parsed.all &&
     parsed.profile === undefined &&
     parsed.overwrite
   ) {
     throw new Error("--overwrite requires --scenario");
   }
-  if (parsed.scenario === undefined && parsed.artwork !== undefined) {
+  if (
+    parsed.scenario === undefined &&
+    !parsed.all &&
+    parsed.artwork !== undefined
+  ) {
     throw new Error("--artwork requires --scenario");
-  }
-  if (parsed.all && parsed.profile === undefined) {
-    throw new Error("unknown capture option: --all");
   }
   return parsed;
 }
