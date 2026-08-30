@@ -4,14 +4,21 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
+import { once } from "node:events";
+import { createServer } from "node:net";
 import path from "node:path";
 import { tmpdir } from "node:os";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
-import { buildPresentationCapturePlan } from "./presentation-captures.mjs";
+import {
+  buildPresentationCapturePlan,
+  selectFocusedPresentationCapture,
+} from "./presentation-captures.mjs";
 import {
   assertProcessRunning,
   runMonitoredProcess,
@@ -38,8 +45,132 @@ if (options.list) {
   process.stdout.write(
     `${JSON.stringify(buildPresentationCapturePlan(), null, 2)}\n`,
   );
+} else if (options.scenario !== undefined) {
+  await captureFocusedScenario(options.scenario);
 } else {
   await capturePresentations(options);
+}
+
+async function captureFocusedScenario(scenarioIdentifier) {
+  const width = 3840;
+  const height = 2160;
+  const viewport = `${width}x${height}`;
+  const capture = selectFocusedPresentationCapture(
+    buildPresentationCapturePlan(),
+    scenarioIdentifier,
+  );
+  const runtimeDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-focused-capture."),
+  );
+  const controlSocketPath = path.join(runtimeDirectory, "capture-control.sock");
+  const displayConfigurationPath = path.join(runtimeDirectory, "display.json");
+  const temporaryCapturePath = path.join(runtimeDirectory, "capture.png");
+  const finalCapturePath = path.join(process.cwd(), capture.fileName);
+  const controlServer = createServer();
+  let control;
+  let renderer;
+  let xvfb;
+  try {
+    await writeFile(
+      displayConfigurationPath,
+      `${JSON.stringify(captureDisplayConfiguration, null, 2)}\n`,
+    );
+    const snapshot = JSON.parse(
+      await readFile(path.join(repositoryRoot, capture.fixture), "utf8"),
+    );
+    const revision = 1;
+    snapshot.revision = revision;
+    const selection = {
+      type: "select",
+      scenario: capture.scenario,
+      revision,
+      snapshot,
+    };
+    await new Promise((resolve, reject) => {
+      controlServer.once("error", reject);
+      controlServer.listen(controlSocketPath, resolve);
+    });
+    process.stderr.write(
+      `Capturing Fixture Scenario ${capture.scenario} at ${viewport}\n`,
+    );
+    const displaySession = await startXvfbDisplay({
+      width,
+      height,
+      cwd: repositoryRoot,
+      description: "the focused native capture display",
+    });
+    xvfb = displaySession.xvfb;
+    const connected = once(controlServer, "connection");
+    const environment = {
+      ...process.env,
+      DISPLAY: displaySession.display,
+      GDK_BACKEND: "x11",
+      NO_AT_BRIDGE: "1",
+      ROONSCAPE_CAPTURE_CONTROL: controlSocketPath,
+      ROONSCAPE_CAPTURE_VIEWPORT: viewport,
+      ROONSCAPE_DIAGNOSTICS: "0",
+      ROONSCAPE_STATIC_FIXTURE: "1",
+    };
+    delete environment.ROONSCAPE_CAPTURE_TYPOGRAPHY;
+    delete environment.ROONSCAPE_DISPLAY_CONFIG;
+    delete environment.ROONSCAPE_FIXTURE;
+    delete environment.ROONSCAPE_FIXTURE_AUTO_CLOSE_MS;
+    delete environment.ROONSCAPE_FIXTURE_CONTROL;
+    delete environment.ROONSCAPE_SOCKET;
+    renderer = startNativeRenderer(displayConfigurationPath, environment);
+    await renderer.spawned;
+    [control] = await waitFor(
+      () => connected,
+      renderer,
+      "the renderer capture control connection",
+    );
+    const acknowledgements = createInterface({ input: control })[
+      Symbol.asyncIterator
+    ]();
+    control.write(`${JSON.stringify(selection)}\n`);
+    const acknowledgement = await waitFor(
+      async () => {
+        const next = await acknowledgements.next();
+        if (next.done) {
+          throw new Error("capture control channel closed before readiness");
+        }
+        return JSON.parse(next.value);
+      },
+      renderer,
+      `painted Fixture Scenario revision ${revision}`,
+    );
+    if (
+      acknowledgement.type !== "painted" ||
+      acknowledgement.scenario !== capture.scenario ||
+      acknowledgement.revision !== revision
+    ) {
+      throw new Error(
+        `renderer acknowledged an unexpected Fixture Scenario revision: ${JSON.stringify(acknowledgement)}`,
+      );
+    }
+    const windowId = await waitForRoonScapeWindow(
+      renderer,
+      environment,
+      width,
+      height,
+    );
+    await captureNativeWindow(
+      windowId,
+      temporaryCapturePath,
+      environment,
+      width,
+      height,
+    );
+    await rename(temporaryCapturePath, finalCapturePath);
+    process.stdout.write(`${finalCapturePath}\n`);
+  } finally {
+    control?.destroy();
+    await Promise.all([stopProcess(renderer), stopProcess(xvfb)]);
+    if (controlServer.listening) {
+      await new Promise((resolve) => controlServer.close(resolve));
+    }
+    await rm(runtimeDirectory, { force: true, recursive: true });
+  }
 }
 
 async function capturePresentations({
@@ -138,19 +269,7 @@ async function captureFixture(
   let publisher;
   let renderer;
   try {
-    renderer = startLongRunning(
-      "cargo",
-      [
-        "run",
-        "--quiet",
-        "--package",
-        "roonscape-renderer",
-        "--",
-        "--config",
-        displayConfigurationPath,
-      ],
-      environment,
-    );
+    renderer = startNativeRenderer(displayConfigurationPath, environment);
     await renderer.spawned;
     const windowId = await waitForRoonScapeWindow(
       renderer,
@@ -174,16 +293,48 @@ async function captureFixture(
     assertProcessRunning(renderer, "the native renderer");
 
     const capturePath = path.join(outputDirectory, capture.fileName);
-    await run(
-      "scrot",
-      ["--window", windowId, "--overwrite", capturePath],
+    await captureNativeWindow(
+      windowId,
+      capturePath,
       environment,
+      capture.width,
+      capture.height,
     );
-    await verifyPngDimensions(capturePath, capture.width, capture.height);
   } finally {
     await Promise.all([stopProcess(renderer), stopProcess(publisher)]);
     await rm(runtimeDirectory, { force: true, recursive: true });
   }
+}
+
+function startNativeRenderer(displayConfigurationPath, environment) {
+  return startLongRunning(
+    "cargo",
+    [
+      "run",
+      "--quiet",
+      "--package",
+      "roonscape-renderer",
+      "--",
+      "--config",
+      displayConfigurationPath,
+    ],
+    environment,
+  );
+}
+
+async function captureNativeWindow(
+  windowId,
+  capturePath,
+  environment,
+  width,
+  height,
+) {
+  await run(
+    "scrot",
+    ["--window", windowId, "--overwrite", capturePath],
+    environment,
+  );
+  await verifyPngDimensions(capturePath, width, height);
 }
 
 function startLongRunning(command, arguments_, environment = process.env) {
@@ -312,6 +463,7 @@ function parseArguments(arguments_) {
     list: false,
     output: undefined,
     only: undefined,
+    scenario: undefined,
     viewport: undefined,
     settleMilliseconds: defaultSettleMilliseconds,
   };
@@ -324,6 +476,9 @@ function parseArguments(arguments_) {
         break;
       case "--output":
         parsed.output = requiredValue(arguments_, ++index, argument);
+        break;
+      case "--scenario":
+        parsed.scenario = requiredValue(arguments_, ++index, argument);
         break;
       case "--only":
         parsed.only = requiredValue(arguments_, ++index, argument);
@@ -349,6 +504,11 @@ function parseArguments(arguments_) {
 
   if (parsed.list && arguments_.length !== 1) {
     throw new Error("--list cannot be combined with capture options");
+  }
+  if (parsed.scenario !== undefined && arguments_.length !== 2) {
+    throw new Error(
+      "--scenario cannot be combined with legacy capture options",
+    );
   }
   return parsed;
 }

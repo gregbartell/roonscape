@@ -114,6 +114,26 @@ export function buildPresentationCapturePlan({
   return [...matrix, ...representatives];
 }
 
+export function selectFocusedPresentationCapture(plan, scenarioIdentifier) {
+  const matchingCaptures = plan.filter(
+    (capture) =>
+      capture.variant === "matrix" &&
+      capture.viewport === "3840x2160" &&
+      capture.scenario === scenarioIdentifier,
+  );
+  if (matchingCaptures.length === 0) {
+    throw new Error(
+      `unknown Fixture Scenario identifier: ${scenarioIdentifier}`,
+    );
+  }
+  if (matchingCaptures.length > 1) {
+    throw new Error(
+      `ambiguous Fixture Scenario identifier: ${scenarioIdentifier}`,
+    );
+  }
+  return matchingCaptures[0];
+}
+
 function fixtureScenario(scenario, fixtureName, palette) {
   return {
     scenario,
