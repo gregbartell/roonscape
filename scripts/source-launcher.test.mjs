@@ -11,15 +11,16 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
-const scratchRoot = "/tmp/codex/roonscape";
 
 test("source launch resolves the relocated bridge and renderer", async () => {
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-source-launcher-test."),
+  );
   const sourceRoot = path.join(taskDirectory, "source");
 
   try {

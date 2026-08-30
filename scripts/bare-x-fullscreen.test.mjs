@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { once } from "node:events";
-import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -16,7 +17,6 @@ import {
 
 const executeFile = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const scratchRoot = "/var/tmp/codex/roonscape";
 const rendererPath = path.join(
   repositoryRoot,
   "target/debug/roonscape-renderer",
@@ -24,8 +24,9 @@ const rendererPath = path.join(
 
 test("determinate progress renders without invalid GTK measurements", async () => {
   await access(rendererPath);
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-bare-x-test."),
+  );
   const socketPath = path.join(taskDirectory, "roonscape.sock");
   const environment = {
     ...process.env,
@@ -111,8 +112,9 @@ test("Presentation Capture retains its requested viewport", async () => {
 
 async function assertRendererGeometry(environment, expected) {
   await access(rendererPath);
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-bare-x-test."),
+  );
   const { display, xvfb } = await startXvfbDisplay({
     width: 3840,
     height: 2160,

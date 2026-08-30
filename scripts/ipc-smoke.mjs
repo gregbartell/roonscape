@@ -1,14 +1,15 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
-const scratchRoot = "/tmp/codex/roonscape";
-await mkdir(scratchRoot, { recursive: true });
-const runtimeDirectory = await mkdtemp(path.join(scratchRoot, "ipc-smoke."));
+const runtimeDirectory = await mkdtemp(
+  path.join(tmpdir(), "roonscape-ipc-smoke."),
+);
 const socketPath = path.join(runtimeDirectory, "roonscape.sock");
 const environment = { ...process.env, ROONSCAPE_SOCKET: socketPath };
 const children = new Set();

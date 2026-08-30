@@ -8,6 +8,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { buildPresentationCapturePlan } from "./presentation-captures.mjs";
@@ -21,7 +22,6 @@ import {
 } from "./process-harness.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const scratchRoot = "/tmp/codex/roonscape";
 const nativeRenderer = "native GTK 4/Pango";
 const defaultSettleMilliseconds = 1_500;
 const captureDisplayConfiguration = {
@@ -110,7 +110,7 @@ async function captureFixture(
   settleMilliseconds,
 ) {
   const runtimeDirectory = await mkdtemp(
-    path.join(scratchRoot, "presentation-capture."),
+    path.join(tmpdir(), "roonscape-presentation-capture."),
   );
   const socketPath = path.join(runtimeDirectory, "roonscape.sock");
   const displayConfigurationPath = path.join(runtimeDirectory, "display.json");
@@ -281,9 +281,8 @@ async function verifyPngDimensions(filePath, expectedWidth, expectedHeight) {
 }
 
 async function prepareOutputDirectory(requestedOutput) {
-  await mkdir(scratchRoot, { recursive: true });
   if (requestedOutput === undefined) {
-    return mkdtemp(path.join(scratchRoot, "presentation-captures."));
+    return mkdtemp(path.join(tmpdir(), "roonscape-presentation-captures."));
   }
 
   const outputDirectory = path.resolve(repositoryRoot, requestedOutput);

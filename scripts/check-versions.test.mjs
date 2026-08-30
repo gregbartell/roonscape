@@ -8,7 +8,6 @@ import test from "node:test";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const versionCheck = path.join(repositoryRoot, "scripts/check-versions.mjs");
-const scratchRoot = path.join(tmpdir(), "codex", "roonscape");
 
 test("the repository version check accepts matching release versions", () => {
   withRepository("1.2.3", {}, (fixtureRoot) => {
@@ -47,8 +46,9 @@ test("the repository version check reports every release version mismatch", () =
 });
 
 function withRepository(version, overrides, run) {
-  mkdirSync(scratchRoot, { recursive: true });
-  const fixtureRoot = mkdtempSync(path.join(scratchRoot, "version-check."));
+  const fixtureRoot = mkdtempSync(
+    path.join(tmpdir(), "roonscape-version-check."),
+  );
   const files = {
     "package.json": json({ name: "roonscape", version }),
     "package-lock.json": json({

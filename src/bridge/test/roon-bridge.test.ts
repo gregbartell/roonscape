@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -175,9 +176,9 @@ async function prepareArtworkTestContext({
   now?: () => Date;
   output?: RoonZone["outputs"][number];
 } = {}): Promise<ArtworkTestContext> {
-  const scratchRoot = "/tmp/codex/roonscape";
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-bridge-test."),
+  );
   const artworkDirectory = path.join(taskDirectory, "artwork");
   const artworkFiles = await ArtworkFileStore.open(artworkDirectory);
   const boundary = createRoonBoundary(
@@ -312,9 +313,9 @@ test("resolves the configured Tracked Output from the initial full zone state", 
 });
 
 test("publishes prepared display lines with compressed artwork from Roon Image", async () => {
-  const scratchRoot = "/tmp/codex/roonscape";
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-bridge-test."),
+  );
   const artworkDirectory = path.join(taskDirectory, "artwork");
   const artworkFiles = await ArtworkFileStore.open(artworkDirectory);
   const boundary = createRoonBoundary("output-speaker-system", artworkFiles);
@@ -759,9 +760,9 @@ test("leaves absent prepared display lines absent without inventing fallbacks", 
 });
 
 test("a stale artwork response cannot delete a newer presentation file", async () => {
-  const scratchRoot = "/tmp/codex/roonscape";
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-bridge-test."),
+  );
   const artworkDirectory = path.join(taskDirectory, "artwork");
   const artworkFiles = await ArtworkFileStore.open(artworkDirectory);
   const boundary = createRoonBoundary("output-speaker-system", artworkFiles);

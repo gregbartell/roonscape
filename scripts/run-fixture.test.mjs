@@ -10,12 +10,12 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const scratchRoot = "/tmp/codex/roonscape";
 
 test("a clean renderer exit stops the fixture publisher and removes runtime state", async () => {
   await withTaskDirectory(async (taskDirectory) => {
@@ -62,8 +62,9 @@ test("the release option runs the optimized renderer profile", async () => {
 });
 
 async function withTaskDirectory(run) {
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-fixture-test."),
+  );
   try {
     await run(taskDirectory);
   } finally {

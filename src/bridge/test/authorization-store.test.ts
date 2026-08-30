@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -9,9 +10,9 @@ import {
 } from "../src/authorization-store.js";
 
 test("persists Roon authorization in a private dedicated file", async () => {
-  const scratchRoot = "/tmp/codex/roonscape";
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-authorization-store-test."),
+  );
   const stateDirectory = path.join(taskDirectory, "state");
   const authorizationFile = path.join(stateDirectory, "authorization.json");
   const store = new FileAuthorizationStore(authorizationFile);

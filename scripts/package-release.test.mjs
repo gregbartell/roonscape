@@ -54,9 +54,9 @@ test(
       `${expectedChecksum}  ${path.basename(archiveFile)}\n`,
     );
 
-    const scratchRoot = path.join(tmpdir(), "codex", "roonscape");
-    mkdirSync(scratchRoot, { recursive: true });
-    const extractionRoot = mkdtempSync(path.join(scratchRoot, "release-test."));
+    const extractionRoot = mkdtempSync(
+      path.join(tmpdir(), "roonscape-release-test."),
+    );
     try {
       const archiveListing = run("tar", ["-tzf", archiveFile], {
         cwd: extractionRoot,

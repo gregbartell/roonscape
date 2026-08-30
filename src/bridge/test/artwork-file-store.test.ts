@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { ArtworkFileStore } from "../src/artwork-file-store.js";
 
 test("keeps only the current artwork and one atomically staged replacement", async () => {
-  const scratchRoot = "/tmp/codex/roonscape";
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-artwork-store-test."),
+  );
   const artworkDirectory = path.join(taskDirectory, "artwork");
   const store = await ArtworkFileStore.open(artworkDirectory);
 

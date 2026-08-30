@@ -1,5 +1,6 @@
 import { once } from "node:events";
-import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
 
@@ -12,9 +13,9 @@ if (
 }
 const releaseRenderer = arguments_[0] === "--release";
 
-const scratchRoot = "/tmp/codex/roonscape";
-await mkdir(scratchRoot, { recursive: true });
-const runtimeDirectory = await mkdtemp(path.join(scratchRoot, "fixture."));
+const runtimeDirectory = await mkdtemp(
+  path.join(tmpdir(), "roonscape-fixture."),
+);
 const socketPath = path.join(runtimeDirectory, "roonscape.sock");
 const controlSocketPath = path.join(
   runtimeDirectory,

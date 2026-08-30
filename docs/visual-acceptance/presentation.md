@@ -22,9 +22,9 @@ npm run capture:presentations
 The command builds the bridge, starts the production native renderer against
 each shared fixture, waits for an exact-size RoonScape window, verifies the PNG
 dimensions, and writes a `manifest.json`. It prints the new output directory
-under `/tmp/codex/roonscape/`. Stable descriptive filenames identify the
-viewport and scenario, while a new directory prevents later runs from
-overwriting earlier evidence.
+under the host operating system's temporary directory. Stable descriptive
+filenames identify the viewport and scenario, while a new directory prevents
+later runs from overwriting earlier evidence.
 
 The capture process supplies a temporary Display Configuration with a one-hour
 inactivity grace period, so OLED-safe dimming and repositioning do not alter
@@ -44,7 +44,7 @@ npm run capture:presentations -- --only playing
 npm run capture:presentations -- --only identity-baselines
 npm run capture:presentations -- --viewport 1600x900
 npm run capture:presentations -- --only playing --viewport 1600x900
-npm run capture:presentations -- --output /tmp/codex/roonscape/presentation-review
+npm run capture:presentations -- --output /path/to/presentation-review
 ```
 
 ## Complete Fixture Scenario matrix

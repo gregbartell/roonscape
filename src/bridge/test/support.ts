@@ -1,13 +1,13 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
-
-const scratchRoot = "/tmp/codex/roonscape";
 
 export async function withTaskDirectory<T>(
   run: (taskDirectory: string) => Promise<T>,
 ): Promise<T> {
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-bridge-test."),
+  );
   try {
     return await run(taskDirectory);
   } finally {

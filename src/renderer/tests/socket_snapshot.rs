@@ -1,7 +1,5 @@
-use std::fs;
 use std::io::Write;
 use std::os::unix::net::UnixListener;
-use std::path::Path;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -15,12 +13,7 @@ use roonscape_renderer::{
 
 #[test]
 fn reads_one_complete_snapshot_from_the_local_socket() {
-    let scratch_root = Path::new("/tmp/codex/roonscape");
-    fs::create_dir_all(scratch_root).expect("scratch root should be creatable");
-    let runtime_directory = tempfile::Builder::new()
-        .prefix("task.")
-        .tempdir_in(scratch_root)
-        .expect("private runtime directory should be creatable");
+    let runtime_directory = runtime_directory();
     let socket_path = runtime_directory.path().join("roonscape.sock");
     let listener = UnixListener::bind(&socket_path).expect("fixture socket should bind");
     let fixture = support::fixture("playing.json");
@@ -45,12 +38,7 @@ fn reads_one_complete_snapshot_from_the_local_socket() {
 
 #[test]
 fn reads_availability_transitions_from_one_local_socket_connection() {
-    let scratch_root = Path::new("/tmp/codex/roonscape");
-    fs::create_dir_all(scratch_root).expect("scratch root should be creatable");
-    let runtime_directory = tempfile::Builder::new()
-        .prefix("task.")
-        .tempdir_in(scratch_root)
-        .expect("private runtime directory should be creatable");
+    let runtime_directory = runtime_directory();
     let socket_path = runtime_directory.path().join("roonscape.sock");
     let listener = UnixListener::bind(&socket_path).expect("fixture socket should bind");
     let pairing_required = compact_fixture("pairing-required.json");
@@ -78,12 +66,7 @@ fn reads_availability_transitions_from_one_local_socket_connection() {
 
 #[test]
 fn reconnects_when_the_publisher_starts_later_and_replays_its_current_snapshot() {
-    let scratch_root = Path::new("/tmp/codex/roonscape");
-    fs::create_dir_all(scratch_root).expect("scratch root should be creatable");
-    let runtime_directory = tempfile::Builder::new()
-        .prefix("task.")
-        .tempdir_in(scratch_root)
-        .expect("private runtime directory should be creatable");
+    let runtime_directory = runtime_directory();
     let socket_path = runtime_directory.path().join("roonscape.sock");
     let subscription = SnapshotSubscription::start(socket_path.clone(), Duration::from_millis(10));
 
@@ -154,12 +137,7 @@ fn reconnects_when_the_publisher_starts_later_and_replays_its_current_snapshot()
 
 #[test]
 fn rejects_malformed_and_oversized_frames_then_recovers_current_state() {
-    let scratch_root = Path::new("/tmp/codex/roonscape");
-    fs::create_dir_all(scratch_root).expect("scratch root should be creatable");
-    let runtime_directory = tempfile::Builder::new()
-        .prefix("task.")
-        .tempdir_in(scratch_root)
-        .expect("private runtime directory should be creatable");
+    let runtime_directory = runtime_directory();
     let socket_path = runtime_directory.path().join("roonscape.sock");
     let listener = UnixListener::bind(&socket_path).expect("fixture socket should bind");
     let playing = compact_fixture("playing.json");
@@ -199,6 +177,13 @@ fn rejects_malformed_and_oversized_frames_then_recovers_current_state() {
     );
 
     publisher.join().expect("fixture publisher should finish");
+}
+
+fn runtime_directory() -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix("roonscape.")
+        .tempdir()
+        .expect("private runtime directory should be creatable")
 }
 
 fn compact_fixture(name: &str) -> String {

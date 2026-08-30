@@ -1,18 +1,14 @@
-use std::fs;
 use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixListener;
-use std::path::Path;
 use std::thread;
 
 use roonscape_renderer::{FixtureNavigation, NavigationIntent};
 
 #[test]
 fn emits_semantic_intents_over_the_private_fixture_mode_control_boundary() {
-    let scratch_root = Path::new("/tmp/codex/roonscape");
-    fs::create_dir_all(scratch_root).expect("scratch root should be creatable");
     let runtime_directory = tempfile::Builder::new()
-        .prefix("task.")
-        .tempdir_in(scratch_root)
+        .prefix("roonscape.")
+        .tempdir()
         .expect("private runtime directory should be creatable");
     let control_socket_path = runtime_directory.path().join("fixture-navigation.sock");
     let listener =

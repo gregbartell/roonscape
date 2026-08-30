@@ -9,13 +9,13 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import test from "node:test";
 
 import { buildPresentationCapturePlan } from "./presentation-captures.mjs";
 
 const execFileAsync = promisify(execFile);
-const scratchRoot = "/tmp/codex/roonscape";
 
 const REPRESENTATIVE_VIEWPORTS = [
   "1280x720",
@@ -86,8 +86,9 @@ test("plans every visual acceptance scenario at every representative viewport", 
 });
 
 test("derives the visual acceptance matrix from the Fixture Scenario catalog", async () => {
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-presentation-test."),
+  );
   const catalogPath = path.join(taskDirectory, "fixture-scenario-catalog.json");
 
   try {
@@ -288,8 +289,9 @@ test("capture command lists the durable plan without launching the renderer", as
 });
 
 test("capture command orchestrates one native fixture capture and records its manifest", async () => {
-  await mkdir(scratchRoot, { recursive: true });
-  const taskDirectory = await mkdtemp(path.join(scratchRoot, "task."));
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-presentation-test."),
+  );
   const binDirectory = path.join(taskDirectory, "bin");
   const outputDirectory = path.join(taskDirectory, "captures");
   const fakePng = path.join(taskDirectory, "fake.png");
