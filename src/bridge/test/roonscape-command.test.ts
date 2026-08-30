@@ -809,12 +809,23 @@ test("arrow-key selection disambiguates identical Tracked Output choices", async
       }),
       launchBridge: () => bridge,
       launchRenderer: () => completedChild({ exitCode: 0, signal: null }),
+      writeSetupLines: (lines, replacePrevious) => {
+        if (replacePrevious) {
+          output.splice(output.length - lines.length, lines.length);
+        }
+        output.push(...lines);
+      },
       writeOutput: (line) => output.push(line),
     }),
   );
 
   assert.equal(result, 0);
   assert.equal(selectedTrackedOutput, "output-usb-dac-right");
+  assert.equal(
+    output.filter((line) => line.startsWith("Choose the Tracked Output"))
+      .length,
+    1,
+  );
   assert.match(output.join("\n"), /USB DAC.*Living Room.*output-usb-dac-left/);
   assert.match(output.join("\n"), /USB DAC.*Living Room.*output-usb-dac-right/);
 });
@@ -1370,6 +1381,7 @@ test("shutdown remains bounded when a child never reports exit", async () => {
 function commandDependencies(
   overrides: Partial<RoonScapeCommandDependencies> = {},
 ): RoonScapeCommandDependencies {
+  const writeOutput = overrides.writeOutput ?? (() => undefined);
   return {
     version: "0.1.0-test",
     environment: {},
@@ -1402,7 +1414,8 @@ function commandDependencies(
     },
     subscribeToTermination: () => () => undefined,
     delay: async () => undefined,
-    writeOutput: () => undefined,
+    writeSetupLines: (lines) => lines.forEach(writeOutput),
+    writeOutput,
     writeError: () => undefined,
     ...overrides,
   };

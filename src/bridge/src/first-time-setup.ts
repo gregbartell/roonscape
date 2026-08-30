@@ -24,6 +24,7 @@ export interface SetupDependencies {
     configuration: DisplayConfiguration,
   ): void;
   delay(milliseconds: number): Promise<void>;
+  writeSetupLines(lines: readonly string[], replacePrevious: boolean): void;
   writeOutput(line: string): void;
   writeError(line: string): void;
 }
@@ -160,18 +161,19 @@ async function chooseTrackedOutput(
   );
   let selectedIndex = savedIndex < 0 ? 0 : savedIndex;
   const duplicateLabels = duplicateOutputLabels(outputs);
+  let selectionRendered = false;
 
   while (true) {
-    dependencies.writeOutput("Choose the Tracked Output with ↑/↓ and Enter:");
+    const lines = ["Choose the Tracked Output with ↑/↓ and Enter:"];
     for (const [index, output] of outputs.entries()) {
       const baseLabel = trackedOutputLabel(output);
       const label = duplicateLabels.has(baseLabel)
         ? `${baseLabel} (${output.trackedOutputId})`
         : baseLabel;
-      dependencies.writeOutput(
-        `${index === selectedIndex ? ">" : " "} ${label}`,
-      );
+      lines.push(`${index === selectedIndex ? ">" : " "} ${label}`);
     }
+    dependencies.writeSetupLines(lines, selectionRendered);
+    selectionRendered = true;
     const key = await readAllowedSetupKey(
       dependencies,
       ["up", "down", "enter"],

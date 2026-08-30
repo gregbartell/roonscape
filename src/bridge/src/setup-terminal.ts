@@ -1,13 +1,35 @@
-import { createInterface, emitKeypressEvents, type Key } from "node:readline";
+import {
+  clearScreenDown,
+  createInterface,
+  emitKeypressEvents,
+  type Key,
+} from "node:readline";
 import type { ReadStream } from "node:tty";
 
 import type { SetupKey } from "./first-time-setup.js";
+
+const saveCursorPosition = "\u001b7";
+const restoreCursorPosition = "\u001b8";
 
 export function terminalIsInteractive(
   input: ReadStream = process.stdin,
   output: NodeJS.WriteStream = process.stdout,
 ): boolean {
   return Boolean(input.isTTY && output.isTTY);
+}
+
+export function writeSetupLines(
+  lines: readonly string[],
+  replacePrevious: boolean,
+  output: NodeJS.WritableStream = process.stdout,
+): void {
+  if (replacePrevious) {
+    output.write(restoreCursorPosition);
+    clearScreenDown(output);
+  } else {
+    output.write(saveCursorPosition);
+  }
+  output.write(`${lines.join("\n")}\n`);
 }
 
 export function readSetupKey(

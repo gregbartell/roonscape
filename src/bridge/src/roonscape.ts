@@ -18,6 +18,7 @@ import {
   readSetupKey,
   readSetupValue,
   terminalIsInteractive,
+  writeSetupLines,
 } from "./setup-terminal.js";
 import { repositoryRoot } from "./repository-root.js";
 import { discoverTrackedOutputs } from "./tracked-output-discovery.js";
@@ -108,6 +109,7 @@ process.exitCode = await runRoonScapeCommand(process.argv.slice(2), {
       const timer = setTimeout(resolve, milliseconds);
       timer.unref();
     }),
+  writeSetupLines,
   writeOutput: (line) => process.stdout.write(`${line}\n`),
   writeError: (line) => process.stderr.write(`RoonScape: ${line}\n`),
 });
