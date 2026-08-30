@@ -1,13 +1,16 @@
 import {
   access,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
   readdir,
   rename,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
+import { constants as fileConstants } from "node:fs";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import path from "node:path";
@@ -17,6 +20,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   buildPresentationCapturePlan,
+  listFixtureScenarios,
+  presentationCaptureResolution,
   selectFocusedPresentationCapture,
 } from "./presentation-captures.mjs";
 import {
@@ -31,6 +36,7 @@ import {
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const nativeRenderer = "native GTK 4/Pango";
 const defaultSettleMilliseconds = 1_500;
+const maximumCaptureDimension = 32_767;
 const captureDisplayConfiguration = {
   trackedOutputId: "visual-acceptance-capture",
   inactivity: {
@@ -41,43 +47,198 @@ const captureDisplayConfiguration = {
 };
 const options = parseArguments(process.argv.slice(2));
 
-if (options.list) {
+if (options.listScenarios) {
+  process.stdout.write(
+    listFixtureScenarios()
+      .map(({ scenario, label }) => `${scenario}\t${label}\n`)
+      .join(""),
+  );
+} else if (options.list) {
   process.stdout.write(
     `${JSON.stringify(buildPresentationCapturePlan(), null, 2)}\n`,
   );
 } else if (options.scenario !== undefined) {
-  await captureFocusedScenario(options.scenario);
+  await captureFocusedScenario(options);
 } else {
   await capturePresentations(options);
 }
 
-async function captureFocusedScenario(scenarioIdentifier) {
-  const width = 3840;
-  const height = 2160;
-  const viewport = `${width}x${height}`;
-  const capture = selectFocusedPresentationCapture(
+async function captureFocusedScenario(options) {
+  const captures = await preflightFocusedCapture(options);
+  for (const capture of captures) {
+    await captureFocusedResolution(capture);
+  }
+}
+
+async function preflightFocusedCapture({
+  output,
+  overwrite,
+  resolutions,
+  scenario,
+}) {
+  const selected = selectFocusedPresentationCapture(
     buildPresentationCapturePlan(),
-    scenarioIdentifier,
+    scenario,
   );
+  const requestedResolutions =
+    resolutions.length === 0
+      ? [presentationCaptureResolution(3840, 2160)]
+      : resolutions;
+  const duplicateResolution = requestedResolutions.find(
+    ({ viewport }, index) =>
+      requestedResolutions.findIndex(
+        (candidate) => candidate.viewport === viewport,
+      ) !== index,
+  );
+  if (duplicateResolution !== undefined) {
+    throw new Error(`duplicate --resolution: ${duplicateResolution.viewport}`);
+  }
+
+  const outputDirectory = path.resolve(process.cwd(), output ?? ".");
+  const captures = requestedResolutions.map((resolution) => {
+    const { viewport } = resolution;
+    const fileName = `${viewport}--${selected.scenario}.png`;
+    return {
+      ...selected,
+      ...resolution,
+      fileName,
+      finalCapturePath: path.join(outputDirectory, fileName),
+    };
+  });
+  const failures = [];
+
+  const availableExecutables = new Set();
+  for (const executableName of ["Xvfb", "xwininfo", "scrot", "cargo"]) {
+    if (await executableOnPath(executableName)) {
+      availableExecutables.add(executableName);
+    } else {
+      failures.push(`required executable is unavailable: ${executableName}`);
+    }
+  }
+  const runtimeInputPaths = [
+    "src/renderer/assets/fonts/LibreBaskerville-Variable.ttf",
+    "src/renderer/assets/fonts/LibreBaskerville-Italic-Variable.ttf",
+    "src/renderer/assets/fonts/IBMPlexSans-Variable.ttf",
+    "src/renderer/assets/fonts/IBMPlexSans-Italic-Variable.ttf",
+    selected.fixture,
+  ];
+  let selectedSnapshot;
+  try {
+    selectedSnapshot = JSON.parse(
+      await readFile(path.join(repositoryRoot, selected.fixture), "utf8"),
+    );
+    if (typeof selectedSnapshot.artwork?.path === "string") {
+      runtimeInputPaths.push(selectedSnapshot.artwork.path);
+    }
+  } catch (error) {
+    failures.push(
+      `required Fixture Scenario snapshot is invalid: ${selected.fixture}: ${errorMessage(error)}`,
+    );
+  }
+  for (const inputPath of runtimeInputPaths) {
+    try {
+      await access(path.join(repositoryRoot, inputPath), fileConstants.R_OK);
+    } catch {
+      failures.push(`required capture input is unreadable: ${inputPath}`);
+    }
+  }
+
+  let outputReady = false;
+  try {
+    await mkdir(outputDirectory, { recursive: true });
+    const outputStats = await stat(outputDirectory);
+    if (!outputStats.isDirectory()) {
+      failures.push(`capture output is not a directory: ${outputDirectory}`);
+    } else {
+      await access(
+        outputDirectory,
+        fileConstants.R_OK | fileConstants.W_OK | fileConstants.X_OK,
+      );
+      outputReady = true;
+    }
+  } catch (error) {
+    failures.push(
+      `capture output is unavailable: ${outputDirectory}: ${errorMessage(error)}`,
+    );
+  }
+
+  if (outputReady) {
+    const collisions = [];
+    for (const { finalCapturePath } of captures) {
+      try {
+        const destinationStats = await lstat(finalCapturePath);
+        if (!destinationStats.isFile() && !destinationStats.isSymbolicLink()) {
+          failures.push(
+            `destination is not a replaceable file: ${finalCapturePath}`,
+          );
+        } else if (!overwrite) {
+          collisions.push(finalCapturePath);
+        }
+      } catch (error) {
+        if (error?.code !== "ENOENT") {
+          failures.push(
+            `could not inspect destination ${finalCapturePath}: ${errorMessage(error)}`,
+          );
+        }
+      }
+    }
+    if (collisions.length > 0) {
+      failures.push(
+        `destination files already exist:\n${collisions.join("\n")}`,
+      );
+    }
+  }
+
+  if (availableExecutables.has("cargo") && failures.length === 0) {
+    try {
+      await runMonitoredProcess(
+        "cargo",
+        ["build", "--locked", "--package", "roonscape-renderer"],
+        {
+          cwd: repositoryRoot,
+          environment: process.env,
+          description: "the renderer build preflight",
+          timeoutMilliseconds: 300_000,
+        },
+      );
+    } catch (error) {
+      failures.push(`renderer build preflight failed: ${errorMessage(error)}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(
+      `Presentation Capture preflight failed:\n${failures.map((failure) => `- ${failure}`).join("\n")}`,
+    );
+  }
+  return captures.map((capture) => ({
+    ...capture,
+    snapshot: selectedSnapshot,
+  }));
+}
+
+async function captureFocusedResolution(capture) {
+  const { width, height, viewport, finalCapturePath } = capture;
   const runtimeDirectory = await mkdtemp(
     path.join(tmpdir(), "roonscape-focused-capture."),
   );
   const controlSocketPath = path.join(runtimeDirectory, "capture-control.sock");
   const displayConfigurationPath = path.join(runtimeDirectory, "display.json");
-  const temporaryCapturePath = path.join(runtimeDirectory, "capture.png");
-  const finalCapturePath = path.join(process.cwd(), capture.fileName);
   const controlServer = createServer();
   let control;
+  let publicationDirectory;
   let renderer;
   let xvfb;
   try {
+    publicationDirectory = await mkdtemp(
+      path.join(path.dirname(finalCapturePath), ".roonscape-capture."),
+    );
+    const temporaryCapturePath = path.join(publicationDirectory, "capture.png");
     await writeFile(
       displayConfigurationPath,
       `${JSON.stringify(captureDisplayConfiguration, null, 2)}\n`,
     );
-    const snapshot = JSON.parse(
-      await readFile(path.join(repositoryRoot, capture.fixture), "utf8"),
-    );
+    const snapshot = structuredClone(capture.snapshot);
     const revision = 1;
     snapshot.revision = revision;
     const selection = {
@@ -169,8 +330,33 @@ async function captureFocusedScenario(scenarioIdentifier) {
     if (controlServer.listening) {
       await new Promise((resolve) => controlServer.close(resolve));
     }
-    await rm(runtimeDirectory, { force: true, recursive: true });
+    await Promise.all([
+      rm(runtimeDirectory, { force: true, recursive: true }),
+      publicationDirectory === undefined
+        ? Promise.resolve()
+        : rm(publicationDirectory, { force: true, recursive: true }),
+    ]);
   }
+}
+
+async function executableOnPath(executableName) {
+  const searchDirectories = (process.env.PATH ?? "").split(path.delimiter);
+  for (const directory of searchDirectories) {
+    if (directory.length === 0) {
+      continue;
+    }
+    try {
+      await access(path.join(directory, executableName), fileConstants.X_OK);
+      return true;
+    } catch {
+      // Continue searching the remaining PATH entries.
+    }
+  }
+  return false;
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function capturePresentations({
@@ -461,8 +647,12 @@ function delay(milliseconds) {
 function parseArguments(arguments_) {
   const parsed = {
     list: false,
+    listScenarios: false,
+    legacyOption: false,
     output: undefined,
     only: undefined,
+    overwrite: false,
+    resolutions: [],
     scenario: undefined,
     viewport: undefined,
     settleMilliseconds: defaultSettleMilliseconds,
@@ -472,21 +662,40 @@ function parseArguments(arguments_) {
     const argument = arguments_[index];
     switch (argument) {
       case "--list":
+        rejectDuplicateOption(parsed.list, argument);
         parsed.list = true;
         break;
+      case "--list-scenarios":
+        rejectDuplicateOption(parsed.listScenarios, argument);
+        parsed.listScenarios = true;
+        break;
       case "--output":
+        rejectDuplicateOption(parsed.output !== undefined, argument);
         parsed.output = requiredValue(arguments_, ++index, argument);
         break;
       case "--scenario":
+        rejectDuplicateOption(parsed.scenario !== undefined, argument);
         parsed.scenario = requiredValue(arguments_, ++index, argument);
         break;
+      case "--resolution":
+        parsed.resolutions.push(
+          parseResolution(requiredValue(arguments_, ++index, argument)),
+        );
+        break;
+      case "--overwrite":
+        rejectDuplicateOption(parsed.overwrite, argument);
+        parsed.overwrite = true;
+        break;
       case "--only":
+        parsed.legacyOption = true;
         parsed.only = requiredValue(arguments_, ++index, argument);
         break;
       case "--viewport":
+        parsed.legacyOption = true;
         parsed.viewport = requiredValue(arguments_, ++index, argument);
         break;
       case "--settle-ms": {
+        parsed.legacyOption = true;
         const value = requiredValue(arguments_, ++index, argument);
         parsed.settleMilliseconds = Number.parseInt(value, 10);
         if (
@@ -505,12 +714,56 @@ function parseArguments(arguments_) {
   if (parsed.list && arguments_.length !== 1) {
     throw new Error("--list cannot be combined with capture options");
   }
-  if (parsed.scenario !== undefined && arguments_.length !== 2) {
+  if (parsed.listScenarios && arguments_.length !== 1) {
+    throw new Error("--list-scenarios cannot be combined with capture options");
+  }
+  if (parsed.scenario !== undefined && (parsed.list || parsed.legacyOption)) {
     throw new Error(
       "--scenario cannot be combined with legacy capture options",
     );
   }
+  if (parsed.scenario === undefined && parsed.resolutions.length > 0) {
+    throw new Error("--resolution requires --scenario");
+  }
+  if (parsed.scenario === undefined && parsed.overwrite) {
+    throw new Error("--overwrite requires --scenario");
+  }
   return parsed;
+}
+
+function parseResolution(value) {
+  const match = value.match(/^(\d+)x(\d+)$/);
+  if (match === null) {
+    throw new Error("--resolution must use WIDTHxHEIGHT");
+  }
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    throw new Error("--resolution dimensions must be positive safe integers");
+  }
+  if (width < 1280 || height < 720) {
+    throw new Error("--resolution must be at least 1280x720");
+  }
+  if (width <= height) {
+    throw new Error("--resolution must be landscape");
+  }
+  if (width > maximumCaptureDimension || height > maximumCaptureDimension) {
+    throw new Error(
+      `--resolution exceeds the supported maximum of ${maximumCaptureDimension}`,
+    );
+  }
+  return presentationCaptureResolution(width, height);
+}
+
+function rejectDuplicateOption(duplicate, option) {
+  if (duplicate) {
+    throw new Error(`duplicate capture option: ${option}`);
+  }
 }
 
 function requiredValue(arguments_, index, option) {

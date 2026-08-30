@@ -280,16 +280,42 @@ test("plans early middle and near-complete progress evidence", async () => {
   }
 });
 
-test("capture command lists the durable plan without launching the renderer", async () => {
+test("capture command lists stable Fixture Scenario identifiers and labels without launching tools", async () => {
   const { stdout, stderr } = await execFileAsync(
     process.execPath,
-    ["scripts/capture-presentations.mjs", "--list"],
-    { cwd: new URL("..", import.meta.url) },
+    ["scripts/capture-presentations.mjs", "--list-scenarios"],
+    {
+      cwd: new URL("..", import.meta.url),
+      env: { ...process.env, PATH: "" },
+    },
   );
-  const plan = JSON.parse(stdout);
 
   assert.equal(stderr, "");
-  assert.deepEqual(plan, buildPresentationCapturePlan());
+  assert.equal(
+    stdout,
+    [
+      "playing\tPlaying",
+      "paused\tPaused",
+      "loading-with-content\tStarting with content",
+      "loading-without-content\tStarting without content",
+      "idle\tIdle",
+      "pairing-required\tAwaiting Roon Authorization",
+      "disconnected\tDisconnected",
+      "output-unavailable\tOutput unavailable",
+      "playing-without-content\tPlaying without content",
+      "paused-without-content\tPaused without content",
+      "missing-metadata\tMissing metadata",
+      "missing-artist\tMissing Artist",
+      "missing-album\tMissing Album",
+      "missing-artwork\tMissing artwork",
+      "long-metadata\tLong metadata",
+      "extreme-metadata\tExtreme metadata",
+      "indeterminate-progress\tIndeterminate progress",
+      "non-square-artwork\tNon-square artwork",
+      "light-artwork\tLight artwork",
+      "",
+    ].join("\n"),
+  );
 });
 
 test("focused capture selection rejects an ambiguous exact Fixture Scenario", () => {
@@ -302,6 +328,70 @@ test("focused capture selection rejects an ambiguous exact Fixture Scenario", ()
   );
 });
 
+test("focused capture rejects invalid resolutions and option combinations before launching tools", async () => {
+  const invalidInvocations = [
+    {
+      arguments: ["--scenario", "playing", "--resolution", "wide"],
+      diagnostic: /--resolution must use WIDTHxHEIGHT/,
+    },
+    {
+      arguments: ["--scenario", "playing", "--resolution", "0x720"],
+      diagnostic: /positive safe integers/,
+    },
+    {
+      arguments: ["--scenario", "playing", "--resolution", "1280x719"],
+      diagnostic: /at least 1280x720/,
+    },
+    {
+      arguments: ["--scenario", "playing", "--resolution", "1280x1281"],
+      diagnostic: /landscape/,
+    },
+    {
+      arguments: ["--scenario", "playing", "--resolution", "1280x1280"],
+      diagnostic: /landscape/,
+    },
+    {
+      arguments: ["--scenario", "playing", "--resolution", "32768x720"],
+      diagnostic: /exceeds the supported maximum of 32767/,
+    },
+    {
+      arguments: ["--resolution", "1920x1080"],
+      diagnostic: /--resolution requires --scenario/,
+    },
+    {
+      arguments: ["--overwrite"],
+      diagnostic: /--overwrite requires --scenario/,
+    },
+    {
+      arguments: ["--scenario", "playing", "--settle-ms", "1500"],
+      diagnostic: /--scenario cannot be combined with legacy capture options/,
+    },
+    {
+      arguments: ["--list-scenarios", "--overwrite"],
+      diagnostic: /--list-scenarios cannot be combined with capture options/,
+    },
+  ];
+
+  for (const invocation of invalidInvocations) {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        ["scripts/capture-presentations.mjs", ...invocation.arguments],
+        {
+          cwd: new URL("..", import.meta.url),
+          env: { ...process.env, PATH: "" },
+        },
+      ),
+      (error) => {
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, invocation.diagnostic);
+        return true;
+      },
+      invocation.arguments.join(" "),
+    );
+  }
+});
+
 test("focused capture waits for its painted revision and publishes one validated 4K PNG", async () => {
   const taskDirectory = await mkdtemp(
     path.join(tmpdir(), "roonscape-focused-capture-test."),
@@ -309,25 +399,43 @@ test("focused capture waits for its painted revision and publishes one validated
   const binDirectory = path.join(taskDirectory, "bin");
   const workDirectory = path.join(taskDirectory, "work");
   const runtimeRoot = await mkdtemp(path.join(tmpdir(), "rsc."));
-  const fakePng = path.join(taskDirectory, "fake.png");
+  const fakePngDirectory = path.join(taskDirectory, "pngs");
+  const buildFailure = path.join(taskDirectory, "build-failure");
   const processLog = path.join(taskDirectory, "processes");
-  await Promise.all([mkdir(binDirectory), mkdir(workDirectory)]);
-  await writeFile(fakePng, pngHeader(3840, 2160));
+  await Promise.all([
+    mkdir(binDirectory),
+    mkdir(workDirectory),
+    mkdir(fakePngDirectory),
+  ]);
+  await Promise.all([
+    writeFile(
+      path.join(fakePngDirectory, "3840x2160.png"),
+      pngHeader(3840, 2160),
+    ),
+    writeFile(
+      path.join(fakePngDirectory, "1920x1080.png"),
+      pngHeader(1920, 1080),
+    ),
+    writeFile(
+      path.join(fakePngDirectory, "1280x720.png"),
+      pngHeader(1280, 720),
+    ),
+  ]);
   await executable(
     path.join(binDirectory, "Xvfb"),
     '#!/bin/sh\nprintf "Xvfb|%s\\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\ndisplay_number="${1#:}"\nsocket="/tmp/.X11-unix/X${display_number}"\nmkdir -p /tmp/.X11-unix\ntouch "$socket"\ntrap \'printf "Xvfb-stopped\\n" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"; rm -f "$socket"; exit 0\' TERM INT EXIT\nwhile :; do /usr/bin/sleep 1; done\n',
   );
   await executable(
     path.join(binDirectory, "cargo"),
-    '#!/bin/sh\nprintf "renderer|%s|%s|%s|%s|%s|%s|%s\\n" "$ROONSCAPE_STATIC_FIXTURE" "$ROONSCAPE_CAPTURE_VIEWPORT" "$ROONSCAPE_CAPTURE_CONTROL" "${ROONSCAPE_DIAGNOSTICS-unset}" "${ROONSCAPE_CAPTURE_TYPOGRAPHY-unset}" "${ROONSCAPE_FIXTURE_AUTO_CLOSE_MS-unset}" "${ROONSCAPE_DISPLAY_CONFIG-unset}" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\nexec "${NODE:-node}" "$ROONSCAPE_CAPTURE_TEST_RENDERER"\n',
+    '#!/bin/sh\nif [ "$1" = "build" ]; then\n  printf "cargo-preflight|%s\\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n  if [ -f "$ROONSCAPE_CAPTURE_TEST_BUILD_FAILURE" ]; then\n    printf "missing renderer input\\n" >&2\n    exit 7\n  fi\n  exit 0\nfi\nprintf "renderer|%s|%s|%s|%s|%s|%s|%s\\n" "$ROONSCAPE_STATIC_FIXTURE" "$ROONSCAPE_CAPTURE_VIEWPORT" "$ROONSCAPE_CAPTURE_CONTROL" "${ROONSCAPE_DIAGNOSTICS-unset}" "${ROONSCAPE_CAPTURE_TYPOGRAPHY-unset}" "${ROONSCAPE_FIXTURE_AUTO_CLOSE_MS-unset}" "${ROONSCAPE_DISPLAY_CONFIG-unset}" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\nexec "${NODE:-node}" "$ROONSCAPE_CAPTURE_TEST_RENDERER"\n',
   );
   await executable(
     path.join(binDirectory, "xwininfo"),
-    "#!/bin/sh\nprintf 'xwininfo: Window id: 4242 \"RoonScape\"\\n  Width: 3840\\n  Height: 2160\\n'\n",
+    '#!/bin/sh\nwidth="${ROONSCAPE_CAPTURE_VIEWPORT%x*}"\nheight="${ROONSCAPE_CAPTURE_VIEWPORT#*x}"\nprintf \'xwininfo: Window id: 4242 "RoonScape"\\n  Width: %s\\n  Height: %s\\n\' "$width" "$height"\n',
   );
   await executable(
     path.join(binDirectory, "scrot"),
-    '#!/bin/sh\nprintf "scrot|%s|%s\\n" "$*" "$(/usr/bin/date +%s%3N)" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n[ "$1" = "--window" ] && [ "$2" = "4242" ] && [ "$3" = "--overwrite" ] || exit 2\ncp "$ROONSCAPE_CAPTURE_TEST_PNG" "$4"\n',
+    '#!/bin/sh\nprintf "scrot|%s|%s\\n" "$*" "$(/usr/bin/date +%s%3N)" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n[ "$1" = "--window" ] && [ "$2" = "4242" ] && [ "$3" = "--overwrite" ] || exit 2\ncp "$ROONSCAPE_CAPTURE_TEST_PNG_DIRECTORY/$ROONSCAPE_CAPTURE_VIEWPORT.png" "$4"\n',
   );
   const fakeRenderer = path.join(taskDirectory, "renderer.mjs");
   await writeFile(
@@ -335,7 +443,7 @@ test("focused capture waits for its painted revision and publishes one validated
     '#!/usr/bin/env node\nimport { once } from "node:events";\nimport { appendFile } from "node:fs/promises";\nimport { createConnection } from "node:net";\nimport { createInterface } from "node:readline";\nconst log = process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG;\nconst connection = createConnection(process.env.ROONSCAPE_CAPTURE_CONTROL);\nprocess.once("SIGTERM", async () => { await appendFile(log, "renderer-stopped\\n"); process.exit(0); });\nawait once(connection, "connect");\nconst lines = createInterface({ input: connection })[Symbol.asyncIterator]();\nconst selection = JSON.parse((await lines.next()).value);\nif (selection.type !== "select" || selection.scenario !== "playing" || selection.revision !== selection.snapshot.revision) process.exit(2);\nawait appendFile(log, `painted|${Date.now()}\\n`);\nconnection.write(`${JSON.stringify({ type: "painted", scenario: selection.scenario, revision: selection.revision })}\\n`);\nawait once(connection, "close");\nawait appendFile(log, "renderer-stopped\\n");\n',
   );
 
-  const runFocusedCapture = () =>
+  const runFocusedCapture = (...arguments_) =>
     execFileAsync(
       process.execPath,
       [
@@ -345,6 +453,7 @@ test("focused capture waits for its painted revision and publishes one validated
         ),
         "--scenario",
         "playing",
+        ...arguments_,
       ],
       {
         cwd: workDirectory,
@@ -352,7 +461,8 @@ test("focused capture waits for its painted revision and publishes one validated
           ...process.env,
           PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
           TMPDIR: runtimeRoot,
-          ROONSCAPE_CAPTURE_TEST_PNG: fakePng,
+          ROONSCAPE_CAPTURE_TEST_BUILD_FAILURE: buildFailure,
+          ROONSCAPE_CAPTURE_TEST_PNG_DIRECTORY: fakePngDirectory,
           ROONSCAPE_CAPTURE_TEST_PROCESS_LOG: processLog,
           ROONSCAPE_CAPTURE_TEST_RENDERER: fakeRenderer,
           ROONSCAPE_CAPTURE_TYPOGRAPHY: "fallback",
@@ -368,14 +478,34 @@ test("focused capture waits for its painted revision and publishes one validated
     const finalPath = path.join(workDirectory, "3840x2160--playing.png");
     assert.equal(stdout, `${finalPath}\n`);
     assert.match(stderr, /Capturing Fixture Scenario playing at 3840x2160/);
-    assert.deepEqual(await readFile(finalPath), await readFile(fakePng));
+    assert.deepEqual(
+      await readFile(finalPath),
+      await readFile(path.join(fakePngDirectory, "3840x2160.png")),
+    );
     const processes = await readFile(processLog, "utf8");
+    assert.match(
+      processes,
+      /cargo-preflight\|build --locked --package roonscape-renderer/,
+    );
+    assert.ok(
+      processes.indexOf("cargo-preflight|") < processes.indexOf("Xvfb|"),
+      "the complete renderer build should be checked before renderer work",
+    );
     assert.match(processes, /Xvfb\|.*3840x2160x24/);
     assert.match(
       processes,
       /renderer\|1\|3840x2160\|\S+\|0\|unset\|unset\|unset/,
     );
     assert.match(processes, /scrot\|--window 4242 --overwrite \/.*\.png\|\d+/);
+    const temporaryCapturePath = processes.match(
+      /scrot\|--window 4242 --overwrite ([^|]+)\|\d+/,
+    )?.[1];
+    assert.ok(
+      temporaryCapturePath?.startsWith(
+        `${workDirectory}${path.sep}.roonscape-capture.`,
+      ),
+      "the validated temporary capture should share the destination filesystem",
+    );
     assert.match(processes, /renderer-stopped/);
     assert.match(processes, /Xvfb-stopped/);
     const paintedAt = Number(processes.match(/painted\|(\d+)/)?.[1]);
@@ -388,12 +518,96 @@ test("focused capture waits for its painted revision and publishes one validated
     assert.deepEqual(await readdir(runtimeRoot), []);
 
     await rm(finalPath);
-    await writeFile(fakePng, pngHeader(1920, 1080));
+    const processLogBeforeBuildFailure = await readFile(processLog, "utf8");
+    await writeFile(buildFailure, "fail");
+    await assert.rejects(
+      runFocusedCapture(),
+      /renderer build preflight failed:[\s\S]*missing renderer input/,
+    );
+    const buildFailureProcesses = (await readFile(processLog, "utf8")).slice(
+      processLogBeforeBuildFailure.length,
+    );
+    assert.match(buildFailureProcesses, /^cargo-preflight\|/);
+    assert.doesNotMatch(buildFailureProcesses, /Xvfb\||renderer\|/);
+    await rm(buildFailure);
+
+    const { stdout: repeatedStdout, stderr: repeatedStderr } =
+      await runFocusedCapture(
+        "--resolution",
+        "1280x720",
+        "--resolution",
+        "1920x1080",
+        "--output",
+        "review/captures",
+      );
+    const outputDirectory = path.join(workDirectory, "review/captures");
+    const plannedPaths = [
+      path.join(outputDirectory, "1280x720--playing.png"),
+      path.join(outputDirectory, "1920x1080--playing.png"),
+    ];
+    assert.equal(repeatedStdout, `${plannedPaths.join("\n")}\n`);
+    assert.match(repeatedStderr, /playing at 1280x720/);
+    assert.match(repeatedStderr, /playing at 1920x1080/);
+    assert.deepEqual((await readdir(outputDirectory)).sort(), [
+      "1280x720--playing.png",
+      "1920x1080--playing.png",
+    ]);
+
+    const processLogBeforeCollision = await readFile(processLog, "utf8");
+    await assert.rejects(
+      runFocusedCapture(
+        "--resolution",
+        "1280x720",
+        "--resolution",
+        "1920x1080",
+        "--output",
+        "review/captures",
+      ),
+      /destination files already exist:[\s\S]*1280x720--playing\.png[\s\S]*1920x1080--playing\.png/,
+    );
+    assert.equal(await readFile(processLog, "utf8"), processLogBeforeCollision);
+
+    await rm(plannedPaths[0]);
+    await mkdir(plannedPaths[0]);
+    await assert.rejects(
+      runFocusedCapture(
+        "--resolution",
+        "1280x720",
+        "--resolution",
+        "1920x1080",
+        "--output",
+        "review/captures",
+        "--overwrite",
+      ),
+      /destination is not a replaceable file:.*1280x720--playing\.png/,
+    );
+    assert.equal(await readFile(processLog, "utf8"), processLogBeforeCollision);
+    await rm(plannedPaths[0], { recursive: true });
+    await writeFile(plannedPaths[0], "stale");
+    await runFocusedCapture(
+      "--resolution",
+      "1280x720",
+      "--resolution",
+      "1920x1080",
+      "--output",
+      "review/captures",
+      "--overwrite",
+    );
+    assert.deepEqual(
+      await readFile(plannedPaths[0]),
+      await readFile(path.join(fakePngDirectory, "1280x720.png")),
+    );
+
+    await rm(outputDirectory, { force: true, recursive: true });
+    await writeFile(
+      path.join(fakePngDirectory, "3840x2160.png"),
+      pngHeader(1920, 1080),
+    );
     await assert.rejects(
       runFocusedCapture(),
       /is 1920x1080; expected 3840x2160/,
     );
-    assert.deepEqual(await readdir(workDirectory), []);
+    assert.deepEqual(await readdir(workDirectory), ["review"]);
     assert.deepEqual(await readdir(runtimeRoot), []);
   } finally {
     await Promise.all([
@@ -416,6 +630,31 @@ test("focused capture rejects an unknown Fixture Scenario before launching tools
         error.stderr,
         /unknown Fixture Scenario identifier: not-maintained/,
       );
+      return true;
+    },
+  );
+});
+
+test("focused capture reports missing dependencies together before renderer work", async () => {
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["scripts/capture-presentations.mjs", "--scenario", "playing"],
+      {
+        cwd: new URL("..", import.meta.url),
+        env: { ...process.env, PATH: "" },
+      },
+    ),
+    (error) => {
+      assert.equal(error.stdout, "");
+      assert.match(error.stderr, /required executable is unavailable: Xvfb/);
+      assert.match(
+        error.stderr,
+        /required executable is unavailable: xwininfo/,
+      );
+      assert.match(error.stderr, /required executable is unavailable: scrot/);
+      assert.match(error.stderr, /required executable is unavailable: cargo/);
+      assert.doesNotMatch(error.stderr, /Capturing Fixture Scenario/);
       return true;
     },
   );

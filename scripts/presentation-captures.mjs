@@ -3,13 +3,13 @@ import { fileURLToPath } from "node:url";
 import { readFixtureScenarioCatalog } from "../src/bridge/dist/src/fixture-scenario-catalog.js";
 
 const VIEWPORTS = [
-  { key: "1280x720", width: 1280, height: 720 },
-  { key: "1600x900", width: 1600, height: 900 },
-  { key: "1600x1200", width: 1600, height: 1200 },
-  { key: "1920x1200", width: 1920, height: 1200 },
-  { key: "2560x1080", width: 2560, height: 1080 },
-  { key: "3840x2160", width: 3840, height: 2160 },
-  { key: "3840x2400", width: 3840, height: 2400 },
+  presentationCaptureResolution(1280, 720),
+  presentationCaptureResolution(1600, 900),
+  presentationCaptureResolution(1600, 1200),
+  presentationCaptureResolution(1920, 1200),
+  presentationCaptureResolution(2560, 1080),
+  presentationCaptureResolution(3840, 2160),
+  presentationCaptureResolution(3840, 2400),
 ];
 
 const defaultCatalogPath = fileURLToPath(
@@ -97,21 +97,34 @@ export function buildPresentationCapturePlan({
     scenarios.map((scenario) => ({
       variant: "matrix",
       ...scenario,
-      ...viewportFields(viewport),
+      ...viewport,
       typography: "automatic",
       diagnostics: false,
-      fileName: `${viewport.key}--${scenario.scenario}.png`,
+      fileName: `${viewport.viewport}--${scenario.scenario}.png`,
     })),
   );
   const representatives = VIEWPORTS.flatMap((viewport) =>
     REPRESENTATIVES.map((capture) => ({
       ...capture,
-      ...viewportFields(viewport),
-      fileName: `${viewport.key}--representative--${capture.scenario}.png`,
+      ...viewport,
+      fileName: `${viewport.viewport}--representative--${capture.scenario}.png`,
     })),
   );
 
   return [...matrix, ...representatives];
+}
+
+export function listFixtureScenarios({
+  catalogPath = defaultCatalogPath,
+} = {}) {
+  return readFixtureScenarioCatalog(catalogPath).map(({ scenario, label }) => ({
+    scenario,
+    label,
+  }));
+}
+
+export function presentationCaptureResolution(width, height) {
+  return { width, height, viewport: `${width}x${height}` };
 }
 
 export function selectFocusedPresentationCapture(plan, scenarioIdentifier) {
@@ -154,13 +167,5 @@ function representative(
     ...fixtureScenario(scenario, fixtureName, palette),
     typography,
     diagnostics,
-  };
-}
-
-function viewportFields(viewport) {
-  return {
-    viewport: viewport.key,
-    width: viewport.width,
-    height: viewport.height,
   };
 }
