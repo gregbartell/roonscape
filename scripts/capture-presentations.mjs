@@ -10,6 +10,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { constants as fileConstants } from "node:fs";
 import { once } from "node:events";
 import { createServer } from "node:net";
@@ -37,6 +38,17 @@ const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const nativeRenderer = "native GTK 4/Pango";
 const defaultSettleMilliseconds = 1_500;
 const maximumCaptureDimension = 32_767;
+const customArtworkScenarios = new Set([
+  "playing",
+  "paused",
+  "loading-with-content",
+  "missing-metadata",
+  "missing-artist",
+  "missing-album",
+  "long-metadata",
+  "extreme-metadata",
+  "indeterminate-progress",
+]);
 const captureDisplayConfiguration = {
   trackedOutputId: "visual-acceptance-capture",
   inactivity: {
@@ -71,6 +83,7 @@ async function captureFocusedScenario(options) {
 }
 
 async function preflightFocusedCapture({
+  artwork,
   output,
   overwrite,
   resolutions,
@@ -80,6 +93,13 @@ async function preflightFocusedCapture({
     buildPresentationCapturePlan(),
     scenario,
   );
+  if (artwork !== undefined && !customArtworkScenarios.has(selected.scenario)) {
+    throw new Error(
+      `--artwork is incompatible with Fixture Scenario ${selected.scenario}`,
+    );
+  }
+  const customArtwork =
+    artwork === undefined ? undefined : await validateCustomArtwork(artwork);
   const requestedResolutions =
     resolutions.length === 0
       ? [presentationCaptureResolution(3840, 2160)]
@@ -97,7 +117,11 @@ async function preflightFocusedCapture({
   const outputDirectory = path.resolve(process.cwd(), output ?? ".");
   const captures = requestedResolutions.map((resolution) => {
     const { viewport } = resolution;
-    const fileName = `${viewport}--${selected.scenario}.png`;
+    const artworkIdentity =
+      customArtwork === undefined
+        ? ""
+        : `--${customArtwork.sanitizedBasename}--${customArtwork.contentHash}`;
+    const fileName = `${viewport}--${selected.scenario}${artworkIdentity}.png`;
     return {
       ...selected,
       ...resolution,
@@ -127,7 +151,10 @@ async function preflightFocusedCapture({
     selectedSnapshot = JSON.parse(
       await readFile(path.join(repositoryRoot, selected.fixture), "utf8"),
     );
-    if (typeof selectedSnapshot.artwork?.path === "string") {
+    if (
+      customArtwork === undefined &&
+      typeof selectedSnapshot.artwork?.path === "string"
+    ) {
       runtimeInputPaths.push(selectedSnapshot.artwork.path);
     }
   } catch (error) {
@@ -214,7 +241,59 @@ async function preflightFocusedCapture({
   return captures.map((capture) => ({
     ...capture,
     snapshot: selectedSnapshot,
+    customArtwork,
   }));
+}
+
+async function validateCustomArtwork(requestedPath) {
+  const artworkPath = path.resolve(process.cwd(), requestedPath);
+  let artworkStats;
+  try {
+    artworkStats = await stat(artworkPath);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      throw new Error(`custom artwork does not exist: ${artworkPath}`, {
+        cause: error,
+      });
+    }
+    throw new Error(
+      `could not inspect custom artwork ${artworkPath}: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+  if (!artworkStats.isFile()) {
+    throw new Error(`custom artwork is not a file: ${artworkPath}`);
+  }
+  if (artworkStats.size === 0) {
+    throw new Error(`custom artwork is empty: ${artworkPath}`);
+  }
+  try {
+    await access(artworkPath, fileConstants.R_OK);
+  } catch {
+    throw new Error(`custom artwork is unreadable: ${artworkPath}`);
+  }
+  let contents;
+  try {
+    contents = await readFile(artworkPath);
+  } catch {
+    throw new Error(`custom artwork is unreadable: ${artworkPath}`);
+  }
+  const sanitizedBasename =
+    path
+      .basename(artworkPath)
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9]+/g, "-")
+      .replaceAll(/^-|-$/g, "")
+      .slice(0, 80)
+      .replace(/-$/, "") || "artwork";
+  return {
+    contents,
+    sanitizedBasename,
+    contentHash: createHash("sha256")
+      .update(contents)
+      .digest("hex")
+      .slice(0, 12),
+  };
 }
 
 async function captureFocusedResolution(capture) {
@@ -239,6 +318,14 @@ async function captureFocusedResolution(capture) {
       `${JSON.stringify(captureDisplayConfiguration, null, 2)}\n`,
     );
     const snapshot = structuredClone(capture.snapshot);
+    if (capture.customArtwork !== undefined) {
+      const artworkPath = path.join(runtimeDirectory, "custom-artwork");
+      await writeFile(artworkPath, capture.customArtwork.contents, {
+        flag: "wx",
+        mode: 0o600,
+      });
+      snapshot.artwork = { revision: 1, path: artworkPath };
+    }
     const revision = 1;
     snapshot.revision = revision;
     const selection = {
@@ -646,6 +733,7 @@ function delay(milliseconds) {
 
 function parseArguments(arguments_) {
   const parsed = {
+    artwork: undefined,
     list: false,
     listScenarios: false,
     legacyOption: false,
@@ -661,6 +749,10 @@ function parseArguments(arguments_) {
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     switch (argument) {
+      case "--artwork":
+        rejectDuplicateOption(parsed.artwork !== undefined, argument);
+        parsed.artwork = requiredValue(arguments_, ++index, argument);
+        break;
       case "--list":
         rejectDuplicateOption(parsed.list, argument);
         parsed.list = true;
@@ -727,6 +819,9 @@ function parseArguments(arguments_) {
   }
   if (parsed.scenario === undefined && parsed.overwrite) {
     throw new Error("--overwrite requires --scenario");
+  }
+  if (parsed.scenario === undefined && parsed.artwork !== undefined) {
+    throw new Error("--artwork requires --scenario");
   }
   return parsed;
 }

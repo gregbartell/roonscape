@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmod,
   mkdir,
@@ -363,6 +364,21 @@ test("focused capture rejects invalid resolutions and option combinations before
       diagnostic: /--overwrite requires --scenario/,
     },
     {
+      arguments: ["--artwork", "cover.png"],
+      diagnostic: /--artwork requires --scenario/,
+    },
+    {
+      arguments: [
+        "--scenario",
+        "playing",
+        "--artwork",
+        "first.png",
+        "--artwork",
+        "second.png",
+      ],
+      diagnostic: /duplicate capture option: --artwork/,
+    },
+    {
       arguments: ["--scenario", "playing", "--settle-ms", "1500"],
       diagnostic: /--scenario cannot be combined with legacy capture options/,
     },
@@ -402,6 +418,12 @@ test("focused capture waits for its painted revision and publishes one validated
   const fakePngDirectory = path.join(taskDirectory, "pngs");
   const buildFailure = path.join(taskDirectory, "build-failure");
   const processLog = path.join(taskDirectory, "processes");
+  const customArtwork = path.join(taskDirectory, "My unsafe ! Cover.PNG");
+  const canonicalPlayingPath = path.join(
+    new URL("..", import.meta.url).pathname,
+    "src/shared/fixtures/playing.json",
+  );
+  const canonicalPlaying = await readFile(canonicalPlayingPath);
   await Promise.all([
     mkdir(binDirectory),
     mkdir(workDirectory),
@@ -419,6 +441,12 @@ test("focused capture waits for its painted revision and publishes one validated
     writeFile(
       path.join(fakePngDirectory, "1280x720.png"),
       pngHeader(1280, 720),
+    ),
+    writeFile(
+      customArtwork,
+      await readFile(
+        new URL("../src/shared/fixtures/artwork/light.svg", import.meta.url),
+      ),
     ),
   ]);
   await executable(
@@ -440,7 +468,7 @@ test("focused capture waits for its painted revision and publishes one validated
   const fakeRenderer = path.join(taskDirectory, "renderer.mjs");
   await writeFile(
     fakeRenderer,
-    '#!/usr/bin/env node\nimport { once } from "node:events";\nimport { appendFile } from "node:fs/promises";\nimport { createConnection } from "node:net";\nimport { createInterface } from "node:readline";\nconst log = process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG;\nconst connection = createConnection(process.env.ROONSCAPE_CAPTURE_CONTROL);\nprocess.once("SIGTERM", async () => { await appendFile(log, "renderer-stopped\\n"); process.exit(0); });\nawait once(connection, "connect");\nconst lines = createInterface({ input: connection })[Symbol.asyncIterator]();\nconst selection = JSON.parse((await lines.next()).value);\nif (selection.type !== "select" || selection.scenario !== "playing" || selection.revision !== selection.snapshot.revision) process.exit(2);\nawait appendFile(log, `painted|${Date.now()}\\n`);\nconnection.write(`${JSON.stringify({ type: "painted", scenario: selection.scenario, revision: selection.revision })}\\n`);\nawait once(connection, "close");\nawait appendFile(log, "renderer-stopped\\n");\n',
+    '#!/usr/bin/env node\nimport { createHash } from "node:crypto";\nimport { once } from "node:events";\nimport { appendFile, readFile } from "node:fs/promises";\nimport { createConnection } from "node:net";\nimport { createInterface } from "node:readline";\nconst log = process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG;\nconst connection = createConnection(process.env.ROONSCAPE_CAPTURE_CONTROL);\nprocess.once("SIGTERM", async () => { await appendFile(log, "renderer-stopped\\n"); process.exit(0); });\nawait once(connection, "connect");\nconst lines = createInterface({ input: connection })[Symbol.asyncIterator]();\nconst selection = JSON.parse((await lines.next()).value);\nif (selection.type !== "select" || selection.scenario !== "playing" || selection.revision !== selection.snapshot.revision) process.exit(2);\nconst observedArtworkHash = selection.snapshot.artwork === null ? null : createHash("sha256").update(await readFile(selection.snapshot.artwork.path)).digest("hex").slice(0, 12);\nawait appendFile(log, `selection|${JSON.stringify({ ...selection, observedArtworkHash })}\\npainted|${Date.now()}\\n`);\nconnection.write(`${JSON.stringify({ type: "painted", scenario: selection.scenario, revision: selection.revision })}\\n`);\nawait once(connection, "close");\nawait appendFile(log, "renderer-stopped\\n");\n',
   );
 
   const runFocusedCapture = (...arguments_) =>
@@ -518,6 +546,52 @@ test("focused capture waits for its painted revision and publishes one validated
     assert.deepEqual(await readdir(runtimeRoot), []);
 
     await rm(finalPath);
+    const artworkHash = createHash("sha256")
+      .update(await readFile(customArtwork))
+      .digest("hex")
+      .slice(0, 12);
+    const customFileName = `1280x720--playing--my-unsafe-cover-png--${artworkHash}.png`;
+    const { stdout: customStdout } = await runFocusedCapture(
+      "--artwork",
+      customArtwork,
+      "--resolution",
+      "1280x720",
+    );
+    const customCapturePath = path.join(workDirectory, customFileName);
+    assert.equal(customStdout, `${customCapturePath}\n`);
+    assert.deepEqual(
+      await readFile(customCapturePath),
+      await readFile(path.join(fakePngDirectory, "1280x720.png")),
+    );
+    const customSelection = [
+      ...(await readFile(processLog, "utf8")).matchAll(/^selection\|(.*)$/gm),
+    ]
+      .map((match) => JSON.parse(match[1]))
+      .find((selection) => selection.observedArtworkHash === artworkHash);
+    assert.ok(
+      customSelection,
+      "the renderer should receive the custom artwork",
+    );
+    assert.notEqual(customSelection.snapshot.artwork.path, customArtwork);
+    assert.ok(
+      customSelection.snapshot.artwork.path.startsWith(runtimeRoot),
+      "the renderer should receive a task-owned copy of validated artwork",
+    );
+    const expectedSnapshot = JSON.parse(canonicalPlaying);
+    expectedSnapshot.revision = customSelection.revision;
+    expectedSnapshot.artwork = customSelection.snapshot.artwork;
+    assert.deepEqual(customSelection.snapshot, expectedSnapshot);
+    assert.deepEqual(await readFile(canonicalPlayingPath), canonicalPlaying);
+    await rm(customCapturePath);
+    const { stdout: repeatedCustomStdout } = await runFocusedCapture(
+      "--artwork",
+      customArtwork,
+      "--resolution",
+      "1280x720",
+    );
+    assert.equal(repeatedCustomStdout, customStdout);
+    await rm(customCapturePath);
+
     const processLogBeforeBuildFailure = await readFile(processLog, "utf8");
     await writeFile(buildFailure, "fail");
     await assert.rejects(
@@ -633,6 +707,232 @@ test("focused capture rejects an unknown Fixture Scenario before launching tools
       return true;
     },
   );
+});
+
+test("focused capture rejects custom artwork for incompatible Fixture Scenarios", async () => {
+  const artwork = path.join(
+    new URL("..", import.meta.url).pathname,
+    "src/shared/fixtures/artwork/playing.svg",
+  );
+  const incompatibleScenarios = [
+    "loading-without-content",
+    "idle",
+    "pairing-required",
+    "disconnected",
+    "output-unavailable",
+    "playing-without-content",
+    "paused-without-content",
+    "missing-artwork",
+    "non-square-artwork",
+    "light-artwork",
+  ];
+
+  for (const scenario of incompatibleScenarios) {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "scripts/capture-presentations.mjs",
+          "--scenario",
+          scenario,
+          "--artwork",
+          artwork,
+        ],
+        {
+          cwd: new URL("..", import.meta.url),
+          env: { ...process.env, PATH: "" },
+        },
+      ),
+      new RegExp(`--artwork is incompatible with Fixture Scenario ${scenario}`),
+      scenario,
+    );
+  }
+});
+
+test("focused capture accepts custom artwork for every compatible Fixture Scenario", async () => {
+  const artwork = path.join(
+    new URL("..", import.meta.url).pathname,
+    "src/shared/fixtures/artwork/playing.svg",
+  );
+  const compatibleScenarios = [
+    "playing",
+    "paused",
+    "loading-with-content",
+    "missing-metadata",
+    "missing-artist",
+    "missing-album",
+    "long-metadata",
+    "extreme-metadata",
+    "indeterminate-progress",
+  ];
+
+  for (const scenario of compatibleScenarios) {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "scripts/capture-presentations.mjs",
+          "--scenario",
+          scenario,
+          "--artwork",
+          artwork,
+        ],
+        {
+          cwd: new URL("..", import.meta.url),
+          env: { ...process.env, PATH: "" },
+        },
+      ),
+      (error) => {
+        assert.match(error.stderr, /required executable is unavailable: Xvfb/);
+        assert.doesNotMatch(error.stderr, /--artwork is incompatible/);
+        return true;
+      },
+      scenario,
+    );
+  }
+});
+
+test("focused capture rejects unusable custom artwork before renderer work", async () => {
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-custom-artwork-test."),
+  );
+  const missingArtwork = path.join(taskDirectory, "missing.png");
+  const emptyArtwork = path.join(taskDirectory, "empty.png");
+  const directoryArtwork = path.join(taskDirectory, "directory.png");
+  const unreadableArtwork = path.join(taskDirectory, "unreadable.png");
+  await writeFile(emptyArtwork, "");
+  await mkdir(directoryArtwork);
+  await writeFile(unreadableArtwork, "not empty");
+  await chmod(unreadableArtwork, 0o000);
+
+  const invalidArtwork = [
+    [missingArtwork, /custom artwork does not exist:/],
+    [emptyArtwork, /custom artwork is empty:/],
+    [directoryArtwork, /custom artwork is not a file:/],
+    [unreadableArtwork, /custom artwork is unreadable:/],
+  ];
+
+  try {
+    for (const [artwork, diagnostic] of invalidArtwork) {
+      await assert.rejects(
+        execFileAsync(
+          process.execPath,
+          [
+            "scripts/capture-presentations.mjs",
+            "--scenario",
+            "playing",
+            "--artwork",
+            artwork,
+          ],
+          {
+            cwd: new URL("..", import.meta.url),
+            env: { ...process.env, PATH: "" },
+          },
+        ),
+        (error) => {
+          assert.match(error.stderr, diagnostic);
+          assert.doesNotMatch(error.stderr, /Capturing Fixture Scenario/);
+          return true;
+        },
+        artwork,
+      );
+    }
+  } finally {
+    await chmod(unreadableArtwork, 0o600);
+    await rm(taskDirectory, { force: true, recursive: true });
+  }
+});
+
+test("focused capture rejects artwork unsupported by the native image pipeline before scrot", async () => {
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-unsupported-artwork-test."),
+  );
+  const artwork = path.join(taskDirectory, "looks-valid.png");
+  await writeFile(artwork, "not an image");
+
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          path.join(
+            new URL("..", import.meta.url).pathname,
+            "scripts/capture-presentations.mjs",
+          ),
+          "--scenario",
+          "playing",
+          "--artwork",
+          artwork,
+          "--resolution",
+          "1280x720",
+        ],
+        {
+          cwd: taskDirectory,
+          env: process.env,
+          timeout: 300_000,
+        },
+      ),
+      (error) => {
+        assert.match(
+          error.stderr,
+          /could not decode or derive a palette from artwork/,
+        );
+        return true;
+      },
+    );
+    assert.deepEqual(await readdir(taskDirectory), ["looks-valid.png"]);
+  } finally {
+    await rm(taskDirectory, { force: true, recursive: true });
+  }
+});
+
+test("focused capture publishes a native PNG with valid custom artwork regardless of extension", async () => {
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-valid-artwork-test."),
+  );
+  const artwork = path.join(taskDirectory, "Proposed cover.unknown");
+  const artworkContents = await readFile(
+    new URL("../src/shared/fixtures/artwork/light.svg", import.meta.url),
+  );
+  await writeFile(artwork, artworkContents);
+  const artworkHash = createHash("sha256")
+    .update(artworkContents)
+    .digest("hex")
+    .slice(0, 12);
+  const capturePath = path.join(
+    taskDirectory,
+    `1280x720--playing--proposed-cover-unknown--${artworkHash}.png`,
+  );
+
+  try {
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        path.join(
+          new URL("..", import.meta.url).pathname,
+          "scripts/capture-presentations.mjs",
+        ),
+        "--scenario",
+        "playing",
+        "--artwork",
+        artwork,
+        "--resolution",
+        "1280x720",
+      ],
+      {
+        cwd: taskDirectory,
+        env: process.env,
+        timeout: 300_000,
+      },
+    );
+    assert.equal(stdout, `${capturePath}\n`);
+    const capture = await readFile(capturePath);
+    assert.equal(capture.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.equal(capture.readUInt32BE(16), 1280);
+    assert.equal(capture.readUInt32BE(20), 720);
+  } finally {
+    await rm(taskDirectory, { force: true, recursive: true });
+  }
 });
 
 test("focused capture reports missing dependencies together before renderer work", async () => {

@@ -19,7 +19,8 @@ use roonscape_renderer::{
     PresentationProgress, PresentationRevision, PresentationStatus, PresentationStatusEmphasis,
     PresentationStatusLayout, PresentationStyleLayer, PresentationTransition,
     PresentationTransitionStyles, ResolvedPresentation, TextOverflow, TypographySelection,
-    TypographyStyles, Viewport, metadata_layout, resolve_presentation,
+    TypographyStyles, Viewport, metadata_layout, resolve_capture_presentation,
+    resolve_presentation,
 };
 
 use crate::activity_waveform::activity_waveform;
@@ -42,9 +43,34 @@ pub(crate) struct PresentationView {
 }
 
 #[derive(Clone, Copy)]
-struct RenderingConfiguration {
+pub(crate) struct RenderingConfiguration {
     typography: TypographySelection,
     behavior: PresentationBehavior,
+    artwork_failure: ArtworkFailure,
+}
+
+#[derive(Clone, Copy)]
+enum ArtworkFailure {
+    UseFallback,
+    FailCapture,
+}
+
+impl RenderingConfiguration {
+    pub(crate) fn runtime(typography: TypographySelection, behavior: PresentationBehavior) -> Self {
+        Self {
+            typography,
+            behavior,
+            artwork_failure: ArtworkFailure::UseFallback,
+        }
+    }
+
+    pub(crate) fn capture(typography: TypographySelection, behavior: PresentationBehavior) -> Self {
+        Self {
+            typography,
+            behavior,
+            artwork_failure: ArtworkFailure::FailCapture,
+        }
+    }
 }
 
 struct RenderedPresentation {
@@ -55,6 +81,7 @@ struct RenderedPresentation {
     now_playing: Option<RenderedNowPlaying>,
     full_field: Option<RenderedFullField>,
     diagnostics: Option<gtk::Label>,
+    capture_error: Option<String>,
 }
 
 enum PresentationLayoutSource {
@@ -434,14 +461,9 @@ impl PresentationView {
         presentation: &Presentation,
         repository_root: &Path,
         palette_provider: gtk::CssProvider,
-        typography: TypographySelection,
         diagnostics_text: Option<&str>,
-        behavior: PresentationBehavior,
+        rendering: RenderingConfiguration,
     ) -> Self {
-        let rendering = RenderingConfiguration {
-            typography,
-            behavior,
-        };
         let caches = PresentationCaches::new(PRESENTATION_CACHE_CAPACITY);
         let rendered = render_presentation(
             presentation,
@@ -617,15 +639,18 @@ impl PresentationView {
         repository_root: &Path,
     ) -> RenderedPresentation {
         let diagnostics_text = self.transition.current().value().diagnostics_text();
-        let resolved = resolve_presentation(presentation, repository_root);
+        let (resolved, capture_error) =
+            resolve_for_rendering(presentation, repository_root, self.rendering);
         let render = || {
-            render_current_from_resolved(
+            let mut rendered = render_current_from_resolved(
                 &resolved,
                 repository_root,
                 diagnostics_text.as_deref(),
                 self.caches.clone(),
                 self.rendering,
-            )
+            );
+            rendered.capture_error.clone_from(&capture_error);
+            rendered
         };
         match (&resolved.presentation, self.layout_viewport) {
             (Presentation::NowPlaying(_), Some(viewport)) => {
@@ -679,6 +704,9 @@ impl PresentationView {
 
 impl RenderedPresentation {
     fn capture_ready(&self) -> Result<bool, String> {
+        if let Some(error) = self.capture_error.as_ref() {
+            return Err(error.clone());
+        }
         if let Some(now_playing) = self.now_playing.as_ref() {
             return now_playing.artwork.capture_ready();
         }
@@ -784,14 +812,35 @@ fn render_presentation(
     caches: PresentationCaches,
     rendering: RenderingConfiguration,
 ) -> RenderedPresentation {
-    let resolved = resolve_presentation(presentation, repository_root);
-    render_resolved_presentation(
+    let (resolved, capture_error) = resolve_for_rendering(presentation, repository_root, rendering);
+    let mut rendered = render_resolved_presentation(
         &resolved,
         repository_root,
         diagnostics_text,
         caches,
         rendering,
-    )
+    );
+    rendered.capture_error = capture_error;
+    rendered
+}
+
+fn resolve_for_rendering(
+    presentation: &Presentation,
+    repository_root: &Path,
+    rendering: RenderingConfiguration,
+) -> (ResolvedPresentation, Option<String>) {
+    match rendering.artwork_failure {
+        ArtworkFailure::UseFallback => (resolve_presentation(presentation, repository_root), None),
+        ArtworkFailure::FailCapture => {
+            match resolve_capture_presentation(presentation, repository_root) {
+                Ok(resolved) => (resolved, None),
+                Err(error) => (
+                    resolve_presentation(presentation, repository_root),
+                    Some(error.to_string()),
+                ),
+            }
+        }
+    }
 }
 
 fn render_resolved_presentation(
@@ -897,6 +946,7 @@ fn full_field(
             pending_fits,
         }),
         diagnostics,
+        capture_error: None,
     }
 }
 
@@ -972,6 +1022,7 @@ fn now_playing(
         now_playing: Some(now_playing),
         full_field: None,
         diagnostics,
+        capture_error: None,
     }
 }
 

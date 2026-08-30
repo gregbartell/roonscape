@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -28,6 +28,15 @@ test("acknowledges initial and repeated Fixture Scenario revisions only after th
     path.join(tmpdir(), "roonscape-capture-control-test."),
   );
   const controlSocketPath = path.join(taskDirectory, "capture-control.sock");
+  const validArtworkPath = path.join(taskDirectory, "valid-artwork.unknown");
+  const invalidArtworkPath = path.join(taskDirectory, "invalid-artwork.png");
+  await writeFile(
+    validArtworkPath,
+    await readFile(
+      path.join(repositoryRoot, "src/shared/fixtures/artwork/playing.svg"),
+    ),
+  );
+  await writeFile(invalidArtworkPath, "not an image");
   const server = createServer();
   await new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -91,7 +100,7 @@ test("acknowledges initial and repeated Fixture Scenario revisions only after th
     });
 
     control.write(
-      `${JSON.stringify(await selection("playing.json", "playing", 74))}\n`,
+      `${JSON.stringify(await selection("playing.json", "playing", 74, validArtworkPath))}\n`,
     );
     assert.deepEqual(await nextAcknowledgement(acknowledgements, renderer), {
       type: "painted",
@@ -99,14 +108,36 @@ test("acknowledges initial and repeated Fixture Scenario revisions only after th
       revision: 74,
     });
 
-    const closed = once(renderer, "close");
-    control.destroy();
-    const [exitCode, signal] = await closed;
+    control.write(
+      `${JSON.stringify(await selection("playing.json", "playing", 75, invalidArtworkPath))}\n`,
+    );
+    const closed = once(renderer, "close").then(([exitCode, signal]) => ({
+      type: "closed",
+      exitCode,
+      signal,
+    }));
+    const acknowledged = acknowledgements.next().then((next) =>
+      next.done
+        ? closed
+        : {
+            type: "acknowledged",
+            acknowledgement: JSON.parse(next.value),
+          },
+    );
+    const outcome = await Promise.race([closed, acknowledged]);
+    assert.deepEqual(outcome, {
+      type: "closed",
+      exitCode: 1,
+      signal: null,
+    });
+    const { exitCode, signal } = outcome;
     assert.equal(signal, null);
     assert.equal(exitCode, 1);
     assert.match(
       renderer.capturedStandardError,
-      /capture control channel disconnected/,
+      new RegExp(
+        `could not decode or derive a palette from artwork at ${invalidArtworkPath}`,
+      ),
     );
   } finally {
     await stopProcess(renderer);
@@ -116,7 +147,7 @@ test("acknowledges initial and repeated Fixture Scenario revisions only after th
   }
 });
 
-async function selection(fixtureName, scenario, revision) {
+async function selection(fixtureName, scenario, revision, artworkPath) {
   const snapshot = JSON.parse(
     await readFile(
       path.join(repositoryRoot, "src/shared/fixtures", fixtureName),
@@ -124,6 +155,9 @@ async function selection(fixtureName, scenario, revision) {
     ),
   );
   snapshot.revision = revision;
+  if (artworkPath !== undefined) {
+    snapshot.artwork = { revision: 1, path: artworkPath };
+  }
   return { type: "select", scenario, revision, snapshot };
 }
 

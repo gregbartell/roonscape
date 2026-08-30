@@ -26,7 +26,7 @@ use roonscape_renderer::{
     select_capture_typography, select_typography,
 };
 
-use view::{PresentationView, install_style_providers};
+use view::{PresentationView, RenderingConfiguration, install_style_providers};
 
 const APPLICATION_ID: &str = "io.roonscape.Renderer";
 const SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(250);
@@ -249,14 +249,18 @@ fn build_window(
             .borrow()
             .overlay_text(current_process_memory_bytes())
     });
+    let rendering = if connections.capture_control.is_some() {
+        RenderingConfiguration::capture(typography, renderer_configuration.behavior)
+    } else {
+        RenderingConfiguration::runtime(typography, renderer_configuration.behavior)
+    };
     let presentation_view = Rc::new(RefCell::new(PresentationView::new(
         presentation.borrow().revision(),
         &initial_frame.presentation,
         repository_root,
         palette_provider,
-        typography,
         initial_diagnostics.as_deref(),
-        renderer_configuration.behavior,
+        rendering,
     )));
     presentation_view.borrow_mut().apply_viewport(viewport);
     presentation_view

@@ -61,7 +61,10 @@ pub use presentation::{
     PresentationState, PresentationStatus, PresentationStatusEmphasis, PresentationStatusMotion,
     PresentationStatusSymbol, PresentationTime, PresentationUpdate, presentation_from_snapshot,
 };
-pub use resolution::{ResolvedPresentation, resolve_presentation};
+pub use resolution::{
+    ArtworkResolutionError, ResolvedPresentation, resolve_capture_presentation,
+    resolve_presentation,
+};
 pub use style::{
     DiagnosticsStyle, PresentationStyleLayer, PresentationTransitionStyles, TypographyStyles,
 };
