@@ -343,6 +343,57 @@ test("focused capture selection rejects an ambiguous exact Fixture Scenario", ()
   );
 });
 
+test("capture command requires one current selector and guides callers away from removed options", async () => {
+  const invalidInvocations = [
+    {
+      arguments: [],
+      diagnostic:
+        /a Presentation Capture selector is required: use --scenario, --all, or --profile visual-acceptance/,
+    },
+    {
+      arguments: ["--output", "captures"],
+      diagnostic:
+        /a Presentation Capture selector is required: use --scenario, --all, or --profile visual-acceptance/,
+    },
+    {
+      arguments: ["--list"],
+      diagnostic: /--list was removed; use --list-scenarios/,
+    },
+    {
+      arguments: ["--only", "playing"],
+      diagnostic: /--only was removed; use --scenario/,
+    },
+    {
+      arguments: ["--viewport", "1280x720"],
+      diagnostic: /--viewport was removed; use --resolution/,
+    },
+    {
+      arguments: ["--settle-ms", "0"],
+      diagnostic:
+        /--settle-ms was removed; Presentation Captures now wait for painted-frame readiness/,
+    },
+  ];
+
+  for (const invocation of invalidInvocations) {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        ["scripts/capture-presentations.mjs", ...invocation.arguments],
+        {
+          cwd: new URL("..", import.meta.url),
+          env: { ...process.env, PATH: "" },
+        },
+      ),
+      (error) => {
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, invocation.diagnostic);
+        return true;
+      },
+      invocation.arguments.join(" "),
+    );
+  }
+});
+
 test("focused capture rejects invalid resolutions and option combinations before launching tools", async () => {
   const invalidInvocations = [
     {
@@ -371,15 +422,15 @@ test("focused capture rejects invalid resolutions and option combinations before
     },
     {
       arguments: ["--resolution", "1920x1080"],
-      diagnostic: /--resolution requires --scenario/,
+      diagnostic: /a Presentation Capture selector is required/,
     },
     {
       arguments: ["--overwrite"],
-      diagnostic: /--overwrite requires --scenario/,
+      diagnostic: /a Presentation Capture selector is required/,
     },
     {
       arguments: ["--artwork", "cover.png"],
-      diagnostic: /--artwork requires --scenario/,
+      diagnostic: /a Presentation Capture selector is required/,
     },
     {
       arguments: [
@@ -391,10 +442,6 @@ test("focused capture rejects invalid resolutions and option combinations before
         "second.png",
       ],
       diagnostic: /duplicate capture option: --artwork/,
-    },
-    {
-      arguments: ["--scenario", "playing", "--settle-ms", "1500"],
-      diagnostic: /--scenario cannot be combined with legacy capture options/,
     },
     {
       arguments: ["--list-scenarios", "--overwrite"],
@@ -1484,126 +1531,6 @@ test("focused capture reports missing dependencies together before renderer work
       return true;
     },
   );
-});
-
-test("capture command orchestrates one native fixture capture and records its manifest", async () => {
-  const taskDirectory = await mkdtemp(
-    path.join(tmpdir(), "roonscape-presentation-test."),
-  );
-  const binDirectory = path.join(taskDirectory, "bin");
-  const outputDirectory = path.join(taskDirectory, "captures");
-  const fakePng = path.join(taskDirectory, "fake.png");
-  const rendererEnvironment = path.join(taskDirectory, "renderer-environment");
-  const rendererArguments = path.join(taskDirectory, "renderer-arguments");
-  const windowInspectionAttempts = path.join(
-    taskDirectory,
-    "window-inspection-attempts",
-  );
-  const displayConfiguration = path.join(
-    taskDirectory,
-    "display-configuration",
-  );
-  await mkdir(binDirectory);
-  await writeFile(fakePng, pngHeader(1280, 720));
-  await executable(
-    path.join(binDirectory, "Xvfb"),
-    '#!/bin/sh\ndisplay_number="${1#:}"\nsocket="/tmp/.X11-unix/X${display_number}"\nmkdir -p /tmp/.X11-unix\ntouch "$socket"\ntrap \'rm -f "$socket"; exit 0\' TERM INT EXIT\nwhile :; do /usr/bin/sleep 1; done\n',
-  );
-  await executable(
-    path.join(binDirectory, "cargo"),
-    '#!/bin/sh\nconfiguration_file="$7"\nif [ -S "$ROONSCAPE_SOCKET" ]; then\n  publisher_state=ready\nelse\n  publisher_state=missing\nfi\nprintf "%s|%s|%s|%s|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "$ROONSCAPE_CAPTURE_TYPOGRAPHY" "$ROONSCAPE_DIAGNOSTICS" "${ROONSCAPE_DISPLAY_CONFIG-unset}" "$publisher_state" > "$ROONSCAPE_CAPTURE_TEST_RENDERER_ENVIRONMENT"\nprintf "%s\\n" "$@" > "$ROONSCAPE_CAPTURE_TEST_RENDERER_ARGUMENTS"\ncp "$configuration_file" "$ROONSCAPE_CAPTURE_TEST_DISPLAY_CONFIGURATION"\ntrap \'exit 0\' TERM INT\nwhile :; do /usr/bin/sleep 1; done\n',
-  );
-  await executable(
-    path.join(binDirectory, "xwininfo"),
-    '#!/bin/sh\nattempts_file="$ROONSCAPE_CAPTURE_TEST_WINDOW_INSPECTION_ATTEMPTS"\nattempt=0\n[ ! -f "$attempts_file" ] || read -r attempt < "$attempts_file"\nattempt=$((attempt + 1))\nprintf "%s\\n" "$attempt" > "$attempts_file"\nif [ "$attempt" -eq 1 ]; then\n  width=1\n  height=1\nelse\n  width=1280\n  height=720\nfi\nprintf \'xwininfo: Window id: 4242 "RoonScape"\\n  Width: %s\\n  Height: %s\\n\' "$width" "$height"\n',
-  );
-  await executable(
-    path.join(binDirectory, "scrot"),
-    '#!/bin/sh\n[ "$1" = "--window" ] && [ "$2" = "$ROONSCAPE_CAPTURE_TEST_WINDOW_ID" ] && [ "$3" = "--overwrite" ] || exit 2\n[ -S "$ROONSCAPE_SOCKET" ] || exit 3\ncp "$ROONSCAPE_CAPTURE_TEST_PNG" "$4"\n',
-  );
-
-  try {
-    const { stderr } = await execFileAsync(
-      process.execPath,
-      [
-        "scripts/capture-presentations.mjs",
-        "--output",
-        outputDirectory,
-        "--only",
-        "playing",
-        "--viewport",
-        "1280x720",
-        "--settle-ms",
-        "0",
-      ],
-      {
-        cwd: new URL("..", import.meta.url),
-        env: {
-          ...process.env,
-          PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
-          ROONSCAPE_CAPTURE_TEST_PNG: fakePng,
-          ROONSCAPE_CAPTURE_TEST_DISPLAY_CONFIGURATION: displayConfiguration,
-          ROONSCAPE_CAPTURE_TEST_RENDERER_ARGUMENTS: rendererArguments,
-          ROONSCAPE_CAPTURE_TEST_RENDERER_ENVIRONMENT: rendererEnvironment,
-          ROONSCAPE_CAPTURE_TEST_WINDOW_INSPECTION_ATTEMPTS:
-            windowInspectionAttempts,
-          ROONSCAPE_CAPTURE_TEST_WINDOW_ID: "4242",
-        },
-      },
-    );
-    const manifest = JSON.parse(
-      await readFile(path.join(outputDirectory, "manifest.json"), "utf8"),
-    );
-
-    assert.equal(stderr, "");
-    assert.deepEqual(manifest.captures, [
-      {
-        ...buildPresentationCapturePlan().find(
-          (capture) =>
-            capture.scenario === "playing" &&
-            capture.viewport === "1280x720" &&
-            capture.variant === "matrix",
-        ),
-        renderer: "native GTK 4/Pango",
-      },
-    ]);
-    assert.deepEqual(
-      await readFile(path.join(outputDirectory, manifest.captures[0].fileName)),
-      await readFile(fakePng),
-    );
-    assert.equal(
-      await readFile(rendererEnvironment, "utf8"),
-      "1280x720||0|unset|missing\n",
-      "the renderer should be ready before the fixture progress clock starts",
-    );
-    assert.equal(
-      await readFile(windowInspectionAttempts, "utf8"),
-      "2\n",
-      "capture readiness should wait for the native window to reach its requested size",
-    );
-    const rendererArgumentList = (await readFile(rendererArguments, "utf8"))
-      .trimEnd()
-      .split("\n");
-    assert.deepEqual(rendererArgumentList.slice(0, 6), [
-      "run",
-      "--quiet",
-      "--package",
-      "roonscape-renderer",
-      "--",
-      "--config",
-    ]);
-    assert.equal(path.basename(rendererArgumentList[6]), "display.json");
-    assert.deepEqual(JSON.parse(await readFile(displayConfiguration, "utf8")), {
-      trackedOutputId: "visual-acceptance-capture",
-      inactivity: {
-        gracePeriodSeconds: 3600,
-        dimmedOpacity: 0.35,
-        repositionCadenceSeconds: 60,
-      },
-    });
-  } finally {
-    await rm(taskDirectory, { force: true, recursive: true });
-  }
 });
 
 async function installFakeCaptureDisplay(

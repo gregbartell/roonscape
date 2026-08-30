@@ -4,7 +4,6 @@ import {
   mkdir,
   mkdtemp,
   readFile,
-  readdir,
   rename,
   rm,
   stat,
@@ -35,8 +34,6 @@ import {
 } from "./process-harness.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const nativeRenderer = "native GTK 4/Pango";
-const defaultSettleMilliseconds = 1_500;
 const maximumCaptureDimension = 32_767;
 const captureFontPaths = [
   "src/renderer/assets/fonts/LibreBaskerville-Variable.ttf",
@@ -75,18 +72,12 @@ if (options.listScenarios) {
       .map(({ scenario, label }) => `${scenario}\t${label}\n`)
       .join(""),
   );
-} else if (options.list) {
-  process.stdout.write(
-    `${JSON.stringify(buildPresentationCapturePlan(), null, 2)}\n`,
-  );
 } else if (options.profile !== undefined) {
   await captureVisualAcceptanceProfile(options);
 } else if (options.all) {
   await captureOrdinaryScenarioSet(options);
 } else if (options.scenario !== undefined) {
   await captureFocusedScenario(options);
-} else {
-  await capturePresentations(options);
 }
 
 async function captureFocusedScenario(options) {
@@ -665,139 +656,6 @@ function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function capturePresentations({
-  output,
-  only,
-  viewport,
-  settleMilliseconds,
-}) {
-  const plan = buildPresentationCapturePlan().filter(
-    (capture) =>
-      (only === undefined || capture.scenario === only) &&
-      (viewport === undefined || capture.viewport === viewport),
-  );
-  if (plan.length === 0) {
-    throw new Error("the capture filters did not select any planned artifacts");
-  }
-
-  const outputDirectory = await prepareOutputDirectory(output);
-  const viewportGroups = Map.groupBy(plan, (capture) => capture.viewport);
-  let completed = 0;
-
-  for (const captures of viewportGroups.values()) {
-    const [firstCapture] = captures;
-    const { display, xvfb } = await startXvfbDisplay({
-      width: firstCapture.width,
-      height: firstCapture.height,
-      cwd: repositoryRoot,
-      description: "the native capture display",
-    });
-
-    try {
-      for (const capture of captures) {
-        completed += 1;
-        process.stdout.write(
-          `[${completed}/${plan.length}] ${capture.fileName}\n`,
-        );
-        await captureFixture(
-          capture,
-          display,
-          outputDirectory,
-          settleMilliseconds,
-        );
-      }
-    } finally {
-      await stopProcess(xvfb);
-    }
-  }
-
-  const manifest = {
-    formatVersion: 1,
-    renderer: nativeRenderer,
-    captures: plan.map((capture) => ({
-      ...capture,
-      renderer: nativeRenderer,
-    })),
-  };
-  await writeFile(
-    path.join(outputDirectory, "manifest.json"),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
-  process.stdout.write(`Presentation captures written to ${outputDirectory}\n`);
-}
-
-async function captureFixture(
-  capture,
-  display,
-  outputDirectory,
-  settleMilliseconds,
-) {
-  const runtimeDirectory = await mkdtemp(
-    path.join(tmpdir(), "roonscape-presentation-capture."),
-  );
-  const socketPath = path.join(runtimeDirectory, "roonscape.sock");
-  const displayConfigurationPath = path.join(runtimeDirectory, "display.json");
-  await writeFile(
-    displayConfigurationPath,
-    `${JSON.stringify(captureDisplayConfiguration, null, 2)}\n`,
-  );
-  const environment = {
-    ...process.env,
-    DISPLAY: display,
-    GDK_BACKEND: "x11",
-    NO_AT_BRIDGE: "1",
-    ROONSCAPE_CAPTURE_VIEWPORT: capture.viewport,
-    ROONSCAPE_DIAGNOSTICS: capture.diagnostics ? "1" : "0",
-    ROONSCAPE_FIXTURE: capture.fixture,
-    ROONSCAPE_SOCKET: socketPath,
-  };
-  delete environment.ROONSCAPE_FIXTURE_CONTROL;
-  if (capture.typography !== "automatic") {
-    environment.ROONSCAPE_CAPTURE_TYPOGRAPHY = capture.typography;
-  } else {
-    delete environment.ROONSCAPE_CAPTURE_TYPOGRAPHY;
-  }
-
-  let publisher;
-  let renderer;
-  try {
-    renderer = startNativeRenderer(displayConfigurationPath, environment);
-    await renderer.spawned;
-    const windowId = await waitForRoonScapeWindow(
-      renderer,
-      environment,
-      capture.width,
-      capture.height,
-    );
-    publisher = startLongRunning(
-      process.execPath,
-      [path.join(repositoryRoot, "src/bridge/dist/src/fixture.js")],
-      environment,
-    );
-    await publisher.spawned;
-    await waitFor(
-      () => access(socketPath),
-      publisher,
-      "the fixture publisher",
-      { retryMilliseconds: 25 },
-    );
-    await delay(settleMilliseconds);
-    assertProcessRunning(renderer, "the native renderer");
-
-    const capturePath = path.join(outputDirectory, capture.fileName);
-    await captureNativeWindow(
-      windowId,
-      capturePath,
-      environment,
-      capture.width,
-      capture.height,
-    );
-  } finally {
-    await Promise.all([stopProcess(renderer), stopProcess(publisher)]);
-    await rm(runtimeDirectory, { force: true, recursive: true });
-  }
-}
-
 function startNativeRenderer(displayConfigurationPath, environment) {
   return startLongRunning(
     "cargo",
@@ -923,29 +781,6 @@ async function verifyPngDimensions(filePath, expectedWidth, expectedHeight) {
   }
 }
 
-async function prepareOutputDirectory(requestedOutput) {
-  if (requestedOutput === undefined) {
-    return mkdtemp(path.join(tmpdir(), "roonscape-presentation-captures."));
-  }
-
-  const outputDirectory = path.resolve(repositoryRoot, requestedOutput);
-  try {
-    await mkdir(outputDirectory);
-  } catch (error) {
-    if (error?.code !== "EEXIST") {
-      throw error;
-    }
-    const entries = await readdir(outputDirectory);
-    if (entries.length !== 0) {
-      throw new Error(
-        `capture output directory is not empty: ${outputDirectory}`,
-        { cause: error },
-      );
-    }
-  }
-  return outputDirectory;
-}
-
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -954,17 +789,12 @@ function parseArguments(arguments_) {
   const parsed = {
     all: false,
     artwork: undefined,
-    list: false,
     listScenarios: false,
-    legacyOption: false,
     output: undefined,
-    only: undefined,
     overwrite: false,
     profile: undefined,
     resolutions: [],
     scenario: undefined,
-    viewport: undefined,
-    settleMilliseconds: defaultSettleMilliseconds,
   };
 
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -979,9 +809,7 @@ function parseArguments(arguments_) {
         parsed.artwork = requiredValue(arguments_, ++index, argument);
         break;
       case "--list":
-        rejectDuplicateOption(parsed.list, argument);
-        parsed.list = true;
-        break;
+        throw new Error("--list was removed; use --list-scenarios");
       case "--list-scenarios":
         rejectDuplicateOption(parsed.listScenarios, argument);
         parsed.listScenarios = true;
@@ -1008,33 +836,18 @@ function parseArguments(arguments_) {
         parsed.overwrite = true;
         break;
       case "--only":
-        parsed.legacyOption = true;
-        parsed.only = requiredValue(arguments_, ++index, argument);
-        break;
+        throw new Error("--only was removed; use --scenario");
       case "--viewport":
-        parsed.legacyOption = true;
-        parsed.viewport = requiredValue(arguments_, ++index, argument);
-        break;
-      case "--settle-ms": {
-        parsed.legacyOption = true;
-        const value = requiredValue(arguments_, ++index, argument);
-        parsed.settleMilliseconds = Number.parseInt(value, 10);
-        if (
-          !Number.isSafeInteger(parsed.settleMilliseconds) ||
-          parsed.settleMilliseconds < 0
-        ) {
-          throw new Error("--settle-ms must be a non-negative integer");
-        }
-        break;
-      }
+        throw new Error("--viewport was removed; use --resolution");
+      case "--settle-ms":
+        throw new Error(
+          "--settle-ms was removed; Presentation Captures now wait for painted-frame readiness",
+        );
       default:
         throw new Error(`unknown capture option: ${argument}`);
     }
   }
 
-  if (parsed.list && arguments_.length !== 1) {
-    throw new Error("--list cannot be combined with capture options");
-  }
   if (parsed.listScenarios && arguments_.length !== 1) {
     throw new Error("--list-scenarios cannot be combined with capture options");
   }
@@ -1042,9 +855,6 @@ function parseArguments(arguments_) {
     throw new Error(`unknown capture profile: ${parsed.profile}`);
   }
   if (parsed.profile === "visual-acceptance") {
-    if (parsed.output === undefined) {
-      throw new Error("--profile visual-acceptance requires --output");
-    }
     const incompatibleOption = [
       [parsed.scenario !== undefined, "--scenario"],
       [parsed.all, "--all"],
@@ -1056,39 +866,22 @@ function parseArguments(arguments_) {
         `--profile visual-acceptance cannot be combined with ${incompatibleOption}`,
       );
     }
+    if (parsed.output === undefined) {
+      throw new Error("--profile visual-acceptance requires --output");
+    }
   }
   if (parsed.all && parsed.scenario !== undefined) {
     throw new Error("--all and --scenario cannot be combined");
-  }
-  if (parsed.all && parsed.legacyOption) {
-    throw new Error("--all cannot be combined with legacy capture options");
-  }
-  if (parsed.scenario !== undefined && (parsed.list || parsed.legacyOption)) {
-    throw new Error(
-      "--scenario cannot be combined with legacy capture options",
-    );
-  }
-  if (
-    parsed.scenario === undefined &&
-    !parsed.all &&
-    parsed.resolutions.length > 0
-  ) {
-    throw new Error("--resolution requires --scenario");
   }
   if (
     parsed.scenario === undefined &&
     !parsed.all &&
     parsed.profile === undefined &&
-    parsed.overwrite
+    !parsed.listScenarios
   ) {
-    throw new Error("--overwrite requires --scenario");
-  }
-  if (
-    parsed.scenario === undefined &&
-    !parsed.all &&
-    parsed.artwork !== undefined
-  ) {
-    throw new Error("--artwork requires --scenario");
+    throw new Error(
+      "a Presentation Capture selector is required: use --scenario, --all, or --profile visual-acceptance",
+    );
   }
   return parsed;
 }

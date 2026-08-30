@@ -16,71 +16,28 @@ guide](../development.md). The capture host also needs `Xvfb`, `xwininfo`, and
 From the repository root, run:
 
 ```sh
-npm run capture:presentations
+npm run capture:presentations -- --profile visual-acceptance --output /path/to/presentation-review
 ```
 
-The command builds the bridge, starts the production native renderer against
-each shared fixture, waits for an exact-size RoonScape window, verifies the PNG
-dimensions, and writes a `manifest.json`. It prints the new output directory
-under the host operating system's temporary directory. Stable descriptive
-filenames identify the viewport and scenario, while a new directory prevents
-later runs from overwriting earlier evidence.
+The explicit profile requires its destination and owns the complete maintained
+Fixture Scenario matrix, representative viewports, typography paths, palette
+evidence, and diagnostics variants. It starts the production native renderer
+in static Fixture Mode, waits for each requested revision to finish layout and
+paint, captures the native X11 window with `scrot`, and validates each PNG's
+dimensions before publication. Playing progress, Starting rotation,
+indeterminate activity, inactivity treatment, and crossfades remain at their
+deterministic static endpoints.
 
-The capture process supplies a temporary Display Configuration with a one-hour
-inactivity grace period, so OLED-safe dimming and repositioning do not alter
-the evidence.
+Validated Presentation Captures appear progressively under stable descriptive
+filenames, and each final path is printed to standard output. Progress and
+diagnostics use standard error. A failure exits nonzero, preserves and lists
+completed captures, and explicitly marks the profile incomplete; no manifest
+or pixel-golden comparison is produced. Existing destinations require an
+intentional `--overwrite`, which can leave a partially refreshed set if a later
+capture fails.
 
-Inspect the complete plan without launching GTK:
-
-```sh
-npm run capture:presentations -- --list
-```
-
-For an ordinary review set, capture the 17 maintained nonduplicate Fixture
-Scenarios at 4K into an explicit directory:
-
-```sh
-npm run capture:presentations -- --all --output /path/to/presentation-review
-```
-
-`--all` follows catalog order and omits only `light-artwork` and
-`non-square-artwork`; either remains available through `--scenario`. Add one or
-more `--resolution WIDTHxHEIGHT` options to produce the complete set at each
-requested resolution. The command reuses one renderer session per resolution,
-waits for each Fixture Scenario's painted revision, validates its PNG, and then
-publishes and prints that capture's final path before advancing.
-
-`--artwork /path/to/image` substitutes one validated image into Playing,
-Paused, Starting with content, missing metadata, missing Artist, missing Album,
-long metadata, extreme metadata, and indeterminate progress. The other eight
-ordinary Fixture Scenarios retain their canonical content. Custom-artwork
-filenames include the sanitized artwork basename and a content hash.
-
-Existing destination files stop the run during preflight unless `--overwrite`
-is supplied. A later capture failure exits nonzero, explicitly reports the set
-as incomplete, lists every completed final path, and preserves those valid
-captures. In an overwrite run this progressive behavior can leave a partially
-refreshed set: paths completed before the failure contain new captures, while
-later existing paths can still contain captures from the previous run.
-
-For one individually selected Fixture Scenario, use `--scenario`; it cannot be
-combined with `--all`:
-
-```sh
-npm run capture:presentations -- --scenario light-artwork --output /path/to/presentation-review
-npm run capture:presentations -- --scenario non-square-artwork --output /path/to/presentation-review
-```
-
-For focused review, filter by one scenario, one viewport, or both. An explicit
-output directory must be absent or empty:
-
-```sh
-npm run capture:presentations -- --only playing
-npm run capture:presentations -- --only identity-baselines
-npm run capture:presentations -- --viewport 1600x900
-npm run capture:presentations -- --only playing --viewport 1600x900
-npm run capture:presentations -- --output /path/to/presentation-review
-```
+Use `--list-scenarios`, `--scenario`, or `--all` for smaller Presentation
+Capture work as described in the [Development guide](../development.md).
 
 ## Complete Fixture Scenario matrix
 
@@ -90,9 +47,9 @@ peer representative viewports: 1280×720, 1600×900, 1600×1200, 1920×1200,
 
 | Scenario                 | Shared fixture                | Review focus                                   |
 | ------------------------ | ----------------------------- | ---------------------------------------------- |
-| Playing                  | `playing.json`                | Advancing determinate progress; dark artwork   |
+| Playing                  | `playing.json`                | Frozen determinate progress; dark artwork      |
 | Paused                   | `paused.json`                 | Frozen progress and inactivity-ready layout    |
-| Starting with content    | `loading.json`                | Now Playing composition and rotating ring      |
+| Starting with content    | `loading.json`                | Now Playing composition and zero-phase ring    |
 | Starting without content | `loading-empty.json`          | `Preparing playback` on one complete line      |
 | Idle                     | `stopped.json`                | One-line, unclipped `Nothing is playing`        |
 | Awaiting Roon Authorization | `pairing-required.json`       | One-line heading and authorization instruction |
@@ -106,7 +63,7 @@ peer representative viewports: 1280×720, 1600×900, 1600×1200, 1920×1200,
 | Missing artwork          | `missing-artwork.json`        | Fixed no-art palette and square field          |
 | Long metadata            | `long-metadata.json`          | Responsive wrapping and reduction              |
 | Extreme metadata         | `extreme-metadata.json`       | Final line bounds and ellipsis                 |
-| Indeterminate progress   | `indeterminate-progress.json` | Artwork, activity waveform, and timing copy    |
+| Indeterminate progress   | `indeterminate-progress.json` | Artwork, reference waveform, and timing copy   |
 | Non-square artwork       | `non-square-artwork.json`     | Image-shaped frame in a reserved square        |
 | Light artwork            | `light-artwork.json`          | Readable light artwork-derived palette         |
 
