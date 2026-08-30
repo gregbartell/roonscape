@@ -1,3 +1,4 @@
+mod capture_control;
 mod contract;
 mod diagnostics;
 mod display_configuration;
@@ -14,6 +15,10 @@ mod style;
 mod transition;
 mod typography;
 
+pub use capture_control::{
+    CaptureControl, CaptureControlError, CaptureControlEvent, FixtureSelection,
+    FixtureSelectionIdentity, PaintedFixtureSelection,
+};
 pub use contract::{
     ArtworkReference, Availability, NowPlaying, Playback, PresentationSnapshot, Progress,
     SnapshotError, TrackedOutput, TrackedZone, parse_snapshot,

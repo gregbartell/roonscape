@@ -16,8 +16,9 @@ use std::time::{Duration, Instant, SystemTime};
 use gtk::glib;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    ConnectionState, Diagnostics, DiagnosticsConfiguration, FixtureNavigation,
-    InactivityConfiguration, NowPlayingTitleFace, Presentation, PresentationBehavior,
+    CaptureControl, CaptureControlEvent, ConnectionState, Diagnostics, DiagnosticsConfiguration,
+    FixtureNavigation, FixtureSelection, FixtureSelectionIdentity, InactivityConfiguration,
+    NowPlayingTitleFace, PaintedFixtureSelection, Presentation, PresentationBehavior,
     PresentationState, PresentationTime, PresentationUpdate, RendererAction, RendererKey,
     RendererKeyboard, SnapshotEvent, SnapshotSubscription, Viewport, current_process_memory_bytes,
     display_configuration_file_path, load_inactivity_configuration,
@@ -43,20 +44,34 @@ struct RendererConfiguration {
 }
 
 #[derive(Clone)]
+struct RendererStartup {
+    progress_clock: Instant,
+    configuration: RendererConfiguration,
+    initial_capture: Option<FixtureSelectionIdentity>,
+    runtime_error: Rc<RefCell<Option<String>>>,
+}
+
+#[derive(Clone)]
 struct RendererConnections {
-    snapshots: Rc<SnapshotSubscription>,
+    snapshots: Option<Rc<SnapshotSubscription>>,
     fixture_navigation: Option<Rc<RefCell<FixtureNavigation>>>,
+    capture_control: Option<Rc<CaptureControl>>,
 }
 
 struct PresentationRuntime {
     presentation: Rc<RefCell<PresentationState>>,
     presentation_view: Rc<RefCell<PresentationView>>,
-    updates: Rc<SnapshotSubscription>,
+    updates: Option<Rc<SnapshotSubscription>>,
+    capture_control: Option<Rc<CaptureControl>>,
+    painted_capture: RefCell<PaintedFixtureSelection>,
     diagnostics: Option<Rc<RefCell<Diagnostics>>>,
     display: gtk::Overlay,
     repository_root: PathBuf,
     progress_clock: Instant,
     fixture_navigation_enabled: bool,
+    capture_viewport: Option<Viewport>,
+    application: gtk::Application,
+    runtime_error: Rc<RefCell<Option<String>>>,
 }
 
 fn main() -> ExitCode {
@@ -70,31 +85,62 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let socket_path = env::var_os("ROONSCAPE_SOCKET")
-        .map(PathBuf::from)
-        .ok_or("ROONSCAPE_SOCKET must name the private Unix socket")?;
     let configuration_file = configuration_file_from_arguments()?;
     let inactivity_configuration = host_inactivity_configuration(&configuration_file);
     let renderer_configuration = renderer_configuration_from_environment()?;
     let progress_clock = Instant::now();
-    let presentation = Rc::new(RefCell::new(PresentationState::disconnected_with_behavior(
-        progress_clock.elapsed(),
-        inactivity_configuration,
-        renderer_configuration.behavior,
-    )));
+    let capture_session = env::var_os("ROONSCAPE_CAPTURE_CONTROL")
+        .map(PathBuf::from)
+        .map(|control_socket_path| CaptureControl::connect(&control_socket_path))
+        .transpose()?;
+    if capture_session.is_some()
+        && (renderer_configuration.behavior != PresentationBehavior::StaticFixture
+            || renderer_configuration.capture.viewport.is_none())
+    {
+        return Err(
+            "ROONSCAPE_CAPTURE_CONTROL requires static Fixture Mode and an exact capture viewport"
+                .into(),
+        );
+    }
+    let (capture_control, initial_capture) = match capture_session {
+        Some((control, selection)) => (Some(Rc::new(control)), Some(selection)),
+        None => (None, None),
+    };
+    let initial_capture_identity = initial_capture.as_ref().map(FixtureSelection::identity);
+    let presentation = Rc::new(RefCell::new(match initial_capture {
+        Some(selection) => PresentationState::new_with_behavior(
+            selection.into_snapshot(),
+            PresentationTime::new(progress_clock.elapsed(), SystemTime::now()),
+            inactivity_configuration,
+            renderer_configuration.behavior,
+        )?,
+        None => PresentationState::disconnected_with_behavior(
+            progress_clock.elapsed(),
+            inactivity_configuration,
+            renderer_configuration.behavior,
+        ),
+    }));
     let diagnostics = DiagnosticsConfiguration::from_environment()?
         .enabled()
         .then(|| Rc::new(RefCell::new(Diagnostics::default())));
     let connections = RendererConnections {
-        snapshots: Rc::new(SnapshotSubscription::start(
-            socket_path,
-            SNAPSHOT_RETRY_DELAY,
-        )),
+        snapshots: if capture_control.is_some() {
+            None
+        } else {
+            let socket_path = env::var_os("ROONSCAPE_SOCKET")
+                .map(PathBuf::from)
+                .ok_or("ROONSCAPE_SOCKET must name the private Unix socket")?;
+            Some(Rc::new(SnapshotSubscription::start(
+                socket_path,
+                SNAPSHOT_RETRY_DELAY,
+            )))
+        },
         fixture_navigation: env::var_os("ROONSCAPE_FIXTURE_CONTROL")
             .map(PathBuf::from)
             .map(|control_socket_path| FixtureNavigation::connect(&control_socket_path))
             .transpose()?
             .map(|navigation| Rc::new(RefCell::new(navigation))),
+        capture_control,
     };
     let repository_root = resource_root()?;
     register_packaged_fallback_fonts(&repository_root.join("src/renderer"))?;
@@ -103,7 +149,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         .application_id(APPLICATION_ID)
         .build();
     let activation_error = Rc::new(RefCell::new(None));
+    let runtime_error = Rc::new(RefCell::new(None));
     let captured_activation_error = activation_error.clone();
+    let startup = RendererStartup {
+        progress_clock,
+        configuration: renderer_configuration,
+        initial_capture: initial_capture_identity,
+        runtime_error: runtime_error.clone(),
+    };
 
     application.connect_activate(move |application| {
         if let Err(error) = build_window(
@@ -112,8 +165,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             connections.clone(),
             diagnostics.clone(),
             &repository_root,
-            progress_clock,
-            renderer_configuration,
+            startup.clone(),
         ) {
             *captured_activation_error.borrow_mut() = Some(error);
             application.quit();
@@ -123,6 +175,9 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     if let Some(error) = activation_error.borrow_mut().take() {
         return Err(error);
+    }
+    if let Some(error) = runtime_error.borrow_mut().take() {
+        return Err(error.into());
     }
 
     Ok(())
@@ -148,9 +203,10 @@ fn build_window(
     connections: RendererConnections,
     diagnostics: Option<Rc<RefCell<Diagnostics>>>,
     repository_root: &Path,
-    progress_clock: Instant,
-    renderer_configuration: RendererConfiguration,
+    startup: RendererStartup,
 ) -> Result<(), Box<dyn Error>> {
+    let renderer_configuration = startup.configuration;
+    let progress_clock = startup.progress_clock;
     if renderer_configuration.behavior == PresentationBehavior::StaticFixture
         && let Some(settings) = gtk::Settings::default()
     {
@@ -249,25 +305,44 @@ fn build_window(
         presentation,
         presentation_view: presentation_view.clone(),
         updates: connections.snapshots,
+        capture_control: connections.capture_control,
+        painted_capture: RefCell::new(PaintedFixtureSelection::new(startup.initial_capture)),
         diagnostics: diagnostics.clone(),
         display: display.clone(),
         repository_root: repository_root.to_path_buf(),
         progress_clock,
         fixture_navigation_enabled: connections.fixture_navigation.is_some(),
+        capture_viewport: renderer_configuration.capture.viewport,
+        application: application.clone(),
+        runtime_error: startup.runtime_error,
     });
-    let wakeup_runtime = Rc::clone(&runtime);
-    glib::source::unix_fd_add_local(
-        runtime.updates.wakeup_fd(),
-        glib::IOCondition::IN,
-        move |_, _| {
-            if let Err(error) = wakeup_runtime.updates.clear_wakeup() {
-                eprintln!("RoonScape renderer: could not clear snapshot wakeup: {error}");
+    if let Some(updates) = runtime.updates.as_ref() {
+        let wakeup_runtime = Rc::clone(&runtime);
+        let updates = Rc::clone(updates);
+        glib::source::unix_fd_add_local(updates.wakeup_fd(), glib::IOCondition::IN, move |_, _| {
+            if let Err(error) = updates.clear_wakeup() {
+                wakeup_runtime.fail(format!("could not clear snapshot wakeup: {error}"));
                 return glib::ControlFlow::Break;
             }
             wakeup_runtime.apply_pending_updates();
             glib::ControlFlow::Continue
-        },
-    );
+        });
+    }
+    if let Some(control) = runtime.capture_control.as_ref() {
+        let wakeup_runtime = Rc::clone(&runtime);
+        let control = Rc::clone(control);
+        glib::source::unix_fd_add_local(control.wakeup_fd(), glib::IOCondition::IN, move |_, _| {
+            if let Err(error) = control.clear_wakeup() {
+                wakeup_runtime.fail(format!("could not clear capture control wakeup: {error}"));
+                return glib::ControlFlow::Break;
+            }
+            if wakeup_runtime.apply_capture_commands() {
+                glib::ControlFlow::Continue
+            } else {
+                glib::ControlFlow::Break
+            }
+        });
+    }
     let timer_runtime = Rc::clone(&runtime);
     glib::timeout_add_local(Duration::from_millis(50), move || {
         timer_runtime.tick();
@@ -293,6 +368,18 @@ fn build_window(
     }
 
     window.present();
+    if runtime.capture_control.is_some() {
+        let ready_runtime = Rc::clone(&runtime);
+        window.add_tick_callback(move |_, _| {
+            ready_runtime.prepare_capture_acknowledgement();
+            glib::ControlFlow::Continue
+        });
+        let painted_runtime = Rc::clone(&runtime);
+        window
+            .frame_clock()
+            .ok_or("capture-controlled renderer window has no frame clock after presentation")?
+            .connect_after_paint(move |_| painted_runtime.after_paint());
+    }
     Ok(())
 }
 
@@ -401,9 +488,10 @@ impl PresentationRuntime {
     }
 
     fn apply_snapshot_events(&self, now: Duration) -> Option<PresentationUpdate> {
+        let updates = self.updates.as_ref()?;
         let mut presentation_update = None;
         loop {
-            let update = match self.updates.try_recv() {
+            let update = match updates.try_recv() {
                 Ok(SnapshotEvent::Snapshot(snapshot)) => {
                     if let Some(diagnostics) = self.diagnostics.as_ref() {
                         diagnostics
@@ -446,6 +534,96 @@ impl PresentationRuntime {
             }
         }
         presentation_update
+    }
+
+    fn apply_capture_commands(&self) -> bool {
+        let Some(control) = self.capture_control.as_ref() else {
+            return true;
+        };
+        let now = self.progress_clock.elapsed();
+        let mut presentation_update = None;
+        loop {
+            match control.try_recv() {
+                Ok(CaptureControlEvent::Selection(selection)) => {
+                    let identity = selection.identity();
+                    let anchored_at = PresentationTime::new(now, SystemTime::now());
+                    match self
+                        .presentation
+                        .borrow_mut()
+                        .update_for_fixture_selection((*selection).into_snapshot(), anchored_at)
+                    {
+                        Ok(update) => {
+                            self.painted_capture.borrow_mut().select(identity);
+                            presentation_update =
+                                combine_presentation_update(presentation_update, update);
+                        }
+                        Err(error) => {
+                            self.fail(format!("could not select Fixture Scenario: {error}"));
+                            return false;
+                        }
+                    }
+                }
+                Ok(CaptureControlEvent::Disconnected) => {
+                    self.fail("capture control channel disconnected".to_owned());
+                    return false;
+                }
+                Ok(CaptureControlEvent::Failed(error)) => {
+                    self.fail(error);
+                    return false;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.fail("capture control reader stopped unexpectedly".to_owned());
+                    return false;
+                }
+            }
+        }
+        self.apply_viewport();
+        self.render(now, presentation_update);
+        self.display.queue_draw();
+        true
+    }
+
+    fn prepare_capture_acknowledgement(&self) {
+        let Some(revision) = self.painted_capture.borrow().pending_revision() else {
+            return;
+        };
+        let Some(viewport) = self.capture_viewport else {
+            return;
+        };
+        match self
+            .presentation_view
+            .borrow()
+            .capture_ready(revision, viewport)
+        {
+            Ok(false) => {}
+            Ok(true) => self
+                .painted_capture
+                .borrow_mut()
+                .presentation_completed(revision),
+            Err(error) => self.fail(error),
+        }
+    }
+
+    fn after_paint(&self) {
+        let Some(selection) = self.painted_capture.borrow_mut().after_paint() else {
+            return;
+        };
+        let Some(control) = self.capture_control.as_ref() else {
+            return;
+        };
+        if let Err(error) = control.acknowledge(&selection) {
+            self.fail(format!(
+                "could not acknowledge painted Fixture Scenario: {error}"
+            ));
+        }
+    }
+
+    fn fail(&self, error: String) {
+        if self.runtime_error.borrow().is_none() {
+            *self.runtime_error.borrow_mut() = Some(error);
+        }
+        self.application.quit();
     }
 
     fn render(&self, now: Duration, presentation_update: Option<PresentationUpdate>) {

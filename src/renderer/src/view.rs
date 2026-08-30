@@ -296,6 +296,12 @@ struct RenderedArtwork {
     source_key: Option<ArtworkCacheKey>,
     artwork_cache: Rc<ArtworkCache>,
     layout: ArtworkLayout,
+    readiness: ArtworkReadiness,
+}
+
+struct ArtworkReadiness {
+    scaled: Cell<bool>,
+    decode_error: Option<String>,
 }
 
 struct ArtworkCacheEntry {
@@ -393,6 +399,7 @@ struct RenderedFullField {
     explanation_slot: Option<gtk::Box>,
     explanation: Option<gtk::Label>,
     identity: Option<RenderedIdentity>,
+    pending_fits: Rc<Cell<u32>>,
 }
 
 struct RenderedPresentationStatus {
@@ -586,6 +593,20 @@ impl PresentationView {
         }
     }
 
+    pub(crate) fn capture_ready(&self, revision: u64, viewport: Viewport) -> Result<bool, String> {
+        if self.rendering.behavior != PresentationBehavior::StaticFixture
+            || self.inactivity != InactivityTransform::default()
+            || self.display_viewport != viewport
+            || self.layout_viewport != Some(viewport)
+            || self.transition.current().revision() != revision
+            || self.transition.is_active()
+        {
+            return Ok(false);
+        }
+
+        self.transition.current().value().capture_ready()
+    }
+
     fn remove_layer(&self, layer: PresentationRevision<RenderedPresentation>) {
         self.stack.remove(&layer.value().root);
     }
@@ -657,6 +678,16 @@ impl PresentationView {
 }
 
 impl RenderedPresentation {
+    fn capture_ready(&self) -> Result<bool, String> {
+        if let Some(now_playing) = self.now_playing.as_ref() {
+            return now_playing.artwork.capture_ready();
+        }
+        Ok(self
+            .full_field
+            .as_ref()
+            .is_none_or(|full_field| full_field.pending_fits.get() == 0))
+    }
+
     fn update_in_place(&mut self, presentation: &Presentation) {
         match (
             self.now_playing.as_mut(),
@@ -798,6 +829,7 @@ fn full_field(
     diagnostics_text: Option<&str>,
     rendering: RenderingConfiguration,
 ) -> RenderedPresentation {
+    let pending_fits = Rc::new(Cell::new(0));
     let layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
     let content = gtk::Overlay::new();
     content.set_hexpand(true);
@@ -862,6 +894,7 @@ fn full_field(
             explanation_slot,
             explanation,
             identity,
+            pending_fits,
         }),
         diagnostics,
     }
@@ -968,7 +1001,15 @@ fn artwork(
     let source_key = presentation.artwork_path.as_deref().map(|path| {
         ArtworkCacheKey::new(repository_root.join(path), presentation.artwork_revision)
     });
-    let source = source_key.and_then(|key| artwork_cache.source(&key).map(|source| (key, source)));
+    let source = source_key.as_ref().and_then(|key| {
+        artwork_cache
+            .source(key)
+            .map(|source| (key.clone(), source))
+    });
+    let decode_error = source_key
+        .as_ref()
+        .filter(|_| source.is_none())
+        .map(|key| format!("could not decode artwork at {}", key.path.display()));
     let intrinsic_dimensions = source.as_ref().map(|(_, artwork)| {
         ArtworkDimensions::new(
             artwork
@@ -1058,6 +1099,10 @@ fn artwork(
         source_key: source.map(|(key, _)| key),
         artwork_cache,
         layout,
+        readiness: ArtworkReadiness {
+            scaled: Cell::new(source_key.is_none()),
+            decode_error,
+        },
     }
 }
 
@@ -1385,6 +1430,13 @@ fn apply_now_playing_gradient_for_key<T: NowPlayingGradientTarget>(
 }
 
 impl RenderedArtwork {
+    fn capture_ready(&self) -> Result<bool, String> {
+        match self.readiness.decode_error.as_ref() {
+            Some(error) => Err(error.clone()),
+            None => Ok(self.readiness.scaled.get()),
+        }
+    }
+
     fn apply_layout(&self, now_playing: &NowPlayingLayout) {
         let reservation = ArtworkDimensions::new(
             now_playing.artwork_field_width_px,
@@ -1422,6 +1474,7 @@ impl RenderedArtwork {
                 .scaled(source_key, image)
                 .expect("positive artwork dimensions should produce a scaled image");
             self.surface.set_pixbuf(Some(&scaled));
+            self.readiness.scaled.set(true);
         }
     }
 }
@@ -1444,14 +1497,22 @@ impl RenderedFullField {
             .set_margin_bottom(dimension(layout.status_spacing_px));
         self.heading_slot
             .set_height_request(dimension(layout.heading_slot.height_px));
-        apply_full_field_font_size(&self.heading, layout.heading_font);
+        apply_full_field_font_size(
+            &self.heading,
+            layout.heading_font,
+            Rc::clone(&self.pending_fits),
+        );
         apply_full_field_line_layout(&self.heading, layout.heading_line);
         if let (Some(slot), Some(explanation)) =
             (self.explanation_slot.as_ref(), self.explanation.as_ref())
         {
             slot.set_margin_top(dimension(layout.explanation_spacing_px));
             slot.set_height_request(dimension(layout.explanation_slot.height_px));
-            apply_full_field_font_size(explanation, layout.explanation_font);
+            apply_full_field_font_size(
+                explanation,
+                layout.explanation_font,
+                Rc::clone(&self.pending_fits),
+            );
             apply_full_field_line_layout(explanation, layout.explanation_line);
         }
         if let Some(identity) = self.identity.as_ref() {
@@ -1743,14 +1804,20 @@ fn apply_metadata_line_plan(
         .set_line_spacing(plan.line_height_percent as f32 / 100.0);
 }
 
-fn apply_full_field_font_size(label: &gtk::Label, sizes: FullFieldFontSize) {
+fn apply_full_field_font_size(
+    label: &gtk::Label,
+    sizes: FullFieldFontSize,
+    pending_fits: Rc<Cell<u32>>,
+) {
     set_label_font_size(label, sizes.preferred_px);
+    pending_fits.set(pending_fits.get().saturating_add(1));
     let fitted_label = label.clone();
     label.add_tick_callback(move |_, _| {
         if fitted_label.width() <= 0 {
             return gtk::glib::ControlFlow::Continue;
         }
         fit_full_field_line(&fitted_label, sizes);
+        pending_fits.set(pending_fits.get().saturating_sub(1));
         gtk::glib::ControlFlow::Break
     });
 }
