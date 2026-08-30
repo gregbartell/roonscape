@@ -184,6 +184,31 @@ pub enum PresentationUpdate {
     TransitionRequired,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PresentationBehavior {
+    #[default]
+    Dynamic,
+    StaticFixture,
+}
+
+impl PresentationBehavior {
+    pub fn animations_enabled(self, system_animations_enabled: bool) -> bool {
+        self == Self::Dynamic && system_animations_enabled
+    }
+}
+
+impl PresentationStatusMotion {
+    pub fn rotation_at(self, elapsed: Duration, animations_enabled: bool) -> f64 {
+        let Self::ContinuousRotation { period } = self else {
+            return 0.0;
+        };
+        if !animations_enabled || period.is_zero() {
+            return 0.0;
+        }
+        elapsed.as_secs_f64().rem_euclid(period.as_secs_f64()) / period.as_secs_f64() * (2.0 * PI)
+    }
+}
+
 pub struct PresentationState {
     snapshot: PresentationSnapshot,
     progress_anchored_at: Duration,
@@ -191,6 +216,7 @@ pub struct PresentationState {
     inactivity_configuration: InactivityConfiguration,
     inactivity_condition: Option<InactivityCondition>,
     inactivity_anchored_at: Duration,
+    behavior: PresentationBehavior,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -238,6 +264,18 @@ impl PresentationState {
         anchored_at: Duration,
         inactivity_configuration: InactivityConfiguration,
     ) -> Self {
+        Self::disconnected_with_behavior(
+            anchored_at,
+            inactivity_configuration,
+            PresentationBehavior::Dynamic,
+        )
+    }
+
+    pub fn disconnected_with_behavior(
+        anchored_at: Duration,
+        inactivity_configuration: InactivityConfiguration,
+        behavior: PresentationBehavior,
+    ) -> Self {
         Self {
             snapshot: disconnected_snapshot(0),
             progress_anchored_at: anchored_at,
@@ -247,6 +285,7 @@ impl PresentationState {
                 Availability::Disconnected,
             )),
             inactivity_anchored_at: anchored_at,
+            behavior,
         }
     }
 
@@ -262,8 +301,25 @@ impl PresentationState {
         anchored_at: PresentationTime,
         inactivity_configuration: InactivityConfiguration,
     ) -> Result<Self, PresentationError> {
+        Self::new_with_behavior(
+            snapshot,
+            anchored_at,
+            inactivity_configuration,
+            PresentationBehavior::Dynamic,
+        )
+    }
+
+    pub fn new_with_behavior(
+        snapshot: PresentationSnapshot,
+        anchored_at: PresentationTime,
+        inactivity_configuration: InactivityConfiguration,
+        behavior: PresentationBehavior,
+    ) -> Result<Self, PresentationError> {
         presentation_from_snapshot(&snapshot)?;
-        let source_sample_age = source_sample_age(&snapshot, anchored_at.utc)?;
+        let source_sample_age = match behavior {
+            PresentationBehavior::Dynamic => source_sample_age(&snapshot, anchored_at.utc)?,
+            PresentationBehavior::StaticFixture => Duration::ZERO,
+        };
         let inactivity_condition = inactivity_condition(&snapshot);
         Ok(Self {
             snapshot,
@@ -272,6 +328,7 @@ impl PresentationState {
             inactivity_configuration,
             inactivity_condition,
             inactivity_anchored_at: anchored_at.monotonic,
+            behavior,
         })
     }
 
@@ -310,7 +367,10 @@ impl PresentationState {
         let has_new_source_sample = self.snapshot.playback != snapshot.playback
             || self.snapshot.progress != snapshot.progress;
         if has_new_source_sample {
-            self.source_sample_age = source_sample_age(&snapshot, anchored_at.utc)?;
+            self.source_sample_age = match self.behavior {
+                PresentationBehavior::Dynamic => source_sample_age(&snapshot, anchored_at.utc)?,
+                PresentationBehavior::StaticFixture => Duration::ZERO,
+            };
             self.progress_anchored_at = anchored_at.monotonic;
         }
         if self.inactivity_condition != next_inactivity_condition
@@ -347,9 +407,12 @@ impl PresentationState {
     }
 
     pub fn presentation_at(&self, now: Duration) -> Result<Presentation, PresentationError> {
-        let elapsed = self
-            .source_sample_age
-            .saturating_add(now.saturating_sub(self.progress_anchored_at));
+        let elapsed = match self.behavior {
+            PresentationBehavior::Dynamic => self
+                .source_sample_age
+                .saturating_add(now.saturating_sub(self.progress_anchored_at)),
+            PresentationBehavior::StaticFixture => Duration::ZERO,
+        };
         presentation_from_snapshot_after(&self.snapshot, elapsed)
     }
 
@@ -365,6 +428,9 @@ impl PresentationState {
     }
 
     fn inactivity_transform_at(&self, now: Duration) -> InactivityTransform {
+        if self.behavior == PresentationBehavior::StaticFixture {
+            return InactivityTransform::default();
+        }
         let Some(_) = self.inactivity_condition else {
             return InactivityTransform::default();
         };

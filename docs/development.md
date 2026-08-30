@@ -27,6 +27,18 @@ With the renderer focused, use Left and Right to move between Fixture
 Scenarios. Set `ROONSCAPE_WINDOWED=1` when a window is more convenient than
 fullscreen.
 
+Launch static Fixture Mode when a deterministic presentation is useful for
+inspection or capture:
+
+```sh
+npm run fixture -- --static
+```
+
+Left and Right continue to navigate the Fixture Scenarios, but Playing
+progress remains at its recorded source position and presentation motion,
+inactivity treatment, and crossfades are disabled. Ordinary Fixture Mode and
+Live Mode retain their normal behavior.
+
 Run the complete repository check before submitting a change:
 
 ```sh

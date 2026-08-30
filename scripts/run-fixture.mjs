@@ -5,13 +5,20 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 
 const arguments_ = process.argv.slice(2);
-if (
-  arguments_.length > 1 ||
-  (arguments_[0] !== undefined && arguments_[0] !== "--release")
-) {
-  throw new Error(`unknown fixture option: ${arguments_[0]}`);
+const supportedOptions = new Set(["--release", "--static"]);
+const unknownOption = arguments_.find(
+  (option) => !supportedOptions.has(option),
+);
+if (unknownOption !== undefined) {
+  throw new Error(`unknown fixture option: ${unknownOption}`);
 }
-const releaseRenderer = arguments_[0] === "--release";
+if (new Set(arguments_).size !== arguments_.length) {
+  throw new Error(
+    `duplicate fixture option: ${arguments_.find((option, index) => arguments_.indexOf(option) !== index)}`,
+  );
+}
+const releaseRenderer = arguments_.includes("--release");
+const staticFixture = arguments_.includes("--static");
 
 const runtimeDirectory = await mkdtemp(
   path.join(tmpdir(), "roonscape-fixture."),
@@ -22,6 +29,11 @@ const controlSocketPath = path.join(
   "fixture-navigation.sock",
 );
 const environment = { ...process.env, ROONSCAPE_SOCKET: socketPath };
+if (staticFixture) {
+  environment.ROONSCAPE_STATIC_FIXTURE = "1";
+} else {
+  delete environment.ROONSCAPE_STATIC_FIXTURE;
+}
 const explicitFixture = environment.ROONSCAPE_FIXTURE !== undefined;
 if (explicitFixture) {
   delete environment.ROONSCAPE_FIXTURE_CONTROL;

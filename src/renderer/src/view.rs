@@ -15,11 +15,11 @@ use roonscape_renderer::{
     InactivityLayout, InactivityTransform, MetadataGroupPlan, MetadataLayout, MetadataLineLayout,
     MetadataTypography, NowPlayingField, NowPlayingFooterContent, NowPlayingGradient,
     NowPlayingGradientCacheKey, NowPlayingLayout, NowPlayingPresentation, NowPlayingRole,
-    Presentation, PresentationActivity, PresentationPalette, PresentationProgress,
-    PresentationRevision, PresentationStatus, PresentationStatusEmphasis, PresentationStatusLayout,
-    PresentationStyleLayer, PresentationTransition, PresentationTransitionStyles,
-    ResolvedPresentation, TextOverflow, TypographySelection, TypographyStyles, Viewport,
-    metadata_layout, resolve_presentation,
+    Presentation, PresentationActivity, PresentationBehavior, PresentationPalette,
+    PresentationProgress, PresentationRevision, PresentationStatus, PresentationStatusEmphasis,
+    PresentationStatusLayout, PresentationStyleLayer, PresentationTransition,
+    PresentationTransitionStyles, ResolvedPresentation, TextOverflow, TypographySelection,
+    TypographyStyles, Viewport, metadata_layout, resolve_presentation,
 };
 
 use crate::activity_waveform::activity_waveform;
@@ -33,12 +33,18 @@ pub(crate) struct PresentationView {
     stack: gtk::Stack,
     transition: PresentationTransition<RenderedPresentation>,
     palette_provider: gtk::CssProvider,
-    typography: TypographySelection,
+    rendering: RenderingConfiguration,
     display_viewport: Viewport,
     layout_viewport: Option<Viewport>,
     inactivity: InactivityTransform,
     transition_clock: Instant,
     caches: PresentationCaches,
+}
+
+#[derive(Clone, Copy)]
+struct RenderingConfiguration {
+    typography: TypographySelection,
+    behavior: PresentationBehavior,
 }
 
 struct RenderedPresentation {
@@ -395,6 +401,7 @@ struct RenderedPresentationStatus {
     label: gtk::Label,
     decoration: roonscape_renderer::PresentationStatusDecoration,
     status: PresentationStatus,
+    behavior: PresentationBehavior,
 }
 
 struct RenderedMetadataLine {
@@ -422,14 +429,19 @@ impl PresentationView {
         palette_provider: gtk::CssProvider,
         typography: TypographySelection,
         diagnostics_text: Option<&str>,
+        behavior: PresentationBehavior,
     ) -> Self {
+        let rendering = RenderingConfiguration {
+            typography,
+            behavior,
+        };
         let caches = PresentationCaches::new(PRESENTATION_CACHE_CAPACITY);
         let rendered = render_presentation(
             presentation,
             repository_root,
-            typography,
             diagnostics_text,
             caches.clone(),
+            rendering,
         );
         rendered
             .root
@@ -451,7 +463,7 @@ impl PresentationView {
             stack,
             transition,
             palette_provider,
-            typography,
+            rendering,
             display_viewport: Viewport::WINDOWED_FIXTURE,
             layout_viewport: None,
             inactivity: InactivityTransform::default(),
@@ -513,6 +525,15 @@ impl PresentationView {
         presentation: &Presentation,
         repository_root: &Path,
     ) {
+        if self.rendering.behavior == PresentationBehavior::StaticFixture {
+            let rendered = self.render_current_at_viewport(presentation, repository_root);
+            let released = self.transition.replace_immediately(revision, rendered);
+            for layer in released {
+                self.remove_layer(layer);
+            }
+            self.reveal_current();
+            return;
+        }
         if let Some(discarded) = self.transition.discard_outgoing() {
             self.remove_layer(discarded);
         }
@@ -580,9 +601,9 @@ impl PresentationView {
             render_current_from_resolved(
                 &resolved,
                 repository_root,
-                self.typography,
                 diagnostics_text.as_deref(),
                 self.caches.clone(),
+                self.rendering,
             )
         };
         match (&resolved.presentation, self.layout_viewport) {
@@ -708,16 +729,16 @@ impl RenderedPresentation {
 fn render_current_from_resolved(
     resolved: &ResolvedPresentation,
     repository_root: &Path,
-    typography: TypographySelection,
     diagnostics_text: Option<&str>,
     caches: PresentationCaches,
+    rendering: RenderingConfiguration,
 ) -> RenderedPresentation {
     let rendered = render_resolved_presentation(
         resolved,
         repository_root,
-        typography,
         diagnostics_text,
         caches,
+        rendering,
     );
     rendered
         .root
@@ -728,26 +749,26 @@ fn render_current_from_resolved(
 fn render_presentation(
     presentation: &Presentation,
     repository_root: &Path,
-    typography: TypographySelection,
     diagnostics_text: Option<&str>,
     caches: PresentationCaches,
+    rendering: RenderingConfiguration,
 ) -> RenderedPresentation {
     let resolved = resolve_presentation(presentation, repository_root);
     render_resolved_presentation(
         &resolved,
         repository_root,
-        typography,
         diagnostics_text,
         caches,
+        rendering,
     )
 }
 
 fn render_resolved_presentation(
     resolved: &ResolvedPresentation,
     repository_root: &Path,
-    typography: TypographySelection,
     diagnostics_text: Option<&str>,
     caches: PresentationCaches,
+    rendering: RenderingConfiguration,
 ) -> RenderedPresentation {
     let layout_source = PresentationLayoutSource::for_presentation(&resolved.presentation);
     match &resolved.presentation {
@@ -756,7 +777,7 @@ fn render_resolved_presentation(
             repository_root,
             resolved.palette,
             layout_source,
-            typography,
+            rendering,
             diagnostics_text,
             caches,
         ),
@@ -765,6 +786,7 @@ fn render_resolved_presentation(
             resolved.palette,
             layout_source,
             diagnostics_text,
+            rendering,
         ),
     }
 }
@@ -774,6 +796,7 @@ fn full_field(
     palette: PresentationPalette,
     layout_source: PresentationLayoutSource,
     diagnostics_text: Option<&str>,
+    rendering: RenderingConfiguration,
 ) -> RenderedPresentation {
     let layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
     let content = gtk::Overlay::new();
@@ -787,8 +810,11 @@ fn full_field(
 
     let message = gtk::Box::new(gtk::Orientation::Vertical, 0);
     message.set_hexpand(true);
-    let rendered_status =
-        presentation_status(&presentation.status, layout.presentation_status.decoration);
+    let rendered_status = presentation_status(
+        &presentation.status,
+        layout.presentation_status.decoration,
+        rendering.behavior,
+    );
     message.append(&rendered_status.root);
 
     let (heading_slot, heading) = full_field_line(presentation.heading, "full-field-heading");
@@ -856,7 +882,7 @@ fn now_playing(
     repository_root: &Path,
     palette: PresentationPalette,
     layout_source: PresentationLayoutSource,
-    typography: TypographySelection,
+    rendering: RenderingConfiguration,
     diagnostics_text: Option<&str>,
     caches: PresentationCaches,
 ) -> RenderedPresentation {
@@ -883,7 +909,7 @@ fn now_playing(
     let artwork = artwork(presentation, repository_root, Rc::clone(&caches.artwork));
     artwork_column.set_center_widget(Some(&artwork.reservation));
 
-    let metadata = metadata(presentation, &layout, typography);
+    let metadata = metadata(presentation, &layout, rendering);
     let metadata_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
     metadata_slot.add_css_class("metadata-slot");
     metadata_slot.set_hexpand(false);
@@ -1038,7 +1064,7 @@ fn artwork(
 fn metadata(
     presentation: &NowPlayingPresentation,
     now_playing_layout: &NowPlayingLayout,
-    typography: TypographySelection,
+    rendering: RenderingConfiguration,
 ) -> RenderedMetadata {
     let root = gtk::Overlay::new();
     root.add_css_class("metadata-column");
@@ -1075,6 +1101,7 @@ fn metadata(
     let rendered_status = presentation_status(
         &presentation.status,
         now_playing_layout.presentation_status.decoration,
+        rendering.behavior,
     );
     rendered_status.root.set_halign(gtk::Align::Start);
     rendered_status.root.set_valign(gtk::Align::Start);
@@ -1082,20 +1109,32 @@ fn metadata(
     root.set_measure_overlay(&rendered_status.root, false);
 
     let layout = metadata_layout(presentation, Viewport::WINDOWED_FIXTURE);
-    let title = layout
-        .title
-        .as_ref()
-        .map(|layout| metadata_line(layout, "title", typography.now_playing_title_family()));
-    let artist = layout
-        .artist
-        .as_ref()
-        .map(|layout| metadata_line(layout, "artist", typography.now_playing_supporting_family()));
-    let album = layout
-        .album
-        .as_ref()
-        .map(|layout| metadata_line(layout, "album", typography.now_playing_supporting_family()));
+    let title = layout.title.as_ref().map(|layout| {
+        metadata_line(
+            layout,
+            "title",
+            rendering.typography.now_playing_title_family(),
+        )
+    });
+    let artist = layout.artist.as_ref().map(|layout| {
+        metadata_line(
+            layout,
+            "artist",
+            rendering.typography.now_playing_supporting_family(),
+        )
+    });
+    let album = layout.album.as_ref().map(|layout| {
+        metadata_line(
+            layout,
+            "album",
+            rendering.typography.now_playing_supporting_family(),
+        )
+    });
     let progress = presentation.progress.as_ref().map(progress_view);
-    let activity = presentation.activity.as_deref().map(activity_view);
+    let activity = presentation
+        .activity
+        .as_deref()
+        .map(|activity| activity_view(activity, rendering.behavior));
     let footer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     footer.add_css_class("utility-footer");
     footer.set_hexpand(true);
@@ -1576,7 +1615,7 @@ impl RenderedPresentationStatus {
         let width = self.symbol.width_request();
         let height = self.symbol.height_request();
         self.root.remove(&self.symbol);
-        let symbol = presentation_status_symbol(status, self.decoration);
+        let symbol = presentation_status_symbol(status, self.decoration, self.behavior);
         symbol.set_size_request(width, height);
         self.root.prepend(&symbol);
         self.symbol = symbol;
@@ -1734,6 +1773,7 @@ fn dimension(value: u32) -> i32 {
 fn presentation_status(
     status: &PresentationStatus,
     decoration: roonscape_renderer::PresentationStatusDecoration,
+    behavior: PresentationBehavior,
 ) -> RenderedPresentationStatus {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 14);
     row.add_css_class("presentation-status");
@@ -1744,7 +1784,7 @@ fn presentation_status(
     row.set_halign(gtk::Align::Start);
     row.set_valign(gtk::Align::Start);
 
-    let symbol = presentation_status_symbol(status, decoration);
+    let symbol = presentation_status_symbol(status, decoration, behavior);
     row.append(&symbol);
     let label = metadata_label(status.label, "status-label");
     row.append(&label);
@@ -1754,6 +1794,7 @@ fn presentation_status(
         label,
         decoration,
         status: *status,
+        behavior,
     }
 }
 
@@ -1800,13 +1841,16 @@ fn progress_view(progress: &PresentationProgress) -> RenderedProgress {
     }
 }
 
-fn activity_view(activity: &PresentationActivity) -> RenderedActivity {
+fn activity_view(
+    activity: &PresentationActivity,
+    behavior: PresentationBehavior,
+) -> RenderedActivity {
     let root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     root.add_css_class("activity-group");
     root.set_halign(gtk::Align::Start);
     root.set_valign(gtk::Align::Center);
 
-    let waveform = activity_waveform(activity.waveform);
+    let waveform = activity_waveform(activity.waveform, behavior);
     root.append(&waveform);
 
     let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);

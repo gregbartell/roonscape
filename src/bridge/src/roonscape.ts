@@ -44,6 +44,7 @@ const liveChildEnvironment = (socketPath: string): NodeJS.ProcessEnv => {
     ROONSCAPE_SOCKET: socketPath,
   };
   delete environment.ROONSCAPE_FIXTURE_CONTROL;
+  delete environment.ROONSCAPE_STATIC_FIXTURE;
   return environment;
 };
 

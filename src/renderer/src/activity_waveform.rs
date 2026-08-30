@@ -5,9 +5,12 @@ use std::time::Duration;
 
 use gtk::cairo::Context;
 use gtk::prelude::*;
-use roonscape_renderer::PresentationActivityWaveform;
+use roonscape_renderer::{PresentationActivityWaveform, PresentationBehavior};
 
-pub(crate) fn activity_waveform(waveform: PresentationActivityWaveform) -> gtk::DrawingArea {
+pub(crate) fn activity_waveform(
+    waveform: PresentationActivityWaveform,
+    behavior: PresentationBehavior,
+) -> gtk::DrawingArea {
     let drawing = gtk::DrawingArea::new();
     drawing.add_css_class("activity-waveform");
     drawing.set_hexpand(false);
@@ -27,8 +30,9 @@ pub(crate) fn activity_waveform(waveform: PresentationActivityWaveform) -> gtk::
     });
 
     drawing.add_tick_callback(move |drawing, frame_clock| {
-        let animations_enabled =
+        let system_animations_enabled =
             gtk::Settings::default().is_none_or(|settings| settings.is_gtk_enable_animations());
+        let animations_enabled = behavior.animations_enabled(system_animations_enabled);
         let elapsed =
             Duration::from_micros(frame_clock.frame_time().try_into().unwrap_or_default());
         let next_scales = waveform.bar_scales_at(elapsed, animations_enabled);

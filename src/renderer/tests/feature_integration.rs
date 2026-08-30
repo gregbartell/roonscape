@@ -4,8 +4,8 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use roonscape_renderer::{
     DiagnosticsConfiguration, InactivityConfiguration, InactivityTransform, Presentation,
-    PresentationState, PresentationTime, PresentationTransition, PresentationUpdate,
-    inactivity_configuration_from_display_configuration, parse_snapshot,
+    PresentationBehavior, PresentationState, PresentationTime, PresentationTransition,
+    PresentationUpdate, inactivity_configuration_from_display_configuration, parse_snapshot,
 };
 
 const PLAYING_SAMPLED_AT: u64 = 1_786_821_600;
@@ -15,6 +15,44 @@ fn presentation_time(milliseconds: u64) -> PresentationTime {
         Duration::from_millis(milliseconds),
         UNIX_EPOCH + Duration::from_secs(PLAYING_SAMPLED_AT) + Duration::from_millis(milliseconds),
     )
+}
+
+#[test]
+fn static_fixture_behavior_uses_reduced_animation_reference_states() {
+    let behavior = PresentationBehavior::StaticFixture;
+    let animations_enabled = behavior.animations_enabled(true);
+    assert!(!animations_enabled);
+
+    let starting = snapshot("loading.json", 7);
+    let Presentation::NowPlaying(starting) =
+        roonscape_renderer::presentation_from_snapshot(&starting)
+            .expect("Starting should be presentable")
+    else {
+        panic!("Starting with content should use Now Playing");
+    };
+    assert_eq!(
+        starting
+            .status
+            .motion
+            .rotation_at(Duration::from_millis(900), animations_enabled),
+        0.0
+    );
+
+    let indeterminate = snapshot("indeterminate-progress.json", 8);
+    let Presentation::NowPlaying(indeterminate) =
+        roonscape_renderer::presentation_from_snapshot(&indeterminate)
+            .expect("indeterminate activity should be presentable")
+    else {
+        panic!("indeterminate activity should use Now Playing");
+    };
+    assert_eq!(
+        indeterminate
+            .activity
+            .expect("indeterminate Playing should have activity")
+            .waveform
+            .bar_scales_at(Duration::from_millis(550), animations_enabled),
+        [1.0; 7]
+    );
 }
 
 fn inactivity_configuration() -> InactivityConfiguration {

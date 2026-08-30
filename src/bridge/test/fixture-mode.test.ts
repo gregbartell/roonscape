@@ -58,6 +58,34 @@ test("ordinary Fixture Mode starts predictably at Playing", async () => {
   });
 });
 
+test("static Fixture Mode preserves the Playing scenario source position", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const { socketPath, controlSocketPath, fixture } = startOrdinaryFixture(
+      taskDirectory,
+      undefined,
+      true,
+    );
+
+    try {
+      const snapshots = await publishedSnapshots(fixture.child, socketPath);
+      const expected = await loadSnapshot("src/shared/fixtures/playing.json");
+
+      assert.deepEqual(await snapshots.read(), { ...expected, revision: 1 });
+      await sendNavigationIntent(fixture.child, controlSocketPath, "Next");
+      assertSelectedSnapshot(
+        await snapshots.read(),
+        await loadSnapshot("src/shared/fixtures/paused.json"),
+        2,
+      );
+      await sendNavigationIntent(fixture.child, controlSocketPath, "Previous");
+      assert.deepEqual(await snapshots.read(), { ...expected, revision: 3 });
+      snapshots.close();
+    } finally {
+      await stop(fixture.child);
+    }
+  });
+});
+
 test("Next publishes the next Fixture Scenario as a complete snapshot", async () => {
   await withTaskDirectory(async (taskDirectory) => {
     const { socketPath, controlSocketPath, fixture } =
@@ -315,7 +343,11 @@ function startFixture(
   };
 }
 
-function startOrdinaryFixture(taskDirectory: string, catalogPath?: string) {
+function startOrdinaryFixture(
+  taskDirectory: string,
+  catalogPath?: string,
+  staticFixture = false,
+) {
   const socketPath = path.join(taskDirectory, "roonscape.sock");
   const controlSocketPath = path.join(taskDirectory, "fixture-navigation.sock");
   const fixture = startFixture({
@@ -323,6 +355,7 @@ function startOrdinaryFixture(taskDirectory: string, catalogPath?: string) {
     ROONSCAPE_FIXTURE_CONTROL: controlSocketPath,
     ROONSCAPE_FIXTURE: undefined,
     ROONSCAPE_FIXTURE_CATALOG: catalogPath,
+    ROONSCAPE_STATIC_FIXTURE: staticFixture ? "1" : undefined,
   });
   return { socketPath, controlSocketPath, fixture };
 }

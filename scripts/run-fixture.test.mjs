@@ -19,12 +19,13 @@ const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 
 test("a clean renderer exit stops the fixture publisher and removes runtime state", async () => {
   await withTaskDirectory(async (taskDirectory) => {
-    const { socketPath, controlSocketPath, processId } =
+    const { socketPath, controlSocketPath, processId, staticFixture } =
       await launchFixture(taskDirectory);
     const runtimeDirectory = path.dirname(socketPath);
 
     assert.equal(path.dirname(controlSocketPath), runtimeDirectory);
     assert.equal(path.basename(controlSocketPath), "fixture-navigation.sock");
+    assert.equal(staticFixture, "unset");
     await assert.rejects(access(runtimeDirectory), { code: "ENOENT" });
     assert.throws(() => process.kill(-processId, 0), { code: "ESRCH" });
   });
@@ -61,6 +62,19 @@ test("the release option runs the optimized renderer profile", async () => {
   });
 });
 
+test("the static option preserves navigation and enables static renderer behavior", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const { controlSocketPath, staticFixture } = await launchFixture(
+      taskDirectory,
+      {},
+      ["--static"],
+    );
+
+    assert.notEqual(controlSocketPath, "unset");
+    assert.equal(staticFixture, "1");
+  });
+});
+
 async function withTaskDirectory(run) {
   const taskDirectory = await mkdtemp(
     path.join(tmpdir(), "roonscape-fixture-test."),
@@ -84,7 +98,7 @@ async function launchFixture(
   const cargoStub = path.join(binDirectory, "cargo");
   await writeFile(
     cargoStub,
-    '#!/bin/sh\nprintf "%s\\n%s\\n%s\\n" "$ROONSCAPE_SOCKET" "${ROONSCAPE_FIXTURE_CONTROL-unset}" "$*" > "$ROONSCAPE_FIXTURE_TEST_ENVIRONMENT"\n',
+    '#!/bin/sh\nprintf "%s\\n%s\\n%s\\n%s\\n" "$ROONSCAPE_SOCKET" "${ROONSCAPE_FIXTURE_CONTROL-unset}" "$*" "${ROONSCAPE_STATIC_FIXTURE-unset}" > "$ROONSCAPE_FIXTURE_TEST_ENVIRONMENT"\n',
   );
   await chmod(cargoStub, 0o755);
 
@@ -124,7 +138,7 @@ async function launchFixture(
       `fixture launcher exited via ${signal ?? "no signal"}\n${standardOutput}${standardError}`,
     );
 
-    const [socketPath, controlSocketPath, rendererArguments] = (
+    const [socketPath, controlSocketPath, rendererArguments, staticFixture] = (
       await readFile(environmentRecord, "utf8")
     )
       .trimEnd()
@@ -135,6 +149,7 @@ async function launchFixture(
       socketPath,
       controlSocketPath,
       rendererArguments: rendererArguments.split(" "),
+      staticFixture,
       processId: launcher.pid,
     };
   } finally {

@@ -17,9 +17,9 @@ use gtk::glib;
 use gtk::prelude::*;
 use roonscape_renderer::{
     ConnectionState, Diagnostics, DiagnosticsConfiguration, FixtureNavigation,
-    InactivityConfiguration, NowPlayingTitleFace, Presentation, PresentationState,
-    PresentationTime, PresentationUpdate, RendererAction, RendererKey, RendererKeyboard,
-    SnapshotEvent, SnapshotSubscription, Viewport, current_process_memory_bytes,
+    InactivityConfiguration, NowPlayingTitleFace, Presentation, PresentationBehavior,
+    PresentationState, PresentationTime, PresentationUpdate, RendererAction, RendererKey,
+    RendererKeyboard, SnapshotEvent, SnapshotSubscription, Viewport, current_process_memory_bytes,
     display_configuration_file_path, load_inactivity_configuration,
     register_packaged_fallback_fonts, reject_removed_display_configuration_override,
     select_capture_typography, select_typography,
@@ -34,6 +34,12 @@ const SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(250);
 struct CaptureConfiguration {
     viewport: Option<Viewport>,
     typography: Option<NowPlayingTitleFace>,
+}
+
+#[derive(Clone, Copy)]
+struct RendererConfiguration {
+    capture: CaptureConfiguration,
+    behavior: PresentationBehavior,
 }
 
 #[derive(Clone)]
@@ -69,14 +75,13 @@ fn run() -> Result<(), Box<dyn Error>> {
         .ok_or("ROONSCAPE_SOCKET must name the private Unix socket")?;
     let configuration_file = configuration_file_from_arguments()?;
     let inactivity_configuration = host_inactivity_configuration(&configuration_file);
-    let capture_configuration = capture_configuration_from_environment()?;
+    let renderer_configuration = renderer_configuration_from_environment()?;
     let progress_clock = Instant::now();
-    let presentation = Rc::new(RefCell::new(
-        PresentationState::disconnected_with_inactivity(
-            progress_clock.elapsed(),
-            inactivity_configuration,
-        ),
-    ));
+    let presentation = Rc::new(RefCell::new(PresentationState::disconnected_with_behavior(
+        progress_clock.elapsed(),
+        inactivity_configuration,
+        renderer_configuration.behavior,
+    )));
     let diagnostics = DiagnosticsConfiguration::from_environment()?
         .enabled()
         .then(|| Rc::new(RefCell::new(Diagnostics::default())));
@@ -108,7 +113,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             diagnostics.clone(),
             &repository_root,
             progress_clock,
-            capture_configuration,
+            renderer_configuration,
         ) {
             *captured_activation_error.borrow_mut() = Some(error);
             application.quit();
@@ -144,9 +149,15 @@ fn build_window(
     diagnostics: Option<Rc<RefCell<Diagnostics>>>,
     repository_root: &Path,
     progress_clock: Instant,
-    capture_configuration: CaptureConfiguration,
+    renderer_configuration: RendererConfiguration,
 ) -> Result<(), Box<dyn Error>> {
-    let viewport = capture_configuration
+    if renderer_configuration.behavior == PresentationBehavior::StaticFixture
+        && let Some(settings) = gtk::Settings::default()
+    {
+        settings.set_gtk_enable_animations(false);
+    }
+    let viewport = renderer_configuration
+        .capture
         .viewport
         .unwrap_or(Viewport::WINDOWED_FIXTURE);
     let window = gtk::ApplicationWindow::builder()
@@ -168,7 +179,7 @@ fn build_window(
                 .collect::<HashSet<_>>()
         })
         .unwrap_or_default();
-    let typography = match capture_configuration.typography {
+    let typography = match renderer_configuration.capture.typography {
         Some(requested) => select_capture_typography(&available_families, requested)?,
         None => select_typography(&available_families),
     };
@@ -189,6 +200,7 @@ fn build_window(
         palette_provider,
         typography,
         initial_diagnostics.as_deref(),
+        renderer_configuration.behavior,
     )));
     presentation_view.borrow_mut().apply_viewport(viewport);
     presentation_view
@@ -264,7 +276,9 @@ fn build_window(
 
     install_diagnostics_updates(&window, diagnostics, presentation_view);
 
-    if capture_configuration.viewport.is_none() && env::var_os("ROONSCAPE_WINDOWED").is_none() {
+    if renderer_configuration.capture.viewport.is_none()
+        && env::var_os("ROONSCAPE_WINDOWED").is_none()
+    {
         present_fullscreen(&window);
     }
 
@@ -327,6 +341,17 @@ fn capture_configuration_from_environment() -> Result<CaptureConfiguration, Box<
     Ok(CaptureConfiguration {
         viewport,
         typography,
+    })
+}
+
+fn renderer_configuration_from_environment() -> Result<RendererConfiguration, Box<dyn Error>> {
+    Ok(RendererConfiguration {
+        capture: capture_configuration_from_environment()?,
+        behavior: if env::var("ROONSCAPE_STATIC_FIXTURE").as_deref() == Ok("1") {
+            PresentationBehavior::StaticFixture
+        } else {
+            PresentationBehavior::Dynamic
+        },
     })
 }
 

@@ -240,6 +240,48 @@ fn advances_playing_progress_from_the_latest_local_anchor() {
 }
 
 #[test]
+fn static_fixture_state_freezes_source_progress_and_inactivity() {
+    let snapshot =
+        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
+    let state = PresentationState::new_with_behavior(
+        snapshot,
+        presentation_time(10, PLAYING_SAMPLED_AT + 60),
+        inactivity_configuration(),
+        roonscape_renderer::PresentationBehavior::StaticFixture,
+    )
+    .expect("static Playing should anchor a presentation");
+
+    let frame = state
+        .frame_at(Duration::from_secs(600))
+        .expect("static Playing should remain presentable");
+    assert_eq!(frame.inactivity, InactivityTransform::default());
+    let Presentation::NowPlaying(presentation) = frame.presentation else {
+        panic!("Playing snapshot should produce Now Playing content");
+    };
+    assert_eq!(
+        presentation.progress.map(|progress| progress.elapsed),
+        Some("2:51".to_owned())
+    );
+
+    let paused =
+        parse_snapshot(&support::fixture("paused.json")).expect("Paused fixture should be valid");
+    let paused_state = PresentationState::new_with_behavior(
+        paused,
+        presentation_time(10, PLAYING_SAMPLED_AT),
+        inactivity_configuration(),
+        roonscape_renderer::PresentationBehavior::StaticFixture,
+    )
+    .expect("static Paused should anchor a presentation");
+    assert_eq!(
+        paused_state
+            .frame_at(Duration::from_secs(600))
+            .expect("static Paused should remain presentable")
+            .inactivity,
+        InactivityTransform::default()
+    );
+}
+
+#[test]
 fn freezes_paused_and_loading_progress_at_the_source_sample() {
     for fixture_name in ["paused.json", "loading.json"] {
         let snapshot = parse_snapshot(&support::fixture(fixture_name))

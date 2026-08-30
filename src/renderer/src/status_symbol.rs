@@ -5,8 +5,8 @@ use std::rc::Rc;
 use gtk::cairo::{Context, LineCap, LineJoin};
 use gtk::prelude::*;
 use roonscape_renderer::{
-    PresentationStatus, PresentationStatusDecoration, PresentationStatusMotion,
-    PresentationStatusSymbol,
+    PresentationBehavior, PresentationStatus, PresentationStatusDecoration,
+    PresentationStatusMotion, PresentationStatusSymbol,
 };
 
 const GLYPH_GRID: f64 = 32.0;
@@ -21,6 +21,7 @@ struct DecorationStyle {
 pub(crate) fn presentation_status_symbol(
     status: &PresentationStatus,
     decoration: PresentationStatusDecoration,
+    behavior: PresentationBehavior,
 ) -> gtk::Box {
     let decoration = decoration_style(decoration);
     let container = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -48,16 +49,16 @@ pub(crate) fn presentation_status_symbol(
         );
     });
 
-    if let PresentationStatusMotion::ContinuousRotation { period } = status.motion {
+    let motion = status.motion;
+    if let PresentationStatusMotion::ContinuousRotation { .. } = motion {
         drawing.add_tick_callback(move |drawing, frame_clock| {
-            let animations_enabled =
+            let system_animations_enabled =
                 gtk::Settings::default().is_none_or(|settings| settings.is_gtk_enable_animations());
-            let next_rotation = if animations_enabled {
-                let period_micros = period.as_micros() as f64;
-                (frame_clock.frame_time() as f64).rem_euclid(period_micros) / period_micros * TAU
-            } else {
-                0.0
-            };
+            let animations_enabled = behavior.animations_enabled(system_animations_enabled);
+            let elapsed = std::time::Duration::from_micros(
+                frame_clock.frame_time().try_into().unwrap_or_default(),
+            );
+            let next_rotation = motion.rotation_at(elapsed, animations_enabled);
             if (rotation.get() - next_rotation).abs() > f64::EPSILON {
                 rotation.set(next_rotation);
                 drawing.queue_draw();

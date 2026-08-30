@@ -14,13 +14,21 @@ export interface FixtureModeSession {
   close(): Promise<void>;
 }
 
+export interface FixtureModeSessionOptions {
+  behavior?: "ordinary" | "static";
+  now?: () => Date;
+  log?: (message: string) => void;
+}
+
 export async function startFixtureModeSession(
   catalog: readonly FixtureScenario[],
   socketPath: string,
   controlSocketPath: string,
-  now: () => Date = () => new Date(),
-  log: (message: string) => void = (message) => process.stdout.write(message),
+  options: FixtureModeSessionOptions = {},
 ): Promise<FixtureModeSession> {
+  const behavior = options.behavior ?? "ordinary";
+  const now = options.now ?? (() => new Date());
+  const log = options.log ?? ((message) => process.stdout.write(message));
   const initialScenario = catalog[0];
   if (initialScenario === undefined) {
     throw new Error("Fixture Scenario catalog is unexpectedly empty");
@@ -39,7 +47,7 @@ export async function startFixtureModeSession(
   let selectedIndex = 0;
   let revision = 1;
   const publisher = await startSnapshotPublisher(
-    selectedSnapshot(initialScenario, revision, now()),
+    selectedSnapshot(initialScenario, revision, now(), behavior),
     socketPath,
   );
   const connections = new Set<Socket>();
@@ -70,7 +78,9 @@ export async function startFixtureModeSession(
             revision += 1;
             const selected = catalog[selectedIndex];
             if (selected !== undefined) {
-              publisher.publish(selectedSnapshot(selected, revision, now()));
+              publisher.publish(
+                selectedSnapshot(selected, revision, now(), behavior),
+              );
               log(`Fixture Scenario: ${selected.label}\n`);
             }
           }
@@ -100,13 +110,16 @@ function selectedSnapshot(
   scenario: FixtureScenario,
   revision: number,
   selectedAt: Date,
+  behavior: "ordinary" | "static",
 ): PresentationSnapshot {
   const snapshot = scenario.snapshot;
   return {
     ...snapshot,
     revision,
     progress:
-      snapshot.playback === "playing" && snapshot.progress !== null
+      behavior === "ordinary" &&
+      snapshot.playback === "playing" &&
+      snapshot.progress !== null
         ? { ...snapshot.progress, sampledAt: selectedAt.toISOString() }
         : snapshot.progress,
   };

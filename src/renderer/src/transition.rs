@@ -48,6 +48,16 @@ impl<T> PresentationTransition<T> {
         discarded
     }
 
+    pub fn replace_immediately(&mut self, revision: u64, value: T) -> Vec<PresentationRevision<T>> {
+        let mut released = self.outgoing.take().into_iter().collect::<Vec<_>>();
+        released.push(mem::replace(
+            &mut self.current,
+            PresentationRevision { revision, value },
+        ));
+        self.started_at = None;
+        released
+    }
+
     pub fn discard_outgoing(&mut self) -> Option<PresentationRevision<T>> {
         self.started_at = None;
         self.outgoing.take()

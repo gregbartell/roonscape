@@ -25,6 +25,10 @@ if (explicitFixture === undefined) {
     catalog,
     socketPath,
     controlSocketPath,
+    {
+      behavior:
+        process.env.ROONSCAPE_STATIC_FIXTURE === "1" ? "static" : "ordinary",
+    },
   );
 } else {
   const snapshot = await loadSnapshot(explicitFixture);

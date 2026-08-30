@@ -70,7 +70,7 @@ test("source launch resolves the relocated bridge and renderer", async () => {
         `#!/bin/sh
 for attempt in $(seq 1 500); do
   if [ -S "$ROONSCAPE_SOCKET" ]; then
-    printf '%s\\n%s\\n%s\\n' "$1" "$2" "$ROONSCAPE_SOCKET" > "$ROONSCAPE_SOURCE_LAUNCH_RECORD"
+    printf '%s\\n%s\\n%s\\n%s\\n' "$1" "$2" "$ROONSCAPE_SOCKET" "\${ROONSCAPE_STATIC_FIXTURE-unset}" > "$ROONSCAPE_SOURCE_LAUNCH_RECORD"
     exit 0
   fi
   sleep 0.01
@@ -90,6 +90,7 @@ exit 1
           taskDirectory,
           "authorization.json",
         ),
+        ROONSCAPE_STATIC_FIXTURE: "1",
         ROONSCAPE_SOURCE_LAUNCH_RECORD: launchRecord,
         XDG_RUNTIME_DIR: runtimeRoot,
       },
@@ -103,6 +104,7 @@ exit 1
         "--config",
         configurationFile,
         path.join(runtimeRoot, "roonscape/roonscape.sock"),
+        "unset",
       ],
     );
   } finally {

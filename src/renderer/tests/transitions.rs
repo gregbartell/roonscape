@@ -135,6 +135,25 @@ fn completed_transition_releases_the_outgoing_presentation_and_becomes_stable() 
 }
 
 #[test]
+fn static_replacement_releases_prior_layers_without_a_crossfade() {
+    let (playing_revision, playing) = coordinated("playing.json");
+    let (missing_revision, missing) = coordinated("missing-artwork.json");
+    let mut transition = PresentationTransition::new(playing_revision, playing);
+
+    let released = transition.replace_immediately(missing_revision, missing);
+
+    assert_eq!(
+        released
+            .iter()
+            .map(|layer| layer.revision())
+            .collect::<Vec<_>>(),
+        [7]
+    );
+    assert_eq!(transition.current().revision(), 8);
+    assert!(!transition.is_active());
+}
+
+#[test]
 fn crossfades_light_now_playing_into_missing_content_as_complete_layers() {
     let artwork_directory = tempdir().expect("temporary artwork directory should be available");
     let light_artwork = artwork_directory.path().join("light.svg");
