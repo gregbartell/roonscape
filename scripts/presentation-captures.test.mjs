@@ -408,6 +408,222 @@ test("focused capture rejects invalid resolutions and option combinations before
   }
 });
 
+test("visual-acceptance profile requires its destination and rejects incompatible options", async () => {
+  const invalidInvocations = [
+    {
+      arguments: ["--profile", "visual-acceptance"],
+      diagnostic: /--profile visual-acceptance requires --output/,
+    },
+    {
+      arguments: [
+        "--profile",
+        "visual-acceptance",
+        "--output",
+        "captures",
+        "--scenario",
+        "playing",
+      ],
+      diagnostic:
+        /--profile visual-acceptance cannot be combined with --scenario/,
+    },
+    {
+      arguments: [
+        "--profile",
+        "visual-acceptance",
+        "--output",
+        "captures",
+        "--all",
+      ],
+      diagnostic: /--profile visual-acceptance cannot be combined with --all/,
+    },
+    {
+      arguments: [
+        "--profile",
+        "visual-acceptance",
+        "--output",
+        "captures",
+        "--artwork",
+        "cover.png",
+      ],
+      diagnostic:
+        /--profile visual-acceptance cannot be combined with --artwork/,
+    },
+    {
+      arguments: [
+        "--profile",
+        "visual-acceptance",
+        "--output",
+        "captures",
+        "--resolution",
+        "1920x1080",
+      ],
+      diagnostic:
+        /--profile visual-acceptance cannot be combined with --resolution/,
+    },
+    {
+      arguments: ["--profile", "brief", "--output", "captures"],
+      diagnostic: /unknown capture profile: brief/,
+    },
+  ];
+
+  for (const invocation of invalidInvocations) {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        ["scripts/capture-presentations.mjs", ...invocation.arguments],
+        {
+          cwd: new URL("..", import.meta.url),
+          env: { ...process.env, PATH: "" },
+        },
+      ),
+      (error) => {
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, invocation.diagnostic);
+        return true;
+      },
+      invocation.arguments.join(" "),
+    );
+  }
+});
+
+test("visual-acceptance profile publishes its maintained plan through reusable painted sessions", async () => {
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-profile-capture-test."),
+  );
+  const binDirectory = path.join(taskDirectory, "bin");
+  const outputDirectory = path.join(taskDirectory, "captures");
+  const fakePngDirectory = path.join(taskDirectory, "pngs");
+  const processLog = path.join(taskDirectory, "processes");
+  const failureMarker = path.join(taskDirectory, "fail-profile");
+  const runtimeRoot = await mkdtemp(path.join(tmpdir(), "rsc."));
+  const plan = buildPresentationCapturePlan();
+  await Promise.all([
+    mkdir(binDirectory),
+    mkdir(outputDirectory),
+    mkdir(fakePngDirectory),
+  ]);
+  await Promise.all(
+    REPRESENTATIVE_VIEWPORTS.map(async (viewport) => {
+      const [width, height] = viewport.split("x").map(Number);
+      await writeFile(
+        path.join(fakePngDirectory, `${viewport}.png`),
+        pngHeader(width, height),
+      );
+    }),
+  );
+  await installFakeCaptureDisplay(binDirectory);
+  await executable(
+    path.join(binDirectory, "cargo"),
+    '#!/bin/sh\nif [ "$1" = "build" ]; then\n  printf "cargo-preflight|%s\\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n  exit 0\nfi\nprintf "renderer|%s|%s|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "${ROONSCAPE_CAPTURE_TYPOGRAPHY-automatic}" "$ROONSCAPE_DIAGNOSTICS" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\nexec "${NODE:-node}" "$ROONSCAPE_CAPTURE_TEST_RENDERER"\n',
+  );
+  await executable(
+    path.join(binDirectory, "scrot"),
+    '#!/bin/sh\nprintf "scrot|%s|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "$4" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n[ "$1" = "--window" ] && [ "$2" = "4242" ] && [ "$3" = "--overwrite" ] || exit 2\ncp "$ROONSCAPE_CAPTURE_TEST_PNG_DIRECTORY/$ROONSCAPE_CAPTURE_VIEWPORT.png" "$4"\n',
+  );
+  const fakeRenderer = path.join(taskDirectory, "renderer.mjs");
+  await writeFile(
+    fakeRenderer,
+    '#!/usr/bin/env node\nimport { once } from "node:events";\nimport { existsSync } from "node:fs";\nimport { appendFile } from "node:fs/promises";\nimport { createConnection } from "node:net";\nimport { createInterface } from "node:readline";\nconst connection = createConnection(process.env.ROONSCAPE_CAPTURE_CONTROL);\nawait once(connection, "connect");\nfor await (const line of createInterface({ input: connection })) {\n  const selection = JSON.parse(line);\n  await appendFile(process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG, `selection|${selection.scenario}|${selection.revision}\\n`);\n  if (existsSync(process.env.ROONSCAPE_CAPTURE_TEST_FAILURE_MARKER) && selection.scenario === "loading-with-content") process.exit(9);\n  await appendFile(process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG, `painted|${selection.scenario}|${selection.revision}\\n`);\n  connection.write(`${JSON.stringify({ type: "painted", scenario: selection.scenario, revision: selection.revision })}\\n`);\n}\n',
+  );
+  const firstCapturePath = path.join(outputDirectory, plan[0].fileName);
+  await writeFile(firstCapturePath, "stale");
+  const runProfile = (...arguments_) =>
+    execFileAsync(
+      process.execPath,
+      [
+        path.join(
+          new URL("..", import.meta.url).pathname,
+          "scripts/capture-presentations.mjs",
+        ),
+        "--profile",
+        "visual-acceptance",
+        "--output",
+        outputDirectory,
+        ...arguments_,
+      ],
+      {
+        cwd: taskDirectory,
+        env: {
+          ...process.env,
+          PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+          TMPDIR: runtimeRoot,
+          ROONSCAPE_CAPTURE_TEST_PNG_DIRECTORY: fakePngDirectory,
+          ROONSCAPE_CAPTURE_TEST_PROCESS_LOG: processLog,
+          ROONSCAPE_CAPTURE_TEST_RENDERER: fakeRenderer,
+          ROONSCAPE_CAPTURE_TEST_FAILURE_MARKER: failureMarker,
+        },
+      },
+    );
+
+  try {
+    await assert.rejects(runProfile(), /destination files already exist/);
+    await assert.rejects(readFile(processLog), /ENOENT/);
+
+    const { stdout, stderr } = await runProfile("--overwrite");
+    const publishedPaths = stdout.trimEnd().split("\n");
+    assert.equal(publishedPaths.length, plan.length);
+    assert.deepEqual(
+      publishedPaths.toSorted(),
+      plan
+        .map((capture) => path.join(outputDirectory, capture.fileName))
+        .toSorted(),
+    );
+    assert.match(stderr, /Capturing Fixture Scenario playing at 1280x720/);
+    assert.deepEqual(
+      (await readdir(outputDirectory)).toSorted(),
+      plan.map((capture) => capture.fileName).toSorted(),
+    );
+    assert.equal(
+      (await readdir(outputDirectory)).includes("manifest.json"),
+      false,
+    );
+    const processes = await readFile(processLog, "utf8");
+    assert.equal((processes.match(/^selection\|/gm) ?? []).length, plan.length);
+    assert.equal((processes.match(/^scrot\|/gm) ?? []).length, plan.length);
+    const sessions = [...processes.matchAll(/^renderer\|(.+)$/gm)].map(
+      (match) => match[1],
+    );
+    assert.equal(sessions.length, REPRESENTATIVE_VIEWPORTS.length * 4);
+    assert.equal(new Set(sessions).size, sessions.length);
+    for (const capture of plan) {
+      assert.deepEqual(
+        await readFile(path.join(outputDirectory, capture.fileName)),
+        await readFile(path.join(fakePngDirectory, `${capture.viewport}.png`)),
+      );
+    }
+    assert.deepEqual(await readdir(runtimeRoot), []);
+
+    await rm(outputDirectory, { force: true, recursive: true });
+    await mkdir(outputDirectory);
+    await writeFile(failureMarker, "fail");
+    await assert.rejects(runProfile(), (error) => {
+      const completedPaths = error.stdout.trimEnd().split("\n");
+      assert.deepEqual(completedPaths, [
+        path.join(outputDirectory, "1280x720--playing.png"),
+        path.join(outputDirectory, "1280x720--paused.png"),
+      ]);
+      assert.match(
+        error.stderr,
+        /Visual-acceptance profile is incomplete \(2\/210 captures completed\)/,
+      );
+      assert.match(error.stderr, /Completed captures:/);
+      assert.match(error.stderr, /1280x720--playing\.png/);
+      assert.match(error.stderr, /1280x720--paused\.png/);
+      return true;
+    });
+    assert.deepEqual((await readdir(outputDirectory)).toSorted(), [
+      "1280x720--paused.png",
+      "1280x720--playing.png",
+    ]);
+    assert.deepEqual(await readdir(runtimeRoot), []);
+  } finally {
+    await Promise.all([
+      rm(taskDirectory, { force: true, recursive: true }),
+      rm(runtimeRoot, { force: true, recursive: true }),
+    ]);
+  }
+});
+
 test("focused capture waits for its painted revision and publishes one validated 4K PNG", async () => {
   const taskDirectory = await mkdtemp(
     path.join(tmpdir(), "roonscape-focused-capture-test."),
@@ -449,17 +665,10 @@ test("focused capture waits for its painted revision and publishes one validated
       ),
     ),
   ]);
-  await executable(
-    path.join(binDirectory, "Xvfb"),
-    '#!/bin/sh\nprintf "Xvfb|%s\\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\ndisplay_number="${1#:}"\nsocket="/tmp/.X11-unix/X${display_number}"\nmkdir -p /tmp/.X11-unix\ntouch "$socket"\ntrap \'printf "Xvfb-stopped\\n" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"; rm -f "$socket"; exit 0\' TERM INT EXIT\nwhile :; do /usr/bin/sleep 1; done\n',
-  );
+  await installFakeCaptureDisplay(binDirectory, { logStop: true });
   await executable(
     path.join(binDirectory, "cargo"),
     '#!/bin/sh\nif [ "$1" = "build" ]; then\n  printf "cargo-preflight|%s\\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n  if [ -f "$ROONSCAPE_CAPTURE_TEST_BUILD_FAILURE" ]; then\n    printf "missing renderer input\\n" >&2\n    exit 7\n  fi\n  exit 0\nfi\nprintf "renderer|%s|%s|%s|%s|%s|%s|%s\\n" "$ROONSCAPE_STATIC_FIXTURE" "$ROONSCAPE_CAPTURE_VIEWPORT" "$ROONSCAPE_CAPTURE_CONTROL" "${ROONSCAPE_DIAGNOSTICS-unset}" "${ROONSCAPE_CAPTURE_TYPOGRAPHY-unset}" "${ROONSCAPE_FIXTURE_AUTO_CLOSE_MS-unset}" "${ROONSCAPE_DISPLAY_CONFIG-unset}" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\nexec "${NODE:-node}" "$ROONSCAPE_CAPTURE_TEST_RENDERER"\n',
-  );
-  await executable(
-    path.join(binDirectory, "xwininfo"),
-    '#!/bin/sh\nwidth="${ROONSCAPE_CAPTURE_VIEWPORT%x*}"\nheight="${ROONSCAPE_CAPTURE_VIEWPORT#*x}"\nprintf \'xwininfo: Window id: 4242 "RoonScape"\\n  Width: %s\\n  Height: %s\\n\' "$width" "$height"\n',
   );
   await executable(
     path.join(binDirectory, "scrot"),
@@ -1079,6 +1288,39 @@ test("capture command orchestrates one native fixture capture and records its ma
     await rm(taskDirectory, { force: true, recursive: true });
   }
 });
+
+async function installFakeCaptureDisplay(
+  binDirectory,
+  { logStop = false } = {},
+) {
+  const stopAction = logStop
+    ? 'printf "Xvfb-stopped\\n" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"; rm -f "$socket"'
+    : 'rm -f "$socket"';
+  await executable(
+    path.join(binDirectory, "Xvfb"),
+    [
+      "#!/bin/sh",
+      'printf "Xvfb|%s\\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"',
+      'display_number="${1#:}"',
+      'socket="/tmp/.X11-unix/X${display_number}"',
+      "mkdir -p /tmp/.X11-unix",
+      'touch "$socket"',
+      `trap '${stopAction}; exit 0' TERM INT EXIT`,
+      "while :; do /usr/bin/sleep 1; done",
+      "",
+    ].join("\n"),
+  );
+  await executable(
+    path.join(binDirectory, "xwininfo"),
+    [
+      "#!/bin/sh",
+      'width="${ROONSCAPE_CAPTURE_VIEWPORT%x*}"',
+      'height="${ROONSCAPE_CAPTURE_VIEWPORT#*x}"',
+      `printf 'xwininfo: Window id: 4242 "RoonScape"\\n  Width: %s\\n  Height: %s\\n' "$width" "$height"`,
+      "",
+    ].join("\n"),
+  );
+}
 
 async function executable(filePath, contents) {
   await writeFile(filePath, contents);

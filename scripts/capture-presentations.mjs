@@ -38,6 +38,12 @@ const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const nativeRenderer = "native GTK 4/Pango";
 const defaultSettleMilliseconds = 1_500;
 const maximumCaptureDimension = 32_767;
+const captureFontPaths = [
+  "src/renderer/assets/fonts/LibreBaskerville-Variable.ttf",
+  "src/renderer/assets/fonts/LibreBaskerville-Italic-Variable.ttf",
+  "src/renderer/assets/fonts/IBMPlexSans-Variable.ttf",
+  "src/renderer/assets/fonts/IBMPlexSans-Italic-Variable.ttf",
+];
 const customArtworkScenarios = new Set([
   "playing",
   "paused",
@@ -69,6 +75,8 @@ if (options.listScenarios) {
   process.stdout.write(
     `${JSON.stringify(buildPresentationCapturePlan(), null, 2)}\n`,
   );
+} else if (options.profile !== undefined) {
+  await captureVisualAcceptanceProfile(options);
 } else if (options.scenario !== undefined) {
   await captureFocusedScenario(options);
 } else {
@@ -78,7 +86,240 @@ if (options.listScenarios) {
 async function captureFocusedScenario(options) {
   const captures = await preflightFocusedCapture(options);
   for (const capture of captures) {
-    await captureFocusedResolution(capture);
+    await captureControlledSession([capture], []);
+  }
+}
+
+async function captureVisualAcceptanceProfile(options) {
+  const captures = await preflightVisualAcceptanceProfile(options);
+  const sessionGroups = groupCompatibleCaptures(captures);
+  const completedPaths = [];
+
+  try {
+    for (const sessionCaptures of sessionGroups) {
+      await captureControlledSession(sessionCaptures, completedPaths);
+    }
+  } catch (error) {
+    const completed =
+      completedPaths.length === 0
+        ? "none"
+        : completedPaths.map((capturePath) => `- ${capturePath}`).join("\n");
+    throw new Error(
+      `Visual-acceptance profile is incomplete (${completedPaths.length}/${captures.length} captures completed).\nCompleted captures:\n${completed}\nFailure: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+}
+
+function groupCompatibleCaptures(captures) {
+  const sessionGroups = [];
+  for (const capture of captures) {
+    const compatibleGroup = sessionGroups.find(([firstCapture]) =>
+      capturesShareSession(firstCapture, capture),
+    );
+    if (compatibleGroup === undefined) {
+      sessionGroups.push([capture]);
+    } else {
+      compatibleGroup.push(capture);
+    }
+  }
+  return sessionGroups;
+}
+
+function capturesShareSession(first, second) {
+  return (
+    first.viewport === second.viewport &&
+    first.typography === second.typography &&
+    first.diagnostics === second.diagnostics
+  );
+}
+
+async function preflightVisualAcceptanceProfile({ output, overwrite }) {
+  const outputDirectory = path.resolve(process.cwd(), output);
+  const plan = buildPresentationCapturePlan();
+  const failures = [];
+  const snapshots = new Map();
+  const runtimeInputPaths = new Set(captureFontPaths);
+
+  for (const { fixture } of plan) {
+    runtimeInputPaths.add(fixture);
+    if (snapshots.has(fixture)) {
+      continue;
+    }
+    try {
+      const snapshot = JSON.parse(
+        await readFile(path.join(repositoryRoot, fixture), "utf8"),
+      );
+      snapshots.set(fixture, snapshot);
+      if (typeof snapshot.artwork?.path === "string") {
+        runtimeInputPaths.add(snapshot.artwork.path);
+      }
+    } catch (error) {
+      failures.push(
+        `required Fixture Scenario snapshot is invalid: ${fixture}: ${errorMessage(error)}`,
+      );
+    }
+  }
+
+  const captures = plan.map((capture) => ({
+    ...capture,
+    finalCapturePath: path.join(outputDirectory, capture.fileName),
+    snapshot: snapshots.get(capture.fixture),
+  }));
+  await addUnreadableInputFailures(runtimeInputPaths, failures);
+  const availableExecutables = await addMissingExecutableFailures(failures);
+  await addDestinationFailures(captures, outputDirectory, overwrite, failures);
+  await addRendererBuildFailure(availableExecutables, failures);
+  assertCapturePreflightSucceeded(failures);
+  return captures;
+}
+
+async function captureControlledSession(captures, completedPaths) {
+  const [firstCapture] = captures;
+  const { width, height, viewport, typography, diagnostics } = firstCapture;
+  const runtimeDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-controlled-capture."),
+  );
+  const controlSocketPath = path.join(runtimeDirectory, "capture-control.sock");
+  const displayConfigurationPath = path.join(runtimeDirectory, "display.json");
+  const controlServer = createServer();
+  let control;
+  let renderer;
+  let xvfb;
+
+  try {
+    await writeFile(
+      displayConfigurationPath,
+      `${JSON.stringify(captureDisplayConfiguration, null, 2)}\n`,
+    );
+    await new Promise((resolve, reject) => {
+      controlServer.once("error", reject);
+      controlServer.listen(controlSocketPath, resolve);
+    });
+    const displaySession = await startXvfbDisplay({
+      width,
+      height,
+      cwd: repositoryRoot,
+      description: "the controlled native capture display",
+    });
+    xvfb = displaySession.xvfb;
+    const connected = once(controlServer, "connection");
+    const environment = {
+      ...process.env,
+      DISPLAY: displaySession.display,
+      GDK_BACKEND: "x11",
+      NO_AT_BRIDGE: "1",
+      ROONSCAPE_CAPTURE_CONTROL: controlSocketPath,
+      ROONSCAPE_CAPTURE_VIEWPORT: viewport,
+      ROONSCAPE_DIAGNOSTICS: diagnostics ? "1" : "0",
+      ROONSCAPE_STATIC_FIXTURE: "1",
+    };
+    if (typography === "automatic") {
+      delete environment.ROONSCAPE_CAPTURE_TYPOGRAPHY;
+    } else {
+      environment.ROONSCAPE_CAPTURE_TYPOGRAPHY = typography;
+    }
+    delete environment.ROONSCAPE_DISPLAY_CONFIG;
+    delete environment.ROONSCAPE_FIXTURE;
+    delete environment.ROONSCAPE_FIXTURE_AUTO_CLOSE_MS;
+    delete environment.ROONSCAPE_FIXTURE_CONTROL;
+    delete environment.ROONSCAPE_SOCKET;
+    renderer = startNativeRenderer(displayConfigurationPath, environment);
+    await renderer.spawned;
+    [control] = await waitFor(
+      () => connected,
+      renderer,
+      "the renderer capture control connection",
+    );
+    const acknowledgements = createInterface({ input: control })[
+      Symbol.asyncIterator
+    ]();
+    let windowId;
+
+    for (const [index, capture] of captures.entries()) {
+      const revision = index + 1;
+      const snapshot = structuredClone(capture.snapshot);
+      if (capture.customArtwork !== undefined) {
+        const artworkPath = path.join(
+          runtimeDirectory,
+          `custom-artwork-${revision}`,
+        );
+        await writeFile(artworkPath, capture.customArtwork.contents, {
+          flag: "wx",
+          mode: 0o600,
+        });
+        snapshot.artwork = { revision: 1, path: artworkPath };
+      }
+      snapshot.revision = revision;
+      process.stderr.write(
+        `Capturing Fixture Scenario ${capture.scenario} at ${viewport}\n`,
+      );
+      control.write(
+        `${JSON.stringify({
+          type: "select",
+          scenario: capture.scenario,
+          revision,
+          snapshot,
+        })}\n`,
+      );
+      const acknowledgement = await waitFor(
+        async () => {
+          const next = await acknowledgements.next();
+          if (next.done) {
+            throw new Error("capture control channel closed before readiness");
+          }
+          return JSON.parse(next.value);
+        },
+        renderer,
+        `painted Fixture Scenario revision ${revision}`,
+      );
+      if (
+        acknowledgement.type !== "painted" ||
+        acknowledgement.scenario !== capture.scenario ||
+        acknowledgement.revision !== revision
+      ) {
+        throw new Error(
+          `renderer acknowledged an unexpected Fixture Scenario revision: ${JSON.stringify(acknowledgement)}`,
+        );
+      }
+      windowId ??= await waitForRoonScapeWindow(
+        renderer,
+        environment,
+        width,
+        height,
+      );
+      const publicationDirectory = await mkdtemp(
+        path.join(
+          path.dirname(capture.finalCapturePath),
+          ".roonscape-capture.",
+        ),
+      );
+      try {
+        const temporaryCapturePath = path.join(
+          publicationDirectory,
+          "capture.png",
+        );
+        await captureNativeWindow(
+          windowId,
+          temporaryCapturePath,
+          environment,
+          width,
+          height,
+        );
+        await rename(temporaryCapturePath, capture.finalCapturePath);
+        completedPaths.push(capture.finalCapturePath);
+        process.stdout.write(`${capture.finalCapturePath}\n`);
+      } finally {
+        await rm(publicationDirectory, { force: true, recursive: true });
+      }
+    }
+  } finally {
+    control?.destroy();
+    await Promise.all([stopProcess(renderer), stopProcess(xvfb)]);
+    if (controlServer.listening) {
+      await new Promise((resolve) => controlServer.close(resolve));
+    }
+    await rm(runtimeDirectory, { force: true, recursive: true });
   }
 }
 
@@ -131,21 +372,8 @@ async function preflightFocusedCapture({
   });
   const failures = [];
 
-  const availableExecutables = new Set();
-  for (const executableName of ["Xvfb", "xwininfo", "scrot", "cargo"]) {
-    if (await executableOnPath(executableName)) {
-      availableExecutables.add(executableName);
-    } else {
-      failures.push(`required executable is unavailable: ${executableName}`);
-    }
-  }
-  const runtimeInputPaths = [
-    "src/renderer/assets/fonts/LibreBaskerville-Variable.ttf",
-    "src/renderer/assets/fonts/LibreBaskerville-Italic-Variable.ttf",
-    "src/renderer/assets/fonts/IBMPlexSans-Variable.ttf",
-    "src/renderer/assets/fonts/IBMPlexSans-Italic-Variable.ttf",
-    selected.fixture,
-  ];
+  const availableExecutables = await addMissingExecutableFailures(failures);
+  const runtimeInputPaths = [...captureFontPaths, selected.fixture];
   let selectedSnapshot;
   try {
     selectedSnapshot = JSON.parse(
@@ -162,82 +390,10 @@ async function preflightFocusedCapture({
       `required Fixture Scenario snapshot is invalid: ${selected.fixture}: ${errorMessage(error)}`,
     );
   }
-  for (const inputPath of runtimeInputPaths) {
-    try {
-      await access(path.join(repositoryRoot, inputPath), fileConstants.R_OK);
-    } catch {
-      failures.push(`required capture input is unreadable: ${inputPath}`);
-    }
-  }
-
-  let outputReady = false;
-  try {
-    await mkdir(outputDirectory, { recursive: true });
-    const outputStats = await stat(outputDirectory);
-    if (!outputStats.isDirectory()) {
-      failures.push(`capture output is not a directory: ${outputDirectory}`);
-    } else {
-      await access(
-        outputDirectory,
-        fileConstants.R_OK | fileConstants.W_OK | fileConstants.X_OK,
-      );
-      outputReady = true;
-    }
-  } catch (error) {
-    failures.push(
-      `capture output is unavailable: ${outputDirectory}: ${errorMessage(error)}`,
-    );
-  }
-
-  if (outputReady) {
-    const collisions = [];
-    for (const { finalCapturePath } of captures) {
-      try {
-        const destinationStats = await lstat(finalCapturePath);
-        if (!destinationStats.isFile() && !destinationStats.isSymbolicLink()) {
-          failures.push(
-            `destination is not a replaceable file: ${finalCapturePath}`,
-          );
-        } else if (!overwrite) {
-          collisions.push(finalCapturePath);
-        }
-      } catch (error) {
-        if (error?.code !== "ENOENT") {
-          failures.push(
-            `could not inspect destination ${finalCapturePath}: ${errorMessage(error)}`,
-          );
-        }
-      }
-    }
-    if (collisions.length > 0) {
-      failures.push(
-        `destination files already exist:\n${collisions.join("\n")}`,
-      );
-    }
-  }
-
-  if (availableExecutables.has("cargo") && failures.length === 0) {
-    try {
-      await runMonitoredProcess(
-        "cargo",
-        ["build", "--locked", "--package", "roonscape-renderer"],
-        {
-          cwd: repositoryRoot,
-          environment: process.env,
-          description: "the renderer build preflight",
-          timeoutMilliseconds: 300_000,
-        },
-      );
-    } catch (error) {
-      failures.push(`renderer build preflight failed: ${errorMessage(error)}`);
-    }
-  }
-
-  if (failures.length > 0) {
-    throw new Error(
-      `Presentation Capture preflight failed:\n${failures.map((failure) => `- ${failure}`).join("\n")}`,
-    );
-  }
+  await addUnreadableInputFailures(runtimeInputPaths, failures);
+  await addDestinationFailures(captures, outputDirectory, overwrite, failures);
+  await addRendererBuildFailure(availableExecutables, failures);
+  assertCapturePreflightSucceeded(failures);
   return captures.map((capture) => ({
     ...capture,
     snapshot: selectedSnapshot,
@@ -296,133 +452,101 @@ async function validateCustomArtwork(requestedPath) {
   };
 }
 
-async function captureFocusedResolution(capture) {
-  const { width, height, viewport, finalCapturePath } = capture;
-  const runtimeDirectory = await mkdtemp(
-    path.join(tmpdir(), "roonscape-focused-capture."),
-  );
-  const controlSocketPath = path.join(runtimeDirectory, "capture-control.sock");
-  const displayConfigurationPath = path.join(runtimeDirectory, "display.json");
-  const controlServer = createServer();
-  let control;
-  let publicationDirectory;
-  let renderer;
-  let xvfb;
+async function addUnreadableInputFailures(inputPaths, failures) {
+  for (const inputPath of inputPaths) {
+    try {
+      await access(path.join(repositoryRoot, inputPath), fileConstants.R_OK);
+    } catch {
+      failures.push(`required capture input is unreadable: ${inputPath}`);
+    }
+  }
+}
+
+async function addMissingExecutableFailures(failures) {
+  const availableExecutables = new Set();
+  for (const executableName of ["Xvfb", "xwininfo", "scrot", "cargo"]) {
+    if (await executableOnPath(executableName)) {
+      availableExecutables.add(executableName);
+    } else {
+      failures.push(`required executable is unavailable: ${executableName}`);
+    }
+  }
+  return availableExecutables;
+}
+
+async function addDestinationFailures(
+  captures,
+  outputDirectory,
+  overwrite,
+  failures,
+) {
   try {
-    publicationDirectory = await mkdtemp(
-      path.join(path.dirname(finalCapturePath), ".roonscape-capture."),
-    );
-    const temporaryCapturePath = path.join(publicationDirectory, "capture.png");
-    await writeFile(
-      displayConfigurationPath,
-      `${JSON.stringify(captureDisplayConfiguration, null, 2)}\n`,
-    );
-    const snapshot = structuredClone(capture.snapshot);
-    if (capture.customArtwork !== undefined) {
-      const artworkPath = path.join(runtimeDirectory, "custom-artwork");
-      await writeFile(artworkPath, capture.customArtwork.contents, {
-        flag: "wx",
-        mode: 0o600,
-      });
-      snapshot.artwork = { revision: 1, path: artworkPath };
+    await mkdir(outputDirectory, { recursive: true });
+    const outputStats = await stat(outputDirectory);
+    if (!outputStats.isDirectory()) {
+      failures.push(`capture output is not a directory: ${outputDirectory}`);
+      return;
     }
-    const revision = 1;
-    snapshot.revision = revision;
-    const selection = {
-      type: "select",
-      scenario: capture.scenario,
-      revision,
-      snapshot,
-    };
-    await new Promise((resolve, reject) => {
-      controlServer.once("error", reject);
-      controlServer.listen(controlSocketPath, resolve);
-    });
-    process.stderr.write(
-      `Capturing Fixture Scenario ${capture.scenario} at ${viewport}\n`,
+    await access(
+      outputDirectory,
+      fileConstants.R_OK | fileConstants.W_OK | fileConstants.X_OK,
     );
-    const displaySession = await startXvfbDisplay({
-      width,
-      height,
-      cwd: repositoryRoot,
-      description: "the focused native capture display",
-    });
-    xvfb = displaySession.xvfb;
-    const connected = once(controlServer, "connection");
-    const environment = {
-      ...process.env,
-      DISPLAY: displaySession.display,
-      GDK_BACKEND: "x11",
-      NO_AT_BRIDGE: "1",
-      ROONSCAPE_CAPTURE_CONTROL: controlSocketPath,
-      ROONSCAPE_CAPTURE_VIEWPORT: viewport,
-      ROONSCAPE_DIAGNOSTICS: "0",
-      ROONSCAPE_STATIC_FIXTURE: "1",
-    };
-    delete environment.ROONSCAPE_CAPTURE_TYPOGRAPHY;
-    delete environment.ROONSCAPE_DISPLAY_CONFIG;
-    delete environment.ROONSCAPE_FIXTURE;
-    delete environment.ROONSCAPE_FIXTURE_AUTO_CLOSE_MS;
-    delete environment.ROONSCAPE_FIXTURE_CONTROL;
-    delete environment.ROONSCAPE_SOCKET;
-    renderer = startNativeRenderer(displayConfigurationPath, environment);
-    await renderer.spawned;
-    [control] = await waitFor(
-      () => connected,
-      renderer,
-      "the renderer capture control connection",
+  } catch (error) {
+    failures.push(
+      `capture output is unavailable: ${outputDirectory}: ${errorMessage(error)}`,
     );
-    const acknowledgements = createInterface({ input: control })[
-      Symbol.asyncIterator
-    ]();
-    control.write(`${JSON.stringify(selection)}\n`);
-    const acknowledgement = await waitFor(
-      async () => {
-        const next = await acknowledgements.next();
-        if (next.done) {
-          throw new Error("capture control channel closed before readiness");
-        }
-        return JSON.parse(next.value);
+    return;
+  }
+
+  const collisions = [];
+  for (const { finalCapturePath } of captures) {
+    try {
+      const destinationStats = await lstat(finalCapturePath);
+      if (!destinationStats.isFile() && !destinationStats.isSymbolicLink()) {
+        failures.push(
+          `destination is not a replaceable file: ${finalCapturePath}`,
+        );
+      } else if (!overwrite) {
+        collisions.push(finalCapturePath);
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        failures.push(
+          `could not inspect destination ${finalCapturePath}: ${errorMessage(error)}`,
+        );
+      }
+    }
+  }
+  if (collisions.length > 0) {
+    failures.push(`destination files already exist:\n${collisions.join("\n")}`);
+  }
+}
+
+async function addRendererBuildFailure(availableExecutables, failures) {
+  if (!availableExecutables.has("cargo") || failures.length > 0) {
+    return;
+  }
+  try {
+    await runMonitoredProcess(
+      "cargo",
+      ["build", "--locked", "--package", "roonscape-renderer"],
+      {
+        cwd: repositoryRoot,
+        environment: process.env,
+        description: "the renderer build preflight",
+        timeoutMilliseconds: 300_000,
       },
-      renderer,
-      `painted Fixture Scenario revision ${revision}`,
     );
-    if (
-      acknowledgement.type !== "painted" ||
-      acknowledgement.scenario !== capture.scenario ||
-      acknowledgement.revision !== revision
-    ) {
-      throw new Error(
-        `renderer acknowledged an unexpected Fixture Scenario revision: ${JSON.stringify(acknowledgement)}`,
-      );
-    }
-    const windowId = await waitForRoonScapeWindow(
-      renderer,
-      environment,
-      width,
-      height,
+  } catch (error) {
+    failures.push(`renderer build preflight failed: ${errorMessage(error)}`);
+  }
+}
+
+function assertCapturePreflightSucceeded(failures) {
+  if (failures.length > 0) {
+    throw new Error(
+      `Presentation Capture preflight failed:\n${failures.map((failure) => `- ${failure}`).join("\n")}`,
     );
-    await captureNativeWindow(
-      windowId,
-      temporaryCapturePath,
-      environment,
-      width,
-      height,
-    );
-    await rename(temporaryCapturePath, finalCapturePath);
-    process.stdout.write(`${finalCapturePath}\n`);
-  } finally {
-    control?.destroy();
-    await Promise.all([stopProcess(renderer), stopProcess(xvfb)]);
-    if (controlServer.listening) {
-      await new Promise((resolve) => controlServer.close(resolve));
-    }
-    await Promise.all([
-      rm(runtimeDirectory, { force: true, recursive: true }),
-      publicationDirectory === undefined
-        ? Promise.resolve()
-        : rm(publicationDirectory, { force: true, recursive: true }),
-    ]);
   }
 }
 
@@ -733,6 +857,7 @@ function delay(milliseconds) {
 
 function parseArguments(arguments_) {
   const parsed = {
+    all: false,
     artwork: undefined,
     list: false,
     listScenarios: false,
@@ -740,6 +865,7 @@ function parseArguments(arguments_) {
     output: undefined,
     only: undefined,
     overwrite: false,
+    profile: undefined,
     resolutions: [],
     scenario: undefined,
     viewport: undefined,
@@ -749,6 +875,10 @@ function parseArguments(arguments_) {
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     switch (argument) {
+      case "--all":
+        rejectDuplicateOption(parsed.all, argument);
+        parsed.all = true;
+        break;
       case "--artwork":
         rejectDuplicateOption(parsed.artwork !== undefined, argument);
         parsed.artwork = requiredValue(arguments_, ++index, argument);
@@ -764,6 +894,10 @@ function parseArguments(arguments_) {
       case "--output":
         rejectDuplicateOption(parsed.output !== undefined, argument);
         parsed.output = requiredValue(arguments_, ++index, argument);
+        break;
+      case "--profile":
+        rejectDuplicateOption(parsed.profile !== undefined, argument);
+        parsed.profile = requiredValue(arguments_, ++index, argument);
         break;
       case "--scenario":
         rejectDuplicateOption(parsed.scenario !== undefined, argument);
@@ -809,6 +943,25 @@ function parseArguments(arguments_) {
   if (parsed.listScenarios && arguments_.length !== 1) {
     throw new Error("--list-scenarios cannot be combined with capture options");
   }
+  if (parsed.profile !== undefined && parsed.profile !== "visual-acceptance") {
+    throw new Error(`unknown capture profile: ${parsed.profile}`);
+  }
+  if (parsed.profile === "visual-acceptance") {
+    if (parsed.output === undefined) {
+      throw new Error("--profile visual-acceptance requires --output");
+    }
+    const incompatibleOption = [
+      [parsed.scenario !== undefined, "--scenario"],
+      [parsed.all, "--all"],
+      [parsed.artwork !== undefined, "--artwork"],
+      [parsed.resolutions.length > 0, "--resolution"],
+    ].find(([present]) => present)?.[1];
+    if (incompatibleOption !== undefined) {
+      throw new Error(
+        `--profile visual-acceptance cannot be combined with ${incompatibleOption}`,
+      );
+    }
+  }
   if (parsed.scenario !== undefined && (parsed.list || parsed.legacyOption)) {
     throw new Error(
       "--scenario cannot be combined with legacy capture options",
@@ -817,11 +970,18 @@ function parseArguments(arguments_) {
   if (parsed.scenario === undefined && parsed.resolutions.length > 0) {
     throw new Error("--resolution requires --scenario");
   }
-  if (parsed.scenario === undefined && parsed.overwrite) {
+  if (
+    parsed.scenario === undefined &&
+    parsed.profile === undefined &&
+    parsed.overwrite
+  ) {
     throw new Error("--overwrite requires --scenario");
   }
   if (parsed.scenario === undefined && parsed.artwork !== undefined) {
     throw new Error("--artwork requires --scenario");
+  }
+  if (parsed.all && parsed.profile === undefined) {
+    throw new Error("unknown capture option: --all");
   }
   return parsed;
 }
