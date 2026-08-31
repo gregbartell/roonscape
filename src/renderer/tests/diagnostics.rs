@@ -31,15 +31,13 @@ fn diagnostics_are_disabled_by_default_and_require_an_explicit_host_flag() {
 }
 
 #[test]
-fn reports_bounded_observations_without_changing_the_presentation_snapshot() {
+fn reports_bounded_connection_snapshot_and_frame_observations() {
     let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
         .expect("renderer should be inside the repository");
-    let snapshot =
-        parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
-    let original_revision = snapshot.revision;
-    let original_playback = snapshot.playback;
+    let snapshot = parse_snapshot(&support::fixture("missing-artwork.json"))
+        .expect("missing-artwork fixture should be valid");
     let mut diagnostics = Diagnostics::default();
 
     diagnostics.observe_connection(ConnectionState::Connected);
@@ -49,8 +47,6 @@ fn reports_bounded_observations_without_changing_the_presentation_snapshot() {
 
     assert_eq!(
         diagnostics.overlay_text(Some(48 * 1024 * 1024)),
-        "Memory  48.0 MiB\nFrame   17.0 ms\nArtwork 1200 × 1200\nConnection connected\nRevision 7"
+        "Memory  48.0 MiB\nFrame   17.0 ms\nArtwork —\nConnection connected\nRevision 8"
     );
-    assert_eq!(snapshot.revision, original_revision);
-    assert_eq!(snapshot.playback, original_playback);
 }

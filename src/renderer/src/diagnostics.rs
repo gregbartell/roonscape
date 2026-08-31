@@ -133,3 +133,23 @@ pub fn current_process_memory_bytes() -> Option<u64> {
     })?;
     resident_kibibytes.checked_mul(1024)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{ConnectionState, Diagnostics};
+
+    #[test]
+    fn formats_available_artwork_dimensions() {
+        let diagnostics = Diagnostics {
+            connection: ConnectionState::Connected,
+            revision: Some(7),
+            artwork_dimensions: Some((1_200, 1_200)),
+            ..Diagnostics::default()
+        };
+
+        assert_eq!(
+            diagnostics.overlay_text(None),
+            "Memory  —\nFrame   —\nArtwork 1200 × 1200\nConnection connected\nRevision 7"
+        );
+    }
+}

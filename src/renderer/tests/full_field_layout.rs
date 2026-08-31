@@ -54,50 +54,53 @@ fn centers_a_sixty_percent_full_field_composition_inside_every_safe_viewport() {
 }
 
 #[test]
-fn keeps_full_field_status_heading_and_accent_anchors_stable_across_scenarios() {
-    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
-        let expected = FullFieldLayout::for_viewport(viewport);
+fn fixture_scenarios_resolve_full_field_explanations_only_when_required() {
+    for (fixture, has_explanation, _) in FULL_FIELD_FIXTURES {
+        let snapshot = parse_snapshot(&support::fixture(fixture))
+            .expect("Full-field Fixture Scenario should be valid");
+        let presentation = presentation_from_snapshot(&snapshot)
+            .expect("Full-field Fixture Scenario should produce a presentation");
+        let Presentation::FullField(presentation) = presentation else {
+            panic!("{fixture} should use a Full-field Presentation");
+        };
 
-        for (fixture, has_explanation, _) in FULL_FIELD_FIXTURES {
-            let snapshot = parse_snapshot(&support::fixture(fixture))
-                .expect("Full-field Fixture Scenario should be valid");
-            let presentation = presentation_from_snapshot(&snapshot)
-                .expect("Full-field Fixture Scenario should produce a presentation");
-            let Presentation::FullField(presentation) = presentation else {
-                panic!("{fixture} should use a Full-field Presentation");
-            };
+        assert_eq!(
+            presentation.explanation.is_some(),
+            has_explanation,
+            "{fixture}"
+        );
+    }
+}
 
-            assert_eq!(
-                presentation.explanation.is_some(),
-                has_explanation,
-                "{fixture}"
-            );
-            let actual = FullFieldLayout::for_viewport(viewport);
-            assert_eq!(
-                (
-                    actual.composition_left_viewport_x_px,
-                    actual.text_left_viewport_x_px,
-                    actual.presentation_status_slot,
-                    actual.heading_slot,
-                ),
-                (
-                    expected.composition_left_viewport_x_px,
-                    expected.text_left_viewport_x_px,
-                    expected.presentation_status_slot,
-                    expected.heading_slot,
-                ),
-                "{fixture} should preserve Full-field anchors at {viewport:?}",
-            );
-            assert_eq!(
-                actual.accent_bottom_viewport_y_px(has_explanation),
-                if has_explanation {
-                    expected.explanation_slot.bottom_viewport_y_px()
-                } else {
-                    expected.heading_slot.bottom_viewport_y_px()
-                },
-                "{fixture} should extend the accent only through its occupied fixed slots at {viewport:?}",
-            );
-        }
+#[test]
+fn full_field_presentation_accent_uses_approved_extents() {
+    let expected_accent_bottoms_px = [
+        (400, 440),
+        (500, 552),
+        (650, 702),
+        (660, 721),
+        (620, 703),
+        (1_180, 1_293),
+        (1_300, 1_413),
+    ];
+
+    for (viewport, (heading_bottom_px, explanation_bottom_px)) in
+        representative_viewports::REPRESENTATIVE_VIEWPORTS
+            .into_iter()
+            .zip(expected_accent_bottoms_px)
+    {
+        let layout = FullFieldLayout::for_viewport(viewport);
+
+        assert_eq!(
+            layout.accent_bottom_viewport_y_px(false),
+            heading_bottom_px,
+            "heading-only copy should use the approved accent extent at {viewport:?}",
+        );
+        assert_eq!(
+            layout.accent_bottom_viewport_y_px(true),
+            explanation_bottom_px,
+            "explanation-bearing copy should use the approved accent extent at {viewport:?}",
+        );
     }
 }
 
@@ -239,28 +242,17 @@ fn raises_the_full_field_explanation_cap_for_television_distance() {
 }
 
 #[test]
-fn available_full_field_scenarios_use_the_shared_identity_anchor_and_unavailable_ones_omit_it() {
-    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
-        let expected_anchor = FullFieldLayout::for_viewport(viewport).identity_anchor;
+fn fixture_scenarios_resolve_full_field_identity_only_when_available() {
+    for (fixture, _, has_identity) in FULL_FIELD_FIXTURES {
+        let snapshot = parse_snapshot(&support::fixture(fixture))
+            .expect("Full-field identity Fixture Scenario should be valid");
+        let presentation = presentation_from_snapshot(&snapshot)
+            .expect("Full-field identity Fixture Scenario should produce a presentation");
+        let Presentation::FullField(presentation) = presentation else {
+            panic!("{fixture} should use a Full-field Presentation");
+        };
 
-        for (fixture, _, has_identity) in FULL_FIELD_FIXTURES {
-            let snapshot = parse_snapshot(&support::fixture(fixture))
-                .expect("Full-field identity Fixture Scenario should be valid");
-            let presentation = presentation_from_snapshot(&snapshot)
-                .expect("Full-field identity Fixture Scenario should produce a presentation");
-            let Presentation::FullField(presentation) = presentation else {
-                panic!("{fixture} should use a Full-field Presentation");
-            };
-
-            assert_eq!(presentation.identity.is_some(), has_identity, "{fixture}");
-            if has_identity {
-                assert_eq!(
-                    FullFieldLayout::for_viewport(viewport).identity_anchor,
-                    expected_anchor,
-                    "{fixture} should retain the established identity anchor at {viewport:?}",
-                );
-            }
-        }
+        assert_eq!(presentation.identity.is_some(), has_identity, "{fixture}");
     }
 }
 

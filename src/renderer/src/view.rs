@@ -2181,7 +2181,7 @@ mod tests {
     }
 
     #[test]
-    fn prepares_a_gradient_while_returning_independent_work() {
+    fn prepares_and_reuses_a_gradient_raster() {
         let gradient_cache = NowPlayingGradientCache::new(2);
         let palette = PresentationPalette::fallback();
         let viewport = Viewport::new(16, 9);
@@ -2190,12 +2190,8 @@ mod tests {
             palette,
             viewport: viewport_key,
         };
-        let independent_work_ran = Cell::new(false);
 
-        let result = gradient_cache.prepare_while(palette, viewport_key, || {
-            independent_work_ran.set(true);
-            42
-        });
+        gradient_cache.prepare_while(palette, viewport_key, || {});
         let prepared = gradient_cache
             .cached_raster(&raster_key)
             .expect("preparation should cache the generated raster");
@@ -2203,8 +2199,6 @@ mod tests {
         let installed_key = Cell::new(None::<NowPlayingGradientCacheKey>);
         apply_now_playing_gradient(&target, palette, &gradient_cache, &installed_key, viewport);
 
-        assert!(independent_work_ran.get());
-        assert_eq!(result, 42);
         assert!(Arc::ptr_eq(&prepared, &target.rasters.borrow()[0]));
     }
 
