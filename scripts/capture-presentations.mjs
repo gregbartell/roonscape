@@ -29,7 +29,7 @@ import {
   runMonitoredProcess,
   startMonitoredProcess,
   startXvfbDisplay,
-  stopProcess,
+  stopProcesses,
   waitFor,
 } from "./process-harness.mjs";
 import {
@@ -201,6 +201,7 @@ async function captureControlledSession(captures, completedPaths) {
   let control;
   let renderer;
   let xvfb;
+  let captureFailure;
 
   try {
     await writeFile(
@@ -329,9 +330,12 @@ async function captureControlledSession(captures, completedPaths) {
         await rm(publicationDirectory, { force: true, recursive: true });
       }
     }
+  } catch (error) {
+    captureFailure = error;
+    throw error;
   } finally {
     control?.destroy();
-    await Promise.all([stopProcess(renderer), stopProcess(xvfb)]);
+    await stopProcesses([renderer, xvfb], { failure: captureFailure });
     if (controlServer.listening) {
       await new Promise((resolve) => controlServer.close(resolve));
     }

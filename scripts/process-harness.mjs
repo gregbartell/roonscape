@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 
+const diagnosticTailBytes = 64 * 1024;
+const truncationMarker = "[... earlier output truncated ...]\n";
+
 export function startMonitoredProcess(
   command,
   arguments_,
@@ -14,6 +17,12 @@ export function startMonitoredProcess(
   child.capturedError = undefined;
   child.capturedStandardOutput = "";
   child.capturedStandardError = "";
+  const captureStandardOutput = captureTail((output) => {
+    child.capturedStandardOutput = output;
+  });
+  const captureStandardError = captureTail((output) => {
+    child.capturedStandardError = output;
+  });
   child.spawned = new Promise((resolve, reject) => {
     child.once("spawn", resolve);
     child.once("error", reject);
@@ -21,14 +30,8 @@ export function startMonitoredProcess(
   child.on("error", (error) => {
     child.capturedError = error;
   });
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    child.capturedStandardOutput += chunk;
-  });
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk) => {
-    child.capturedStandardError += chunk;
-  });
+  child.stdout.on("data", captureStandardOutput);
+  child.stderr.on("data", captureStandardError);
   return child;
 }
 
@@ -107,8 +110,11 @@ export async function runMonitoredProcess(
   await child.spawned;
   const outcome = await completionBefore(completed, timeoutMilliseconds);
   if (outcome.kind === "timed-out") {
-    await stopProcess(child);
-    throw new Error(`timed out waiting for ${description}`);
+    await failAfterStopping(
+      new Error(`timed out waiting for ${description}`),
+      child,
+      { description },
+    );
   }
 
   const [exitCode, signal] = outcome.value;
@@ -120,25 +126,63 @@ export async function runMonitoredProcess(
 
 export async function stopProcess(
   child,
-  { graceMilliseconds = 2_000, killMilliseconds = 2_000 } = {},
+  { description, graceMilliseconds = 2_000, killMilliseconds = 2_000 } = {},
 ) {
   if (
     child === undefined ||
-    child.exitCode !== null ||
-    child.signalCode !== null ||
+    processHasExited(child) ||
     child.capturedError !== undefined
   ) {
     return;
   }
 
+  const escalationStarted = Date.now();
   if (await stopWithSignal(child, "SIGTERM", graceMilliseconds)) {
     return;
   }
-  if (child.exitCode !== null || child.signalCode !== null) {
+  if (processHasExited(child)) {
     return;
   }
 
-  await stopWithSignal(child, "SIGKILL", killMilliseconds);
+  if (
+    (await stopWithSignal(child, "SIGKILL", killMilliseconds)) ||
+    processHasExited(child)
+  ) {
+    return;
+  }
+
+  const elapsedMilliseconds = Date.now() - escalationStarted;
+  const command = child.spawnfile ?? "monitored process";
+  const processDescription =
+    description === undefined || description === command
+      ? command
+      : `${description} (${command})`;
+  throw new Error(
+    `failed to clean up ${processDescription}: no exit after SIGTERM and SIGKILL (${elapsedMilliseconds} ms elapsed)`,
+  );
+}
+
+export async function stopProcesses(
+  children,
+  { failure, ...stopOptions } = {},
+) {
+  const results = await Promise.allSettled(
+    children.map((child) => stopProcess(child, stopOptions)),
+  );
+  const cleanupFailures = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (cleanupFailures.length === 0) {
+    return;
+  }
+
+  throw new AggregateError(
+    failure === undefined ? cleanupFailures : [failure, ...cleanupFailures],
+    failure === undefined
+      ? "failed to clean up monitored processes"
+      : errorMessage(failure),
+    { cause: cleanupFailures[0] },
+  );
 }
 
 export async function availableXDisplayNumber({
@@ -194,8 +238,7 @@ export async function startXvfbDisplay({
     });
     return { display, xvfb };
   } catch (error) {
-    await stopProcess(xvfb);
-    throw error;
+    await failAfterStopping(error, xvfb, { description });
   }
 }
 
@@ -224,17 +267,27 @@ function processDetails(child) {
 
 function stopWithSignal(child, signal, milliseconds) {
   return new Promise((resolve) => {
-    const closed = () => {
+    const exited = () => {
       clearTimeout(timeout);
       resolve(true);
     };
     const timeout = setTimeout(() => {
-      child.off("close", closed);
+      child.off("exit", exited);
       resolve(false);
     }, milliseconds);
-    child.once("close", closed);
+    child.once("exit", exited);
+    if (processHasExited(child)) {
+      child.off("exit", exited);
+      clearTimeout(timeout);
+      resolve(true);
+      return;
+    }
     child.kill(signal);
   });
+}
+
+function processHasExited(child) {
+  return child.exitCode !== null || child.signalCode !== null;
 }
 
 function actionBefore(action, milliseconds) {
@@ -266,4 +319,38 @@ function settleBefore(promise, milliseconds) {
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function failAfterStopping(failure, child, stopOptions) {
+  await stopProcesses([child], { failure, ...stopOptions });
+  throw failure;
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function captureTail(update) {
+  let tail = Buffer.alloc(0);
+  let truncated = false;
+
+  return (chunk) => {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (tail.length + bytes.length > diagnosticTailBytes) {
+      truncated = true;
+      tail =
+        bytes.length >= diagnosticTailBytes
+          ? bytes.subarray(bytes.length - diagnosticTailBytes)
+          : Buffer.concat(
+              [
+                tail.subarray(tail.length + bytes.length - diagnosticTailBytes),
+                bytes,
+              ],
+              diagnosticTailBytes,
+            );
+    } else {
+      tail = Buffer.concat([tail, bytes], tail.length + bytes.length);
+    }
+    update(`${truncated ? truncationMarker : ""}${tail.toString("utf8")}`);
+  };
 }
