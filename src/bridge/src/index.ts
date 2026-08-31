@@ -10,6 +10,7 @@ import {
   displayConfigurationFilePath,
   rejectRemovedDisplayConfigurationOverride,
 } from "./display-configuration.js";
+import { installBridgeLifecycle } from "./bridge-lifecycle.js";
 import { startSnapshotPublisher } from "./fixture-publisher.js";
 import { initialAvailabilitySnapshot, startRoonBridge } from "./roon-bridge.js";
 import { createSupportedRoonServices } from "./roon-services.js";
@@ -47,14 +48,7 @@ const bridge = startRoonBridge({
 
 process.stdout.write(`RoonScape bridge listening at ${socketPath}\n`);
 
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.once(signal, () => {
-    void bridge
-      .stop()
-      .then(() => publisher.close())
-      .finally(() => process.exit(0));
-  });
-}
+installBridgeLifecycle({ bridge, publisher });
 
 function bridgeFileOptions(arguments_: string[]): {
   authorizationFile?: string;

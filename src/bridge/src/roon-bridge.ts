@@ -1,5 +1,6 @@
 import type { Availability, PresentationSnapshot } from "./snapshot.js";
 import type { ArtworkFiles } from "./artwork-file-store.js";
+import { attemptAllCleanup } from "./cleanup.js";
 import type { DisplayConfigurationStore } from "./display-configuration.js";
 import { SnapshotPublicationError } from "./fixture-publisher.js";
 import { initializeRoonExtension } from "./roon-extension.js";
@@ -325,11 +326,12 @@ export function startRoonBridge({
 
   return {
     currentSnapshot: () => currentSnapshot,
-    stop: async () => {
-      services.extension.stop_discovery();
-      services.extension.disconnect_all();
-      await artworkPresentation.cancelAndClear();
-    },
+    stop: () =>
+      attemptAllCleanup("Could not stop Roon bridge", [
+        () => services.extension.stop_discovery(),
+        () => services.extension.disconnect_all(),
+        () => artworkPresentation.cancelAndClear(),
+      ]),
   };
 }
 

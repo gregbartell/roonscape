@@ -1,4 +1,5 @@
 import { startFixturePublisher } from "./fixture-publisher.js";
+import { installFixtureModeLifecycle } from "./fixture-lifecycle.js";
 import { startFixtureModeSession } from "./fixture-mode-session.js";
 import { loadFixtureScenarioCatalog } from "./fixture-scenario-catalog.js";
 import { loadSnapshot } from "./snapshot.js";
@@ -37,8 +38,4 @@ if (explicitFixture === undefined) {
 
 process.stdout.write(`Fixture publisher listening at ${socketPath}\n`);
 
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.once(signal, () => {
-    void fixtureSession.close().finally(() => process.exit(0));
-  });
-}
+installFixtureModeLifecycle({ fixtureSession });

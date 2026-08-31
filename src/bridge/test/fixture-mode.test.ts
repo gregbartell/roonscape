@@ -58,6 +58,39 @@ test("ordinary Fixture Mode starts predictably at Playing", async () => {
   });
 });
 
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  test(`${signal} cleanly closes a Fixture Mode subprocess`, async () => {
+    await withTaskDirectory(async (taskDirectory) => {
+      const { socketPath, controlSocketPath, fixture } =
+        startOrdinaryFixture(taskDirectory);
+
+      try {
+        await readPublishedSnapshot(fixture.child, socketPath);
+        await access(controlSocketPath);
+        const closed = once(fixture.child, "close");
+
+        fixture.child.kill(signal);
+
+        const [exitCode, observedSignal] = (await closed) as [
+          number | null,
+          NodeJS.Signals | null,
+        ];
+        assert.deepEqual(
+          { exitCode, signal: observedSignal },
+          {
+            exitCode: 0,
+            signal: null,
+          },
+        );
+        await assert.rejects(access(socketPath), { code: "ENOENT" });
+        await assert.rejects(access(controlSocketPath), { code: "ENOENT" });
+      } finally {
+        await stop(fixture.child);
+      }
+    });
+  });
+}
+
 test("static Fixture Mode preserves the Playing scenario source position", async () => {
   await withTaskDirectory(async (taskDirectory) => {
     const { socketPath, controlSocketPath, fixture } = startOrdinaryFixture(

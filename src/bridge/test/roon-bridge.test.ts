@@ -50,6 +50,7 @@ interface RoonBoundary {
   statusUpdates: Array<{ message: string; isError: boolean }>;
   publicationDiagnostics: string[];
   currentSnapshot(): PresentationSnapshot;
+  stop(): Promise<void>;
 }
 
 function createRoonBoundary(
@@ -178,6 +179,7 @@ function createRoonBoundary(
     statusUpdates,
     publicationDiagnostics,
     currentSnapshot: () => bridge.currentSnapshot(),
+    stop: () => bridge.stop(),
   };
 }
 
@@ -195,6 +197,45 @@ function artworkZone(imageKey: string, title = "A Moment Apart"): RoonZone {
     },
   };
 }
+
+test("stop attempts service, discovery, and artwork cleanup and preserves every failure", async () => {
+  const events: string[] = [];
+  const boundary = createRoonBoundary(undefined, {
+    ...unusedArtworkFiles(),
+    clear: async () => {
+      events.push("artwork cleared");
+      throw new Error("artwork cleanup failed");
+    },
+  });
+  boundary.extension.disconnect_all = () => {
+    events.push("services disconnected");
+    throw new Error("service cleanup failed");
+  };
+  boundary.extension.stop_discovery = () => {
+    events.push("discovery stopped");
+    throw new Error("discovery cleanup failed");
+  };
+
+  await assert.rejects(boundary.stop(), (error) => {
+    assert.ok(error instanceof AggregateError);
+    assert.deepEqual(
+      error.errors.map((failure: unknown) =>
+        failure instanceof Error ? failure.message : String(failure),
+      ),
+      [
+        "discovery cleanup failed",
+        "service cleanup failed",
+        "artwork cleanup failed",
+      ],
+    );
+    return true;
+  });
+  assert.deepEqual(events, [
+    "discovery stopped",
+    "services disconnected",
+    "artwork cleared",
+  ]);
+});
 
 async function withArtworkTestBoundary(
   run: (boundary: RoonBoundary) => Promise<void>,

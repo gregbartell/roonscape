@@ -1,6 +1,7 @@
 import { chmod } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 
+import { attemptAllCleanup } from "./cleanup.js";
 import type { FixtureScenario } from "./fixture-scenario-catalog.js";
 import {
   assertSnapshotPublishable,
@@ -12,6 +13,27 @@ export type FixtureNavigationIntent = "Previous" | "Next";
 
 export interface FixtureModeSession {
   close(): Promise<void>;
+}
+
+interface FixtureModeSessionCleanup {
+  disconnectControlClients(): void;
+  closeControlServer(): Promise<void>;
+  closePublisher(): Promise<void>;
+}
+
+export function createFixtureModeSession({
+  disconnectControlClients,
+  closeControlServer,
+  closePublisher,
+}: FixtureModeSessionCleanup): FixtureModeSession {
+  return {
+    close: () =>
+      attemptAllCleanup("Could not stop Fixture Mode", [
+        disconnectControlClients,
+        closeControlServer,
+        closePublisher,
+      ]),
+  };
 }
 
 export interface FixtureModeSessionOptions {
@@ -96,14 +118,15 @@ export async function startFixtureModeSession(
   }
 
   log(`Fixture Scenario: ${initialScenario.label}\n`);
-  return {
-    close: async () => {
+  return createFixtureModeSession({
+    disconnectControlClients: () => {
       for (const connection of connections) {
         connection.destroy();
       }
-      await Promise.all([close(controlServer), publisher.close()]);
     },
-  };
+    closeControlServer: () => close(controlServer),
+    closePublisher: () => publisher.close(),
+  });
 }
 
 function selectedSnapshot(
