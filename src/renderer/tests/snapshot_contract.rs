@@ -290,3 +290,37 @@ fn rejects_the_removed_display_zone_snapshot_field() {
 
     assert!(error.to_string().contains("violates the schema"));
 }
+
+#[test]
+fn bounds_roon_supplied_display_strings_by_unicode_code_points() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(&support::fixture("playing.json")).expect("fixture should be JSON");
+    let cases = [
+        (vec!["trackedOutput", "name"], 256_usize),
+        (vec!["trackedZone", "name"], 256_usize),
+        (vec!["nowPlaying", "title"], 1_024_usize),
+        (vec!["nowPlaying", "artist"], 1_024_usize),
+        (vec!["nowPlaying", "album"], 1_024_usize),
+    ];
+
+    for (path, limit) in cases {
+        let mut bounded = fixture.clone();
+        let mut oversized = fixture.clone();
+        set_string(&mut bounded, &path, &"🌌".repeat(limit));
+        set_string(&mut oversized, &path, &"🌌".repeat(limit + 1));
+
+        parse_snapshot(&bounded.to_string())
+            .expect("the field limit should count Unicode code points");
+        let error = parse_snapshot(&oversized.to_string())
+            .expect_err("one Unicode code point beyond the field limit should fail");
+        assert!(error.to_string().contains("violates the schema"));
+    }
+}
+
+fn set_string(candidate: &mut serde_json::Value, path: &[&str], value: &str) {
+    let mut target = candidate;
+    for segment in &path[..path.len() - 1] {
+        target = &mut target[*segment];
+    }
+    target[path[path.len() - 1]] = value.into();
+}

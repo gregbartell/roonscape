@@ -97,6 +97,58 @@ fn rejects_a_selection_whose_command_and_snapshot_revisions_differ() {
 }
 
 #[test]
+fn accepts_a_selection_at_the_complete_serialized_snapshot_limit() {
+    let runtime_directory = tempfile::Builder::new()
+        .prefix("roonscape.")
+        .tempdir()
+        .expect("private runtime directory should be creatable");
+    let control_socket_path = runtime_directory.path().join("capture-control.sock");
+    let listener =
+        UnixListener::bind(&control_socket_path).expect("capture control socket should bind");
+    let snapshot = snapshot_with_serialized_bytes(64 * 1024);
+    thread::spawn(move || {
+        let (mut connection, _) = listener.accept().expect("renderer should connect");
+        writeln!(
+            connection,
+            "{{\"type\":\"select\",\"scenario\":\"playing\",\"revision\":7,\"snapshot\":{snapshot}}}"
+        )
+        .expect("selection should be writable");
+    });
+
+    let (_, selection) = CaptureControl::connect(&control_socket_path)
+        .expect("a snapshot at the shared serialized limit should be accepted");
+    assert_eq!(selection.revision(), 7);
+}
+
+#[test]
+fn rejects_a_selection_beyond_the_complete_serialized_snapshot_limit() {
+    let runtime_directory = tempfile::Builder::new()
+        .prefix("roonscape.")
+        .tempdir()
+        .expect("private runtime directory should be creatable");
+    let control_socket_path = runtime_directory.path().join("capture-control.sock");
+    let listener =
+        UnixListener::bind(&control_socket_path).expect("capture control socket should bind");
+    let snapshot = snapshot_with_serialized_bytes(64 * 1024 + 1);
+    thread::spawn(move || {
+        let (mut connection, _) = listener.accept().expect("renderer should connect");
+        writeln!(
+            connection,
+            "{{\"type\":\"select\",\"scenario\":\"playing\",\"revision\":7,\"snapshot\":{snapshot}}}"
+        )
+        .expect("selection should be writable");
+    });
+
+    let error = CaptureControl::connect(&control_socket_path)
+        .err()
+        .expect("a snapshot beyond the shared serialized limit should fail");
+    assert_eq!(
+        error.to_string(),
+        "invalid capture control command: snapshot exceeds 64 KiB"
+    );
+}
+
+#[test]
 fn waits_for_deferred_presentation_work_and_a_subsequent_paint_without_using_stale_readiness() {
     let mut painted = PaintedFixtureSelection::new(Some(FixtureSelectionIdentity::new(
         "output-unavailable",
@@ -130,4 +182,18 @@ fn snapshot_at_revision(snapshot: &str, revision: u64) -> String {
         serde_json::from_str(snapshot).expect("fixture should be valid JSON");
     snapshot["revision"] = revision.into();
     snapshot.to_string()
+}
+
+fn snapshot_with_serialized_bytes(serialized_bytes: usize) -> String {
+    let mut snapshot: serde_json::Value = serde_json::from_str(&support::fixture("playing.json"))
+        .expect("fixture should be valid JSON");
+    snapshot["artwork"]["path"] = "".into();
+    let base = snapshot.to_string();
+    let padding = serialized_bytes
+        .checked_sub(base.len() + 1)
+        .expect("target should fit the base snapshot");
+    snapshot["artwork"]["path"] = "x".repeat(padding).into();
+    let snapshot = snapshot.to_string();
+    assert_eq!(snapshot.len() + 1, serialized_bytes);
+    snapshot
 }

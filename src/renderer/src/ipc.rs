@@ -8,9 +8,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError, sync_channel};
 use std::thread;
 use std::time::Duration;
 
-use crate::contract::{PresentationSnapshot, SnapshotError, parse_snapshot};
-
-const MAX_SNAPSHOT_BYTES: u64 = 64 * 1024;
+use crate::contract::{MAX_SNAPSHOT_BYTES, PresentationSnapshot, SnapshotError, parse_snapshot};
 
 pub struct SnapshotReader {
     reader: BufReader<UnixStream>,

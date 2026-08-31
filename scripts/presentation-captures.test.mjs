@@ -19,8 +19,31 @@ import {
   buildPresentationCapturePlan,
   selectFocusedPresentationCapture,
 } from "./presentation-captures.mjs";
+import { validatePresentationCaptureSnapshot } from "./presentation-snapshot.mjs";
 
 const execFileAsync = promisify(execFile);
+
+test("Presentation Capture enforces the shared snapshot field and total limits", async () => {
+  const snapshot = JSON.parse(
+    await readFile(
+      new URL("../src/shared/fixtures/playing.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const oversizedTitle = structuredClone(snapshot);
+  oversizedTitle.nowPlaying.title = "🌌".repeat(1_025);
+  await assert.rejects(
+    validatePresentationCaptureSnapshot(oversizedTitle),
+    /Invalid presentation snapshot/,
+  );
+
+  const oversizedMessage = structuredClone(snapshot);
+  oversizedMessage.artwork.path = "x".repeat(64 * 1024);
+  await assert.rejects(
+    validatePresentationCaptureSnapshot(oversizedMessage),
+    /Snapshot exceeds 64 KiB/,
+  );
+});
 
 const REPRESENTATIVE_VIEWPORTS = [
   "1280x720",

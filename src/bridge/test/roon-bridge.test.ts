@@ -20,6 +20,7 @@ import {
   type RoonStatusService,
 } from "../src/roon-bridge.js";
 import type { DisplayConfigurationStore } from "../src/display-configuration.js";
+import { assertSnapshotPublishable } from "../src/fixture-publisher.js";
 import {
   type PresentationSnapshot,
   validateSnapshot,
@@ -47,6 +48,8 @@ interface RoonBoundary {
   resolveImageRequest(index: number, contentType: string, image: Buffer): void;
   snapshots: PresentationSnapshot[];
   statusUpdates: Array<{ message: string; isError: boolean }>;
+  publicationDiagnostics: string[];
+  currentSnapshot(): PresentationSnapshot;
 }
 
 function createRoonBoundary(
@@ -61,6 +64,7 @@ function createRoonBoundary(
     | undefined;
   const snapshots: PresentationSnapshot[] = [];
   const statusUpdates: Array<{ message: string; isError: boolean }> = [];
+  const publicationDiagnostics: string[] = [];
   const imageRequests: RoonBoundary["imageRequests"] = [];
   const imageCallbacks: Array<
     (error: string | false, contentType?: string, image?: Buffer) => void
@@ -106,7 +110,7 @@ function createRoonBoundary(
     },
   };
 
-  startRoonBridge({
+  const bridge = startRoonBridge({
     authorizationStore,
     artworkFiles,
     displayConfigurationStore,
@@ -118,7 +122,11 @@ function createRoonBoundary(
         status,
       };
     },
-    publish: (snapshot) => snapshots.push(snapshot),
+    publish: (snapshot) => {
+      assertSnapshotPublishable(snapshot);
+      snapshots.push(snapshot);
+    },
+    reportPublicationFailure: (reason) => publicationDiagnostics.push(reason),
     scheduleArtworkRetry: (retry, delayMilliseconds) => {
       const scheduledRetry = { cancelled: false, retry };
       artworkRetries.push(scheduledRetry);
@@ -168,6 +176,8 @@ function createRoonBoundary(
     },
     snapshots,
     statusUpdates,
+    publicationDiagnostics,
+    currentSnapshot: () => bridge.currentSnapshot(),
   };
 }
 
@@ -1531,4 +1541,176 @@ test("reports each availability condition through Roon extension status", () => 
     },
     { message: "Disconnected from Roon", isError: true },
   ]);
+});
+
+test("rejects invalid Live Mode candidates atomically and recovers publication status", () => {
+  const boundary = createRoonBoundary("output-speaker-system");
+  boundary.extensionOptions().core_paired(boundary.core());
+  const validZone: RoonZone = {
+    zone_id: "zone-living-room",
+    display_name: "Living Room",
+    state: "playing",
+    outputs: [
+      { output_id: "output-speaker-system", display_name: "Speaker System" },
+    ],
+    now_playing: {
+      three_line: {
+        line1: "Last Light on Phobos",
+        line2: "Evelyn Lark",
+        line3: "Signals from the Quiet Sea",
+      },
+    },
+  };
+  boundary.emitZones("Subscribed", { zones: [validZone] });
+  const lastValid = boundary.snapshots.at(-1);
+  assert.ok(lastValid);
+
+  const invalidUnicodeTitle = "rejected-unicode-\ud800";
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          ...validZone,
+          now_playing: {
+            image_key: "rejected-artwork",
+            three_line: {
+              ...validZone.now_playing?.three_line,
+              line1: invalidUnicodeTitle,
+            },
+          },
+        },
+      ],
+    });
+  }
+
+  const oversizedTitle = `rejected-title-${"x".repeat(1_025)}`;
+  boundary.emitZones("Changed", {
+    zones_changed: [
+      {
+        ...validZone,
+        now_playing: {
+          image_key: "rejected-artwork",
+          three_line: {
+            ...validZone.now_playing?.three_line,
+            line1: oversizedTitle,
+          },
+        },
+      },
+    ],
+  });
+  boundary.emitZones("Changed", {
+    zones_changed: [
+      {
+        ...validZone,
+        now_playing: {
+          image_key: "rejected-artwork",
+          three_line: {
+            ...validZone.now_playing?.three_line,
+            line1: oversizedTitle,
+          },
+        },
+      },
+    ],
+  });
+
+  const oversizedOutput = `rejected-output-${"x".repeat(257)}`;
+  boundary.emitZones("Changed", {
+    zones_changed: [
+      {
+        ...validZone,
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: oversizedOutput,
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.deepEqual(boundary.snapshots.at(-1), lastValid);
+  assert.deepEqual(boundary.currentSnapshot(), lastValid);
+  assert.deepEqual(boundary.imageRequests, []);
+  assert.deepEqual(boundary.publicationDiagnostics, [
+    "Title contains invalid Unicode",
+    "Title exceeds 1,024 Unicode code points",
+    "Tracked Output name exceeds 256 Unicode code points",
+  ]);
+  assert.ok(
+    boundary.publicationDiagnostics.every(
+      (diagnostic) =>
+        !diagnostic.includes(oversizedTitle) &&
+        !diagnostic.includes(oversizedOutput) &&
+        !diagnostic.includes(invalidUnicodeTitle),
+    ),
+  );
+  assert.deepEqual(boundary.statusUpdates.slice(-3), [
+    {
+      message: "Publication failed: Title contains invalid Unicode",
+      isError: true,
+    },
+    {
+      message: "Publication failed: Title exceeds 1,024 Unicode code points",
+      isError: true,
+    },
+    {
+      message:
+        "Publication failed: Tracked Output name exceeds 256 Unicode code points",
+      isError: true,
+    },
+  ]);
+
+  boundary.emitZones("Changed", {
+    zones_changed: [validZone],
+  });
+
+  assert.equal(boundary.snapshots.at(-1)?.revision, lastValid.revision + 1);
+  assert.equal(
+    boundary.snapshots.at(-1)?.nowPlaying?.title,
+    "Last Light on Phobos",
+  );
+  assert.deepEqual(boundary.statusUpdates.at(-1), {
+    message: "Connected",
+    isError: false,
+  });
+});
+
+test("republishes the last valid Idle state to recover publication status", () => {
+  const boundary = createRoonBoundary("output-speaker-system");
+  boundary.extensionOptions().core_paired(boundary.core());
+  const idleZone: RoonZone = {
+    zone_id: "zone-living-room",
+    display_name: "Living Room",
+    state: "stopped",
+    outputs: [
+      { output_id: "output-speaker-system", display_name: "Speaker System" },
+    ],
+  };
+  boundary.emitZones("Subscribed", { zones: [idleZone] });
+  const lastValidRevision = boundary.currentSnapshot().revision;
+
+  boundary.emitZones("Changed", {
+    zones_changed: [
+      {
+        ...idleZone,
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "x".repeat(257),
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(boundary.currentSnapshot().revision, lastValidRevision);
+  assert.equal(boundary.statusUpdates.at(-1)?.isError, true);
+
+  boundary.emitZones("Changed", { zones_changed: [idleZone] });
+
+  assert.equal(boundary.currentSnapshot().revision, lastValidRevision + 1);
+  assert.equal(boundary.currentSnapshot().playback, "stopped");
+  assert.deepEqual(boundary.statusUpdates.at(-1), {
+    message: "Connected",
+    isError: false,
+  });
 });

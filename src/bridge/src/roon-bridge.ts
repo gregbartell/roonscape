@@ -1,6 +1,7 @@
 import type { Availability, PresentationSnapshot } from "./snapshot.js";
 import type { ArtworkFiles } from "./artwork-file-store.js";
 import type { DisplayConfigurationStore } from "./display-configuration.js";
+import { SnapshotPublicationError } from "./fixture-publisher.js";
 import { initializeRoonExtension } from "./roon-extension.js";
 
 type Unavailable = Exclude<Availability, "available">;
@@ -142,6 +143,7 @@ interface StartRoonBridgeOptions {
   displayConfigurationStore: DisplayConfigurationStore;
   createRoonServices: CreateRoonServices;
   publish(snapshot: PresentationSnapshot): void;
+  reportPublicationFailure?: (reason: string) => void;
   scheduleArtworkRetry?: ScheduleArtworkRetry;
   now?: () => Date;
 }
@@ -161,6 +163,7 @@ export function startRoonBridge({
   displayConfigurationStore,
   createRoonServices,
   publish,
+  reportPublicationFailure = reportSnapshotPublicationFailure,
   scheduleArtworkRetry = scheduleRetryWithTimeout,
   now = () => new Date(),
 }: StartRoonBridgeOptions): RoonBridge {
@@ -172,16 +175,35 @@ export function startRoonBridge({
     : "pairingRequired";
   let currentSnapshot = unavailableSnapshot(revision, initialAvailability);
   let updateStatus: (availability: Availability) => void = () => undefined;
+  let updatePublicationFailureStatus: (reason: string) => void = () =>
+    undefined;
+  let lastPublicationFailureCode: string | undefined;
   let activeCore: RoonCore | undefined;
 
   const publishState: PublishState = (state) => {
-    if (samePresentation(currentSnapshot, state)) {
+    if (
+      samePresentation(currentSnapshot, state) &&
+      lastPublicationFailureCode === undefined
+    ) {
       return false;
     }
 
-    revision += 1;
-    currentSnapshot = { revision, ...state };
-    publish(currentSnapshot);
+    const candidate = { revision: revision + 1, ...state };
+    try {
+      publish(candidate);
+    } catch (error) {
+      const failure = snapshotPublicationFailure(error);
+      if (failure.code !== lastPublicationFailureCode) {
+        lastPublicationFailureCode = failure.code;
+        reportPublicationFailure(failure.message);
+        updatePublicationFailureStatus(failure.message);
+      }
+      return false;
+    }
+
+    revision = candidate.revision;
+    currentSnapshot = candidate;
+    lastPublicationFailureCode = undefined;
     updateStatus(state.availability);
     return true;
   };
@@ -295,6 +317,8 @@ export function startRoonBridge({
   });
   const status = services.status;
   updateStatus = (availability) => setExtensionStatus(status, availability);
+  updatePublicationFailureStatus = (reason) =>
+    status.set_status(`Publication failed: ${reason}`, true);
   publish(currentSnapshot);
   setExtensionStatus(status, currentSnapshot.availability);
   services.extension.start_discovery();
@@ -361,8 +385,9 @@ class ArtworkPresentationCoordinator {
     const stateChanged = !samePresentationExceptArtwork(currentSnapshot, state);
 
     if (zone.state === "stopped") {
-      if (stateChanged) {
-        this.#publishState(state);
+      const published = this.#publishState(state);
+      if (stateChanged && !published) {
+        return;
       }
       void this.cancelAndClear().catch(reportArtworkError);
       return;
@@ -375,6 +400,7 @@ class ArtworkPresentationCoordinator {
       this.#artworkIdentity !== artworkIdentity;
 
     if (!stateChanged && !artworkIdentityChanged) {
+      this.#publishState({ ...state, artwork: currentSnapshot.artwork });
       return;
     }
 
@@ -383,19 +409,22 @@ class ArtworkPresentationCoordinator {
       return;
     }
 
+    const retainArtworkWhileLoading =
+      zone.state === "loading" && imageKey !== undefined;
+    if (
+      stateChanged &&
+      !this.#publishState({
+        ...state,
+        artwork: retainArtworkWhileLoading ? currentSnapshot.artwork : null,
+      })
+    ) {
+      return;
+    }
+
     this.#artworkIdentity = artworkIdentity;
     this.#cancelScheduledRetry();
     this.#consecutiveFailures = 0;
     this.#requestGeneration += 1;
-    const retainArtworkWhileLoading =
-      zone.state === "loading" && imageKey !== undefined;
-    if (stateChanged) {
-      this.#publishState({
-        ...state,
-        artwork: retainArtworkWhileLoading ? currentSnapshot.artwork : null,
-      });
-    }
-
     const imageService = core.services.RoonApiImage;
     if (imageKey === undefined || imageService === undefined) {
       this.#publishLatestWithArtwork(null);
@@ -694,4 +723,18 @@ function setExtensionStatus(
 function reportArtworkError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`RoonScape artwork: ${message}\n`);
+}
+
+function snapshotPublicationFailure(error: unknown): {
+  code: string;
+  message: string;
+} {
+  if (error instanceof SnapshotPublicationError) {
+    return { code: error.code, message: error.message };
+  }
+  return { code: "unknown", message: "Snapshot publication failed" };
+}
+
+function reportSnapshotPublicationFailure(reason: string): void {
+  process.stderr.write(`RoonScape publication: ${reason}\n`);
 }

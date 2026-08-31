@@ -32,6 +32,10 @@ import {
   stopProcess,
   waitFor,
 } from "./process-harness.mjs";
+import {
+  loadPresentationCaptureSnapshot,
+  validatePresentationCaptureSnapshot,
+} from "./presentation-snapshot.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const maximumCaptureDimension = 32_767;
@@ -160,9 +164,7 @@ async function preflightVisualAcceptanceProfile({ output, overwrite }) {
       continue;
     }
     try {
-      const snapshot = JSON.parse(
-        await readFile(path.join(repositoryRoot, fixture), "utf8"),
-      );
+      const snapshot = await loadPresentationCaptureSnapshot(fixture);
       snapshots.set(fixture, snapshot);
       if (typeof snapshot.artwork?.path === "string") {
         runtimeInputPaths.add(snapshot.artwork.path);
@@ -264,6 +266,7 @@ async function captureControlledSession(captures, completedPaths) {
         snapshot.artwork = { revision: 1, path: artworkPath };
       }
       snapshot.revision = revision;
+      await validatePresentationCaptureSnapshot(snapshot);
       process.stderr.write(
         `Capturing Fixture Scenario ${capture.scenario} at ${viewport}\n`,
       );
@@ -377,9 +380,7 @@ async function preflightFocusedCapture({
   const runtimeInputPaths = [...captureFontPaths, selected.fixture];
   let selectedSnapshot;
   try {
-    selectedSnapshot = JSON.parse(
-      await readFile(path.join(repositoryRoot, selected.fixture), "utf8"),
-    );
+    selectedSnapshot = await loadPresentationCaptureSnapshot(selected.fixture);
     if (
       customArtwork === undefined &&
       typeof selectedSnapshot.artwork?.path === "string"
@@ -425,9 +426,7 @@ async function preflightOrdinaryScenarioSet({
   for (const selected of selectedScenarios) {
     runtimeInputPaths.add(selected.fixture);
     try {
-      const snapshot = JSON.parse(
-        await readFile(path.join(repositoryRoot, selected.fixture), "utf8"),
-      );
+      const snapshot = await loadPresentationCaptureSnapshot(selected.fixture);
       snapshots.set(selected.fixture, snapshot);
       if (
         (!customArtworkScenarios.has(selected.scenario) ||

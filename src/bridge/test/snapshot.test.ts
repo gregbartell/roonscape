@@ -367,3 +367,67 @@ test("rejects invalid timing and stopped snapshots with stale Now Playing", asyn
     ),
   );
 });
+
+test("bounds Roon-supplied display strings by Unicode code points", async () => {
+  const snapshot = await loadSnapshot("src/shared/fixtures/playing.json");
+  const cases = [
+    [
+      "Tracked Output",
+      256,
+      (value: string) => ({ trackedOutput: { name: value } }),
+    ],
+    [
+      "Tracked Zone",
+      256,
+      (value: string) => ({ trackedZone: { name: value } }),
+    ],
+    [
+      "Title",
+      1_024,
+      (value: string) => ({
+        nowPlaying: { ...snapshot.nowPlaying, title: value },
+      }),
+    ],
+    [
+      "Artist",
+      1_024,
+      (value: string) => ({
+        nowPlaying: { ...snapshot.nowPlaying, artist: value },
+      }),
+    ],
+    [
+      "Album",
+      1_024,
+      (value: string) => ({
+        nowPlaying: { ...snapshot.nowPlaying, album: value },
+      }),
+    ],
+  ] as const;
+
+  for (const [field, limit, changed] of cases) {
+    const multibyteCodePoint = "🌌";
+    await assert.doesNotReject(
+      validateSnapshot({
+        ...snapshot,
+        ...changed(multibyteCodePoint.repeat(limit)),
+      }),
+      `${field} should accept ${limit} Unicode code points`,
+    );
+    await assert.rejects(
+      validateSnapshot({
+        ...snapshot,
+        ...changed(multibyteCodePoint.repeat(limit + 1)),
+      }),
+      /must NOT have more than/,
+      `${field} should reject ${limit + 1} Unicode code points`,
+    );
+  }
+
+  await assert.rejects(
+    validateSnapshot({
+      ...snapshot,
+      nowPlaying: { ...snapshot.nowPlaying, title: "\ud800" },
+    }),
+    /Title contains invalid Unicode/,
+  );
+});

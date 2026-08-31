@@ -113,14 +113,17 @@ test("replaces the current snapshot without retaining event history", async () =
   });
 });
 
-test("rejects an oversized snapshot without replacing the current snapshot", async () => {
+test("rejects a display string beyond its shared limit without replacing the current snapshot", async () => {
   const snapshot = await loadSnapshot("src/shared/fixtures/playing.json");
 
   await withPublisher(snapshot, async ({ publisher, socketPath }) => {
     assert.throws(
-      () =>
-        publisher.publish(withTitle(snapshot, "x".repeat(MAX_SNAPSHOT_BYTES))),
-      /Snapshot exceeds 64 KiB/,
+      () => publisher.publish(withTitle(snapshot, "\ud800")),
+      /Title contains invalid Unicode/,
+    );
+    assert.throws(
+      () => publisher.publish(withTitle(snapshot, "🌌".repeat(1_025))),
+      /Title exceeds 1,024 Unicode code points/,
     );
 
     const client = createConnection(socketPath);
@@ -129,6 +132,29 @@ test("rejects an oversized snapshot without replacing the current snapshot", asy
 
     assert.deepEqual(JSON.parse(line), snapshot);
     client.destroy();
+  });
+});
+
+test("accepts 65,536 serialized bytes including the newline and rejects one more", async () => {
+  const snapshot = await loadSnapshot("src/shared/fixtures/playing.json");
+  const bounded = withSerializedBytes(snapshot, MAX_SNAPSHOT_BYTES);
+  const oversized = withSerializedBytes(snapshot, MAX_SNAPSHOT_BYTES + 1);
+
+  await withTaskDirectory(async (runtimeDirectory) => {
+    const publisher = await startSnapshotPublisher(
+      bounded,
+      path.join(runtimeDirectory, "roonscape.sock"),
+    );
+    await publisher.close();
+  });
+  await withTaskDirectory(async (runtimeDirectory) => {
+    await assert.rejects(
+      startSnapshotPublisher(
+        oversized,
+        path.join(runtimeDirectory, "roonscape.sock"),
+      ),
+      /Snapshot exceeds 64 KiB/,
+    );
   });
 });
 
@@ -149,7 +175,7 @@ test(
         const finalRevision = 107;
         for (let revision = 8; revision <= finalRevision; revision += 1) {
           publisher.publish(
-            withTitle(snapshot, "x".repeat(60 * 1024), revision),
+            withSerializedBytes({ ...snapshot, revision }, 60 * 1024),
           );
         }
 
@@ -321,5 +347,24 @@ function withTitle(
     ...snapshot,
     revision,
     nowPlaying: { ...snapshot.nowPlaying, title },
+  };
+}
+
+function withSerializedBytes(
+  snapshot: PresentationSnapshot,
+  serializedBytes: number,
+): PresentationSnapshot {
+  const base = {
+    ...snapshot,
+    artwork: { revision: snapshot.revision, path: "" },
+  };
+  const baseBytes = Buffer.byteLength(`${JSON.stringify(base)}\n`, "utf8");
+  assert.ok(serializedBytes > baseBytes);
+  return {
+    ...base,
+    artwork: {
+      ...base.artwork,
+      path: "x".repeat(serializedBytes - baseBytes),
+    },
   };
 }

@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::contract::{PresentationSnapshot, parse_snapshot};
 
-const MAX_CONTROL_MESSAGE_BYTES: u64 = 64 * 1024;
+const MAX_CONTROL_MESSAGE_BYTES: u64 = 128 * 1024;
 
 #[derive(Debug)]
 pub struct FixtureSelection {
@@ -148,7 +148,7 @@ impl fmt::Display for CaptureControlError {
             Self::IncompleteMessage => {
                 formatter.write_str("capture control channel closed during a command")
             }
-            Self::MessageTooLarge => formatter.write_str("capture control command exceeds 64 KiB"),
+            Self::MessageTooLarge => formatter.write_str("capture control command exceeds 128 KiB"),
             Self::InvalidMessage(error) => {
                 write!(formatter, "invalid capture control command: {error}")
             }

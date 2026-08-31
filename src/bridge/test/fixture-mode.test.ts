@@ -269,8 +269,8 @@ test("ordinary Fixture Mode preflights every catalog snapshot against the publis
       "oversized-fixture.json",
     );
     const oversized = await loadSnapshot("src/shared/fixtures/playing.json");
-    assert.ok(oversized.nowPlaying);
-    oversized.nowPlaying.title = "x".repeat(64 * 1024);
+    assert.ok(oversized.artwork);
+    oversized.artwork.path = "x".repeat(64 * 1024);
     await writeFile(
       oversizedFixturePath,
       `${JSON.stringify(oversized, null, 2)}\n`,

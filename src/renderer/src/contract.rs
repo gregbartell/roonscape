@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 const SNAPSHOT_SCHEMA: &str = include_str!("../../shared/schema/presentation-snapshot.schema.json");
+pub(crate) const MAX_SNAPSHOT_BYTES: u64 = 64 * 1024;
 static SNAPSHOT_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
     let schema: Value = serde_json::from_str(SNAPSHOT_SCHEMA)
         .expect("embedded presentation snapshot schema should be valid JSON");
@@ -86,6 +87,7 @@ pub struct ArtworkReference {
 #[derive(Debug)]
 pub enum SnapshotError {
     Json(serde_json::Error),
+    MessageTooLarge,
     Schema(String),
 }
 
@@ -93,6 +95,7 @@ impl fmt::Display for SnapshotError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Json(error) => write!(formatter, "snapshot is not valid JSON: {error}"),
+            Self::MessageTooLarge => formatter.write_str("snapshot exceeds 64 KiB"),
             Self::Schema(error) => write!(formatter, "snapshot violates the schema: {error}"),
         }
     }
@@ -102,13 +105,17 @@ impl Error for SnapshotError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Json(error) => Some(error),
-            Self::Schema(_) => None,
+            Self::MessageTooLarge | Self::Schema(_) => None,
         }
     }
 }
 
 pub fn parse_snapshot(contents: &str) -> Result<PresentationSnapshot, SnapshotError> {
-    let candidate: Value = serde_json::from_str(contents).map_err(SnapshotError::Json)?;
+    let message = contents.trim_end_matches(['\r', '\n']);
+    if message.len() as u64 + 1 > MAX_SNAPSHOT_BYTES {
+        return Err(SnapshotError::MessageTooLarge);
+    }
+    let candidate: Value = serde_json::from_str(message).map_err(SnapshotError::Json)?;
 
     SNAPSHOT_VALIDATOR
         .validate(&candidate)

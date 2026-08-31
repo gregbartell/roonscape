@@ -7,9 +7,26 @@ import {
 } from "node:net";
 import path from "node:path";
 
-import type { PresentationSnapshot } from "./snapshot.js";
+import {
+  findSnapshotDisplayStringViolation,
+  type SnapshotDisplayStringViolationCode,
+  type PresentationSnapshot,
+} from "./snapshot.js";
 
 export const MAX_SNAPSHOT_BYTES = 64 * 1024;
+
+export type SnapshotPublicationFailureCode =
+  SnapshotDisplayStringViolationCode | "snapshotTooLarge";
+
+export class SnapshotPublicationError extends RangeError {
+  constructor(
+    readonly code: SnapshotPublicationFailureCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SnapshotPublicationError";
+  }
+}
 
 export interface SnapshotPublisher {
   publish(snapshot: PresentationSnapshot): void;
@@ -125,9 +142,19 @@ function flushPending(connection: SnapshotConnection): void {
 }
 
 function serializeSnapshot(snapshot: PresentationSnapshot): string {
+  const displayStringViolation = findSnapshotDisplayStringViolation(snapshot);
+  if (displayStringViolation !== undefined) {
+    throw new SnapshotPublicationError(
+      displayStringViolation.code,
+      displayStringViolation.message,
+    );
+  }
   const message = `${JSON.stringify(snapshot)}\n`;
   if (Buffer.byteLength(message, "utf8") > MAX_SNAPSHOT_BYTES) {
-    throw new RangeError("Snapshot exceeds 64 KiB");
+    throw new SnapshotPublicationError(
+      "snapshotTooLarge",
+      "Snapshot exceeds 64 KiB",
+    );
   }
   return message;
 }
