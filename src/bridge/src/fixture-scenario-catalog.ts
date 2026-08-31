@@ -5,7 +5,6 @@ import { repositoryRoot } from "./repository-root.js";
 import { loadSnapshot, type PresentationSnapshot } from "./snapshot.js";
 
 const defaultCatalogPath = "src/shared/fixtures/fixture-scenario-catalog.json";
-const fixtureScenarioCount = 19;
 
 export type FixturePalette = "dark" | "light" | "fixed-no-art";
 
@@ -72,11 +71,10 @@ function validateCatalog(candidate: unknown): FixtureScenarioEntry[] {
   if (
     !isRecord(candidate) ||
     candidate.formatVersion !== 1 ||
-    !Array.isArray(candidate.scenarios) ||
-    candidate.scenarios.length !== fixtureScenarioCount
+    !Array.isArray(candidate.scenarios)
   ) {
     throw new Error(
-      `Invalid Fixture Scenario catalog: expected format version 1 with exactly ${fixtureScenarioCount} scenarios`,
+      "Invalid Fixture Scenario catalog: expected format version 1 with a scenarios array",
     );
   }
 
