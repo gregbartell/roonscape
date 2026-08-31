@@ -6,6 +6,12 @@ import { initializeRoonExtension } from "./roon-extension.js";
 type Unavailable = Exclude<Availability, "available">;
 type SnapshotState = Omit<PresentationSnapshot, "revision">;
 type PublishState = (state: SnapshotState) => boolean;
+type ScheduleArtworkRetry = (
+  retry: () => void,
+  delayMilliseconds: number,
+) => () => void;
+const INITIAL_ARTWORK_RETRY_DELAY_MILLISECONDS = 1_000;
+const MAXIMUM_ARTWORK_RETRY_DELAY_MILLISECONDS = 30_000;
 
 export interface AuthorizationStore {
   load(): unknown;
@@ -136,6 +142,7 @@ interface StartRoonBridgeOptions {
   displayConfigurationStore: DisplayConfigurationStore;
   createRoonServices: CreateRoonServices;
   publish(snapshot: PresentationSnapshot): void;
+  scheduleArtworkRetry?: ScheduleArtworkRetry;
   now?: () => Date;
 }
 
@@ -154,6 +161,7 @@ export function startRoonBridge({
   displayConfigurationStore,
   createRoonServices,
   publish,
+  scheduleArtworkRetry = scheduleRetryWithTimeout,
   now = () => new Date(),
 }: StartRoonBridgeOptions): RoonBridge {
   let revision = 0;
@@ -180,6 +188,7 @@ export function startRoonBridge({
   const artworkPresentation = new ArtworkPresentationCoordinator({
     artworkFiles,
     publishState,
+    scheduleArtworkRetry,
     currentRevision: () => revision,
     currentSnapshot: () => currentSnapshot,
   });
@@ -303,6 +312,7 @@ export function startRoonBridge({
 interface ArtworkPresentationCoordinatorOptions {
   artworkFiles: ArtworkFiles;
   publishState: PublishState;
+  scheduleArtworkRetry: ScheduleArtworkRetry;
   currentRevision(): number;
   currentSnapshot(): PresentationSnapshot;
 }
@@ -310,25 +320,32 @@ interface ArtworkPresentationCoordinatorOptions {
 class ArtworkPresentationCoordinator {
   readonly #artworkFiles: ArtworkFiles;
   readonly #publishState: PublishState;
+  readonly #scheduleArtworkRetry: ScheduleArtworkRetry;
   readonly #currentRevision: () => number;
   readonly #currentSnapshot: () => PresentationSnapshot;
   #artworkIdentity: string | null | undefined;
-  #request = 0;
+  #cancelScheduledArtworkRetry: (() => void) | undefined;
+  #consecutiveFailures = 0;
+  #requestGeneration = 0;
 
   constructor({
     artworkFiles,
     publishState,
+    scheduleArtworkRetry,
     currentRevision,
     currentSnapshot,
   }: ArtworkPresentationCoordinatorOptions) {
     this.#artworkFiles = artworkFiles;
     this.#publishState = publishState;
+    this.#scheduleArtworkRetry = scheduleArtworkRetry;
     this.#currentRevision = currentRevision;
     this.#currentSnapshot = currentSnapshot;
   }
 
   cancelAndClear(): Promise<void> {
-    this.#request += 1;
+    this.#cancelScheduledRetry();
+    this.#requestGeneration += 1;
+    this.#consecutiveFailures = 0;
     this.#artworkIdentity = undefined;
     return this.#artworkFiles.clear();
   }
@@ -367,7 +384,9 @@ class ArtworkPresentationCoordinator {
     }
 
     this.#artworkIdentity = artworkIdentity;
-    const request = ++this.#request;
+    this.#cancelScheduledRetry();
+    this.#consecutiveFailures = 0;
+    this.#requestGeneration += 1;
     const retainArtworkWhileLoading =
       zone.state === "loading" && imageKey !== undefined;
     if (stateChanged) {
@@ -388,6 +407,11 @@ class ArtworkPresentationCoordinator {
       void this.#artworkFiles.clear().catch(reportArtworkError);
     }
 
+    this.#requestArtwork(imageService, imageKey);
+  }
+
+  #requestArtwork(imageService: RoonImageService, imageKey: string): void {
+    const requestGeneration = ++this.#requestGeneration;
     imageService.get_image(
       imageKey,
       {
@@ -397,7 +421,7 @@ class ArtworkPresentationCoordinator {
         format: "image/jpeg",
       },
       (error, contentType, image) => {
-        if (request !== this.#request) {
+        if (requestGeneration !== this.#requestGeneration) {
           return;
         }
         if (
@@ -405,28 +429,66 @@ class ArtworkPresentationCoordinator {
           contentType !== "image/jpeg" ||
           image === undefined
         ) {
-          this.#publishLatestWithArtwork(null);
-          void this.#artworkFiles.clear().catch(reportArtworkError);
+          this.#recoverFromFailure(requestGeneration, imageService, imageKey);
           return;
         }
 
-        void this.#publishArtwork(request, image).catch(reportArtworkError);
+        void this.#publishArtwork(requestGeneration, image).catch(
+          (error: unknown) => {
+            reportArtworkError(error);
+            this.#recoverFromFailure(requestGeneration, imageService, imageKey);
+          },
+        );
       },
     );
   }
 
-  async #publishArtwork(request: number, image: Buffer): Promise<void> {
+  async #publishArtwork(
+    requestGeneration: number,
+    image: Buffer,
+  ): Promise<void> {
     const reference = await this.#artworkFiles.stage(
       this.#currentRevision() + 1,
       image,
     );
-    if (request !== this.#request) {
+    if (requestGeneration !== this.#requestGeneration) {
       await this.#artworkFiles.discard(reference);
       return;
     }
 
     this.#publishLatestWithArtwork(reference);
     await this.#artworkFiles.commit(reference);
+    this.#consecutiveFailures = 0;
+  }
+
+  #recoverFromFailure(
+    requestGeneration: number,
+    imageService: RoonImageService,
+    imageKey: string,
+  ): void {
+    if (requestGeneration !== this.#requestGeneration) {
+      return;
+    }
+
+    this.#publishLatestWithArtwork(null);
+    void this.#artworkFiles.clear().catch(reportArtworkError);
+    this.#consecutiveFailures += 1;
+    const delayMilliseconds = Math.min(
+      INITIAL_ARTWORK_RETRY_DELAY_MILLISECONDS *
+        2 ** (this.#consecutiveFailures - 1),
+      MAXIMUM_ARTWORK_RETRY_DELAY_MILLISECONDS,
+    );
+    this.#cancelScheduledArtworkRetry = this.#scheduleArtworkRetry(() => {
+      this.#cancelScheduledArtworkRetry = undefined;
+      if (requestGeneration === this.#requestGeneration) {
+        this.#requestArtwork(imageService, imageKey);
+      }
+    }, delayMilliseconds);
+  }
+
+  #cancelScheduledRetry(): void {
+    this.#cancelScheduledArtworkRetry?.();
+    this.#cancelScheduledArtworkRetry = undefined;
   }
 
   #publishLatestWithArtwork(artwork: PresentationSnapshot["artwork"]): void {
@@ -442,6 +504,14 @@ class ArtworkPresentationCoordinator {
       artwork,
     });
   }
+}
+
+function scheduleRetryWithTimeout(
+  retry: () => void,
+  delayMilliseconds: number,
+): () => void {
+  const timeout = setTimeout(retry, delayMilliseconds);
+  return () => clearTimeout(timeout);
 }
 
 export function initialAvailabilitySnapshot(

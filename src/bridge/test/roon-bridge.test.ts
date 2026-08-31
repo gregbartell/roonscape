@@ -40,6 +40,9 @@ interface RoonBoundary {
       format: "image/jpeg";
     };
   }>;
+  failImage(error?: string): void;
+  retryDelays: number[];
+  runNextArtworkRetry(): void;
   resolveImage(contentType: string, image: Buffer): void;
   resolveImageRequest(index: number, contentType: string, image: Buffer): void;
   snapshots: PresentationSnapshot[];
@@ -62,6 +65,8 @@ function createRoonBoundary(
   const imageCallbacks: Array<
     (error: string | false, contentType?: string, image?: Buffer) => void
   > = [];
+  const artworkRetries: Array<{ cancelled: boolean; retry(): void }> = [];
+  const retryDelays: number[] = [];
   const authorizationStore: AuthorizationStore = {
     load: () => persistedState,
     save: (state) => {
@@ -114,6 +119,14 @@ function createRoonBoundary(
       };
     },
     publish: (snapshot) => snapshots.push(snapshot),
+    scheduleArtworkRetry: (retry, delayMilliseconds) => {
+      const scheduledRetry = { cancelled: false, retry };
+      artworkRetries.push(scheduledRetry);
+      retryDelays.push(delayMilliseconds);
+      return () => {
+        scheduledRetry.cancelled = true;
+      };
+    },
     now,
   });
 
@@ -129,7 +142,20 @@ function createRoonBoundary(
       assert.ok(capturedOptions);
       return capturedOptions;
     },
+    failImage: (error = "transient image failure") => {
+      const callback = imageCallbacks.at(-1);
+      assert.ok(callback);
+      callback(error);
+    },
     imageRequests,
+    retryDelays,
+    runNextArtworkRetry: () => {
+      const retry = artworkRetries.shift();
+      assert.ok(retry);
+      if (!retry.cancelled) {
+        retry.retry();
+      }
+    },
     resolveImage: (contentType, image) => {
       const callback = imageCallbacks.at(-1);
       assert.ok(callback);
@@ -144,6 +170,169 @@ function createRoonBoundary(
     statusUpdates,
   };
 }
+
+function artworkZone(imageKey: string, title = "A Moment Apart"): RoonZone {
+  return {
+    zone_id: "zone-living-room",
+    display_name: "Living Room",
+    state: "playing",
+    outputs: [
+      { output_id: "output-speaker-system", display_name: "Speaker System" },
+    ],
+    now_playing: {
+      image_key: imageKey,
+      three_line: { line1: title, line2: "ODESZA" },
+    },
+  };
+}
+
+async function withArtworkTestBoundary(
+  run: (boundary: RoonBoundary) => Promise<void>,
+  wrapArtworkFiles: (store: ArtworkFiles) => ArtworkFiles = (store) => store,
+): Promise<void> {
+  const taskDirectory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-bridge-test."),
+  );
+  const store = await ArtworkFileStore.open(
+    path.join(taskDirectory, "artwork"),
+  );
+  const boundary = createRoonBoundary(
+    "output-speaker-system",
+    wrapArtworkFiles(store),
+  );
+
+  try {
+    await run(boundary);
+  } finally {
+    await store.clear();
+    await rm(taskDirectory, { recursive: true });
+  }
+}
+
+test("retries unchanged Now Playing artwork after a transient download failure", async () => {
+  await withArtworkTestBoundary(async (boundary) => {
+    boundary.extensionOptions().core_paired(boundary.core());
+    boundary.emitZones("Subscribed", {
+      zones: [artworkZone("unchanged-artwork-key")],
+    });
+    boundary.failImage();
+
+    assert.deepEqual(boundary.retryDelays, [1_000]);
+    assert.equal(boundary.imageRequests.length, 1);
+
+    boundary.runNextArtworkRetry();
+    assert.deepEqual(
+      boundary.imageRequests.map(({ imageKey }) => imageKey),
+      ["unchanged-artwork-key", "unchanged-artwork-key"],
+    );
+    boundary.resolveImage("image/jpeg", Buffer.from("recovered artwork"));
+    await waitFor(() => boundary.snapshots.at(-1)?.artwork !== null);
+
+    const artworkPath = boundary.snapshots.at(-1)?.artwork?.path;
+    assert.ok(artworkPath);
+    assert.equal(await readFile(artworkPath, "utf8"), "recovered artwork");
+  });
+});
+
+test("retries unchanged artwork after validation, staging, and commit failures", async (t) => {
+  for (const failure of ["validation", "stage", "commit"] as const) {
+    await t.test(failure, async () => {
+      let shouldFail = true;
+      await withArtworkTestBoundary(
+        async (boundary) => {
+          boundary.extensionOptions().core_paired(boundary.core());
+          boundary.emitZones("Subscribed", {
+            zones: [artworkZone(`artwork-with-${failure}-failure`)],
+          });
+          if (failure === "validation") {
+            boundary.resolveImage("image/png", Buffer.from("wrong format"));
+          } else {
+            boundary.resolveImage("image/jpeg", Buffer.from("first attempt"));
+          }
+          await waitFor(() => boundary.retryDelays.length === 1);
+
+          boundary.runNextArtworkRetry();
+          boundary.resolveImage("image/jpeg", Buffer.from("recovered artwork"));
+          await waitFor(() => boundary.snapshots.at(-1)?.artwork !== null);
+
+          assert.equal(boundary.imageRequests.length, 2);
+          const artworkPath = boundary.snapshots.at(-1)?.artwork?.path;
+          assert.ok(artworkPath);
+          assert.equal(
+            await readFile(artworkPath, "utf8"),
+            "recovered artwork",
+          );
+        },
+        (store) => ({
+          stage: (revision, image) => {
+            if (failure === "stage" && shouldFail) {
+              shouldFail = false;
+              return Promise.reject(new Error("transient stage failure"));
+            }
+            return store.stage(revision, image);
+          },
+          commit: (reference) => {
+            if (failure === "commit" && shouldFail) {
+              shouldFail = false;
+              return Promise.reject(new Error("transient commit failure"));
+            }
+            return store.commit(reference);
+          },
+          discard: (reference) => store.discard(reference),
+          clear: () => store.clear(),
+        }),
+      );
+    });
+  }
+});
+
+test("caps artwork retry backoff while Now Playing remains unchanged", () => {
+  const boundary = createRoonBoundary("output-speaker-system");
+
+  boundary.extensionOptions().core_paired(boundary.core());
+  boundary.emitZones("Subscribed", {
+    zones: [artworkZone("persistent-failure")],
+  });
+  for (let failure = 0; failure < 7; failure += 1) {
+    boundary.failImage();
+    boundary.runNextArtworkRetry();
+  }
+
+  assert.deepEqual(
+    boundary.retryDelays,
+    [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000],
+  );
+});
+
+test("cancels an artwork retry when Now Playing changes", async () => {
+  const firstZone = artworkZone("first-artwork-key");
+  const secondZone: RoonZone = {
+    ...firstZone,
+    now_playing: {
+      image_key: "second-artwork-key",
+      three_line: { line1: "Across the Room", line2: "ODESZA" },
+    },
+  };
+
+  await withArtworkTestBoundary(async (boundary) => {
+    boundary.extensionOptions().core_paired(boundary.core());
+    boundary.emitZones("Subscribed", { zones: [firstZone] });
+    boundary.failImage();
+    boundary.emitZones("Changed", { zones_changed: [secondZone] });
+    boundary.runNextArtworkRetry();
+
+    assert.deepEqual(
+      boundary.imageRequests.map(({ imageKey }) => imageKey),
+      ["first-artwork-key", "second-artwork-key"],
+    );
+
+    boundary.resolveImage("image/jpeg", Buffer.from("second artwork"));
+    await waitFor(() => boundary.snapshots.at(-1)?.artwork !== null);
+    const artworkPath = boundary.snapshots.at(-1)?.artwork?.path;
+    assert.ok(artworkPath);
+    assert.equal(await readFile(artworkPath, "utf8"), "second artwork");
+  });
+});
 
 function unusedArtworkFiles(): ArtworkFiles {
   return {
