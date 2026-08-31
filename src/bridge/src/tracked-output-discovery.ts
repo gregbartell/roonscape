@@ -13,6 +13,10 @@ interface TrackedOutputDiscoveryOptions {
   signal?: AbortSignal;
 }
 
+// The pinned node-roon-api finishes discovery startup on a 200 ms callback
+// that stop_discovery does not cancel.
+const roonDiscoveryStartupMilliseconds = 200;
+
 export function discoverTrackedOutputs({
   authorizationStore,
   createRoonServices,
@@ -31,8 +35,12 @@ export function discoverTrackedOutputs({
         clearTimeout(timeout);
       }
       signal?.removeEventListener("abort", handleAbort);
-      services.extension.stop_discovery();
-      services.extension.disconnect_all();
+      stopRoonServices(services);
+      const deferredStop = setTimeout(
+        () => stopRoonServices(services),
+        roonDiscoveryStartupMilliseconds + 1,
+      );
+      deferredStop.unref();
       settlePromise();
     };
     const handleAbort = (): void => {
@@ -87,4 +95,9 @@ export function discoverTrackedOutputs({
     }
     services.extension.start_discovery();
   });
+}
+
+function stopRoonServices(services: RoonServices): void {
+  services.extension.stop_discovery();
+  services.extension.disconnect_all();
 }
