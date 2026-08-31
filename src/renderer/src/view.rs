@@ -1,8 +1,6 @@
-use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::cell::Cell;
+use std::path::Path;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Instant;
 
 use gtk::gdk;
@@ -13,17 +11,21 @@ use roonscape_renderer::{
     ArtworkLayout, FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, FullFieldPresentation,
     IdentityLineLayout, IdentityPhraseAlignment, IdentityPlacement, IdentityRowLayout,
     InactivityLayout, InactivityTransform, MetadataGroupPlan, MetadataLayout, MetadataLineLayout,
-    MetadataTypography, NowPlayingField, NowPlayingFooterContent, NowPlayingGradient,
-    NowPlayingGradientCacheKey, NowPlayingLayout, NowPlayingPresentation, NowPlayingRole,
-    Presentation, PresentationActivity, PresentationBehavior, PresentationPalette,
-    PresentationProgress, PresentationRevision, PresentationStatus, PresentationStatusEmphasis,
-    PresentationStatusLayout, PresentationStyleLayer, PresentationTransition,
-    PresentationTransitionStyles, ResolvedPresentation, TextOverflow, TypographySelection,
-    TypographyStyles, Viewport, metadata_layout, resolve_capture_presentation,
-    resolve_presentation,
+    MetadataTypography, NowPlayingField, NowPlayingFooterContent, NowPlayingLayout,
+    NowPlayingPresentation, NowPlayingRole, Presentation, PresentationActivity,
+    PresentationBehavior, PresentationPalette, PresentationProgress, PresentationRevision,
+    PresentationStatus, PresentationStatusEmphasis, PresentationStatusLayout,
+    PresentationStyleLayer, PresentationTransition, PresentationTransitionStyles,
+    ResolvedPresentation, TextOverflow, TypographySelection, TypographyStyles, Viewport,
+    metadata_layout, resolve_capture_presentation, resolve_presentation,
 };
 
 use crate::activity_waveform::activity_waveform;
+use crate::artwork_cache::{ArtworkCache, ArtworkCacheKey};
+use crate::gradient_cache::{
+    CachedNowPlayingGradient, NowPlayingGradientCache, PreparedNowPlayingGradient,
+    RenderedNowPlayingGradient,
+};
 use crate::status_symbol::presentation_status_symbol;
 
 const STYLES: &str = include_str!("style.css");
@@ -159,16 +161,7 @@ struct RenderedNowPlaying {
 
 struct RenderedNowPlayingBackground {
     picture: gtk::Picture,
-    palette: PresentationPalette,
-    cache_key: Rc<Cell<Option<NowPlayingGradientCacheKey>>>,
-    gradient_cache: Rc<NowPlayingGradientCache>,
-}
-
-struct RenderedNowPlayingGradient {
-    logical_viewport: Viewport,
-    physical_viewport: Viewport,
-    stride_bytes: usize,
-    rgba8: Arc<[u8]>,
+    gradient: Rc<CachedNowPlayingGradient>,
 }
 
 #[derive(Clone)]
@@ -177,141 +170,12 @@ struct PresentationCaches {
     artwork: Rc<ArtworkCache>,
 }
 
-struct BoundedLruCache<K, V> {
-    capacity: usize,
-    entries: RefCell<VecDeque<(K, V)>>,
-}
-
-impl<K: PartialEq, V> BoundedLruCache<K, V> {
-    fn new(capacity: usize) -> Self {
-        assert!(capacity > 0, "cache capacity must be positive");
-        Self {
-            capacity,
-            entries: RefCell::new(VecDeque::with_capacity(capacity)),
-        }
-    }
-
-    fn use_entry<T>(&self, key: &K, use_entry: impl FnOnce(&mut V) -> T) -> Option<T> {
-        let mut entries = self.entries.borrow_mut();
-        let position = entries.iter().position(|(cached, _)| cached == key)?;
-        let mut entry = entries
-            .remove(position)
-            .expect("the located cache entry should exist");
-        let result = use_entry(&mut entry.1);
-        entries.push_back(entry);
-        Some(result)
-    }
-
-    fn insert(&self, key: K, value: V) {
-        let mut entries = self.entries.borrow_mut();
-        if entries.len() == self.capacity {
-            entries.pop_front();
-        }
-        entries.push_back((key, value));
-    }
-}
-
 impl PresentationCaches {
     fn new(capacity: usize) -> Self {
         Self {
             gradients: Rc::new(NowPlayingGradientCache::new(capacity)),
             artwork: Rc::new(ArtworkCache::new(capacity)),
         }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct NowPlayingGradientRasterKey {
-    palette: PresentationPalette,
-    viewport: NowPlayingGradientCacheKey,
-}
-
-struct NowPlayingGradientCache {
-    rasters: BoundedLruCache<NowPlayingGradientRasterKey, Arc<[u8]>>,
-}
-
-impl NowPlayingGradientCache {
-    fn new(capacity: usize) -> Self {
-        Self {
-            rasters: BoundedLruCache::new(capacity),
-        }
-    }
-
-    fn raster(
-        &self,
-        palette: PresentationPalette,
-        viewport: NowPlayingGradientCacheKey,
-    ) -> Arc<[u8]> {
-        let key = NowPlayingGradientRasterKey { palette, viewport };
-        if let Some(raster) = self.cached_raster(&key) {
-            return raster;
-        }
-
-        let raster = Self::generate_raster(palette, viewport);
-        self.rasters.insert(key, Arc::clone(&raster));
-        raster
-    }
-
-    fn prepare_while<T>(
-        &self,
-        palette: PresentationPalette,
-        viewport: NowPlayingGradientCacheKey,
-        independent_work: impl FnOnce() -> T,
-    ) -> T {
-        let key = NowPlayingGradientRasterKey { palette, viewport };
-        if self.cached_raster(&key).is_some() {
-            return independent_work();
-        }
-
-        std::thread::scope(|scope| {
-            let generation = scope.spawn(move || Self::generate_raster(palette, viewport));
-            let result = independent_work();
-            let raster = generation
-                .join()
-                .expect("now-playing gradient generation should not panic");
-            self.rasters.insert(key, raster);
-            result
-        })
-    }
-
-    fn cached_raster(&self, key: &NowPlayingGradientRasterKey) -> Option<Arc<[u8]>> {
-        self.rasters.use_entry(key, |raster| Arc::clone(raster))
-    }
-
-    fn generate_raster(
-        palette: PresentationPalette,
-        viewport: NowPlayingGradientCacheKey,
-    ) -> Arc<[u8]> {
-        Arc::from(NowPlayingGradient::new(palette, viewport.physical_viewport()).into_rgba8())
-    }
-}
-
-trait NowPlayingGradientTarget {
-    fn scale_factor(&self) -> u32;
-
-    fn install_gradient(&self, gradient: RenderedNowPlayingGradient);
-}
-
-impl NowPlayingGradientTarget for gtk::Picture {
-    fn scale_factor(&self) -> u32 {
-        u32::try_from(gtk::prelude::WidgetExt::scale_factor(self))
-            .expect("GTK display scale factor must be positive")
-    }
-
-    fn install_gradient(&self, gradient: RenderedNowPlayingGradient) {
-        let bytes = gtk::glib::Bytes::from_owned(gradient.rgba8);
-        let texture = gdk::MemoryTexture::new(
-            dimension(gradient.physical_viewport.width_px),
-            dimension(gradient.physical_viewport.height_px),
-            gdk::MemoryFormat::R8g8b8a8,
-            &bytes,
-            gradient.stride_bytes,
-        );
-        self.set_size_request(
-            dimension(gradient.logical_viewport.width_px),
-            dimension(gradient.logical_viewport.height_px),
-        );
-        self.set_paintable(Some(&texture));
     }
 }
 
@@ -329,92 +193,6 @@ struct RenderedArtwork {
 struct ArtworkReadiness {
     scaled: Cell<bool>,
     decode_error: Option<String>,
-}
-
-struct ArtworkCacheEntry {
-    source: gdk_pixbuf::Pixbuf,
-    scaled: Option<ScaledArtwork>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct ArtworkCacheKey {
-    path: PathBuf,
-    revision: Option<u64>,
-}
-
-impl ArtworkCacheKey {
-    fn new(path: PathBuf, revision: Option<u64>) -> Self {
-        Self { path, revision }
-    }
-}
-
-struct ScaledArtwork {
-    dimensions: ArtworkDimensions,
-    pixbuf: gdk_pixbuf::Pixbuf,
-}
-
-struct ArtworkCache {
-    entries: BoundedLruCache<ArtworkCacheKey, ArtworkCacheEntry>,
-}
-
-impl ArtworkCache {
-    fn new(capacity: usize) -> Self {
-        Self {
-            entries: BoundedLruCache::new(capacity),
-        }
-    }
-
-    fn source(&self, key: &ArtworkCacheKey) -> Option<gdk_pixbuf::Pixbuf> {
-        if let Some(source) = self.entries.use_entry(key, |entry| entry.source.clone()) {
-            return Some(source);
-        }
-
-        let source = gdk_pixbuf::Pixbuf::from_file(&key.path).ok()?;
-        self.entries.insert(
-            key.clone(),
-            ArtworkCacheEntry {
-                source: source.clone(),
-                scaled: None,
-            },
-        );
-        Some(source)
-    }
-
-    fn scaled(
-        &self,
-        key: &ArtworkCacheKey,
-        dimensions: ArtworkDimensions,
-    ) -> Option<gdk_pixbuf::Pixbuf> {
-        let source = self.source(key)?;
-        if let Some(scaled) = self
-            .entries
-            .use_entry(key, |entry| {
-                entry
-                    .scaled
-                    .as_ref()
-                    .filter(|scaled| scaled.dimensions == dimensions)
-                    .map(|scaled| scaled.pixbuf.clone())
-            })
-            .flatten()
-        {
-            return Some(scaled);
-        }
-
-        let pixbuf = source.scale_simple(
-            dimension(dimensions.width_px),
-            dimension(dimensions.height_px),
-            gdk_pixbuf::InterpType::Bilinear,
-        )?;
-        self.entries
-            .use_entry(key, |entry| {
-                entry.scaled = Some(ScaledArtwork {
-                    dimensions,
-                    pixbuf: pixbuf.clone(),
-                });
-            })
-            .expect("loading artwork should leave it cached");
-        Some(pixbuf)
-    }
 }
 
 struct RenderedFullField {
@@ -656,19 +434,20 @@ impl PresentationView {
             (Presentation::NowPlaying(_), Some(viewport)) => {
                 let scale_factor = u32::try_from(gtk::prelude::WidgetExt::scale_factor(&self.root))
                     .expect("GTK display scale factor must be positive");
-                let gradient_key = NowPlayingGradientCacheKey::new(viewport, scale_factor);
                 // A fresh gradient is independent of foreground construction
-                // and layout. Apply the background only after preparation so
-                // it consumes this cache entry instead of generating another.
-                let rendered =
-                    self.caches
-                        .gradients
-                        .prepare_while(resolved.palette, gradient_key, || {
-                            let rendered = render();
-                            rendered.apply_viewport_foreground(viewport);
-                            rendered
-                        });
-                rendered.apply_prepared_now_playing_background(gradient_key);
+                // and layout. Install the prepared raster only after foreground
+                // construction so the new background is never partially ready.
+                let (rendered, prepared_gradient) = self.caches.gradients.prepare_while(
+                    resolved.palette,
+                    viewport,
+                    scale_factor,
+                    || {
+                        let rendered = render();
+                        rendered.apply_viewport_foreground(viewport);
+                        rendered
+                    },
+                );
+                rendered.apply_prepared_now_playing_background(prepared_gradient);
                 rendered
             }
             (_, Some(viewport)) => {
@@ -766,9 +545,9 @@ impl RenderedPresentation {
         }
     }
 
-    fn apply_prepared_now_playing_background(&self, key: NowPlayingGradientCacheKey) {
+    fn apply_prepared_now_playing_background(&self, gradient: PreparedNowPlayingGradient) {
         if let Some(now_playing) = self.now_playing.as_ref() {
-            now_playing.background.apply_prepared(key);
+            now_playing.background.apply_prepared(gradient);
         }
     }
 
@@ -1060,7 +839,7 @@ fn artwork(
     let decode_error = source_key
         .as_ref()
         .filter(|_| source.is_none())
-        .map(|key| format!("could not decode artwork at {}", key.path.display()));
+        .map(|key| format!("could not decode artwork at {}", key.path().display()));
     let intrinsic_dimensions = source.as_ref().map(|(_, artwork)| {
         ArtworkDimensions::new(
             artwork
@@ -1397,87 +1176,56 @@ impl RenderedNowPlayingBackground {
         picture.set_keep_aspect_ratio(false);
         picture.set_hexpand(true);
         picture.set_vexpand(true);
-        let cache_key = Rc::new(Cell::new(None::<NowPlayingGradientCacheKey>));
+        let gradient = Rc::new(gradient_cache.gradient(palette));
         picture.connect_scale_factor_notify({
-            let cache_key = Rc::clone(&cache_key);
-            let gradient_cache = Rc::clone(&gradient_cache);
+            let gradient = Rc::clone(&gradient);
             move |picture| {
-                let Some(current_key) = cache_key.get() else {
-                    return;
-                };
-                apply_now_playing_gradient(
-                    picture,
-                    palette,
-                    &gradient_cache,
-                    &cache_key,
-                    current_key.logical_viewport(),
-                );
+                if let Some(rendered) = gradient.refresh(display_scale_factor(picture)) {
+                    install_now_playing_gradient(picture, rendered);
+                }
             }
         });
-        Self {
-            picture,
-            palette,
-            cache_key,
-            gradient_cache,
-        }
+        Self { picture, gradient }
     }
 
     fn apply_viewport(&self, viewport: Viewport) {
-        apply_now_playing_gradient(
-            &self.picture,
-            self.palette,
-            &self.gradient_cache,
-            &self.cache_key,
-            viewport,
-        );
+        if let Some(rendered) = self
+            .gradient
+            .render(viewport, display_scale_factor(&self.picture))
+        {
+            install_now_playing_gradient(&self.picture, rendered);
+        }
     }
 
-    fn apply_prepared(&self, key: NowPlayingGradientCacheKey) {
-        apply_now_playing_gradient_for_key(
-            &self.picture,
-            self.palette,
-            &self.gradient_cache,
-            &self.cache_key,
-            key,
-        );
+    fn apply_prepared(&self, prepared: PreparedNowPlayingGradient) {
+        if let Some(rendered) = self.gradient.render_prepared(prepared) {
+            install_now_playing_gradient(&self.picture, rendered);
+        }
     }
 }
 
-fn apply_now_playing_gradient<T: NowPlayingGradientTarget>(
-    target: &T,
-    palette: PresentationPalette,
-    gradient_cache: &NowPlayingGradientCache,
-    cache_key: &Cell<Option<NowPlayingGradientCacheKey>>,
-    logical_viewport: Viewport,
-) {
-    let scale_factor = target.scale_factor();
-    let next_key = NowPlayingGradientCacheKey::new(logical_viewport, scale_factor);
-    apply_now_playing_gradient_for_key(target, palette, gradient_cache, cache_key, next_key);
+fn display_scale_factor(widget: &impl IsA<gtk::Widget>) -> u32 {
+    u32::try_from(gtk::prelude::WidgetExt::scale_factor(widget))
+        .expect("GTK display scale factor must be positive")
 }
 
-fn apply_now_playing_gradient_for_key<T: NowPlayingGradientTarget>(
-    target: &T,
-    palette: PresentationPalette,
-    gradient_cache: &NowPlayingGradientCache,
-    cache_key: &Cell<Option<NowPlayingGradientCacheKey>>,
-    next_key: NowPlayingGradientCacheKey,
-) {
-    if cache_key.get() == Some(next_key) {
-        return;
-    }
-
+fn install_now_playing_gradient(picture: &gtk::Picture, gradient: RenderedNowPlayingGradient) {
     // GTK lays widgets out in logical pixels, then rasterizes them at the
     // widget scale factor. Giving the Picture one texture pixel per physical
     // output pixel avoids resampling the spatial dither during rasterization.
-    let logical_viewport = next_key.logical_viewport();
-    let physical_viewport = next_key.physical_viewport();
-    target.install_gradient(RenderedNowPlayingGradient {
-        logical_viewport,
-        physical_viewport,
-        stride_bytes: physical_viewport.width_px as usize * 4,
-        rgba8: gradient_cache.raster(palette, next_key),
-    });
-    cache_key.set(Some(next_key));
+    let bytes = gtk::glib::Bytes::from_owned(gradient.rgba8);
+    let texture = gdk::MemoryTexture::new(
+        dimension(gradient.physical_viewport.width_px),
+        dimension(gradient.physical_viewport.height_px),
+        gdk::MemoryFormat::R8g8b8a8,
+        &bytes,
+        gradient.stride_bytes,
+    );
+    picture.set_size_request(
+        dimension(gradient.logical_viewport.width_px),
+        dimension(gradient.logical_viewport.height_px),
+    );
+    picture.set_paintable(Some(&texture));
 }
 
 impl RenderedArtwork {
@@ -2085,354 +1833,10 @@ pub(crate) fn install_style_providers(typography: TypographySelection) -> gtk::C
 
 #[cfg(test)]
 mod tests {
-    use std::cell::{Cell, RefCell};
-    use std::path::Path;
-    use std::sync::Arc;
-
-    use gtk::glib::object::ObjectType;
-
-    use super::{
-        ArtworkCache, ArtworkCacheKey, NowPlayingGradientCache, NowPlayingGradientRasterKey,
-        NowPlayingGradientTarget, PresentationLayoutSource, RenderedNowPlayingGradient, STYLES,
-        apply_now_playing_gradient, apply_now_playing_gradient_for_key,
-    };
+    use super::{PresentationLayoutSource, STYLES};
     use roonscape_renderer::{
-        ArtworkDimensions, NowPlayingFooterContent, NowPlayingGradientCacheKey,
-        PresentationPalette, Rgb, Viewport, parse_snapshot, presentation_from_snapshot,
+        NowPlayingFooterContent, Viewport, parse_snapshot, presentation_from_snapshot,
     };
-
-    #[derive(Debug, PartialEq, Eq)]
-    struct GradientInstallation {
-        logical_viewport: Viewport,
-        physical_viewport: Viewport,
-        stride_bytes: usize,
-        byte_count: usize,
-    }
-
-    struct RecordingGradientTarget {
-        scale_factor: Cell<u32>,
-        installations: RefCell<Vec<GradientInstallation>>,
-        rasters: RefCell<Vec<Arc<[u8]>>>,
-    }
-
-    impl RecordingGradientTarget {
-        fn new(scale_factor: u32) -> Self {
-            Self {
-                scale_factor: Cell::new(scale_factor),
-                installations: RefCell::new(Vec::new()),
-                rasters: RefCell::new(Vec::new()),
-            }
-        }
-    }
-
-    impl NowPlayingGradientTarget for RecordingGradientTarget {
-        fn scale_factor(&self) -> u32 {
-            self.scale_factor.get()
-        }
-
-        fn install_gradient(&self, gradient: RenderedNowPlayingGradient) {
-            self.rasters.borrow_mut().push(Arc::clone(&gradient.rgba8));
-            self.installations.borrow_mut().push(GradientInstallation {
-                logical_viewport: gradient.logical_viewport,
-                physical_viewport: gradient.physical_viewport,
-                stride_bytes: gradient.stride_bytes,
-                byte_count: gradient.rgba8.len(),
-            });
-        }
-    }
-
-    fn artwork_key(name: &str, revision: Option<u64>) -> ArtworkCacheKey {
-        ArtworkCacheKey::new(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../shared/fixtures/artwork")
-                .join(name),
-            revision,
-        )
-    }
-
-    #[test]
-    fn reuses_a_gradient_raster_across_rendered_backgrounds() {
-        let gradient_cache = NowPlayingGradientCache::new(2);
-        let first_target = RecordingGradientTarget::new(1);
-        let second_target = RecordingGradientTarget::new(1);
-        let first_key = Cell::new(None::<NowPlayingGradientCacheKey>);
-        let second_key = Cell::new(None::<NowPlayingGradientCacheKey>);
-        let viewport = Viewport::new(16, 9);
-
-        apply_now_playing_gradient(
-            &first_target,
-            PresentationPalette::fallback(),
-            &gradient_cache,
-            &first_key,
-            viewport,
-        );
-        apply_now_playing_gradient(
-            &second_target,
-            PresentationPalette::fallback(),
-            &gradient_cache,
-            &second_key,
-            viewport,
-        );
-
-        assert!(Arc::ptr_eq(
-            &first_target.rasters.borrow()[0],
-            &second_target.rasters.borrow()[0],
-        ));
-    }
-
-    #[test]
-    fn prepares_and_reuses_a_gradient_raster() {
-        let gradient_cache = NowPlayingGradientCache::new(2);
-        let palette = PresentationPalette::fallback();
-        let viewport = Viewport::new(16, 9);
-        let viewport_key = NowPlayingGradientCacheKey::new(viewport, 1);
-        let raster_key = NowPlayingGradientRasterKey {
-            palette,
-            viewport: viewport_key,
-        };
-
-        gradient_cache.prepare_while(palette, viewport_key, || {});
-        let prepared = gradient_cache
-            .cached_raster(&raster_key)
-            .expect("preparation should cache the generated raster");
-        let target = RecordingGradientTarget::new(1);
-        let installed_key = Cell::new(None::<NowPlayingGradientCacheKey>);
-        apply_now_playing_gradient(&target, palette, &gradient_cache, &installed_key, viewport);
-
-        assert!(Arc::ptr_eq(&prepared, &target.rasters.borrow()[0]));
-    }
-
-    #[test]
-    fn consumes_a_prepared_gradient_before_its_target_is_rooted() {
-        let gradient_cache = NowPlayingGradientCache::new(2);
-        let palette = PresentationPalette::fallback();
-        let viewport = Viewport::new(16, 9);
-        let prepared_key = NowPlayingGradientCacheKey::new(viewport, 2);
-        let raster_key = NowPlayingGradientRasterKey {
-            palette,
-            viewport: prepared_key,
-        };
-        gradient_cache.prepare_while(palette, prepared_key, || {});
-        let prepared = gradient_cache
-            .cached_raster(&raster_key)
-            .expect("preparation should cache the display-scale raster");
-
-        let unrooted_target = RecordingGradientTarget::new(1);
-        let installed_key = Cell::new(None::<NowPlayingGradientCacheKey>);
-        apply_now_playing_gradient_for_key(
-            &unrooted_target,
-            palette,
-            &gradient_cache,
-            &installed_key,
-            prepared_key,
-        );
-
-        assert!(Arc::ptr_eq(&prepared, &unrooted_target.rasters.borrow()[0]));
-    }
-
-    #[test]
-    fn keeps_gradient_rasters_separate_across_palettes() {
-        let gradient_cache = NowPlayingGradientCache::new(2);
-        let first_target = RecordingGradientTarget::new(1);
-        let second_target = RecordingGradientTarget::new(1);
-        let first_key = Cell::new(None::<NowPlayingGradientCacheKey>);
-        let second_key = Cell::new(None::<NowPlayingGradientCacheKey>);
-        let viewport = Viewport::new(16, 9);
-        let first_palette = PresentationPalette::fallback();
-        let mut second_palette = first_palette;
-        second_palette.background = Rgb {
-            red: 1,
-            green: 2,
-            blue: 3,
-        };
-
-        apply_now_playing_gradient(
-            &first_target,
-            first_palette,
-            &gradient_cache,
-            &first_key,
-            viewport,
-        );
-        apply_now_playing_gradient(
-            &second_target,
-            second_palette,
-            &gradient_cache,
-            &second_key,
-            viewport,
-        );
-
-        assert!(!Arc::ptr_eq(
-            &first_target.rasters.borrow()[0],
-            &second_target.rasters.borrow()[0],
-        ));
-    }
-
-    #[test]
-    fn reuses_decoded_artwork_across_rendered_presentations() {
-        let artwork_cache = ArtworkCache::new(2);
-        let key = artwork_key("playing.svg", None);
-
-        let first = artwork_cache
-            .source(&key)
-            .expect("the Playing artwork should decode");
-        let second = artwork_cache
-            .source(&key)
-            .expect("the cached Playing artwork should decode");
-
-        assert_eq!(first.as_ptr(), second.as_ptr());
-    }
-
-    #[test]
-    fn reuses_scaled_artwork_at_the_same_dimensions() {
-        let artwork_cache = ArtworkCache::new(2);
-        let key = artwork_key("playing.svg", None);
-        let dimensions = ArtworkDimensions::new(120, 120);
-
-        let first = artwork_cache
-            .scaled(&key, dimensions)
-            .expect("the Playing artwork should scale");
-        let second = artwork_cache
-            .scaled(&key, dimensions)
-            .expect("the cached Playing artwork should scale");
-        let resized = artwork_cache
-            .scaled(&key, ArtworkDimensions::new(100, 100))
-            .expect("the Playing artwork should rescale at new dimensions");
-
-        assert_eq!(first.as_ptr(), second.as_ptr());
-        assert_ne!(second.as_ptr(), resized.as_ptr());
-    }
-
-    #[test]
-    fn invalidates_cached_artwork_when_its_revision_changes() {
-        let artwork_cache = ArtworkCache::new(2);
-        let first_key = artwork_key("playing.svg", Some(1));
-        let second_key = artwork_key("playing.svg", Some(2));
-
-        let first = artwork_cache
-            .source(&first_key)
-            .expect("the first artwork revision should decode");
-        let second = artwork_cache
-            .source(&second_key)
-            .expect("the second artwork revision should decode");
-
-        assert_ne!(first.as_ptr(), second.as_ptr());
-    }
-
-    #[test]
-    fn evicts_the_least_recently_used_artwork_beyond_capacity() {
-        let artwork_cache = ArtworkCache::new(2);
-        let playing = artwork_key("playing.svg", None);
-        let light = artwork_key("light.svg", None);
-        let non_square = artwork_key("non-square.svg", None);
-
-        let first_playing = artwork_cache
-            .source(&playing)
-            .expect("Playing should decode");
-        let first_light = artwork_cache.source(&light).expect("light should decode");
-        let reused_playing = artwork_cache
-            .source(&playing)
-            .expect("cached Playing should decode");
-        assert_eq!(first_playing.as_ptr(), reused_playing.as_ptr());
-
-        artwork_cache
-            .source(&non_square)
-            .expect("non-square artwork should decode");
-        let regenerated_light = artwork_cache
-            .source(&light)
-            .expect("evicted light artwork should decode again");
-        assert_ne!(first_light.as_ptr(), regenerated_light.as_ptr());
-    }
-
-    #[test]
-    fn evicts_the_least_recently_used_raster_beyond_capacity() {
-        let gradient_cache = NowPlayingGradientCache::new(2);
-        let first_viewport = Viewport::new(16, 9);
-        let second_viewport = Viewport::new(20, 12);
-        let third_viewport = Viewport::new(24, 14);
-        let render = |viewport| {
-            let target = RecordingGradientTarget::new(1);
-            let local_key = Cell::new(None::<NowPlayingGradientCacheKey>);
-            apply_now_playing_gradient(
-                &target,
-                PresentationPalette::fallback(),
-                &gradient_cache,
-                &local_key,
-                viewport,
-            );
-            Arc::clone(&target.rasters.borrow()[0])
-        };
-
-        let first = render(first_viewport);
-        let second = render(second_viewport);
-        let reused_first = render(first_viewport);
-        assert!(Arc::ptr_eq(&first, &reused_first));
-
-        let _third = render(third_viewport);
-        let regenerated_second = render(second_viewport);
-        assert!(!Arc::ptr_eq(&second, &regenerated_second));
-    }
-
-    #[test]
-    fn installs_and_caches_the_physical_now_playing_gradient() {
-        let target = RecordingGradientTarget::new(2);
-        let gradient_cache = NowPlayingGradientCache::new(2);
-        let cache_key = Cell::new(None::<NowPlayingGradientCacheKey>);
-        let first_viewport = Viewport::new(16, 9);
-
-        apply_now_playing_gradient(
-            &target,
-            PresentationPalette::fallback(),
-            &gradient_cache,
-            &cache_key,
-            first_viewport,
-        );
-        assert_eq!(
-            *target.installations.borrow(),
-            [GradientInstallation {
-                logical_viewport: first_viewport,
-                physical_viewport: Viewport::new(32, 18),
-                stride_bytes: 32 * 4,
-                byte_count: 32 * 18 * 4,
-            }]
-        );
-
-        apply_now_playing_gradient(
-            &target,
-            PresentationPalette::fallback(),
-            &gradient_cache,
-            &cache_key,
-            first_viewport,
-        );
-        assert_eq!(target.installations.borrow().len(), 1);
-
-        let second_viewport = Viewport::new(20, 12);
-        apply_now_playing_gradient(
-            &target,
-            PresentationPalette::fallback(),
-            &gradient_cache,
-            &cache_key,
-            second_viewport,
-        );
-        assert_eq!(target.installations.borrow().len(), 2);
-
-        target.scale_factor.set(3);
-        apply_now_playing_gradient(
-            &target,
-            PresentationPalette::fallback(),
-            &gradient_cache,
-            &cache_key,
-            second_viewport,
-        );
-        assert_eq!(
-            target.installations.borrow().last(),
-            Some(&GradientInstallation {
-                logical_viewport: second_viewport,
-                physical_viewport: Viewport::new(60, 36),
-                stride_bytes: 60 * 4,
-                byte_count: 60 * 36 * 4,
-            })
-        );
-    }
 
     #[test]
     fn keeps_the_current_footer_geometry_when_the_viewport_changes() {

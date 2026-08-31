@@ -1,4 +1,7 @@
 mod activity_waveform;
+mod artwork_cache;
+mod bounded_lru_cache;
+mod gradient_cache;
 mod status_symbol;
 mod view;
 
