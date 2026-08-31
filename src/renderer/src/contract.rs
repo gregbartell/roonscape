@@ -1,10 +1,20 @@
 use std::error::Error;
 use std::fmt;
+use std::sync::LazyLock;
 
+use jsonschema::Validator;
 use serde::Deserialize;
 use serde_json::Value;
 
 const SNAPSHOT_SCHEMA: &str = include_str!("../../shared/schema/presentation-snapshot.schema.json");
+static SNAPSHOT_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
+    let schema: Value = serde_json::from_str(SNAPSHOT_SCHEMA)
+        .expect("embedded presentation snapshot schema should be valid JSON");
+    jsonschema::options()
+        .should_validate_formats(true)
+        .build(&schema)
+        .expect("embedded presentation snapshot schema should compile")
+});
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -99,13 +109,8 @@ impl Error for SnapshotError {
 
 pub fn parse_snapshot(contents: &str) -> Result<PresentationSnapshot, SnapshotError> {
     let candidate: Value = serde_json::from_str(contents).map_err(SnapshotError::Json)?;
-    let schema: Value = serde_json::from_str(SNAPSHOT_SCHEMA).map_err(SnapshotError::Json)?;
-    let validator = jsonschema::options()
-        .should_validate_formats(true)
-        .build(&schema)
-        .map_err(|error| SnapshotError::Schema(error.to_string()))?;
 
-    validator
+    SNAPSHOT_VALIDATOR
         .validate(&candidate)
         .map_err(|error| SnapshotError::Schema(error.to_string()))?;
 

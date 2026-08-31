@@ -4,13 +4,22 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use std::time::Duration;
 
+use jsonschema::Validator;
 use serde::Deserialize;
 use serde_json::Value;
 
 const DISPLAY_CONFIGURATION_SCHEMA: &str =
     include_str!("../../shared/schema/display-configuration.schema.json");
+static DISPLAY_CONFIGURATION_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
+    let schema: Value = serde_json::from_str(DISPLAY_CONFIGURATION_SCHEMA)
+        .expect("embedded Display Configuration schema should be valid JSON");
+    jsonschema::options()
+        .build(&schema)
+        .expect("embedded Display Configuration schema should compile")
+});
 
 const DEFAULT_GRACE_PERIOD: Duration = Duration::from_secs(300);
 const DEFAULT_DIMMED_OPACITY: f64 = 0.35;
@@ -139,12 +148,7 @@ pub fn inactivity_configuration_from_display_configuration(
 ) -> Result<InactivityConfiguration, DisplayConfigurationError> {
     let candidate: Value =
         serde_json::from_str(contents).map_err(DisplayConfigurationError::Json)?;
-    let schema: Value = serde_json::from_str(DISPLAY_CONFIGURATION_SCHEMA)
-        .map_err(DisplayConfigurationError::Json)?;
-    let validator = jsonschema::options()
-        .build(&schema)
-        .map_err(|error| DisplayConfigurationError::Schema(error.to_string()))?;
-    validator
+    DISPLAY_CONFIGURATION_VALIDATOR
         .validate(&candidate)
         .map_err(|error| DisplayConfigurationError::Schema(error.to_string()))?;
     let configuration: DisplayConfigurationFile =
