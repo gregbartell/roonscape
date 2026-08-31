@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   mkdirSync,
@@ -9,196 +10,341 @@ import {
   renameSync,
   rmSync,
   statSync,
-  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
+import {
+  archiveName,
+  assembleReleasePackage,
+  releaseRootName,
+  validateReleasePackage,
+  verifyFileChecksum,
+} from "./release-package.mjs";
+
 const expectedVersion = "1.0.0";
-const releaseRootName = "roonscape";
-const archiveName = "roonscape-linux-x64.tar.gz";
-const releaseDirectory = path.join(repositoryRoot, "release");
-const archiveFile = path.join(releaseDirectory, archiveName);
-const checksumFile = `${archiveFile}.sha256`;
 
-test(
-  "the Linux release is complete, relocatable, and uses its private Node runtime",
-  { timeout: 300_000 },
-  (context) => {
-    const staleBuildOutput = path.join(
-      repositoryRoot,
-      "src/bridge/dist/src/stale-package-output.js",
-    );
-    mkdirSync(path.dirname(staleBuildOutput), { recursive: true });
-    writeFileSync(staleBuildOutput, "throw new Error('stale build output');\n");
-    context.after(() => rmSync(staleBuildOutput, { force: true }));
+test("controlled inputs produce a complete relocatable release", (context) => {
+  const fixture = createPackagingFixture(context);
+  const artifacts = assembleReleasePackage({
+    inputs: fixture.inputs,
+    outputDirectory: fixture.outputDirectory,
+    scratchDirectory: fixture.scratchDirectory,
+    sourceDateEpoch: "1700000000",
+    version: expectedVersion,
+  });
 
-    const packaging = run(process.execPath, ["scripts/package-release.mjs"], {
-      cwd: repositoryRoot,
-    });
-    assert.equal(packaging.status, 0, packagingOutput(packaging));
-    assert.deepEqual(readdirSync(releaseDirectory).sort(), [
-      archiveName,
-      `${archiveName}.sha256`,
-    ]);
+  assert.deepEqual(readdirSync(fixture.outputDirectory).sort(), [
+    archiveName,
+    `${archiveName}.sha256`,
+  ]);
+  const archive = readFileSync(artifacts.archiveFile);
+  assert.equal(
+    readFileSync(artifacts.checksumFile, "utf8"),
+    `${createHash("sha256").update(archive).digest("hex")}  ${archiveName}\n`,
+  );
 
-    const archive = readFileSync(archiveFile);
-    const expectedChecksum = createHash("sha256").update(archive).digest("hex");
+  const extractionRoot = path.join(fixture.root, "extracted");
+  mkdirSync(extractionRoot);
+  const extraction = run("tar", ["-xzf", artifacts.archiveFile], {
+    cwd: extractionRoot,
+  });
+  assert.equal(extraction.status, 0, commandOutput(extraction));
+  const relocatedRoot = path.join(fixture.root, "relocated");
+  renameSync(path.join(extractionRoot, releaseRootName), relocatedRoot);
+
+  assert.deepEqual(listFiles(relocatedRoot), [
+    "node_modules/ajv-formats/package.json",
+    "node_modules/node-roon-api/package.json",
+    "package.json",
+    "roonscape",
+    "runtime/node/LICENSE",
+    "runtime/node/bin/node",
+    "src/bridge/dist/src/index.js",
+    "src/bridge/dist/src/roonscape.js",
+    "src/bridge/node_modules/ajv/package.json",
+    "src/renderer/assets/fonts/IBM-Plex-Sans-OFL.txt",
+    "src/renderer/assets/fonts/IBMPlexSans-Variable.ttf",
+    "src/renderer/assets/fonts/Libre-Baskerville-OFL.txt",
+    "src/renderer/assets/fonts/LibreBaskerville-Variable.ttf",
+    "src/shared/fixtures/artwork/playing.svg",
+    "src/shared/fixtures/fixture-scenario-catalog.json",
+    "src/shared/fixtures/playing.json",
+    "src/shared/schema/display-configuration.schema.json",
+    "src/shared/schema/presentation-snapshot.schema.json",
+    "target/release/roonscape-renderer",
+  ]);
+  assert.throws(
+    () => statSync(path.join(relocatedRoot, "src/bridge/dist/src/stale.js")),
+    { code: "ENOENT" },
+  );
+
+  for (const relativePath of [
+    "roonscape",
+    "runtime/node/bin/node",
+    "target/release/roonscape-renderer",
+  ]) {
     assert.equal(
-      readFileSync(checksumFile, "utf8"),
-      `${expectedChecksum}  ${path.basename(archiveFile)}\n`,
+      statSync(path.join(relocatedRoot, relativePath)).mode & 0o777,
+      0o755,
     );
+  }
+  assert.equal(
+    statSync(path.join(relocatedRoot, "src/bridge/dist/src/index.js")).mode &
+      0o777,
+    0o644,
+  );
 
-    const extractionRoot = mkdtempSync(
-      path.join(tmpdir(), "roonscape-release-test."),
-    );
-    try {
-      const archiveListing = run("tar", ["-tzf", archiveFile], {
-        cwd: extractionRoot,
-      });
-      assert.equal(archiveListing.status, 0, packagingOutput(archiveListing));
-      assert.deepEqual(
-        [
-          ...new Set(
-            archiveListing.stdout
-              .trim()
-              .split("\n")
-              .map((entry) => entry.split("/")[0]),
-          ),
-        ],
-        [releaseRootName],
-      );
+  const invocationFile = path.join(fixture.root, "node-invocation.txt");
+  const launcher = run(path.join(relocatedRoot, "roonscape"), ["--help"], {
+    cwd: fixture.root,
+    env: { ...process.env, ROONSCAPE_TEST_INVOCATION: invocationFile },
+  });
+  assert.equal(launcher.status, 0, commandOutput(launcher));
+  assert.equal(
+    readFileSync(invocationFile, "utf8"),
+    `${path.join(relocatedRoot, "src/bridge/dist/src/roonscape.js")}\n--help\n`,
+  );
+});
 
-      const extraction = run("tar", ["-xzf", archiveFile], {
-        cwd: extractionRoot,
-      });
-      assert.equal(extraction.status, 0, packagingOutput(extraction));
+test("the assembled release passes full validation after relocation", (context) => {
+  const fixture = createPackagingFixture(context);
+  const artifacts = assembleFixture(fixture);
+  const validated = validateReleasePackage({
+    artifacts,
+    commands: { readelf: fixture.readelf },
+    environment: process.env,
+    expectedVersion,
+    scratchDirectory: path.join(fixture.root, "validation"),
+  });
 
-      const releaseRoot = path.join(extractionRoot, releaseRootName);
-      const relocatedRoot = path.join(extractionRoot, "relocated-roonscape");
-      renameSync(releaseRoot, relocatedRoot);
-      assert.throws(
-        () =>
-          statSync(
-            path.join(
-              relocatedRoot,
-              "src/bridge/dist/src/stale-package-output.js",
-            ),
-          ),
-        { code: "ENOENT" },
-      );
+  assert.equal(path.basename(validated.relocatedRoot), "relocated-roonscape");
+});
 
-      for (const relativePath of [
-        "src/bridge/dist/src/index.js",
-        "src/bridge/dist/src/roonscape.js",
-        "src/bridge/node_modules/ajv/package.json",
-        "node_modules/ajv-formats/package.json",
-        "node_modules/node-roon-api/package.json",
-        "package.json",
-        "src/renderer/assets/fonts/IBM-Plex-Sans-OFL.txt",
-        "src/renderer/assets/fonts/IBMPlexSans-Variable.ttf",
-        "src/renderer/assets/fonts/Libre-Baskerville-OFL.txt",
-        "src/renderer/assets/fonts/LibreBaskerville-Variable.ttf",
-        "runtime/node/LICENSE",
-        "src/shared/fixtures/fixture-scenario-catalog.json",
-        "src/shared/fixtures/playing.json",
-        "src/shared/fixtures/artwork/playing.svg",
-        "src/shared/schema/display-configuration.schema.json",
-        "src/shared/schema/presentation-snapshot.schema.json",
-      ]) {
-        assert.ok(
-          statSync(path.join(relocatedRoot, relativePath)).isFile(),
-          `${relativePath} should be packaged`,
-        );
-      }
+test("assembly rejects missing or malformed prepared inputs", (context) => {
+  const missingFixture = createPackagingFixture(context);
+  unlinkSync(path.join(missingFixture.inputs.bridgeBuild, "roonscape.js"));
 
-      assert.equal(
-        JSON.parse(
-          readFileSync(path.join(relocatedRoot, "package.json"), "utf8"),
-        ).version,
+  assert.throws(
+    () => assembleFixture(missingFixture),
+    /prepared Roon bridge entry point is unavailable/,
+  );
+
+  const malformedFixture = createPackagingFixture(context);
+  rmSync(malformedFixture.inputs.rootNodeModules, {
+    force: true,
+    recursive: true,
+  });
+  write(malformedFixture.inputs.rootNodeModules, "not a dependency tree\n");
+  assert.throws(
+    () => assembleFixture(malformedFixture),
+    /prepared rootNodeModules is unavailable/,
+  );
+});
+
+test("a Node archive checksum mismatch is rejected", (context) => {
+  const fixture = createPackagingFixture(context);
+  const archive = path.join(fixture.root, "node.tar.xz");
+  write(archive, "controlled archive");
+
+  assert.throws(
+    () => verifyFileChecksum(archive, "0".repeat(64), "Node runtime"),
+    /Node runtime checksum mismatch/,
+  );
+});
+
+test("validation rejects non-glibc and unsupported executables", (context) => {
+  const fixture = createPackagingFixture(context);
+  const artifacts = assembleFixture(fixture);
+  const nonGlibcReadelf = executable(fixture.root, "readelf-none", "exit 0\n");
+  assert.throws(
+    () =>
+      validateReleasePackage({
+        artifacts,
+        commands: { readelf: nonGlibcReadelf },
         expectedVersion,
-      );
+        scratchDirectory: path.join(fixture.root, "validation-none"),
+      }),
+    /is not linked against glibc/,
+  );
 
-      for (const relativePath of [
-        "roonscape",
-        "runtime/node/bin/node",
-        "target/release/roonscape-renderer",
-      ]) {
-        const mode = statSync(path.join(relocatedRoot, relativePath)).mode;
-        assert.notEqual(
-          mode & 0o111,
-          0,
-          `${relativePath} should be executable`,
-        );
-      }
+  const unsupportedReadelf = executable(
+    fixture.root,
+    "readelf-new",
+    "echo GLIBC_2.36\n",
+  );
+  assert.throws(
+    () =>
+      validateReleasePackage({
+        artifacts,
+        commands: { readelf: unsupportedReadelf },
+        expectedVersion,
+        scratchDirectory: path.join(fixture.root, "validation-new"),
+      }),
+    /requires GLIBC_2\.36/,
+  );
+});
 
-      const commandPath = path.join(extractionRoot, "command-path");
-      mkdirSync(commandPath);
-      for (const command of ["dirname", "readlink"]) {
-        symlinkSync(`/usr/bin/${command}`, path.join(commandPath, command));
-      }
-      chmodSync(commandPath, 0o755);
+test("archive and checksum tool failures fail without successful artifacts", (context) => {
+  const archiveFixture = createPackagingFixture(context);
+  const failure = executable(archiveFixture.root, "failure", "exit 23\n");
+  assert.throws(
+    () =>
+      assembleReleasePackage({
+        commands: { tar: failure },
+        inputs: archiveFixture.inputs,
+        outputDirectory: archiveFixture.outputDirectory,
+        scratchDirectory: archiveFixture.scratchDirectory,
+        sourceDateEpoch: "1700000000",
+        version: expectedVersion,
+      }),
+    /exited with status 23/,
+  );
+  assert.throws(() => statSync(archiveFixture.outputDirectory), {
+    code: "ENOENT",
+  });
 
-      const environment = { ...process.env, PATH: commandPath };
-      const command = path.join(relocatedRoot, "roonscape");
-      const help = run(command, ["--help"], {
-        cwd: extractionRoot,
-        env: environment,
-      });
-      assert.equal(help.status, 0, packagingOutput(help));
-      assert.match(help.stdout, /^Usage: roonscape /);
+  const checksumFixture = createPackagingFixture(context);
+  const artifacts = assembleFixture(checksumFixture);
+  assert.throws(
+    () =>
+      validateReleasePackage({
+        artifacts,
+        commands: { readelf: checksumFixture.readelf, sha256sum: failure },
+        expectedVersion,
+        scratchDirectory: path.join(checksumFixture.root, "validation"),
+      }),
+    /exited with status 23/,
+  );
+});
 
-      const version = run(command, ["--version"], {
-        cwd: extractionRoot,
-        env: environment,
-      });
-      assert.equal(version.status, 0, packagingOutput(version));
-      assert.equal(version.stdout, `RoonScape ${expectedVersion}\n`);
-    } finally {
-      rmSync(extractionRoot, { force: true, recursive: true });
-    }
-  },
-);
+function createPackagingFixture(context) {
+  const root = mkdtempSync(path.join(tmpdir(), "roonscape-package-test."));
+  context.after(() => rmSync(root, { force: true, recursive: true }));
+  const inputRoot = path.join(root, "inputs");
+  const outputDirectory = path.join(root, "release");
+  const scratchDirectory = path.join(root, "scratch");
+  const paths = {
+    bridgeBuild: path.join(inputRoot, "bridge-build"),
+    bridgeSource: path.join(inputRoot, "bridge-source"),
+    bridgeNodeModules: path.join(inputRoot, "bridge-node-modules"),
+    fonts: path.join(inputRoot, "fonts"),
+    launcher: path.join(inputRoot, "roonscape"),
+    nodeDistribution: path.join(inputRoot, "node"),
+    renderer: path.join(inputRoot, "roonscape-renderer"),
+    rootNodeModules: path.join(inputRoot, "root-node-modules"),
+    shared: path.join(inputRoot, "shared"),
+  };
 
-test(
-  "packaging rejects a renderer that does not target glibc",
-  { timeout: 300_000 },
-  (context) => {
-    const fakeCommandDirectory = mkdtempSync(
-      path.join(tmpdir(), "roonscape-package-commands."),
-    );
-    context.after(() =>
-      rmSync(fakeCommandDirectory, { force: true, recursive: true }),
-    );
-    const fakeReadelf = path.join(fakeCommandDirectory, "readelf");
-    writeFileSync(fakeReadelf, "#!/bin/sh\nexit 0\n");
-    chmodSync(fakeReadelf, 0o755);
+  write(paths.launcher, readFileSync("src/launcher/roonscape"));
+  write(paths.renderer, "controlled renderer\n");
+  write(path.join(paths.bridgeSource, "index.ts"), "export {};\n");
+  write(path.join(paths.bridgeSource, "roonscape.ts"), "export {};\n");
+  write(path.join(paths.bridgeBuild, "index.js"), "export {};\n");
+  write(path.join(paths.bridgeBuild, "roonscape.js"), "export {};\n");
+  write(path.join(paths.bridgeBuild, "stale.js"), "throw new Error();\n");
+  write(path.join(paths.rootNodeModules, "ajv-formats/package.json"), "{}\n");
+  write(path.join(paths.rootNodeModules, "node-roon-api/package.json"), "{}\n");
+  write(path.join(paths.bridgeNodeModules, "ajv/package.json"), "{}\n");
+  write(path.join(paths.shared, "fixtures/artwork/playing.svg"), "<svg/>\n");
+  write(
+    path.join(paths.shared, "fixtures/fixture-scenario-catalog.json"),
+    "{}\n",
+  );
+  write(path.join(paths.shared, "fixtures/playing.json"), "{}\n");
+  write(
+    path.join(paths.shared, "schema/display-configuration.schema.json"),
+    "{}\n",
+  );
+  write(
+    path.join(paths.shared, "schema/presentation-snapshot.schema.json"),
+    "{}\n",
+  );
+  for (const font of [
+    "IBM-Plex-Sans-OFL.txt",
+    "IBMPlexSans-Variable.ttf",
+    "Libre-Baskerville-OFL.txt",
+    "LibreBaskerville-Variable.ttf",
+  ]) {
+    write(path.join(paths.fonts, font), "font\n");
+  }
+  write(path.join(paths.nodeDistribution, "LICENSE"), "Node license\n");
+  write(
+    path.join(paths.nodeDistribution, "bin/node"),
+    `#!/bin/sh
+if [ -n "\${ROONSCAPE_TEST_INVOCATION:-}" ]; then
+  printf '%s\\n' "$@" > "$ROONSCAPE_TEST_INVOCATION"
+fi
+case "\${2:-}" in
+  --help) echo 'Usage: roonscape [options]' ;;
+  --version) echo 'RoonScape ${expectedVersion}' ;;
+esac
+`,
+  );
+  for (const executable of [
+    paths.launcher,
+    paths.renderer,
+    path.join(paths.nodeDistribution, "bin/node"),
+  ]) {
+    chmodSync(executable, 0o755);
+  }
 
-    const packaging = run(process.execPath, ["scripts/package-release.mjs"], {
-      cwd: repositoryRoot,
-      env: {
-        ...process.env,
-        PATH: `${fakeCommandDirectory}:${process.env.PATH ?? ""}`,
-      },
-    });
+  const readelf = executable(root, "readelf", "echo GLIBC_2.35\n");
+  return {
+    inputs: paths,
+    outputDirectory,
+    readelf,
+    root,
+    scratchDirectory,
+  };
+}
 
-    assert.notEqual(packaging.status, 0, packagingOutput(packaging));
-    assert.match(packaging.stderr, /is not linked against glibc/);
-  },
-);
-
-function run(executable, arguments_, options) {
-  return spawnSync(executable, arguments_, {
-    encoding: "utf8",
-    ...options,
+function assembleFixture(fixture) {
+  return assembleReleasePackage({
+    inputs: fixture.inputs,
+    outputDirectory: fixture.outputDirectory,
+    scratchDirectory: fixture.scratchDirectory,
+    sourceDateEpoch: "1700000000",
+    version: expectedVersion,
   });
 }
 
-function packagingOutput(result) {
+function executable(root, name, body) {
+  const file = path.join(root, "commands", name);
+  write(file, `#!/bin/sh\n${body}`);
+  chmodSync(file, 0o755);
+  return file;
+}
+
+function write(file, contents) {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, contents);
+}
+
+function run(executable, arguments_, options) {
+  return spawnSync(executable, arguments_, { encoding: "utf8", ...options });
+}
+
+function commandOutput(result) {
   return [result.stdout, result.stderr].filter(Boolean).join("\n");
+}
+
+function listFiles(root) {
+  const files = [];
+  visit(root, "");
+  return files.sort();
+
+  function visit(directory, prefix) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const relativePath = path.join(prefix, entry.name);
+      if (entry.isDirectory()) {
+        visit(path.join(directory, entry.name), relativePath);
+      } else {
+        files.push(relativePath);
+      }
+    }
+  }
 }

@@ -8,13 +8,20 @@ Use this checklist after the release version has been approved.
    `scripts/package-release.test.mjs`. Refresh `package-lock.json` and
    `Cargo.lock` so their RoonScape entries agree with that version. The complete
    repository check rejects any inconsistency across these sources.
-2. Install the locked dependencies with `npm ci`, then run the complete local
-   check and build the release artifacts:
+2. Install the locked development dependencies with `npm ci`, then run the
+   complete local check and the authoritative release-package command:
 
    ```sh
    npm run check
    npm run package
    ```
+
+   The repository check uses controlled packaging inputs and does not build or
+   download release-package components. `npm run package` is the explicit
+   end-to-end release check: it builds the Roon bridge and renderer, installs
+   production dependencies, downloads and verifies the pinned Node runtime,
+   assembles the archive once, and fully validates that same archive and its
+   checksum. It leaves the validated artifacts under `release/`.
 
 3. Review the changes and the two files under `release/`, then commit the
    release. The expected files are `roonscape-linux-x64.tar.gz` and
