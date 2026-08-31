@@ -1,0 +1,17 @@
+#!/bin/sh
+
+printf "Xvfb|%s\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
+display_number="${1#:}"
+socket="/tmp/.X11-unix/X${display_number}"
+mkdir -p /tmp/.X11-unix
+touch "$socket"
+
+stop() {
+  if [ "${ROONSCAPE_CAPTURE_TEST_LOG_STYLE-general}" = "focused" ]; then
+    printf "Xvfb-stopped\n" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
+  fi
+  rm -f "$socket"
+}
+
+trap 'stop; exit 0' TERM INT EXIT
+while :; do /usr/bin/sleep 1; done

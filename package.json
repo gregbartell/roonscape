@@ -29,7 +29,7 @@
     "test:capture-control-renderer": "cargo build --locked --package roonscape-renderer && node --test scripts/capture-control-renderer.test.mjs",
     "test:bridge": "npm run test --workspace @roonscape/bridge",
     "test:fixture-launcher": "node --test scripts/run-fixture.test.mjs",
-    "test:presentation-captures": "npm run build && node --test scripts/presentation-captures.test.mjs",
+    "test:presentation-captures": "npm run build && node --test scripts/presentation-capture*.test.mjs",
     "test:process-harness": "node --test scripts/process-harness.test.mjs",
     "test:package": "node --test scripts/package-release.test.mjs",
     "test:source-launcher": "npm run build && node --test scripts/source-launcher.test.mjs",

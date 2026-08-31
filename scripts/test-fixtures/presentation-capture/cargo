@@ -1,0 +1,39 @@
+#!/bin/sh
+
+if [ "$1" = "build" ]; then
+  if [ -n "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG" ]; then
+    printf "cargo-preflight|%s\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
+  fi
+  if [ -n "$ROONSCAPE_CAPTURE_TEST_BUILD_FAILURE" ] && [ -f "$ROONSCAPE_CAPTURE_TEST_BUILD_FAILURE" ]; then
+    printf "missing renderer input\n" >&2
+    exit 7
+  fi
+  exit 0
+fi
+
+case "${ROONSCAPE_CAPTURE_TEST_LOG_STYLE-general}" in
+  focused)
+    printf "renderer|%s|%s|%s|%s|%s|%s|%s\n" \
+      "$ROONSCAPE_STATIC_FIXTURE" \
+      "$ROONSCAPE_CAPTURE_VIEWPORT" \
+      "$ROONSCAPE_CAPTURE_CONTROL" \
+      "${ROONSCAPE_DIAGNOSTICS-unset}" \
+      "${ROONSCAPE_CAPTURE_TYPOGRAPHY-unset}" \
+      "${ROONSCAPE_FIXTURE_AUTO_CLOSE_MS-unset}" \
+      "${ROONSCAPE_DISPLAY_CONFIG-unset}" \
+      >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
+    ;;
+  profile)
+    printf "renderer|%s|%s|%s\n" \
+      "$ROONSCAPE_CAPTURE_VIEWPORT" \
+      "${ROONSCAPE_CAPTURE_TYPOGRAPHY-automatic}" \
+      "$ROONSCAPE_DIAGNOSTICS" \
+      >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
+    ;;
+  *)
+    printf "renderer|%s\n" "$ROONSCAPE_CAPTURE_VIEWPORT" \
+      >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
+    ;;
+esac
+
+exec "${NODE:-node}" "$ROONSCAPE_CAPTURE_TEST_RENDERER"

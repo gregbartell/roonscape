@@ -1,0 +1,6 @@
+#!/bin/sh
+
+width="${ROONSCAPE_CAPTURE_VIEWPORT%x*}"
+height="${ROONSCAPE_CAPTURE_VIEWPORT#*x}"
+printf 'xwininfo: Window id: 4242 "RoonScape"\n  Width: %s\n  Height: %s\n' \
+  "$width" "$height"

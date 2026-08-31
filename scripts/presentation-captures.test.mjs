@@ -19,6 +19,10 @@ import {
   buildPresentationCapturePlan,
   selectFocusedPresentationCapture,
 } from "./presentation-captures.mjs";
+import {
+  installPresentationCaptureFixtures,
+  presentationCapturePngHeader,
+} from "./presentation-capture-test-fixtures.mjs";
 import { validatePresentationCaptureSnapshot } from "./presentation-snapshot.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -595,24 +599,12 @@ test("visual-acceptance profile publishes its maintained plan through reusable p
       const [width, height] = viewport.split("x").map(Number);
       await writeFile(
         path.join(fakePngDirectory, `${viewport}.png`),
-        pngHeader(width, height),
+        presentationCapturePngHeader(width, height),
       );
     }),
   );
-  await installFakeCaptureDisplay(binDirectory);
-  await executable(
-    path.join(binDirectory, "cargo"),
-    '#!/bin/sh\nif [ "$1" = "build" ]; then\n  printf "cargo-preflight|%s\\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n  exit 0\nfi\nprintf "renderer|%s|%s|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "${ROONSCAPE_CAPTURE_TYPOGRAPHY-automatic}" "$ROONSCAPE_DIAGNOSTICS" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\nexec "${NODE:-node}" "$ROONSCAPE_CAPTURE_TEST_RENDERER"\n',
-  );
-  await executable(
-    path.join(binDirectory, "scrot"),
-    '#!/bin/sh\nprintf "scrot|%s|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "$4" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n[ "$1" = "--window" ] && [ "$2" = "4242" ] && [ "$3" = "--overwrite" ] || exit 2\ncp "$ROONSCAPE_CAPTURE_TEST_PNG_DIRECTORY/$ROONSCAPE_CAPTURE_VIEWPORT.png" "$4"\n',
-  );
-  const fakeRenderer = path.join(taskDirectory, "renderer.mjs");
-  await writeFile(
-    fakeRenderer,
-    '#!/usr/bin/env node\nimport { once } from "node:events";\nimport { existsSync } from "node:fs";\nimport { appendFile } from "node:fs/promises";\nimport { createConnection } from "node:net";\nimport { createInterface } from "node:readline";\nconst connection = createConnection(process.env.ROONSCAPE_CAPTURE_CONTROL);\nawait once(connection, "connect");\nfor await (const line of createInterface({ input: connection })) {\n  const selection = JSON.parse(line);\n  await appendFile(process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG, `selection|${selection.scenario}|${selection.revision}\\n`);\n  if (existsSync(process.env.ROONSCAPE_CAPTURE_TEST_FAILURE_MARKER) && selection.scenario === "loading-with-content") process.exit(9);\n  await appendFile(process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG, `painted|${selection.scenario}|${selection.revision}\\n`);\n  connection.write(`${JSON.stringify({ type: "painted", scenario: selection.scenario, revision: selection.revision })}\\n`);\n}\n',
-  );
+  const { renderer: fakeRenderer } =
+    await installPresentationCaptureFixtures(binDirectory);
   const firstCapturePath = path.join(outputDirectory, plan[0].fileName);
   await writeFile(firstCapturePath, "stale");
   const runProfile = (...arguments_) =>
@@ -639,6 +631,7 @@ test("visual-acceptance profile publishes its maintained plan through reusable p
           ROONSCAPE_CAPTURE_TEST_PROCESS_LOG: processLog,
           ROONSCAPE_CAPTURE_TEST_RENDERER: fakeRenderer,
           ROONSCAPE_CAPTURE_TEST_FAILURE_MARKER: failureMarker,
+          ROONSCAPE_CAPTURE_TEST_LOG_STYLE: "profile",
         },
       },
     );
@@ -731,15 +724,15 @@ test("ordinary all-scenario capture publishes its maintained set through one pai
   await Promise.all([
     writeFile(
       path.join(fakePngDirectory, "1280x720.png"),
-      pngHeader(1280, 720),
+      presentationCapturePngHeader(1280, 720),
     ),
     writeFile(
       path.join(fakePngDirectory, "1920x1080.png"),
-      pngHeader(1920, 1080),
+      presentationCapturePngHeader(1920, 1080),
     ),
     writeFile(
       path.join(fakePngDirectory, "3840x2160.png"),
-      pngHeader(3840, 2160),
+      presentationCapturePngHeader(3840, 2160),
     ),
     writeFile(
       customArtwork,
@@ -748,20 +741,8 @@ test("ordinary all-scenario capture publishes its maintained set through one pai
       ),
     ),
   ]);
-  await installFakeCaptureDisplay(binDirectory);
-  await executable(
-    path.join(binDirectory, "cargo"),
-    '#!/bin/sh\nif [ "$1" = "build" ]; then exit 0; fi\nprintf "renderer|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\nexec "${NODE:-node}" "$ROONSCAPE_CAPTURE_TEST_RENDERER"\n',
-  );
-  await executable(
-    path.join(binDirectory, "scrot"),
-    '#!/bin/sh\nprintf "scrot|%s|%s\\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "$4" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n[ "$1" = "--window" ] && [ "$2" = "4242" ] && [ "$3" = "--overwrite" ] || exit 2\ncp "$ROONSCAPE_CAPTURE_TEST_PNG_DIRECTORY/$ROONSCAPE_CAPTURE_VIEWPORT.png" "$4"\n',
-  );
-  const fakeRenderer = path.join(taskDirectory, "renderer.mjs");
-  await writeFile(
-    fakeRenderer,
-    '#!/usr/bin/env node\nimport { once } from "node:events";\nimport { existsSync } from "node:fs";\nimport { appendFile } from "node:fs/promises";\nimport { createConnection } from "node:net";\nimport { createInterface } from "node:readline";\nconst connection = createConnection(process.env.ROONSCAPE_CAPTURE_CONTROL);\nawait once(connection, "connect");\nfor await (const line of createInterface({ input: connection })) {\n  const selection = JSON.parse(line);\n  const artwork = selection.snapshot.artwork?.path ?? "none";\n  await appendFile(process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG, `selection|${selection.scenario}|${selection.revision}|${artwork}\\n`);\n  if (existsSync(process.env.ROONSCAPE_CAPTURE_TEST_FAILURE_MARKER) && selection.scenario === "loading-with-content") process.exit(9);\n  await appendFile(process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG, `painted|${selection.scenario}|${selection.revision}\\n`);\n  connection.write(`${JSON.stringify({ type: "painted", scenario: selection.scenario, revision: selection.revision })}\\n`);\n}\n',
-  );
+  const { renderer: fakeRenderer } =
+    await installPresentationCaptureFixtures(binDirectory);
   const runAll = (...arguments_) =>
     execFileAsync(
       process.execPath,
@@ -1003,15 +984,15 @@ test("focused capture waits for its painted revision and publishes one validated
   await Promise.all([
     writeFile(
       path.join(fakePngDirectory, "3840x2160.png"),
-      pngHeader(3840, 2160),
+      presentationCapturePngHeader(3840, 2160),
     ),
     writeFile(
       path.join(fakePngDirectory, "1920x1080.png"),
-      pngHeader(1920, 1080),
+      presentationCapturePngHeader(1920, 1080),
     ),
     writeFile(
       path.join(fakePngDirectory, "1280x720.png"),
-      pngHeader(1280, 720),
+      presentationCapturePngHeader(1280, 720),
     ),
     writeFile(
       customArtwork,
@@ -1020,20 +1001,8 @@ test("focused capture waits for its painted revision and publishes one validated
       ),
     ),
   ]);
-  await installFakeCaptureDisplay(binDirectory, { logStop: true });
-  await executable(
-    path.join(binDirectory, "cargo"),
-    '#!/bin/sh\nif [ "$1" = "build" ]; then\n  printf "cargo-preflight|%s\\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n  if [ -f "$ROONSCAPE_CAPTURE_TEST_BUILD_FAILURE" ]; then\n    printf "missing renderer input\\n" >&2\n    exit 7\n  fi\n  exit 0\nfi\nprintf "renderer|%s|%s|%s|%s|%s|%s|%s\\n" "$ROONSCAPE_STATIC_FIXTURE" "$ROONSCAPE_CAPTURE_VIEWPORT" "$ROONSCAPE_CAPTURE_CONTROL" "${ROONSCAPE_DIAGNOSTICS-unset}" "${ROONSCAPE_CAPTURE_TYPOGRAPHY-unset}" "${ROONSCAPE_FIXTURE_AUTO_CLOSE_MS-unset}" "${ROONSCAPE_DISPLAY_CONFIG-unset}" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\nexec "${NODE:-node}" "$ROONSCAPE_CAPTURE_TEST_RENDERER"\n',
-  );
-  await executable(
-    path.join(binDirectory, "scrot"),
-    '#!/bin/sh\nprintf "scrot|%s|%s\\n" "$*" "$(/usr/bin/date +%s%3N)" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"\n[ "$1" = "--window" ] && [ "$2" = "4242" ] && [ "$3" = "--overwrite" ] || exit 2\ncp "$ROONSCAPE_CAPTURE_TEST_PNG_DIRECTORY/$ROONSCAPE_CAPTURE_VIEWPORT.png" "$4"\n',
-  );
-  const fakeRenderer = path.join(taskDirectory, "renderer.mjs");
-  await writeFile(
-    fakeRenderer,
-    '#!/usr/bin/env node\nimport { createHash } from "node:crypto";\nimport { once } from "node:events";\nimport { appendFile, readFile } from "node:fs/promises";\nimport { createConnection } from "node:net";\nimport { createInterface } from "node:readline";\nconst log = process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG;\nconst connection = createConnection(process.env.ROONSCAPE_CAPTURE_CONTROL);\nprocess.once("SIGTERM", async () => { await appendFile(log, "renderer-stopped\\n"); process.exit(0); });\nawait once(connection, "connect");\nconst lines = createInterface({ input: connection })[Symbol.asyncIterator]();\nconst selection = JSON.parse((await lines.next()).value);\nif (selection.type !== "select" || selection.scenario !== "playing" || selection.revision !== selection.snapshot.revision) process.exit(2);\nconst observedArtworkHash = selection.snapshot.artwork === null ? null : createHash("sha256").update(await readFile(selection.snapshot.artwork.path)).digest("hex").slice(0, 12);\nawait appendFile(log, `selection|${JSON.stringify({ ...selection, observedArtworkHash })}\\npainted|${Date.now()}\\n`);\nconnection.write(`${JSON.stringify({ type: "painted", scenario: selection.scenario, revision: selection.revision })}\\n`);\nawait once(connection, "close");\nawait appendFile(log, "renderer-stopped\\n");\n',
-  );
+  const { renderer: fakeRenderer } =
+    await installPresentationCaptureFixtures(binDirectory);
 
   const runFocusedCapture = (...arguments_) =>
     execFileAsync(
@@ -1057,6 +1026,7 @@ test("focused capture waits for its painted revision and publishes one validated
           ROONSCAPE_CAPTURE_TEST_PNG_DIRECTORY: fakePngDirectory,
           ROONSCAPE_CAPTURE_TEST_PROCESS_LOG: processLog,
           ROONSCAPE_CAPTURE_TEST_RENDERER: fakeRenderer,
+          ROONSCAPE_CAPTURE_TEST_LOG_STYLE: "focused",
           ROONSCAPE_CAPTURE_TYPOGRAPHY: "fallback",
           ROONSCAPE_DIAGNOSTICS: "1",
           ROONSCAPE_DISPLAY_CONFIG: "/inherited/display.json",
@@ -1239,7 +1209,7 @@ test("focused capture waits for its painted revision and publishes one validated
     await rm(outputDirectory, { force: true, recursive: true });
     await writeFile(
       path.join(fakePngDirectory, "3840x2160.png"),
-      pngHeader(1920, 1080),
+      presentationCapturePngHeader(1920, 1080),
     );
     await assert.rejects(
       runFocusedCapture(),
@@ -1555,53 +1525,3 @@ test("focused capture reports missing dependencies together before renderer work
     },
   );
 });
-
-async function installFakeCaptureDisplay(
-  binDirectory,
-  { logStop = false } = {},
-) {
-  const stopAction = logStop
-    ? 'printf "Xvfb-stopped\\n" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"; rm -f "$socket"'
-    : 'rm -f "$socket"';
-  await executable(
-    path.join(binDirectory, "Xvfb"),
-    [
-      "#!/bin/sh",
-      'printf "Xvfb|%s\\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"',
-      'display_number="${1#:}"',
-      'socket="/tmp/.X11-unix/X${display_number}"',
-      "mkdir -p /tmp/.X11-unix",
-      'touch "$socket"',
-      `trap '${stopAction}; exit 0' TERM INT EXIT`,
-      "while :; do /usr/bin/sleep 1; done",
-      "",
-    ].join("\n"),
-  );
-  await executable(
-    path.join(binDirectory, "xwininfo"),
-    [
-      "#!/bin/sh",
-      'width="${ROONSCAPE_CAPTURE_VIEWPORT%x*}"',
-      'height="${ROONSCAPE_CAPTURE_VIEWPORT#*x}"',
-      `printf 'xwininfo: Window id: 4242 "RoonScape"\\n  Width: %s\\n  Height: %s\\n' "$width" "$height"`,
-      "",
-    ].join("\n"),
-  );
-}
-
-async function executable(filePath, contents) {
-  await writeFile(filePath, contents);
-  await chmod(filePath, 0o755);
-}
-
-function pngHeader(width, height) {
-  const header = Buffer.alloc(33);
-  Buffer.from("89504e470d0a1a0a", "hex").copy(header);
-  header.writeUInt32BE(13, 8);
-  header.write("IHDR", 12, "ascii");
-  header.writeUInt32BE(width, 16);
-  header.writeUInt32BE(height, 20);
-  header[24] = 8;
-  header[25] = 2;
-  return header;
-}

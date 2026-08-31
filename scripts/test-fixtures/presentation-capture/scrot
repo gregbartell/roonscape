@@ -1,0 +1,13 @@
+#!/bin/sh
+
+[ "$1" = "--window" ] && [ "$2" = "4242" ] && [ "$3" = "--overwrite" ] || exit 2
+
+if [ "${ROONSCAPE_CAPTURE_TEST_LOG_STYLE-general}" = "focused" ]; then
+  printf "scrot|%s|%s\n" "$*" "$(/usr/bin/date +%s%3N)" \
+    >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
+else
+  printf "scrot|%s|%s\n" "$ROONSCAPE_CAPTURE_VIEWPORT" "$4" \
+    >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
+fi
+
+cp "$ROONSCAPE_CAPTURE_TEST_PNG_DIRECTORY/$ROONSCAPE_CAPTURE_VIEWPORT.png" "$4"
