@@ -34,8 +34,8 @@ jobs:
             echo "::error title=Invalid release source::Tag ${GITHUB_REF_NAME} is not reachable from ${DEFAULT_BRANCH}"
             exit 1
           fi
-      - name: Install native test dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libgtk-4-dev xvfb x11-utils
+      - name: Set up native test environment
+        uses: ./.github/actions/setup-native-test-environment
       - name: Install Node dependencies
         run: npm ci
       - name: Run repository checks

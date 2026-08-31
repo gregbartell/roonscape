@@ -23,8 +23,8 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Install native test dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libgtk-4-dev xvfb x11-utils
+      - name: Set up native test environment
+        uses: ./.github/actions/setup-native-test-environment
       - name: Install Node dependencies
         run: npm ci
       - name: Run repository checks

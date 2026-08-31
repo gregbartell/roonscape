@@ -1,0 +1,11 @@
+name: Set up native test environment
+description: Install the shared native dependencies required by repository checks
+
+runs:
+  using: composite
+  steps:
+    - name: Install native test dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes libgtk-4-dev scrot xvfb x11-utils
