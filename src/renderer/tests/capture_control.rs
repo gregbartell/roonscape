@@ -97,6 +97,80 @@ fn rejects_a_selection_whose_command_and_snapshot_revisions_differ() {
 }
 
 #[test]
+fn terminates_capture_when_a_selection_reuses_the_accepted_revision() {
+    let runtime_directory = tempfile::Builder::new()
+        .prefix("roonscape.")
+        .tempdir()
+        .expect("private runtime directory should be creatable");
+    let control_socket_path = runtime_directory.path().join("capture-control.sock");
+    let listener =
+        UnixListener::bind(&control_socket_path).expect("capture control socket should bind");
+    let snapshot = support::fixture("playing.json");
+    thread::spawn(move || {
+        let (mut connection, _) = listener.accept().expect("renderer should connect");
+        for scenario in ["playing", "paused"] {
+            writeln!(
+                connection,
+                "{{\"type\":\"select\",\"scenario\":\"{scenario}\",\"revision\":41,\"snapshot\":{}}}",
+                snapshot_at_revision(&snapshot, 41)
+            )
+            .expect("selection should be writable");
+        }
+    });
+
+    let (control, initial) = CaptureControl::connect(&control_socket_path)
+        .expect("the initial capture selection should establish its epoch");
+    assert_eq!(initial.revision(), 41);
+    let CaptureControlEvent::Failed(error) = control
+        .recv()
+        .expect("the duplicate selection should terminate capture")
+    else {
+        panic!("expected a fatal capture protocol error");
+    };
+    assert_eq!(
+        error,
+        "capture selection revision 41 must be greater than accepted revision 41"
+    );
+}
+
+#[test]
+fn terminates_capture_when_a_selection_decreases_the_accepted_revision() {
+    let runtime_directory = tempfile::Builder::new()
+        .prefix("roonscape.")
+        .tempdir()
+        .expect("private runtime directory should be creatable");
+    let control_socket_path = runtime_directory.path().join("capture-control.sock");
+    let listener =
+        UnixListener::bind(&control_socket_path).expect("capture control socket should bind");
+    let snapshot = support::fixture("playing.json");
+    thread::spawn(move || {
+        let (mut connection, _) = listener.accept().expect("renderer should connect");
+        for (scenario, revision) in [("playing", 41), ("paused", 40)] {
+            writeln!(
+                connection,
+                "{{\"type\":\"select\",\"scenario\":\"{scenario}\",\"revision\":{revision},\"snapshot\":{}}}",
+                snapshot_at_revision(&snapshot, revision)
+            )
+            .expect("selection should be writable");
+        }
+    });
+
+    let (control, initial) = CaptureControl::connect(&control_socket_path)
+        .expect("the initial capture selection should establish its epoch");
+    assert_eq!(initial.revision(), 41);
+    let CaptureControlEvent::Failed(error) = control
+        .recv()
+        .expect("the decreasing selection should terminate capture")
+    else {
+        panic!("expected a fatal capture protocol error");
+    };
+    assert_eq!(
+        error,
+        "capture selection revision 40 must be greater than accepted revision 41"
+    );
+}
+
+#[test]
 fn accepts_a_selection_at_the_complete_serialized_snapshot_limit() {
     let runtime_directory = tempfile::Builder::new()
         .prefix("roonscape.")

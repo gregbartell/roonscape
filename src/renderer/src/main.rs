@@ -534,6 +534,12 @@ impl PresentationRuntime {
                         ConnectionState::Connected => None,
                     }
                 }
+                Ok(SnapshotEvent::RevisionRejected { incoming, accepted }) => {
+                    eprintln!(
+                        "RoonScape renderer: ignored presentation revision {incoming}; current revision is {accepted}"
+                    );
+                    None
+                }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             };
             if let Some(update) = update {

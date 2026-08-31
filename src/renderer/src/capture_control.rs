@@ -128,6 +128,7 @@ pub enum CaptureControlError {
     MessageTooLarge,
     InvalidMessage(String),
     RevisionMismatch { requested: u64, snapshot: u64 },
+    NonIncreasingRevision { incoming: u64, accepted: u64 },
 }
 
 #[derive(Deserialize)]
@@ -158,6 +159,10 @@ impl fmt::Display for CaptureControlError {
             } => write!(
                 formatter,
                 "capture selection revision {requested} does not match snapshot revision {snapshot}"
+            ),
+            Self::NonIncreasingRevision { incoming, accepted } => write!(
+                formatter,
+                "capture selection revision {incoming} must be greater than accepted revision {accepted}"
             ),
         }
     }
@@ -190,10 +195,24 @@ impl CaptureControl {
         notifier
             .set_nonblocking(true)
             .expect("the renderer should configure nonblocking wakeup writes");
+        let initial_revision = initial.revision();
         thread::spawn(move || {
+            let mut accepted_revision = initial_revision;
             loop {
                 let event = match read_selection(&mut reader) {
-                    Ok(selection) => CaptureControlEvent::Selection(Box::new(selection)),
+                    Ok(selection) if selection.revision() <= accepted_revision => {
+                        CaptureControlEvent::Failed(
+                            CaptureControlError::NonIncreasingRevision {
+                                incoming: selection.revision(),
+                                accepted: accepted_revision,
+                            }
+                            .to_string(),
+                        )
+                    }
+                    Ok(selection) => {
+                        accepted_revision = selection.revision();
+                        CaptureControlEvent::Selection(Box::new(selection))
+                    }
                     Err(CaptureControlError::EmptyMessage) => CaptureControlEvent::Disconnected,
                     Err(error) => CaptureControlEvent::Failed(error.to_string()),
                 };

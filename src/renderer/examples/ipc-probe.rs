@@ -48,6 +48,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                 );
                 io::stdout().flush()?;
             }
+            SnapshotEvent::RevisionRejected { incoming, accepted } => {
+                eprintln!(
+                    "RoonScape IPC probe: ignored presentation revision {incoming}; current revision is {accepted}"
+                );
+            }
         }
     }
 }

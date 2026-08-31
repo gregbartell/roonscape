@@ -24,6 +24,7 @@ pub enum ConnectionState {
 pub enum SnapshotEvent {
     ConnectionChanged(ConnectionState),
     Snapshot(Box<PresentationSnapshot>),
+    RevisionRejected { incoming: u64, accepted: u64 },
 }
 
 pub struct SnapshotSubscription {
@@ -115,10 +116,33 @@ impl SnapshotSubscription {
                 ) {
                     return;
                 }
+                let mut accepted_revision = None;
+                let mut last_reported_rejection = None;
 
                 loop {
                     match reader.read_snapshot() {
                         Ok(snapshot) => {
+                            if let Some(accepted) = accepted_revision
+                                && snapshot.revision <= accepted
+                            {
+                                let rejection = (snapshot.revision, accepted);
+                                if last_reported_rejection != Some(rejection) {
+                                    if !notify(
+                                        &sender,
+                                        &mut notifier,
+                                        SnapshotEvent::RevisionRejected {
+                                            incoming: snapshot.revision,
+                                            accepted,
+                                        },
+                                    ) {
+                                        return;
+                                    }
+                                    last_reported_rejection = Some(rejection);
+                                }
+                                continue;
+                            }
+                            accepted_revision = Some(snapshot.revision);
+                            last_reported_rejection = None;
                             if !notify(
                                 &sender,
                                 &mut notifier,
