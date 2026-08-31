@@ -1099,6 +1099,10 @@ test("stale runtime artifacts are reclaimed only after their owner is gone", asy
       environment,
       processId: 424_242,
       userId,
+      observeProcessIdentity: () => ({
+        status: "observed",
+        processStartTimeTicks: "stale-start",
+      }),
     });
     await writeFile(staleSession.socketPath, "stale socket artifact");
     const bridge = pendingChild(() => undefined);
@@ -1114,7 +1118,13 @@ test("stale runtime artifacts are reclaimed only after their owner is gone", asy
             environment,
             processId: process.pid,
             userId,
-            processExists: () => false,
+            observeProcessIdentity: (processId) =>
+              processId === process.pid
+                ? {
+                    status: "observed",
+                    processStartTimeTicks: "current-start",
+                  }
+                : { status: "absent" },
           }),
         launchBridge: ({ socketPath }) => {
           try {
@@ -1213,7 +1223,7 @@ test("an interrupted runtime recovery is reclaimed after its owner is gone", asy
     await chmod(runtimeDirectory, 0o700);
     await writeFile(
       path.join(interruptedRecovery, "session.json"),
-      '{"processId":424242,"token":"interrupted"}\n',
+      '{"processId":424242,"processStartTimeTicks":"stale-start","token":"interrupted"}\n',
       { mode: 0o600 },
     );
     const environment = { XDG_RUNTIME_DIR: runtimeRoot };
@@ -1230,7 +1240,13 @@ test("an interrupted runtime recovery is reclaimed after its owner is gone", asy
             environment,
             processId: process.pid,
             userId: process.getuid?.() ?? 1_000,
-            processExists: () => false,
+            observeProcessIdentity: (processId) =>
+              processId === process.pid
+                ? {
+                    status: "observed",
+                    processStartTimeTicks: "current-start",
+                  }
+                : { status: "absent" },
           }),
         launchBridge: () => {
           bridgeStarted = true;

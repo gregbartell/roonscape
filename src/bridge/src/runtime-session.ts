@@ -11,6 +11,10 @@ import {
 } from "node:fs";
 import path from "node:path";
 
+import {
+  type ObserveProcessIdentity,
+  observeLinuxProcessIdentity,
+} from "./process-identity.js";
 import type { OwnedRuntime } from "./roonscape-command.js";
 
 interface OpenRuntimeSessionOptions {
@@ -18,11 +22,12 @@ interface OpenRuntimeSessionOptions {
   processId: number;
   userId: number;
   fallbackRuntimeRoot?(userId: number): string;
-  processExists?(processId: number): boolean;
+  observeProcessIdentity?: ObserveProcessIdentity;
 }
 
 interface RuntimeOwner {
   processId: number;
+  processStartTimeTicks: string;
   token: string;
 }
 
@@ -38,7 +43,7 @@ export function openRuntimeSession({
   processId,
   userId,
   fallbackRuntimeRoot = (ownerUserId) => `/run/user/${ownerUserId}`,
-  processExists = defaultProcessExists,
+  observeProcessIdentity = observeLinuxProcessIdentity,
 }: OpenRuntimeSessionOptions): OwnedRuntime {
   const runtimeRoot = runtimeRootPath(environment, userId, fallbackRuntimeRoot);
   validatePrivateDirectory(runtimeRoot, userId, "runtime directory");
@@ -51,8 +56,15 @@ export function openRuntimeSession({
     "RoonScape runtime directory",
   );
 
-  const owner: RuntimeOwner = { processId, token: randomUUID() };
-  acquireOwnership(runtimeDirectory, owner, processExists);
+  const owner: RuntimeOwner = {
+    processId,
+    processStartTimeTicks: currentProcessStartTimeTicks(
+      processId,
+      observeProcessIdentity,
+    ),
+    token: randomUUID(),
+  };
+  acquireOwnership(runtimeDirectory, owner, observeProcessIdentity);
 
   return {
     socketPath: path.join(runtimeDirectory, "roonscape.sock"),
@@ -91,7 +103,7 @@ function runtimeRootPath(
 function acquireOwnership(
   runtimeDirectory: string,
   owner: RuntimeOwner,
-  processExists: (processId: number) => boolean,
+  observeProcessIdentity: ObserveProcessIdentity,
 ): void {
   const ownershipDirectory = path.join(
     runtimeDirectory,
@@ -106,14 +118,14 @@ function acquireOwnership(
         ownershipDirectory,
         recoveryDirectory,
         owner,
-        processExists,
+        observeProcessIdentity,
       );
       return;
     }
 
     if (publishOwnedDirectory(ownershipDirectory, owner)) {
       try {
-        removeDeadCandidates(runtimeDirectory, processExists);
+        removeStaleCandidates(runtimeDirectory, observeProcessIdentity);
         const unknownArtifacts = runtimeArtifactNames(runtimeDirectory);
         if (unknownArtifacts.length === 0) {
           return;
@@ -131,7 +143,13 @@ function acquireOwnership(
     if (previousOwner === undefined) {
       continue;
     }
-    if (processExists(previousOwner.processId)) {
+    if (
+      runtimeOwnerIsLive(
+        previousOwner,
+        ownershipDirectory,
+        observeProcessIdentity,
+      )
+    ) {
       throw new Error(
         `RoonScape is already running for this user (process ${previousOwner.processId})`,
       );
@@ -141,7 +159,7 @@ function acquireOwnership(
       ownershipDirectory,
       recoveryDirectory,
       owner,
-      processExists,
+      observeProcessIdentity,
     );
     return;
   }
@@ -152,16 +170,23 @@ function recoverOwnership(
   ownershipDirectory: string,
   recoveryDirectory: string,
   owner: RuntimeOwner,
-  processExists: (processId: number) => boolean,
+  observeProcessIdentity: ObserveProcessIdentity,
 ): void {
   const recoveryLeaf = acquireRecoveryLeaf(
     recoveryDirectory,
     owner,
-    processExists,
+    observeProcessIdentity,
   );
+  removeStaleCandidates(runtimeDirectory, observeProcessIdentity);
   const previousOwner = tryReadRuntimeOwner(ownershipDirectory);
   if (previousOwner !== undefined) {
-    if (processExists(previousOwner.processId)) {
+    if (
+      runtimeOwnerIsLive(
+        previousOwner,
+        ownershipDirectory,
+        observeProcessIdentity,
+      )
+    ) {
       throw new Error(
         `Cannot reclaim runtime state still owned by process ${previousOwner.processId}`,
       );
@@ -181,7 +206,7 @@ function recoverOwnership(
 function acquireRecoveryLeaf(
   recoveryDirectory: string,
   owner: RuntimeOwner,
-  processExists: (processId: number) => boolean,
+  observeProcessIdentity: ObserveProcessIdentity,
 ): string {
   if (publishOwnedDirectory(recoveryDirectory, owner)) {
     return recoveryDirectory;
@@ -190,7 +215,9 @@ function acquireRecoveryLeaf(
   let recoveryLeaf = recoveryDirectory;
   for (;;) {
     const recoveryOwner = readRuntimeOwner(recoveryLeaf);
-    if (processExists(recoveryOwner.processId)) {
+    if (
+      runtimeOwnerIsLive(recoveryOwner, recoveryLeaf, observeProcessIdentity)
+    ) {
       throw new Error(
         `Another RoonScape launch is recovering runtime ownership (process ${recoveryOwner.processId})`,
       );
@@ -225,16 +252,22 @@ function publishOwnedDirectory(
   }
 }
 
-function removeDeadCandidates(
+function removeStaleCandidates(
   runtimeDirectory: string,
-  processExists: (processId: number) => boolean,
+  observeProcessIdentity: ObserveProcessIdentity,
 ): void {
   for (const candidateName of readdirSync(runtimeDirectory).filter((name) =>
     name.startsWith(candidatePrefix),
   )) {
     const candidateDirectory = path.join(runtimeDirectory, candidateName);
     const candidateOwner = readRuntimeOwner(candidateDirectory);
-    if (processExists(candidateOwner.processId)) {
+    if (
+      runtimeOwnerIsLive(
+        candidateOwner,
+        candidateDirectory,
+        observeProcessIdentity,
+      )
+    ) {
       throw new Error(
         `Another RoonScape launch is acquiring runtime ownership (process ${candidateOwner.processId})`,
       );
@@ -324,9 +357,12 @@ function readRuntimeOwner(ownershipDirectory: string): RuntimeOwner {
     typeof candidate !== "object" ||
     candidate === null ||
     !("processId" in candidate) ||
+    !("processStartTimeTicks" in candidate) ||
     !("token" in candidate) ||
     !Number.isSafeInteger(candidate.processId) ||
     (candidate.processId as number) <= 0 ||
+    typeof candidate.processStartTimeTicks !== "string" ||
+    candidate.processStartTimeTicks.length === 0 ||
     typeof candidate.token !== "string" ||
     candidate.token.length === 0
   ) {
@@ -336,8 +372,49 @@ function readRuntimeOwner(ownershipDirectory: string): RuntimeOwner {
   }
   return {
     processId: candidate.processId as number,
+    processStartTimeTicks: candidate.processStartTimeTicks,
     token: candidate.token,
   };
+}
+
+function currentProcessStartTimeTicks(
+  processId: number,
+  observeProcessIdentity: ObserveProcessIdentity,
+): string {
+  try {
+    const observation = observeProcessIdentity(processId);
+    if (observation.status === "observed") {
+      return observation.processStartTimeTicks;
+    }
+  } catch (error) {
+    throw new Error(
+      `Cannot verify the current RoonScape process identity for process ${processId}; ensure Linux procfs is available and readable`,
+      { cause: error },
+    );
+  }
+  throw new Error(
+    `Cannot verify the current RoonScape process identity for process ${processId}; ensure Linux procfs is available and readable`,
+  );
+}
+
+function runtimeOwnerIsLive(
+  owner: RuntimeOwner,
+  ownershipDirectory: string,
+  observeProcessIdentity: ObserveProcessIdentity,
+): boolean {
+  let observation;
+  try {
+    observation = observeProcessIdentity(owner.processId);
+  } catch (error) {
+    throw new Error(
+      `Cannot verify existing RoonScape runtime ownership at ${path.join(ownershipDirectory, ownershipFileName)} because process ${owner.processId} identity could not be read; preserve the runtime state and retry after confirming no RoonScape process is running`,
+      { cause: error },
+    );
+  }
+  return (
+    observation.status === "observed" &&
+    observation.processStartTimeTicks === owner.processStartTimeTicks
+  );
 }
 
 function validatePrivateDirectory(
@@ -366,21 +443,6 @@ function validatePrivateDirectory(
   }
 }
 
-function defaultProcessExists(processId: number): boolean {
-  try {
-    process.kill(processId, 0);
-    return true;
-  } catch (error) {
-    if (isMissingProcess(error)) {
-      return false;
-    }
-    if (isPermissionDenied(error)) {
-      return true;
-    }
-    throw error;
-  }
-}
-
 function isOccupied(error: unknown): boolean {
   return ["EEXIST", "ENOTEMPTY"].includes(errorCode(error) ?? "");
 }
@@ -392,14 +454,6 @@ function isMissingFile(error: unknown): boolean {
   return error instanceof Error && "cause" in error
     ? isMissingFile(error.cause)
     : false;
-}
-
-function isMissingProcess(error: unknown): boolean {
-  return errorCode(error) === "ESRCH";
-}
-
-function isPermissionDenied(error: unknown): boolean {
-  return errorCode(error) === "EPERM";
 }
 
 function errorCode(error: unknown): string | undefined {
