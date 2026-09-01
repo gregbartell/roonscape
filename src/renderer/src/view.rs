@@ -235,7 +235,24 @@ struct RenderedFullField {
     explanation_slot: Option<gtk::Box>,
     explanation: Option<gtk::Label>,
     identity: Option<RenderedIdentity>,
-    pending_fits: Rc<Cell<u32>>,
+    fit_readiness: FullFieldFitReadiness,
+}
+
+#[derive(Clone)]
+struct FullFieldFitReadiness {
+    state: Rc<Cell<FullFieldFitState>>,
+}
+
+#[derive(Clone, Copy)]
+struct FullFieldFitState {
+    generation: u64,
+    pending: u32,
+}
+
+#[derive(Clone)]
+struct FullFieldFitGeneration {
+    generation: u64,
+    readiness: FullFieldFitReadiness,
 }
 
 struct RenderedPresentationStatus {
@@ -268,6 +285,7 @@ impl PresentationView {
     pub(crate) fn new(
         revision: u64,
         presentation: &Presentation,
+        initial_viewport: Viewport,
         repository_root: &Path,
         palette_provider: gtk::CssProvider,
         diagnostics_text: Option<&str>,
@@ -302,7 +320,7 @@ impl PresentationView {
             transition,
             palette_provider,
             rendering,
-            display_viewport: Viewport::WINDOWED_FIXTURE,
+            display_viewport: initial_viewport,
             layout_viewport: None,
             inactivity: InactivityTransform::default(),
             transition_clock: Instant::now(),
@@ -438,6 +456,10 @@ impl PresentationView {
         self.transition.current().value().capture_ready()
     }
 
+    pub(crate) fn layout_ready(&self) -> bool {
+        self.transition.current().value().layout_ready()
+    }
+
     fn remove_layer(&self, layer: PresentationRevision<RenderedPresentation>) {
         self.stack.remove(&layer.value().root);
     }
@@ -520,7 +542,72 @@ impl PresentationView {
     }
 }
 
+impl FullFieldFitReadiness {
+    fn new() -> Self {
+        Self {
+            state: Rc::new(Cell::new(FullFieldFitState {
+                generation: 0,
+                pending: 0,
+            })),
+        }
+    }
+
+    fn begin_generation(&self) -> FullFieldFitGeneration {
+        let current = self.state.get();
+        let generation = current
+            .generation
+            .checked_add(1)
+            .expect("Full-field fit generation must remain representable");
+        self.state.set(FullFieldFitState {
+            generation,
+            ..current
+        });
+        FullFieldFitGeneration {
+            generation,
+            readiness: self.clone(),
+        }
+    }
+
+    fn is_ready(&self) -> bool {
+        self.state.get().pending == 0
+    }
+}
+
+impl FullFieldFitGeneration {
+    fn register_fit(&self) {
+        let current = self.readiness.state.get();
+        self.readiness.state.set(FullFieldFitState {
+            pending: current
+                .pending
+                .checked_add(1)
+                .expect("pending Full-field fits must remain representable"),
+            ..current
+        });
+    }
+
+    fn is_current(&self) -> bool {
+        self.readiness.state.get().generation == self.generation
+    }
+
+    fn complete_fit(&self) {
+        let current = self.readiness.state.get();
+        self.readiness.state.set(FullFieldFitState {
+            pending: current
+                .pending
+                .checked_sub(1)
+                .expect("a completed Full-field fit must be registered"),
+            ..current
+        });
+    }
+}
+
 impl RenderedPresentation {
+    fn layout_ready(&self) -> bool {
+        self.full_field
+            .as_ref()
+            .is_none_or(|full_field| full_field.fit_readiness.is_ready())
+    }
+
     fn capture_ready(&self) -> Result<bool, String> {
         if let Some(error) = self.capture_error.as_ref() {
             return Err(error.clone());
@@ -528,10 +615,7 @@ impl RenderedPresentation {
         if let Some(now_playing) = self.now_playing.as_ref() {
             return now_playing.artwork.capture_ready();
         }
-        Ok(self
-            .full_field
-            .as_ref()
-            .is_none_or(|full_field| full_field.pending_fits.get() == 0))
+        Ok(self.layout_ready())
     }
 
     fn update_in_place(&mut self, presentation: &Presentation) {
@@ -696,7 +780,7 @@ fn full_field(
     diagnostics_text: Option<&str>,
     rendering: RenderingConfiguration,
 ) -> RenderedPresentation {
-    let pending_fits = Rc::new(Cell::new(0));
+    let fit_readiness = FullFieldFitReadiness::new();
     let layout = FullFieldLayout::for_viewport(Viewport::WINDOWED_FIXTURE);
     let content = gtk::Overlay::new();
     content.set_hexpand(true);
@@ -761,7 +845,7 @@ fn full_field(
             explanation_slot,
             explanation,
             identity,
-            pending_fits,
+            fit_readiness,
         }),
         diagnostics,
         capture_error: None,
@@ -1319,6 +1403,9 @@ impl RenderedArtwork {
 
 impl RenderedFullField {
     fn apply_layout(&self, layout: &FullFieldLayout) {
+        // GTK can allocate an earlier viewport after a newer layout is queued.
+        // Only the latest generation may commit its deferred font fitting.
+        let fit_generation = self.fit_readiness.begin_generation();
         self.copy
             .set_width_request(dimension(layout.composition_width_px));
         self.copy
@@ -1335,22 +1422,14 @@ impl RenderedFullField {
             .set_margin_bottom(dimension(layout.status_spacing_px));
         self.heading_slot
             .set_height_request(dimension(layout.heading_slot.height_px));
-        apply_full_field_font_size(
-            &self.heading,
-            layout.heading_font,
-            Rc::clone(&self.pending_fits),
-        );
+        apply_full_field_font_size(&self.heading, layout.heading_font, fit_generation.clone());
         apply_full_field_line_layout(&self.heading, layout.heading_line);
         if let (Some(slot), Some(explanation)) =
             (self.explanation_slot.as_ref(), self.explanation.as_ref())
         {
             slot.set_margin_top(dimension(layout.explanation_spacing_px));
             slot.set_height_request(dimension(layout.explanation_slot.height_px));
-            apply_full_field_font_size(
-                explanation,
-                layout.explanation_font,
-                Rc::clone(&self.pending_fits),
-            );
+            apply_full_field_font_size(explanation, layout.explanation_font, fit_generation);
             apply_full_field_line_layout(explanation, layout.explanation_line);
         }
         if let Some(identity) = self.identity.as_ref() {
@@ -1645,17 +1724,21 @@ fn apply_metadata_line_plan(
 fn apply_full_field_font_size(
     label: &gtk::Label,
     sizes: FullFieldFontSize,
-    pending_fits: Rc<Cell<u32>>,
+    fit_generation: FullFieldFitGeneration,
 ) {
     set_label_font_size(label, sizes.preferred_px);
-    pending_fits.set(pending_fits.get().saturating_add(1));
+    fit_generation.register_fit();
     let fitted_label = label.clone();
     label.add_tick_callback(move |_, _| {
+        if !fit_generation.is_current() {
+            fit_generation.complete_fit();
+            return gtk::glib::ControlFlow::Break;
+        }
         if fitted_label.width() <= 0 {
             return gtk::glib::ControlFlow::Continue;
         }
         fit_full_field_line(&fitted_label, sizes);
-        pending_fits.set(pending_fits.get().saturating_sub(1));
+        fit_generation.complete_fit();
         gtk::glib::ControlFlow::Break
     });
 }

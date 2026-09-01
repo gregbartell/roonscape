@@ -5,11 +5,12 @@ mod gradient_cache;
 mod status_symbol;
 mod view;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::env;
 use std::error::Error;
-use std::io;
+use std::io::{self, Read, Write};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::rc::Rc;
@@ -215,18 +216,35 @@ fn build_window(
     {
         settings.set_gtk_enable_animations(false);
     }
-    let viewport = renderer_configuration
+    let configured_viewport = renderer_configuration
         .capture
         .viewport
         .unwrap_or(Viewport::WINDOWED_FIXTURE);
+    let fullscreen = renderer_configuration.capture.viewport.is_none()
+        && env::var_os("ROONSCAPE_WINDOWED").is_none();
+    let first_revealed_paint_control = env::var_os("ROONSCAPE_TEST_FIRST_REVEALED_PAINT_CONTROL")
+        .map(PathBuf::from)
+        .map(|control_socket_path| UnixStream::connect(&control_socket_path))
+        .transpose()?;
+    if first_revealed_paint_control.is_some() && !fullscreen {
+        return Err(
+            "ROONSCAPE_TEST_FIRST_REVEALED_PAINT_CONTROL requires fullscreen operation".into(),
+        );
+    }
     let window = gtk::ApplicationWindow::builder()
         .application(application)
         .decorated(false)
-        .default_width(viewport.width_px as i32)
-        .default_height(viewport.height_px as i32)
+        .default_width(configured_viewport.width_px as i32)
+        .default_height(configured_viewport.height_px as i32)
         .show_menubar(false)
         .title("RoonScape")
         .build();
+    let fullscreen_viewport = if fullscreen {
+        present_fullscreen(&window)
+    } else {
+        None
+    };
+    let initial_viewport = fullscreen_viewport.unwrap_or(configured_viewport);
     let available_families = window
         .pango_context()
         .font_map()
@@ -262,16 +280,19 @@ fn build_window(
     let presentation_view = Rc::new(RefCell::new(PresentationView::new(
         presentation.borrow().revision(),
         &initial_frame.presentation,
+        initial_viewport,
         repository_root,
         palette_provider,
         initial_diagnostics.as_deref(),
         rendering,
     )));
-    presentation_view.borrow_mut().apply_viewport(viewport);
     presentation_view
         .borrow_mut()
         .apply_inactivity(initial_frame.inactivity);
     let display = gtk::Overlay::new();
+    if fullscreen {
+        display.set_opacity(0.0);
+    }
     display.set_child(Some(&presentation_view.borrow().root()));
     window.set_child(Some(&display));
 
@@ -360,10 +381,19 @@ fn build_window(
 
     install_diagnostics_updates(&window, diagnostics, presentation_view);
 
-    if renderer_configuration.capture.viewport.is_none()
-        && env::var_os("ROONSCAPE_WINDOWED").is_none()
-    {
-        present_fullscreen(&window);
+    if fullscreen {
+        let mapped_runtime = Rc::clone(&runtime);
+        window.connect_map(move |_| {
+            mapped_runtime.prepare_first_visible_frame();
+        });
+        let first_frame_runtime = Rc::clone(&runtime);
+        window.add_tick_callback(move |_, _| {
+            if first_frame_runtime.prepare_first_visible_frame() {
+                glib::ControlFlow::Break
+            } else {
+                glib::ControlFlow::Continue
+            }
+        });
     }
 
     if let Some(milliseconds) = env::var("ROONSCAPE_FIXTURE_AUTO_CLOSE_MS")
@@ -376,6 +406,46 @@ fn build_window(
         });
     }
 
+    if let Some(first_revealed_paint_control) = first_revealed_paint_control {
+        let first_revealed_paint_runtime = Rc::clone(&runtime);
+        let first_revealed_paint_control = Rc::new(RefCell::new(first_revealed_paint_control));
+        let first_revealed_paint_reported = Rc::new(Cell::new(false));
+        let first_revealed_paint_display = display.clone();
+        window.connect_map(move |window| {
+            let Some(frame_clock) = window.frame_clock() else {
+                first_revealed_paint_runtime
+                    .fail("fullscreen renderer window has no frame clock after mapping".into());
+                return;
+            };
+            let first_revealed_paint_runtime = Rc::clone(&first_revealed_paint_runtime);
+            let first_revealed_paint_control = Rc::clone(&first_revealed_paint_control);
+            let first_revealed_paint_reported = Rc::clone(&first_revealed_paint_reported);
+            let first_revealed_paint_display = first_revealed_paint_display.clone();
+            let observed_frame_clock = frame_clock.clone();
+            frame_clock.begin_updating();
+            frame_clock.connect_after_paint(move |_| {
+                if first_revealed_paint_display.opacity() == 0.0 {
+                    return;
+                }
+                if first_revealed_paint_reported.replace(true) {
+                    return;
+                }
+                let result = {
+                    let mut control = first_revealed_paint_control.borrow_mut();
+                    let mut release = [0];
+                    control
+                        .write_all(b"painted\n")
+                        .and_then(|()| control.read_exact(&mut release))
+                };
+                if let Err(error) = result {
+                    first_revealed_paint_runtime.fail(format!(
+                        "could not synchronize the first painted frame: {error}"
+                    ));
+                }
+                observed_frame_clock.end_updating();
+            });
+        });
+    }
     window.present();
     if runtime.capture_control.is_some() {
         let ready_runtime = Rc::clone(&runtime);
@@ -392,7 +462,7 @@ fn build_window(
     Ok(())
 }
 
-fn present_fullscreen(window: &gtk::ApplicationWindow) {
+fn present_fullscreen(window: &gtk::ApplicationWindow) -> Option<Viewport> {
     let monitors = gtk::prelude::WidgetExt::display(window).monitors();
     if monitors.n_items() == 1
         && let Some(monitor) = monitors.item(0).and_downcast::<gtk::gdk::Monitor>()
@@ -400,8 +470,13 @@ fn present_fullscreen(window: &gtk::ApplicationWindow) {
         let geometry = monitor.geometry();
         window.set_default_size(geometry.width(), geometry.height());
         window.fullscreen_on_monitor(&monitor);
+        Some(Viewport::new(
+            geometry.width() as u32,
+            geometry.height() as u32,
+        ))
     } else {
         window.fullscreen();
+        None
     }
 }
 
@@ -484,16 +559,25 @@ impl PresentationRuntime {
         self.render(now, presentation_update);
     }
 
-    fn apply_viewport(&self) {
+    fn apply_viewport(&self) -> bool {
         let width = self.display.width();
         let height = self.display.height();
         if width <= 0 || height <= 0 {
-            return;
+            return false;
         }
 
         self.presentation_view
             .borrow_mut()
             .apply_viewport(Viewport::new(width as u32, height as u32));
+        true
+    }
+
+    fn prepare_first_visible_frame(&self) -> bool {
+        if !self.apply_viewport() || !self.presentation_view.borrow().layout_ready() {
+            return false;
+        }
+        self.display.set_opacity(1.0);
+        true
     }
 
     fn apply_snapshot_events(&self, now: Duration) -> Option<PresentationUpdate> {
