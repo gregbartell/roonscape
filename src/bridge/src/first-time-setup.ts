@@ -106,6 +106,7 @@ export async function runSetup(
 
   dependencies.saveConfiguration(configurationFile, {
     trackedOutputId: selected.trackedOutputId,
+    trackedOutputName: selected.trackedOutputName,
     inactivity: completedInactivity,
   });
   dependencies.writeOutput(`Display Configuration saved: ${configurationFile}`);

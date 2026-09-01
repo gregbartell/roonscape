@@ -135,11 +135,36 @@
       "else": {
         "properties": {
           "playback": { "type": "null" },
-          "trackedOutput": { "type": "null" },
-          "trackedZone": { "type": "null" },
           "nowPlaying": { "type": "null" },
           "progress": { "type": "null" },
           "artwork": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "availability": {
+            "enum": ["pairingRequired", "disconnected"]
+          }
+        },
+        "required": ["availability"]
+      },
+      "then": {
+        "properties": {
+          "trackedOutput": { "type": "null" },
+          "trackedZone": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "availability": { "const": "outputUnavailable" } },
+        "required": ["availability"]
+      },
+      "then": {
+        "properties": {
+          "trackedZone": { "type": "null" }
         }
       }
     },

@@ -54,7 +54,7 @@ peer representative viewports: 1280×720, 1600×900, 1600×1200, 1920×1200,
 | Idle                     | `stopped.json`                | One-line, unclipped `Nothing is playing`        |
 | Awaiting Roon Authorization | `pairing-required.json`       | One-line heading and authorization instruction |
 | Disconnected             | `disconnected.json`           | One-line heading and recovery explanation      |
-| Output unavailable       | `output-unavailable.json`     | One-line heading and complete corrective copy  |
+| Output unavailable       | `output-unavailable.json`     | Corrective copy and output-only identity        |
 | Playing without content  | `playing-empty.json`          | Details-unavailable full field                 |
 | Paused without content   | `paused-empty.json`           | Details-unavailable full field                 |
 | Missing metadata         | `missing-metadata.json`       | Title-only hierarchy                           |
@@ -190,11 +190,15 @@ instead of approving a scenario at only one size.
   between them without participating in their baseline. Ordinary names fit
   comfortably; long names remain on one line and end-ellipsize independently
   without moving the separator or resizing the footer. Available Full-field
-  Presentations use their bottom-right row, and unavailable states expose no
-  stale identities.
+  Presentations use their bottom-right row. Output unavailable uses that same
+  anchor for only the persisted Tracked Output, with no separator or empty Zone
+  phrase; the row is absent for a legacy configuration with no saved name.
+  Awaiting Roon Authorization and disconnected expose neither identity.
 - **Full-field grammar:** Idle, Starting without content, details unavailable,
   Awaiting Roon Authorization, disconnected, and output-unavailable states
-  share the accent-bar language while retaining distinct meanings. At every
+  share the accent-bar language while retaining distinct meanings. Output
+  unavailable keeps its output-only identity independent of this centered
+  composition. At every
   peer viewport, confirm that the bar-and-copy composition occupies 60% of the
   layout viewport and is horizontally centered; the bar remains its stable
   left edge; and Presentation Status, heading, and explanation share the same

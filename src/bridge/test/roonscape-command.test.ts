@@ -290,6 +290,7 @@ test("first-time setup saves OLED defaults and continues into the presentation",
   assert.doesNotMatch(output.join("\n"), /Retry|Quit|Press Q/);
   assert.deepEqual(savedConfiguration, {
     trackedOutputId: "output-speaker-system",
+    trackedOutputName: "Speaker System",
     inactivity: {
       gracePeriodSeconds: 300,
       dimmedOpacity: 0.35,
@@ -309,6 +310,7 @@ test("--setup preserves the saved choices and exits without launching", async ()
   const output: string[] = [];
   const savedConfiguration = {
     trackedOutputId: "output-study",
+    trackedOutputName: "USB DAC",
     inactivity: {
       gracePeriodSeconds: 240,
       dimmedOpacity: 0.3,
@@ -430,6 +432,7 @@ test("--setup prefills OLED values and corrects invalid custom entries", async (
   assert.match(errors.join("\n"), /positive whole number of seconds/);
   assert.deepEqual(savedConfiguration, {
     trackedOutputId: "output-study",
+    trackedOutputName: "USB DAC",
     inactivity: {
       gracePeriodSeconds: 390,
       dimmedOpacity: 0.25,
@@ -527,6 +530,7 @@ test("--setup --config changes only the Tracked Output with a private atomic rep
     assert.equal(result, 0);
     assert.deepEqual(configurationStore.load(), {
       trackedOutputId: "output-study",
+      trackedOutputName: "USB DAC",
       inactivity: {
         gracePeriodSeconds: 240,
         dimmedOpacity: 0.3,

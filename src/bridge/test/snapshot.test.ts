@@ -265,12 +265,61 @@ test("loads every shared unavailable fixture without stale Now Playing", async (
       {
         availability,
         playback: null,
-        trackedOutput: null,
+        trackedOutput:
+          availability === "outputUnavailable"
+            ? { name: "Speaker System" }
+            : null,
         trackedZone: null,
         nowPlaying: null,
         progress: null,
         artwork: null,
       },
+    );
+  }
+});
+
+test("accepts legacy Output unavailable without a persisted Tracked Output name", async () => {
+  await validateSnapshot({
+    schemaVersion: 2,
+    revision: 1,
+    availability: "outputUnavailable",
+    playback: null,
+    trackedOutput: null,
+    trackedZone: null,
+    nowPlaying: null,
+    progress: null,
+    artwork: null,
+  });
+});
+
+test("rejects identities that are not authoritative for unavailable states", async () => {
+  const unavailable = {
+    schemaVersion: 2 as const,
+    revision: 1,
+    playback: null,
+    nowPlaying: null,
+    progress: null,
+    artwork: null,
+  };
+
+  await assert.rejects(
+    validateSnapshot({
+      ...unavailable,
+      availability: "outputUnavailable",
+      trackedOutput: { name: "Speaker System" },
+      trackedZone: { name: "Living Room" },
+    }),
+    /Invalid presentation snapshot/,
+  );
+  for (const availability of ["pairingRequired", "disconnected"] as const) {
+    await assert.rejects(
+      validateSnapshot({
+        ...unavailable,
+        availability,
+        trackedOutput: { name: "Speaker System" },
+        trackedZone: null,
+      }),
+      /Invalid presentation snapshot/,
     );
   }
 });

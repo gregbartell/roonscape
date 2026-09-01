@@ -95,9 +95,14 @@ pub struct NowPlayingPresentation {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PresentationIdentity {
-    pub tracked_output: String,
-    pub tracked_zone: String,
+pub enum PresentationIdentity {
+    OutputAndZone {
+        tracked_output: String,
+        tracked_zone: String,
+    },
+    OutputOnly {
+        tracked_output: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -533,6 +538,7 @@ fn presentation_from_snapshot_after(
     if snapshot.availability != Availability::Available {
         return Ok(Presentation::FullField(unavailable_presentation(
             snapshot.availability,
+            snapshot.tracked_output.as_ref(),
         )));
     }
 
@@ -621,7 +627,7 @@ fn available_full_field(
         status,
         heading,
         explanation: None,
-        identity: Some(PresentationIdentity {
+        identity: Some(PresentationIdentity::OutputAndZone {
             tracked_output: tracked_output.name.clone(),
             tracked_zone: tracked_zone.name.clone(),
         }),
@@ -653,14 +659,17 @@ pub(crate) fn trackless_full_field(presentation: &NowPlayingPresentation) -> Ful
         status: presentation.status,
         heading,
         explanation: None,
-        identity: Some(PresentationIdentity {
+        identity: Some(PresentationIdentity::OutputAndZone {
             tracked_output: presentation.tracked_output.clone(),
             tracked_zone: presentation.tracked_zone.clone(),
         }),
     }
 }
 
-fn unavailable_presentation(availability: Availability) -> FullFieldPresentation {
+fn unavailable_presentation(
+    availability: Availability,
+    tracked_output: Option<&TrackedOutput>,
+) -> FullFieldPresentation {
     let status = presentation_status_for_availability(availability);
     match availability {
         Availability::PairingRequired => FullFieldPresentation {
@@ -681,7 +690,9 @@ fn unavailable_presentation(availability: Availability) -> FullFieldPresentation
             explanation: Some(
                 "Open RoonScape setup to choose another Tracked Output, or make the selected output available in Roon.",
             ),
-            identity: None,
+            identity: tracked_output.map(|tracked_output| PresentationIdentity::OutputOnly {
+                tracked_output: tracked_output.name.clone(),
+            }),
         },
         Availability::Available => unreachable!("available snapshots use Now Playing"),
     }

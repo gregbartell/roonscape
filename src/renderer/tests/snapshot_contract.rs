@@ -285,7 +285,13 @@ fn parses_every_shared_unavailable_fixture_without_stale_content() {
 
         assert_eq!(snapshot.availability, availability);
         assert_eq!(snapshot.playback, None);
-        assert_eq!(snapshot.tracked_output, None);
+        assert_eq!(
+            snapshot
+                .tracked_output
+                .as_ref()
+                .map(|output| output.name.as_str()),
+            (availability == Availability::OutputUnavailable).then_some("Speaker System")
+        );
         assert_eq!(snapshot.tracked_zone, None);
         assert_eq!(snapshot.now_playing, None);
         assert_eq!(snapshot.progress, None);

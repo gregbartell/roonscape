@@ -150,7 +150,7 @@ fn resolves_every_full_field_snapshot_with_truthful_copy_identity_and_fallback_p
             Some(
                 "Open RoonScape setup to choose another Tracked Output, or make the selected output available in Roon.",
             ),
-            false,
+            true,
         ),
     ];
     let repository_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

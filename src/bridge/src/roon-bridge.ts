@@ -1,7 +1,10 @@
 import type { Availability, PresentationSnapshot } from "./snapshot.js";
 import type { ArtworkFiles } from "./artwork-file-store.js";
 import { attemptAllCleanup } from "./cleanup.js";
-import type { DisplayConfigurationStore } from "./display-configuration.js";
+import type {
+  DisplayConfiguration,
+  DisplayConfigurationStore,
+} from "./display-configuration.js";
 import { SnapshotPublicationError } from "./fixture-publisher.js";
 import { initializeRoonExtension } from "./roon-extension.js";
 
@@ -217,7 +220,12 @@ export function startRoonBridge({
   });
 
   const changeAvailability = (availability: Unavailable): void => {
-    publishState(unavailableState(availability));
+    publishState(
+      unavailableState(
+        availability,
+        displayConfigurationStore.load()?.trackedOutputName,
+      ),
+    );
     void artworkPresentation.cancelAndClear().catch(reportArtworkError);
   };
 
@@ -227,10 +235,11 @@ export function startRoonBridge({
     corePaired: (core) => {
       activeCore = core;
       changeAvailability("outputUnavailable");
-      const configuration = displayConfigurationStore.load();
-      if (configuration === null) {
+      const loadedConfiguration = displayConfigurationStore.load();
+      if (loadedConfiguration === null) {
         return;
       }
+      let configuration: DisplayConfiguration = loadedConfiguration;
 
       const zones = new Map<string, RetainedZone>();
       core.services.RoonApiTransport.subscribe_zones((response, event) => {
@@ -294,6 +303,14 @@ export function startRoonBridge({
         if (trackedZone === undefined || trackedOutput === undefined) {
           changeAvailability("outputUnavailable");
           return;
+        }
+
+        if (configuration.trackedOutputName !== trackedOutput.display_name) {
+          configuration = {
+            ...configuration,
+            trackedOutputName: trackedOutput.display_name,
+          };
+          displayConfigurationStore.save(configuration);
         }
 
         const artworkIdentityMayHaveChanged =
@@ -566,12 +583,18 @@ function unavailableSnapshot(
   };
 }
 
-function unavailableState(availability: Unavailable): SnapshotState {
+function unavailableState(
+  availability: Unavailable,
+  trackedOutputName?: string,
+): SnapshotState {
   return {
     schemaVersion: 2,
     availability,
     playback: null,
-    trackedOutput: null,
+    trackedOutput:
+      availability === "outputUnavailable" && trackedOutputName !== undefined
+        ? { name: trackedOutputName }
+        : null,
     trackedZone: null,
     nowPlaying: null,
     progress: null,

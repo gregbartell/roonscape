@@ -275,10 +275,14 @@ struct RenderedIdentity {
     output: gtk::Box,
     output_label: gtk::Label,
     output_name: gtk::Label,
+    zone: Option<RenderedZoneIdentity>,
+}
+
+struct RenderedZoneIdentity {
+    root: gtk::Box,
+    label: gtk::Label,
+    name: gtk::Label,
     separator: gtk::Box,
-    zone: gtk::Box,
-    zone_label: gtk::Label,
-    zone_name: gtk::Label,
 }
 
 impl PresentationView {
@@ -817,12 +821,25 @@ fn full_field(
     content.set_child(Some(&copy));
 
     let identity = if let Some(presentation_identity) = presentation.identity.as_ref() {
-        let identity = tracked_identity(
-            &presentation_identity.tracked_output,
-            &presentation_identity.tracked_zone,
-            layout.identity_placement,
-            layout.identity_line,
-        );
+        let identity = match presentation_identity {
+            roonscape_renderer::PresentationIdentity::OutputAndZone {
+                tracked_output,
+                tracked_zone,
+            } => tracked_identity(
+                tracked_output,
+                Some(tracked_zone),
+                layout.identity_placement,
+                layout.identity_line,
+            ),
+            roonscape_renderer::PresentationIdentity::OutputOnly { tracked_output } => {
+                tracked_identity(
+                    tracked_output,
+                    None,
+                    layout.identity_placement,
+                    layout.identity_line,
+                )
+            }
+        };
         content.add_overlay(&identity.root);
         Some(identity)
     } else {
@@ -1174,7 +1191,7 @@ fn metadata(
     root.set_measure_overlay(&copy, false);
     let identity = tracked_identity(
         &presentation.tracked_output,
-        &presentation.tracked_zone,
+        Some(&presentation.tracked_zone),
         now_playing_layout.identity_placement,
         now_playing_layout.identity_line,
     );
@@ -1634,29 +1651,37 @@ impl RenderedIdentity {
         );
         match layout.phrase_alignment {
             IdentityPhraseAlignment::Baseline => {
-                for label in [
-                    &self.output_label,
-                    &self.output_name,
-                    &self.zone_label,
-                    &self.zone_name,
-                ] {
+                for label in [&self.output_label, &self.output_name] {
                     label.set_valign(gtk::Align::Baseline);
+                }
+                if let Some(zone) = self.zone.as_ref() {
+                    zone.label.set_valign(gtk::Align::Baseline);
+                    zone.name.set_valign(gtk::Align::Baseline);
                 }
             }
         }
-        for (phrase, maximum_width_px) in [
-            (&self.output, layout.output_phrase_max_width_px),
-            (&self.zone, layout.zone_phrase_max_width_px),
-        ] {
-            phrase.set_hexpand(false);
-            phrase.set_size_request(-1, -1);
-            let (_, natural_width, _, _) = phrase.measure(gtk::Orientation::Horizontal, -1);
-            phrase.set_size_request(natural_width.min(dimension(maximum_width_px)), -1);
+        self.output.set_hexpand(false);
+        self.output.set_size_request(-1, -1);
+        let (_, output_width, _, _) = self.output.measure(gtk::Orientation::Horizontal, -1);
+        self.output.set_size_request(
+            output_width.min(dimension(layout.output_phrase_max_width_px)),
+            -1,
+        );
+        if let Some(zone) = self.zone.as_ref() {
+            zone.root.set_hexpand(false);
+            zone.root.set_size_request(-1, -1);
+            let (_, natural_width, _, _) = zone.root.measure(gtk::Orientation::Horizontal, -1);
+            zone.root.set_size_request(
+                natural_width.min(dimension(layout.zone_phrase_max_width_px)),
+                -1,
+            );
+            zone.root.set_halign(gtk::Align::Start);
         }
-        self.zone.set_halign(gtk::Align::Start);
         self.output_name.set_hexpand(true);
-        self.zone_name.set_hexpand(true);
-        self.zone_name.set_xalign(0.0);
+        if let Some(zone) = self.zone.as_ref() {
+            zone.name.set_hexpand(true);
+            zone.name.set_xalign(0.0);
+        }
     }
 
     fn apply_typography(
@@ -1669,12 +1694,14 @@ impl RenderedIdentity {
     ) {
         set_tracked_label_typography(&self.output_label, label_px, label_letter_spacing_px);
         set_label_font_size(&self.output_name, name_px);
-        set_tracked_label_typography(&self.zone_label, label_px, label_letter_spacing_px);
-        set_label_font_size(&self.zone_name, name_px);
-        self.separator
-            .set_size_request(dimension(separator_px), dimension(separator_px));
         self.output_label.set_margin_end(dimension(label_gap_px));
-        self.zone_label.set_margin_end(dimension(label_gap_px));
+        if let Some(zone) = self.zone.as_ref() {
+            set_tracked_label_typography(&zone.label, label_px, label_letter_spacing_px);
+            set_label_font_size(&zone.name, name_px);
+            zone.separator
+                .set_size_request(dimension(separator_px), dimension(separator_px));
+            zone.label.set_margin_end(dimension(label_gap_px));
+        }
     }
 }
 
@@ -1861,7 +1888,7 @@ fn activity_view(
 
 fn tracked_identity(
     tracked_output: &str,
-    tracked_zone: &str,
+    tracked_zone: Option<&str>,
     placement: IdentityPlacement,
     line_layout: IdentityLineLayout,
 ) -> RenderedIdentity {
@@ -1886,34 +1913,43 @@ fn tracked_identity(
     output.append(&output_label);
     output.append(&output_name);
 
-    let zone = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    zone.set_hexpand(true);
-    zone.set_halign(gtk::Align::End);
-    let zone_label = metadata_label("ZONE", "identity-label");
-    let zone_name = identity_name(tracked_zone, line_layout);
-    zone_label.set_valign(gtk::Align::Baseline);
-    zone_name.set_valign(gtk::Align::Baseline);
-    zone_name.set_xalign(1.0);
-    zone.append(&zone_label);
-    zone.append(&zone_name);
-
-    let separator = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    separator.add_css_class("identity-separator");
-    separator.set_halign(gtk::Align::Center);
-    separator.set_valign(gtk::Align::Center);
-
     row.attach(&output, 0, 0, 1, 1);
-    row.attach(&separator, 1, 0, 1, 1);
-    row.attach(&zone, 2, 0, 1, 1);
+    let zone = if let Some(tracked_zone) = tracked_zone {
+        let zone = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        zone.set_hexpand(true);
+        zone.set_halign(gtk::Align::End);
+        let zone_label = metadata_label("ZONE", "identity-label");
+        let zone_name = identity_name(tracked_zone, line_layout);
+        zone_label.set_valign(gtk::Align::Baseline);
+        zone_name.set_valign(gtk::Align::Baseline);
+        zone_name.set_xalign(1.0);
+        zone.append(&zone_label);
+        zone.append(&zone_name);
+
+        let separator = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        separator.add_css_class("identity-separator");
+        separator.set_halign(gtk::Align::Center);
+        separator.set_valign(gtk::Align::Center);
+
+        row.attach(&separator, 1, 0, 1, 1);
+        row.attach(&zone, 2, 0, 1, 1);
+        Some(RenderedZoneIdentity {
+            root: zone,
+            label: zone_label,
+            name: zone_name,
+            separator,
+        })
+    } else {
+        output.set_hexpand(false);
+        output.set_halign(gtk::Align::End);
+        None
+    };
     RenderedIdentity {
         root: row,
         output,
         output_label,
         output_name,
-        separator,
         zone,
-        zone_label,
-        zone_name,
     }
 }
 

@@ -10,6 +10,11 @@
       "type": "string",
       "minLength": 1
     },
+    "trackedOutputName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
     "inactivity": {
       "type": "object",
       "additionalProperties": false,

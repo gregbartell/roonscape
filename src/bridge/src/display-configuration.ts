@@ -12,6 +12,7 @@ export const removedDisplayConfigurationOverrideMessage =
 
 export interface DisplayConfiguration {
   trackedOutputId: string;
+  trackedOutputName?: string;
   inactivity?: InactivityConfiguration;
 }
 

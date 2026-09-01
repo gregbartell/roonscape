@@ -34,9 +34,17 @@ export async function runDisplayConfigurationCommand(
 
   if (command === "select" && operands.length === 1 && operands[0]) {
     const trackedOutputId = operands[0];
+    const trackedOutput = (await dependencies.discoverTrackedOutputs()).find(
+      (output) => output.trackedOutputId === trackedOutputId,
+    );
+    if (trackedOutput === undefined) {
+      dependencies.writeLine(`Tracked Output not found: ${trackedOutputId}`);
+      return 1;
+    }
     const existing = dependencies.configurationStore.load();
     dependencies.configurationStore.save({
       trackedOutputId,
+      trackedOutputName: trackedOutput.trackedOutputName,
       ...(existing?.inactivity === undefined
         ? {}
         : { inactivity: existing.inactivity }),

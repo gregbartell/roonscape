@@ -243,9 +243,12 @@ occupies one complete line across the supported landscape range.
 Available states show the Tracked Output and current Tracked Zone at one
 stable bottom-right position, under the viewer-facing labels **Output** and
 **Zone**. This is the Full-field anchor; Now Playing places the row in its
-raised unified footer. Awaiting Roon Authorization, disconnected, and
-output-unavailable states omit the row so potentially stale identities are
-never shown.
+raised unified footer. Output unavailable uses the same Full-field anchor for
+the persisted Tracked Output name alone, without a separator or Zone phrase,
+because no current Tracked Zone is authoritative. A legacy Display
+Configuration without a persisted name omits the row. Awaiting Roon
+Authorization and disconnected omit both identities because neither recovery
+action depends on the configured output.
 
 The accent bar and copy form a centered composition that occupies 60% of the
 layout viewport. The accent is its stable left edge. Presentation Status, the

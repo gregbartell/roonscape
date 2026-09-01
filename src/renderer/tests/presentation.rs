@@ -4,7 +4,7 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use roonscape_renderer::{
     InactivityConfiguration, InactivityTransform, LayoutOffset, NowPlaying, Playback, Presentation,
-    PresentationState, PresentationTime, PresentationUpdate, parse_snapshot,
+    PresentationIdentity, PresentationState, PresentationTime, PresentationUpdate, parse_snapshot,
     presentation_from_snapshot,
 };
 
@@ -31,8 +31,13 @@ fn assert_full_field_identity(
         .identity
         .as_ref()
         .expect("available full-field presentation should retain authoritative identities");
-    assert_eq!(identity.tracked_output, tracked_output);
-    assert_eq!(identity.tracked_zone, tracked_zone);
+    assert_eq!(
+        identity,
+        &PresentationIdentity::OutputAndZone {
+            tracked_output: tracked_output.to_owned(),
+            tracked_zone: tracked_zone.to_owned(),
+        }
+    );
 }
 
 #[test]
@@ -138,8 +143,32 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
             ),
             (status_label, heading, Some(explanation)),
         );
-        assert_eq!(presentation.identity, None);
+        if fixture_name == "output-unavailable.json" {
+            assert_eq!(
+                presentation.identity,
+                Some(PresentationIdentity::OutputOnly {
+                    tracked_output: "Speaker System".to_owned(),
+                })
+            );
+        } else {
+            assert_eq!(presentation.identity, None);
+        }
     }
+}
+
+#[test]
+fn legacy_output_unavailable_without_a_saved_name_omits_the_identity() {
+    let snapshot = parse_snapshot(
+        r#"{"schemaVersion":2,"revision":1,"availability":"outputUnavailable","playback":null,"trackedOutput":null,"trackedZone":null,"nowPlaying":null,"progress":null,"artwork":null}"#,
+    )
+    .expect("legacy Output unavailable should remain valid");
+    let Presentation::FullField(presentation) =
+        presentation_from_snapshot(&snapshot).expect("legacy snapshot should be presentable")
+    else {
+        panic!("Output unavailable should use a Full-field Presentation");
+    };
+
+    assert_eq!(presentation.identity, None);
 }
 
 #[test]

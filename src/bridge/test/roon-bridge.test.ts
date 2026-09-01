@@ -19,7 +19,10 @@ import {
   type RoonZoneSubscriptionResponse,
   type RoonStatusService,
 } from "../src/roon-bridge.js";
-import type { DisplayConfigurationStore } from "../src/display-configuration.js";
+import type {
+  DisplayConfiguration,
+  DisplayConfigurationStore,
+} from "../src/display-configuration.js";
 import { assertSnapshotPublishable } from "../src/fixture-publisher.js";
 import {
   type PresentationSnapshot,
@@ -49,12 +52,13 @@ interface RoonBoundary {
   snapshots: PresentationSnapshot[];
   statusUpdates: Array<{ message: string; isError: boolean }>;
   publicationDiagnostics: string[];
+  savedConfigurations: DisplayConfiguration[];
   currentSnapshot(): PresentationSnapshot;
   stop(): Promise<void>;
 }
 
 function createRoonBoundary(
-  trackedOutputId?: string,
+  configuredOutput?: string | DisplayConfiguration,
   artworkFiles: ArtworkFiles = unusedArtworkFiles(),
   now: () => Date = () => new Date("2026-08-15T19:20:00Z"),
 ): RoonBoundary {
@@ -66,6 +70,7 @@ function createRoonBoundary(
   const snapshots: PresentationSnapshot[] = [];
   const statusUpdates: Array<{ message: string; isError: boolean }> = [];
   const publicationDiagnostics: string[] = [];
+  const savedConfigurations: DisplayConfiguration[] = [];
   const imageRequests: RoonBoundary["imageRequests"] = [];
   const imageCallbacks: Array<
     (error: string | false, contentType?: string, image?: Buffer) => void
@@ -78,9 +83,16 @@ function createRoonBoundary(
       persistedState = state;
     },
   };
+  let displayConfiguration =
+    typeof configuredOutput === "string"
+      ? { trackedOutputId: configuredOutput }
+      : (configuredOutput ?? null);
   const displayConfigurationStore: DisplayConfigurationStore = {
-    load: () => (trackedOutputId === undefined ? null : { trackedOutputId }),
-    save: () => undefined,
+    load: () => displayConfiguration,
+    save: (configuration) => {
+      displayConfiguration = configuration;
+      savedConfigurations.push(configuration);
+    },
   };
   const status: RoonStatusService = {
     services: [{ name: "com.roonlabs.status:1" }],
@@ -178,6 +190,7 @@ function createRoonBoundary(
     snapshots,
     statusUpdates,
     publicationDiagnostics,
+    savedConfigurations,
     currentSnapshot: () => bridge.currentSnapshot(),
     stop: () => bridge.stop(),
   };
@@ -495,6 +508,90 @@ test("publishes truthful availability across authorization and connection events
   );
 
   await Promise.all(boundary.snapshots.map(validateSnapshot));
+});
+
+test("publishes the saved Tracked Output identity only when that output is unavailable", async () => {
+  const boundary = createRoonBoundary({
+    trackedOutputId: "output-speaker-system",
+    trackedOutputName: "Speaker System",
+  });
+  const extensionOptions = boundary.extensionOptions();
+  const core = boundary.core();
+
+  extensionOptions.core_paired(core);
+  assert.deepEqual(boundary.snapshots.at(-1), {
+    schemaVersion: 2,
+    revision: 1,
+    availability: "outputUnavailable",
+    playback: null,
+    trackedOutput: { name: "Speaker System" },
+    trackedZone: null,
+    nowPlaying: null,
+    progress: null,
+    artwork: null,
+  });
+
+  extensionOptions.core_unpaired(core);
+  assert.equal(boundary.snapshots.at(-1)?.availability, "disconnected");
+  assert.equal(boundary.snapshots.at(-1)?.trackedOutput, null);
+  await Promise.all(boundary.snapshots.map(validateSnapshot));
+});
+
+test("backfills and refreshes the persisted Tracked Output name", () => {
+  const inactivity = {
+    gracePeriodSeconds: 240,
+    dimmedOpacity: 0.3,
+    repositionCadenceSeconds: 45,
+  };
+  const boundary = createRoonBoundary({
+    trackedOutputId: "output-speaker-system",
+    inactivity,
+  });
+
+  boundary.extensionOptions().core_paired(boundary.core());
+  boundary.emitZones("Subscribed", {
+    zones: [
+      {
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
+        state: "stopped",
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
+        ],
+      },
+    ],
+  });
+  boundary.emitZones("Changed", {
+    zones_changed: [
+      {
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
+        state: "stopped",
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Main Speakers",
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.deepEqual(boundary.savedConfigurations, [
+    {
+      trackedOutputId: "output-speaker-system",
+      trackedOutputName: "Speaker System",
+      inactivity,
+    },
+    {
+      trackedOutputId: "output-speaker-system",
+      trackedOutputName: "Main Speakers",
+      inactivity,
+    },
+  ]);
 });
 
 test("resolves the configured Tracked Output from the initial full zone state", async () => {
@@ -1480,7 +1577,7 @@ test("clears presentation state when the configured Tracked Output is removed", 
     revision: 3,
     availability: "outputUnavailable",
     playback: null,
-    trackedOutput: null,
+    trackedOutput: { name: "Speaker System" },
     trackedZone: null,
     nowPlaying: null,
     progress: null,

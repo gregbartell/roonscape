@@ -3,7 +3,9 @@
   "revision": 1,
   "availability": "outputUnavailable",
   "playback": null,
-  "trackedOutput": null,
+  "trackedOutput": {
+    "name": "Speaker System"
+  },
   "trackedZone": null,
   "nowPlaying": null,
   "progress": null,

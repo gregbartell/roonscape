@@ -16,7 +16,7 @@ const FULL_FIELD_FIXTURES: [(&str, bool, bool); 7] = [
     ("loading-empty.json", false, true),
     ("pairing-required.json", true, false),
     ("disconnected.json", true, false),
-    ("output-unavailable.json", true, false),
+    ("output-unavailable.json", true, true),
     ("playing-empty.json", false, true),
     ("paused-empty.json", false, true),
 ];
@@ -242,7 +242,7 @@ fn raises_the_full_field_explanation_cap_for_television_distance() {
 }
 
 #[test]
-fn fixture_scenarios_resolve_full_field_identity_only_when_available() {
+fn fixture_scenarios_resolve_only_the_approved_full_field_identities() {
     for (fixture, _, has_identity) in FULL_FIELD_FIXTURES {
         let snapshot = parse_snapshot(&support::fixture(fixture))
             .expect("Full-field identity Fixture Scenario should be valid");
