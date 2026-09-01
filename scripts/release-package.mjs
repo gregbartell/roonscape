@@ -318,7 +318,7 @@ function assertPreparedInputs(inputs) {
   }
   assertFile(
     path.join(inputs.bridgeBuild, "roonscape.js"),
-    "prepared Roon bridge entry point",
+    "prepared RoonScape Bridge entry point",
   );
   assertFile(
     path.join(inputs.nodeDistribution, "bin/node"),

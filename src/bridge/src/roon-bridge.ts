@@ -327,7 +327,7 @@ export function startRoonBridge({
   return {
     currentSnapshot: () => currentSnapshot,
     stop: () =>
-      attemptAllCleanup("Could not stop Roon bridge", [
+      attemptAllCleanup("Could not stop RoonScape Bridge", [
         () => services.extension.stop_discovery(),
         () => services.extension.disconnect_all(),
         () => artworkPresentation.cancelAndClear(),

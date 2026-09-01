@@ -20,7 +20,7 @@ export function installBridgeLifecycle({
 }: BridgeLifecycleOptions): void {
   installProcessLifecycle({
     cleanup: () => shutdownBridge(bridge, publisher),
-    failureMessage: "Could not stop RoonScape bridge",
+    failureMessage: "Could not stop RoonScape Bridge",
     once,
     reportError,
     exit,
@@ -31,7 +31,7 @@ export async function shutdownBridge(
   bridge: RoonBridge,
   publisher: SnapshotPublisher,
 ): Promise<void> {
-  return attemptAllCleanup("Could not stop RoonScape bridge", [
+  return attemptAllCleanup("Could not stop RoonScape Bridge", [
     () => bridge.stop(),
     () => publisher.close(),
   ]);

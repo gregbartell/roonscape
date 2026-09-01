@@ -1463,7 +1463,7 @@ async function readFirstSnapshot(
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
   }
-  throw new Error(`Timed out waiting for RoonScape bridge at ${socketPath}`);
+  throw new Error(`Timed out waiting for RoonScape Bridge at ${socketPath}`);
 }
 
 function completedChild(result: ChildResult): RunningChild {

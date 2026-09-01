@@ -57,6 +57,11 @@ A screenshot artifact of a Fixture Scenario generated for repeatable human
 review of RoonScape's presentation.
 _Avoid_: Fixture screenshot, screen capture
 
+**Presentation Snapshot**:
+A complete point-in-time description of the Roon state needed to determine a
+RoonScape presentation.
+_Avoid_: Event, update, renderer state
+
 **Presentation Status**:
 The viewer-facing condition label that identifies RoonScape's current
 playback or availability condition, such as Playing, Paused, Idle, or
@@ -68,6 +73,11 @@ Roon's persisted approval for RoonScape to connect as an extension. It is
 independent of Display Configuration.
 _Avoid_: Pairing state, extension credentials
 
+**Roon Bridge**:
+Roon's separate application named Roon Bridge. It is not a RoonScape
+component.
+_Avoid_: RoonScape Bridge
+
 **Roon Control**:
 An action that changes Roon playback, volume, or playback settings. Roon
 Control is outside this product's scope.
@@ -77,10 +87,19 @@ _Avoid_: Display interaction
 An unattended, read-only presentation of current Roon playback.
 _Avoid_: Roon Display, web controller, remote
 
+**RoonScape Bridge**:
+The part of RoonScape that observes Roon and supplies Presentation Snapshots.
+_Avoid_: Roon Bridge
+
 **RoonScape Host**:
 The machine that runs RoonScape and drives its attached display. It may also
 run Roon Server or unrelated workloads.
 _Avoid_: Dedicated host
+
+**RoonScape Renderer**:
+The part of RoonScape that turns Presentation Snapshots into the viewer-facing
+presentation.
+_Avoid_: Frontend, Roon display
 
 **Starting**:
 The viewer-facing playback condition used while Roon reports that the Tracked

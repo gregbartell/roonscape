@@ -152,7 +152,7 @@ impl SnapshotSubscription {
                             }
                         }
                         Err(error) => {
-                            eprintln!("RoonScape renderer: {error}");
+                            eprintln!("RoonScape Renderer: {error}");
                             break;
                         }
                     }

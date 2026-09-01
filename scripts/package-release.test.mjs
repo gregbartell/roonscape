@@ -130,7 +130,7 @@ test("assembly rejects missing or malformed prepared inputs", (context) => {
 
   assert.throws(
     () => assembleFixture(missingFixture),
-    /prepared Roon bridge entry point is unavailable/,
+    /prepared RoonScape Bridge entry point is unavailable/,
   );
 
   const malformedFixture = createPackagingFixture(context);

@@ -81,7 +81,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("RoonScape renderer: {error}");
+            eprintln!("RoonScape Renderer: {error}");
             ExitCode::FAILURE
         }
     }
@@ -292,7 +292,7 @@ fn build_window(
                 if let Some(navigation) = navigation.as_ref()
                     && let Err(error) = navigation.borrow_mut().send(intent)
                 {
-                    eprintln!("RoonScape renderer: could not navigate Fixture Mode: {error}");
+                    eprintln!("RoonScape Renderer: could not navigate Fixture Mode: {error}");
                 }
                 glib::Propagation::Stop
             }
@@ -518,7 +518,7 @@ impl PresentationRuntime {
                     match update {
                         Ok(update) => Some(update),
                         Err(error) => {
-                            eprintln!("RoonScape renderer: {error}");
+                            eprintln!("RoonScape Renderer: {error}");
                             None
                         }
                     }
@@ -536,7 +536,7 @@ impl PresentationRuntime {
                 }
                 Ok(SnapshotEvent::RevisionRejected { incoming, accepted }) => {
                     eprintln!(
-                        "RoonScape renderer: ignored presentation revision {incoming}; current revision is {accepted}"
+                        "RoonScape Renderer: ignored presentation revision {incoming}; current revision is {accepted}"
                     );
                     None
                 }
@@ -643,7 +643,7 @@ impl PresentationRuntime {
         let current_frame = match self.presentation.borrow().frame_at(now) {
             Ok(current_frame) => current_frame,
             Err(error) => {
-                eprintln!("RoonScape renderer: {error}");
+                eprintln!("RoonScape Renderer: {error}");
                 return;
             }
         };
@@ -726,7 +726,7 @@ fn configuration_file_from_arguments() -> Result<PathBuf, Box<dyn Error>> {
         }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "RoonScape renderer accepts only a launcher-provided --config PATH",
+            "RoonScape Renderer accepts only a launcher-provided --config PATH",
         )
         .into()),
     }
@@ -737,7 +737,7 @@ fn host_inactivity_configuration(configuration_file: &Path) -> InactivityConfigu
     match configuration {
         Ok(configuration) => configuration,
         Err(error) => {
-            eprintln!("RoonScape renderer: {error}; using default OLED inactivity calibration");
+            eprintln!("RoonScape Renderer: {error}; using default OLED inactivity calibration");
             InactivityConfiguration::default()
         }
     }

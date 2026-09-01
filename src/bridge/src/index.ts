@@ -46,7 +46,7 @@ const bridge = startRoonBridge({
   publish: (snapshot) => publisher.publish(snapshot),
 });
 
-process.stdout.write(`RoonScape bridge listening at ${socketPath}\n`);
+process.stdout.write(`RoonScape Bridge listening at ${socketPath}\n`);
 
 installBridgeLifecycle({ bridge, publisher });
 
@@ -70,6 +70,6 @@ function bridgeFileOptions(arguments_: string[]): {
     };
   }
   throw new Error(
-    "RoonScape bridge accepts only launcher-provided --config and --authorization paths",
+    "RoonScape Bridge accepts only launcher-provided --config and --authorization paths",
   );
 }
