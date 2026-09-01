@@ -85,7 +85,7 @@ export async function runControlledRendererSession(
     const acknowledgements = createInterface({ input: control })[
       Symbol.asyncIterator
     ]();
-    let windowId;
+    let readyWindowId;
 
     for (const [index, capture] of captures.entries()) {
       const revision = index + 1;
@@ -115,7 +115,7 @@ export async function runControlledRendererSession(
         `painted Fixture Scenario revision ${revision}`,
       );
       assertExpectedAcknowledgement(acknowledgement, capture, revision);
-      windowId ??= await waitForRoonScapeWindow(
+      readyWindowId ??= await waitForRoonScapeWindow(
         renderer,
         rendererEnvironment,
         width,
@@ -126,8 +126,9 @@ export async function runControlledRendererSession(
         width,
         height,
         produce: (temporaryCapturePath) =>
-          captureNativeWindow(
-            windowId,
+          captureNativeViewport(
+            width,
+            height,
             temporaryCapturePath,
             rendererEnvironment,
           ),
@@ -222,10 +223,10 @@ function startNativeRenderer(displayConfigurationPath, environment) {
   );
 }
 
-async function captureNativeWindow(windowId, capturePath, environment) {
+async function captureNativeViewport(width, height, capturePath, environment) {
   await runMonitoredProcess(
     "scrot",
-    ["--window", windowId, "--overwrite", capturePath],
+    ["--autoselect", `0,0,${width},${height}`, "--overwrite", capturePath],
     {
       cwd: repositoryRoot,
       environment,

@@ -1058,9 +1058,12 @@ test("focused capture waits for its painted revision and publishes one validated
       processes,
       /renderer\|1\|3840x2160\|\S+\|0\|unset\|unset\|unset/,
     );
-    assert.match(processes, /scrot\|--window 4242 --overwrite \/.*\.png\|\d+/);
+    assert.match(
+      processes,
+      /scrot\|--autoselect 0,0,3840,2160 --overwrite \/.*\.png\|\d+/,
+    );
     const temporaryCapturePath = processes.match(
-      /scrot\|--window 4242 --overwrite ([^|]+)\|\d+/,
+      /scrot\|--autoselect 0,0,3840,2160 --overwrite ([^|]+)\|\d+/,
     )?.[1];
     assert.ok(
       temporaryCapturePath?.startsWith(
