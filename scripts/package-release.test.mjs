@@ -70,7 +70,7 @@ test("controlled inputs produce a complete relocatable release", (context) => {
     "src/renderer/assets/fonts/IBMPlexSans-Variable.ttf",
     "src/renderer/assets/fonts/Libre-Baskerville-OFL.txt",
     "src/renderer/assets/fonts/LibreBaskerville-Variable.ttf",
-    "src/shared/fixtures/artwork/playing.svg",
+    "src/shared/fixtures/artwork/playing.jpg",
     "src/shared/fixtures/fixture-scenario-catalog.json",
     "src/shared/fixtures/playing.json",
     "src/shared/schema/display-configuration.schema.json",
@@ -249,7 +249,7 @@ function createPackagingFixture(context) {
   write(path.join(paths.rootNodeModules, "ajv-formats/package.json"), "{}\n");
   write(path.join(paths.rootNodeModules, "node-roon-api/package.json"), "{}\n");
   write(path.join(paths.bridgeNodeModules, "ajv/package.json"), "{}\n");
-  write(path.join(paths.shared, "fixtures/artwork/playing.svg"), "<svg/>\n");
+  write(path.join(paths.shared, "fixtures/artwork/playing.jpg"), "jpeg\n");
   write(
     path.join(paths.shared, "fixtures/fixture-scenario-catalog.json"),
     "{}\n",

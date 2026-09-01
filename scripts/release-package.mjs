@@ -206,7 +206,7 @@ export function validateReleasePackage({
     "src/renderer/assets/fonts/IBMPlexSans-Variable.ttf",
     "src/renderer/assets/fonts/Libre-Baskerville-OFL.txt",
     "src/renderer/assets/fonts/LibreBaskerville-Variable.ttf",
-    "src/shared/fixtures/artwork/playing.svg",
+    "src/shared/fixtures/artwork/playing.jpg",
     "src/shared/fixtures/fixture-scenario-catalog.json",
     "src/shared/fixtures/playing.json",
     "src/shared/schema/display-configuration.schema.json",

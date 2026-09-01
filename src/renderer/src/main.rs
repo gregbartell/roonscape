@@ -254,8 +254,10 @@ fn build_window(
     });
     let rendering = if connections.capture_control.is_some() {
         RenderingConfiguration::capture(typography, renderer_configuration.behavior)
+    } else if connections.fixture_navigation.is_some() {
+        RenderingConfiguration::fixture(typography, renderer_configuration.behavior)
     } else {
-        RenderingConfiguration::runtime(typography, renderer_configuration.behavior)
+        RenderingConfiguration::live(typography, renderer_configuration.behavior)
     };
     let presentation_view = Rc::new(RefCell::new(PresentationView::new(
         presentation.borrow().revision(),

@@ -69,7 +69,7 @@ fn revisions_transition_artwork_metadata_and_the_complete_palette_together() {
     assert_eq!(title(outgoing.value()), Some("Last Light on Phobos"));
     assert_eq!(
         outgoing.value().artwork_path.as_deref(),
-        Some("src/shared/fixtures/artwork/playing.svg")
+        Some("src/shared/fixtures/artwork/playing.jpg")
     );
     assert_ne!(outgoing.value().palette, current.value().palette);
 }
@@ -99,7 +99,7 @@ fn rapid_revisions_keep_only_current_and_one_outgoing_presentation() {
     );
     assert_eq!(
         transition.current().value().artwork_path.as_deref(),
-        Some("src/shared/fixtures/artwork/revised.svg")
+        Some("src/shared/fixtures/artwork/revised.jpg")
     );
     assert_ne!(
         transition.current().value().palette,

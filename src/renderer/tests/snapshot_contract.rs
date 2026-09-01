@@ -1,6 +1,70 @@
 mod support;
 
+use std::collections::HashSet;
+use std::fs;
+use std::path::Path;
+
 use roonscape_renderer::{Availability, Playback, parse_snapshot};
+use serde_json::Value;
+
+#[test]
+fn fixture_scenarios_reference_committed_srgb_jpegs_fitted_within_live_mode_artwork_bounds() {
+    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let catalog: Value = serde_json::from_str(&support::fixture("fixture-scenario-catalog.json"))
+        .expect("Fixture Scenario catalog should be valid JSON");
+    let fixture_paths = catalog["scenarios"]
+        .as_array()
+        .expect("Fixture Scenario catalog should contain scenarios")
+        .iter()
+        .map(|scenario| {
+            scenario["fixture"]
+                .as_str()
+                .expect("Fixture Scenario should name a fixture")
+        });
+    let artwork_paths = fixture_paths
+        .filter_map(|fixture_path| {
+            let snapshot = parse_snapshot(
+                &fs::read_to_string(repository_root.join(fixture_path))
+                    .expect("catalogued Fixture Scenario should be committed"),
+            )
+            .expect("catalogued Fixture Scenario should satisfy the shared contract");
+            snapshot.artwork.map(|artwork| artwork.path)
+        })
+        .collect::<HashSet<_>>();
+
+    assert!(!artwork_paths.is_empty());
+    for artwork_path in artwork_paths {
+        assert_eq!(
+            Path::new(&artwork_path)
+                .extension()
+                .and_then(|value| value.to_str()),
+            Some("jpg")
+        );
+        let committed_artwork_path = repository_root.join(&artwork_path);
+        let encoded_artwork_bytes = fs::read(&committed_artwork_path)
+            .expect("Fixture Scenario artwork should be committed");
+        assert!(
+            encoded_artwork_bytes
+                .windows(b"ICC_PROFILE\0".len())
+                .any(|window| window == b"ICC_PROFILE\0"),
+            "{} should embed its sRGB profile",
+            committed_artwork_path.display()
+        );
+        let decoded_artwork = gdk_pixbuf::Pixbuf::from_file(&committed_artwork_path)
+            .expect("Fixture Scenario JPEG should decode");
+        assert!(decoded_artwork.width() <= 1_600);
+        assert!(decoded_artwork.height() <= 1_600);
+        let canonical_source =
+            gdk_pixbuf::Pixbuf::from_file(committed_artwork_path.with_extension("svg"))
+                .expect("Fixture Scenario JPEG should retain a canonical SVG source");
+        assert_eq!(
+            canonical_source.width() * decoded_artwork.height(),
+            canonical_source.height() * decoded_artwork.width(),
+            "{} should preserve its canonical source aspect ratio",
+            committed_artwork_path.display()
+        );
+    }
+}
 
 #[test]
 fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
@@ -58,7 +122,7 @@ fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
             .artwork
             .as_ref()
             .map(|artwork| artwork.path.as_str()),
-        Some("src/shared/fixtures/artwork/playing.svg")
+        Some("src/shared/fixtures/artwork/playing.jpg")
     );
 }
 
@@ -76,7 +140,7 @@ fn parses_missing_artwork_and_artwork_revision_fixtures() {
             .artwork
             .as_ref()
             .map(|artwork| (artwork.revision, artwork.path.as_str())),
-        Some((9, "src/shared/fixtures/artwork/revised.svg"))
+        Some((9, "src/shared/fixtures/artwork/revised.jpg"))
     );
 }
 
@@ -89,7 +153,7 @@ fn parses_the_light_artwork_visual_acceptance_fixture() {
         snapshot
             .artwork
             .map(|artwork| (artwork.revision, artwork.path)),
-        Some((20, "src/shared/fixtures/artwork/light.svg".to_owned()))
+        Some((20, "src/shared/fixtures/artwork/light.jpg".to_owned()))
     );
     assert_eq!(
         snapshot
@@ -112,7 +176,7 @@ fn parses_the_typography_glyph_fallback_visual_acceptance_fixture() {
     );
     assert_eq!(
         snapshot.artwork.map(|artwork| artwork.path),
-        Some("src/shared/fixtures/artwork/playing.svg".to_owned())
+        Some("src/shared/fixtures/artwork/playing.jpg".to_owned())
     );
 }
 
@@ -171,7 +235,7 @@ fn parses_non_square_artwork_and_long_identity_fixtures() {
         non_square
             .artwork
             .map(|artwork| (artwork.revision, artwork.path)),
-        Some((19, "src/shared/fixtures/artwork/non-square.svg".to_owned()))
+        Some((19, "src/shared/fixtures/artwork/non-square.jpg".to_owned()))
     );
     assert!(
         long_identities

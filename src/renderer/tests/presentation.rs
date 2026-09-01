@@ -61,7 +61,7 @@ fn maps_the_playing_snapshot_to_now_playing_content() {
     assert_eq!(presentation.artwork_revision, Some(3));
     assert_eq!(
         presentation.artwork_path.as_deref(),
-        Some("src/shared/fixtures/artwork/playing.svg")
+        Some("src/shared/fixtures/artwork/playing.jpg")
     );
 
     let progress = presentation
@@ -575,7 +575,7 @@ fn simultaneous_playback_and_now_playing_changes_require_a_transition() {
         .as_mut()
         .expect("Paused fixture should reference artwork");
     artwork.revision = 12;
-    artwork.path = "src/shared/fixtures/artwork/revised.svg".to_owned();
+    artwork.path = "src/shared/fixtures/artwork/revised.jpg".to_owned();
 
     assert_eq!(
         state
@@ -610,7 +610,7 @@ fn every_composition_field_requests_one_coordinated_transition() {
         .as_mut()
         .expect("Playing fixture should reference artwork");
     artwork_reference.revision = 12;
-    artwork_reference.path = "src/shared/fixtures/artwork/revised.svg".to_owned();
+    artwork_reference.path = "src/shared/fixtures/artwork/revised.jpg".to_owned();
 
     for (index, (field, mut changed)) in [
         ("identity", identity),

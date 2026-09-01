@@ -25,7 +25,7 @@ test("loads the shared Playing fixture as a complete snapshot", async () => {
     },
     artwork: {
       revision: 3,
-      path: "src/shared/fixtures/artwork/playing.svg",
+      path: "src/shared/fixtures/artwork/playing.jpg",
     },
   });
 });
@@ -124,7 +124,7 @@ test("loads missing artwork and artwork revision fixtures", async () => {
   assert.equal(missingArtwork.artwork, null);
   assert.deepEqual(revisedArtwork.artwork, {
     revision: 9,
-    path: "src/shared/fixtures/artwork/revised.svg",
+    path: "src/shared/fixtures/artwork/revised.jpg",
   });
   assert.equal(revisedArtwork.revision, 9);
 });
@@ -134,7 +134,7 @@ test("loads the light-artwork visual acceptance fixture", async () => {
 
   assert.deepEqual(snapshot.artwork, {
     revision: 20,
-    path: "src/shared/fixtures/artwork/light.svg",
+    path: "src/shared/fixtures/artwork/light.jpg",
   });
   assert.deepEqual(snapshot.nowPlaying, {
     title: "Last Light on Phobos",
@@ -151,7 +151,7 @@ test("loads the typography glyph-fallback visual acceptance fixture", async () =
   assert.equal(snapshot.nowPlaying?.album, "Signals from the Quiet Sea — 月");
   assert.deepEqual(snapshot.artwork, {
     revision: 3,
-    path: "src/shared/fixtures/artwork/playing.svg",
+    path: "src/shared/fixtures/artwork/playing.jpg",
   });
 });
 
@@ -191,7 +191,7 @@ test("loads missing, long, and extreme metadata fixtures without inventing value
 test("metadata-only edge fixtures retain the reference artwork", async () => {
   const referenceArtwork = {
     revision: 3,
-    path: "src/shared/fixtures/artwork/playing.svg",
+    path: "src/shared/fixtures/artwork/playing.jpg",
   };
 
   for (const fixtureName of ["long-metadata.json", "extreme-metadata.json"]) {
@@ -214,7 +214,7 @@ test("loads non-square artwork and long identity edge-case fixtures", async () =
 
   assert.deepEqual(nonSquareArtwork.artwork, {
     revision: 19,
-    path: "src/shared/fixtures/artwork/non-square.svg",
+    path: "src/shared/fixtures/artwork/non-square.jpg",
   });
   assert.deepEqual(nonSquareArtwork.nowPlaying, {
     title: "Last Light on Phobos",

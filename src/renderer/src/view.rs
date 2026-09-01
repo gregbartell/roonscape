@@ -49,6 +49,7 @@ pub(crate) struct RenderingConfiguration {
     typography: TypographySelection,
     behavior: PresentationBehavior,
     artwork_failure: ArtworkFailure,
+    cache_scope: CacheScope,
 }
 
 #[derive(Clone, Copy)]
@@ -57,12 +58,28 @@ enum ArtworkFailure {
     FailCapture,
 }
 
+#[derive(Clone, Copy)]
+enum CacheScope {
+    RendererSession,
+    FixtureScenario,
+}
+
 impl RenderingConfiguration {
-    pub(crate) fn runtime(typography: TypographySelection, behavior: PresentationBehavior) -> Self {
+    pub(crate) fn live(typography: TypographySelection, behavior: PresentationBehavior) -> Self {
         Self {
             typography,
             behavior,
             artwork_failure: ArtworkFailure::UseFallback,
+            cache_scope: CacheScope::RendererSession,
+        }
+    }
+
+    pub(crate) fn fixture(typography: TypographySelection, behavior: PresentationBehavior) -> Self {
+        Self {
+            typography,
+            behavior,
+            artwork_failure: ArtworkFailure::UseFallback,
+            cache_scope: CacheScope::FixtureScenario,
         }
     }
 
@@ -71,6 +88,7 @@ impl RenderingConfiguration {
             typography,
             behavior,
             artwork_failure: ArtworkFailure::FailCapture,
+            cache_scope: CacheScope::FixtureScenario,
         }
     }
 }
@@ -176,6 +194,19 @@ impl PresentationCaches {
             gradients: Rc::new(NowPlayingGradientCache::new(capacity)),
             artwork: Rc::new(ArtworkCache::new(capacity)),
         }
+    }
+}
+
+impl CacheScope {
+    fn render_replacement<T>(
+        self,
+        current: &mut PresentationCaches,
+        render: impl FnOnce(&PresentationCaches) -> T,
+    ) -> T {
+        if let Self::FixtureScenario = self {
+            *current = PresentationCaches::new(PRESENTATION_CACHE_CAPACITY);
+        }
+        render(current)
     }
 }
 
@@ -333,7 +364,7 @@ impl PresentationView {
         repository_root: &Path,
     ) {
         if self.rendering.behavior == PresentationBehavior::StaticFixture {
-            let rendered = self.render_current_at_viewport(presentation, repository_root);
+            let rendered = self.render_replacement_at_viewport(presentation, repository_root);
             let released = self.transition.replace_immediately(revision, rendered);
             for layer in released {
                 self.remove_layer(layer);
@@ -344,7 +375,7 @@ impl PresentationView {
         if let Some(discarded) = self.transition.discard_outgoing() {
             self.remove_layer(discarded);
         }
-        let rendered = self.render_current_at_viewport(presentation, repository_root);
+        let rendered = self.render_replacement_at_viewport(presentation, repository_root);
         let started_at = self.transition_clock.elapsed();
         let discarded = self.transition.begin(revision, rendered, started_at);
         debug_assert!(discarded.is_none());
@@ -411,52 +442,60 @@ impl PresentationView {
         self.stack.remove(&layer.value().root);
     }
 
-    fn render_current_at_viewport(
-        &self,
+    fn render_replacement_at_viewport(
+        &mut self,
         presentation: &Presentation,
         repository_root: &Path,
     ) -> RenderedPresentation {
         let diagnostics_text = self.transition.current().value().diagnostics_text();
         let (resolved, capture_error) =
             resolve_for_rendering(presentation, repository_root, self.rendering);
-        let render = || {
-            let mut rendered = render_current_from_resolved(
-                &resolved,
-                repository_root,
-                diagnostics_text.as_deref(),
-                self.caches.clone(),
-                self.rendering,
-            );
-            rendered.capture_error.clone_from(&capture_error);
-            rendered
-        };
-        match (&resolved.presentation, self.layout_viewport) {
-            (Presentation::NowPlaying(_), Some(viewport)) => {
-                let scale_factor = u32::try_from(gtk::prelude::WidgetExt::scale_factor(&self.root))
-                    .expect("GTK display scale factor must be positive");
-                // A fresh gradient is independent of foreground construction
-                // and layout. Install the prepared raster only after foreground
-                // construction so the new background is never partially ready.
-                let (rendered, prepared_gradient) = self.caches.gradients.prepare_while(
-                    resolved.palette,
-                    viewport,
-                    scale_factor,
-                    || {
-                        let rendered = render();
-                        rendered.apply_viewport_foreground(viewport);
+        let rendering = self.rendering;
+        let layout_viewport = self.layout_viewport;
+        let root = &self.root;
+        rendering
+            .cache_scope
+            .render_replacement(&mut self.caches, |caches| {
+                let render = || {
+                    let mut rendered = render_current_from_resolved(
+                        &resolved,
+                        repository_root,
+                        diagnostics_text.as_deref(),
+                        caches.clone(),
+                        rendering,
+                    );
+                    rendered.capture_error.clone_from(&capture_error);
+                    rendered
+                };
+                match (&resolved.presentation, layout_viewport) {
+                    (Presentation::NowPlaying(_), Some(viewport)) => {
+                        let scale_factor =
+                            u32::try_from(gtk::prelude::WidgetExt::scale_factor(root))
+                                .expect("GTK display scale factor must be positive");
+                        // A fresh gradient is independent of foreground construction
+                        // and layout. Install the prepared raster only after foreground
+                        // construction so the new background is never partially ready.
+                        let (rendered, prepared_gradient) = caches.gradients.prepare_while(
+                            resolved.palette,
+                            viewport,
+                            scale_factor,
+                            || {
+                                let rendered = render();
+                                rendered.apply_viewport_foreground(viewport);
+                                rendered
+                            },
+                        );
+                        rendered.apply_prepared_now_playing_background(prepared_gradient);
                         rendered
-                    },
-                );
-                rendered.apply_prepared_now_playing_background(prepared_gradient);
-                rendered
-            }
-            (_, Some(viewport)) => {
-                let rendered = render();
-                rendered.apply_viewport(viewport);
-                rendered
-            }
-            (_, None) => render(),
-        }
+                    }
+                    (_, Some(viewport)) => {
+                        let rendered = render();
+                        rendered.apply_viewport(viewport);
+                        rendered
+                    }
+                    (_, None) => render(),
+                }
+            })
     }
 
     fn reveal_current(&self) {
@@ -1833,10 +1872,78 @@ pub(crate) fn install_style_providers(typography: TypographySelection) -> gtk::C
 
 #[cfg(test)]
 mod tests {
-    use super::{PresentationLayoutSource, STYLES};
-    use roonscape_renderer::{
-        NowPlayingFooterContent, Viewport, parse_snapshot, presentation_from_snapshot,
+    use std::collections::HashSet;
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use gtk::glib::object::ObjectType;
+
+    use super::{
+        PRESENTATION_CACHE_CAPACITY, PresentationCaches, PresentationLayoutSource,
+        RenderingConfiguration, STYLES,
     };
+    use roonscape_renderer::{
+        NowPlayingFooterContent, NowPlayingGradientCacheKey, PresentationBehavior,
+        PresentationPalette, Viewport, parse_snapshot, presentation_from_snapshot,
+    };
+
+    fn populate_presentation_caches(
+        caches: &PresentationCaches,
+    ) -> (gdk_pixbuf::Pixbuf, Arc<[u8]>) {
+        let artwork = caches
+            .artwork
+            .source(&crate::artwork_cache::ArtworkCacheKey::new(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../shared/fixtures/artwork/playing.svg"),
+                Some(3),
+            ))
+            .expect("Playing artwork should decode");
+        let gradient = caches.gradients.raster(
+            PresentationPalette::fallback(),
+            NowPlayingGradientCacheKey::new(Viewport::new(16, 9), 1),
+        );
+        (artwork, gradient)
+    }
+
+    #[test]
+    fn live_mode_reuses_artwork_and_gradient_caches_across_replacements() {
+        let mut current = PresentationCaches::new(PRESENTATION_CACHE_CAPACITY);
+        let rendering = RenderingConfiguration::live(
+            roonscape_renderer::select_typography(&HashSet::new()),
+            PresentationBehavior::Dynamic,
+        );
+
+        let (first_artwork, first_gradient) = rendering
+            .cache_scope
+            .render_replacement(&mut current, populate_presentation_caches);
+        let (reused_artwork, reused_gradient) = rendering
+            .cache_scope
+            .render_replacement(&mut current, populate_presentation_caches);
+
+        assert_eq!(first_artwork.as_ptr(), reused_artwork.as_ptr());
+        assert!(Arc::ptr_eq(&first_gradient, &reused_gradient));
+    }
+
+    #[test]
+    fn fixture_mode_and_presentation_capture_render_replacements_with_fresh_caches() {
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        for rendering in [
+            RenderingConfiguration::fixture(typography, PresentationBehavior::Dynamic),
+            RenderingConfiguration::capture(typography, PresentationBehavior::StaticFixture),
+        ] {
+            let mut current = PresentationCaches::new(PRESENTATION_CACHE_CAPACITY);
+
+            let (first_artwork, first_gradient) = rendering
+                .cache_scope
+                .render_replacement(&mut current, populate_presentation_caches);
+            let (fresh_artwork, fresh_gradient) = rendering
+                .cache_scope
+                .render_replacement(&mut current, populate_presentation_caches);
+
+            assert_ne!(first_artwork.as_ptr(), fresh_artwork.as_ptr());
+            assert!(!Arc::ptr_eq(&first_gradient, &fresh_gradient));
+        }
+    }
 
     #[test]
     fn keeps_the_current_footer_geometry_when_the_viewport_changes() {
