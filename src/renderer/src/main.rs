@@ -62,6 +62,13 @@ struct RendererConnections {
     capture_control: Option<Rc<CaptureControl>>,
 }
 
+#[derive(Clone, Copy)]
+enum FirstRevealedPaintPhase {
+    WaitingForReveal,
+    WaitingForRepaint,
+    Complete,
+}
+
 struct PresentationRuntime {
     presentation: Rc<RefCell<PresentationState>>,
     rendered_presentation: RefCell<Presentation>,
@@ -413,7 +420,8 @@ fn build_window(
     if let Some(first_revealed_paint_control) = first_revealed_paint_control {
         let first_revealed_paint_runtime = Rc::clone(&runtime);
         let first_revealed_paint_control = Rc::new(RefCell::new(first_revealed_paint_control));
-        let first_revealed_paint_reported = Rc::new(Cell::new(false));
+        let first_revealed_paint_phase =
+            Rc::new(Cell::new(FirstRevealedPaintPhase::WaitingForReveal));
         let first_revealed_paint_display = display.clone();
         window.connect_map(move |window| {
             let Some(frame_clock) = window.frame_clock() else {
@@ -423,30 +431,46 @@ fn build_window(
             };
             let first_revealed_paint_runtime = Rc::clone(&first_revealed_paint_runtime);
             let first_revealed_paint_control = Rc::clone(&first_revealed_paint_control);
-            let first_revealed_paint_reported = Rc::clone(&first_revealed_paint_reported);
+            let first_revealed_paint_phase = Rc::clone(&first_revealed_paint_phase);
             let first_revealed_paint_display = first_revealed_paint_display.clone();
             let observed_frame_clock = frame_clock.clone();
             frame_clock.begin_updating();
-            frame_clock.connect_after_paint(move |_| {
-                if first_revealed_paint_display.opacity() == 0.0 {
-                    return;
+            frame_clock.connect_after_paint(move |_| match first_revealed_paint_phase.get() {
+                FirstRevealedPaintPhase::WaitingForReveal => {
+                    if first_revealed_paint_display.opacity() == 0.0 {
+                        return;
+                    }
+                    first_revealed_paint_phase.set(FirstRevealedPaintPhase::WaitingForRepaint);
+                    let result = {
+                        let mut control = first_revealed_paint_control.borrow_mut();
+                        let mut release = [0];
+                        control
+                            .write_all(b"painted\n")
+                            .and_then(|()| control.read_exact(&mut release))
+                    };
+                    if let Err(error) = result {
+                        first_revealed_paint_phase.set(FirstRevealedPaintPhase::Complete);
+                        observed_frame_clock.end_updating();
+                        first_revealed_paint_runtime.fail(format!(
+                            "could not synchronize the first painted frame: {error}"
+                        ));
+                        return;
+                    }
+                    first_revealed_paint_display.queue_draw();
                 }
-                if first_revealed_paint_reported.replace(true) {
-                    return;
+                FirstRevealedPaintPhase::WaitingForRepaint => {
+                    first_revealed_paint_phase.set(FirstRevealedPaintPhase::Complete);
+                    if let Err(error) = first_revealed_paint_control
+                        .borrow_mut()
+                        .write_all(b"repainted\n")
+                    {
+                        first_revealed_paint_runtime.fail(format!(
+                            "could not report the post-release painted frame: {error}"
+                        ));
+                    }
+                    observed_frame_clock.end_updating();
                 }
-                let result = {
-                    let mut control = first_revealed_paint_control.borrow_mut();
-                    let mut release = [0];
-                    control
-                        .write_all(b"painted\n")
-                        .and_then(|()| control.read_exact(&mut release))
-                };
-                if let Err(error) = result {
-                    first_revealed_paint_runtime.fail(format!(
-                        "could not synchronize the first painted frame: {error}"
-                    ));
-                }
-                observed_frame_clock.end_updating();
+                FirstRevealedPaintPhase::Complete => {}
             });
         });
     }

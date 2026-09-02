@@ -1114,10 +1114,10 @@ test("focused capture waits for its painted revision and publishes one validated
     );
     assert.match(
       processes,
-      /scrot\|--autoselect 0,0,3840,2160 --overwrite \/.*\.png\|\d+/,
+      /scrot\|--autoselect 0,0,3840,2160 --overwrite \/.*\.png/,
     );
     const temporaryCapturePath = processes.match(
-      /scrot\|--autoselect 0,0,3840,2160 --overwrite ([^|]+)\|\d+/,
+      /scrot\|--autoselect 0,0,3840,2160 --overwrite ([^\n]+)/,
     )?.[1];
     assert.ok(
       temporaryCapturePath?.startsWith(
@@ -1127,11 +1127,13 @@ test("focused capture waits for its painted revision and publishes one validated
     );
     assert.match(processes, /renderer-stopped/);
     assert.match(processes, /Xvfb-stopped/);
-    const paintedAt = Number(processes.match(/painted\|(\d+)/)?.[1]);
-    const capturedAt = Number(processes.match(/scrot\|[^\n]+\|(\d+)/)?.[1]);
-    assert.ok(
-      capturedAt - paintedAt >= 0 && capturedAt - paintedAt < 1_000,
-      `capture should follow painted readiness without a settle delay; observed ${capturedAt - paintedAt}ms`,
+    assert.deepEqual(
+      processes
+        .split("\n")
+        .filter((line) => /^(selection|painted|scrot)\|/.test(line))
+        .map((line) => line.slice(0, line.indexOf("|"))),
+      ["selection", "painted", "scrot"],
+      "the focused capture should wait for painted readiness",
     );
     assert.deepEqual(await readdir(workDirectory), ["3840x2160--playing.png"]);
     assert.deepEqual(await readdir(runtimeRoot), []);

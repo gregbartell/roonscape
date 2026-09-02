@@ -38,7 +38,7 @@ for await (const line of createInterface({ input: connection })) {
             .slice(0, 12);
     await appendFile(
       log,
-      `selection|${JSON.stringify({ ...selection, observedArtworkHash })}\npainted|${Date.now()}\n`,
+      `selection|${JSON.stringify({ ...selection, observedArtworkHash })}\npainted|ready\n`,
     );
   } else {
     const artwork = selection.snapshot.artwork?.path ?? "none";

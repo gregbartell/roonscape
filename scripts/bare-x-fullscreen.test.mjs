@@ -6,7 +6,6 @@ import { createServer } from "node:net";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -156,7 +155,18 @@ test("fullscreen startup reveals Disconnected only after its layout settles", as
         "the first revealed frame did not use the fullscreen Disconnected layout",
       );
       firstRevealedPaintControl.write("release\n");
-      await delay(300);
+      await waitFor(
+        () => {
+          if (firstRevealedPaintError !== undefined) {
+            throw firstRevealedPaintError;
+          }
+          if (!firstRevealedPaintNotification.includes("repainted\n")) {
+            throw new Error("the post-release frame has not been reported");
+          }
+        },
+        renderer,
+        "the renderer post-release painted frame",
+      );
       const settledFrame = await captureFullscreenFrame(
         path.join(taskDirectory, "settled.ppm"),
         environment,

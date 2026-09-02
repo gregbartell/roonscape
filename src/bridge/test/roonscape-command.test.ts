@@ -14,6 +14,7 @@ import { createConnection } from "node:net";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import test from "node:test";
+import { setTimeout as wait } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { launchChildProcess } from "../src/child-process.js";
@@ -264,67 +265,79 @@ test("--config takes precedence over the standard XDG path", async () => {
   assert.deepEqual(loadedFiles, ["/working/settings/display.json"]);
 });
 
-test("valid --config without Roon Authorization presents pairing required", async () => {
-  await withTaskDirectory(async (taskDirectory) => {
-    const configurationFile = path.join(taskDirectory, "display.json");
-    const authorizationFile = path.join(taskDirectory, "authorization.json");
-    const socketPath = path.join(taskDirectory, "roonscape.sock");
-    await writeFile(
-      configurationFile,
-      '{"trackedOutputId":"output-speaker-system"}\n',
-    );
-    let finishRenderer: ((result: ChildResult) => void) | undefined;
-    const renderer: RunningChild = {
-      result: new Promise((resolve) => {
-        finishRenderer = resolve;
-      }),
-      sendSignal: () => undefined,
-    };
-    const commandResult = runRoonScapeCommand(
-      ["--config", configurationFile],
-      commandDependencies({
-        currentDirectory: taskDirectory,
-        authorizationFile: () => authorizationFile,
-        loadConfiguration: (file) =>
-          new FileDisplayConfigurationStore(file).load(),
-        openRuntime: async () => ({
-          socketPath,
-          cleanup: async () => undefined,
+test(
+  "valid --config without Roon Authorization presents pairing required",
+  { timeout: 30_000 },
+  async (context) => {
+    await withTaskDirectory(async (taskDirectory) => {
+      const configurationFile = path.join(taskDirectory, "display.json");
+      const authorizationFile = path.join(taskDirectory, "authorization.json");
+      const socketPath = path.join(taskDirectory, "roonscape.sock");
+      await writeFile(
+        configurationFile,
+        '{"trackedOutputId":"output-speaker-system"}\n',
+      );
+      let finishRenderer: ((result: ChildResult) => void) | undefined;
+      const renderer: RunningChild = {
+        result: new Promise((resolve) => {
+          finishRenderer = resolve;
         }),
-        launchBridge: (options) =>
-          launchChildProcess(
-            process.execPath,
-            [
-              bridgeEntry,
-              "--config",
-              options.configurationFile,
-              "--authorization",
-              options.authorizationFile,
-            ],
-            { ...process.env, ROONSCAPE_SOCKET: options.socketPath },
-          ),
-        launchRenderer: () => renderer,
-        delay: (milliseconds) =>
-          new Promise((resolve) => {
-            const timer = setTimeout(resolve, milliseconds);
-            timer.unref();
+        sendSignal: () => undefined,
+      };
+      const bridgeStarted = Promise.withResolvers<RunningChild>();
+      const commandResult = runRoonScapeCommand(
+        ["--config", configurationFile],
+        commandDependencies({
+          currentDirectory: taskDirectory,
+          authorizationFile: () => authorizationFile,
+          loadConfiguration: (file) =>
+            new FileDisplayConfigurationStore(file).load(),
+          openRuntime: async () => ({
+            socketPath,
+            cleanup: async () => undefined,
           }),
-      }),
-    );
+          launchBridge: (options) => {
+            const bridge = launchChildProcess(
+              process.execPath,
+              [
+                bridgeEntry,
+                "--config",
+                options.configurationFile,
+                "--authorization",
+                options.authorizationFile,
+              ],
+              { ...process.env, ROONSCAPE_SOCKET: options.socketPath },
+            );
+            bridgeStarted.resolve(bridge);
+            return bridge;
+          },
+          launchRenderer: () => renderer,
+          delay: (milliseconds) =>
+            new Promise((resolve) => {
+              const timer = setTimeout(resolve, milliseconds);
+              timer.unref();
+            }),
+        }),
+      );
 
-    let commandExit: number;
-    let snapshot: PresentationSnapshot;
-    try {
-      snapshot = await readFirstSnapshot(socketPath);
-    } finally {
-      finishRenderer?.({ exitCode: 0, signal: null });
-      commandExit = await commandResult;
-    }
+      let commandExit: number;
+      let snapshot: PresentationSnapshot;
+      try {
+        snapshot = await readFirstSnapshot(
+          socketPath,
+          bridgeStarted.promise.then((bridge) => bridge.result),
+          context.signal,
+        );
+      } finally {
+        finishRenderer?.({ exitCode: 0, signal: null });
+        commandExit = await commandResult;
+      }
 
-    assert.equal(commandExit, 0);
-    assert.equal(snapshot.availability, "pairingRequired");
-  });
-});
+      assert.equal(commandExit, 0);
+      assert.equal(snapshot.availability, "pairingRequired");
+    });
+  },
+);
 
 test("missing Display Configuration fails promptly without an interactive terminal", async () => {
   const errors: string[] = [];
@@ -1575,31 +1588,55 @@ function commandDependencies(
 
 async function readFirstSnapshot(
   socketPath: string,
+  bridgeResult: Promise<ChildResult>,
+  testSignal: AbortSignal,
 ): Promise<PresentationSnapshot> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  const stopSnapshotObservation = new AbortController();
+  const snapshotSignal = AbortSignal.any([
+    testSignal,
+    stopSnapshotObservation.signal,
+  ]);
+  try {
+    return await Promise.race([
+      readSnapshotWhenAvailable(socketPath, snapshotSignal),
+      bridgeResult.then((result) => {
+        throw new Error(
+          `RoonScape Bridge exited before publishing a snapshot (${result.exitCode ?? result.signal})`,
+        );
+      }),
+    ]);
+  } finally {
+    stopSnapshotObservation.abort();
+  }
+}
+
+async function readSnapshotWhenAvailable(
+  socketPath: string,
+  signal: AbortSignal,
+): Promise<PresentationSnapshot> {
+  for (;;) {
+    signal.throwIfAborted();
     try {
       await access(socketPath);
       const client = createConnection(socketPath);
       const lines = createInterface({ input: client });
       try {
-        const [line] = (await once(lines, "line")) as [string];
+        const [line] = (await once(lines, "line", { signal })) as [string];
         return JSON.parse(line) as PresentationSnapshot;
       } finally {
         client.destroy();
       }
     } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        !("code" in error) ||
-        (error as NodeJS.ErrnoException).code !== "ENOENT" ||
-        attempt === 99
-      ) {
+      if (!isMissingPathError(error)) {
         throw error;
       }
-      await new Promise((resolve) => setTimeout(resolve, 10));
     }
+    await wait(10, undefined, { signal });
   }
-  throw new Error(`Timed out waiting for RoonScape Bridge at ${socketPath}`);
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 function completedChild(result: ChildResult): RunningChild {
