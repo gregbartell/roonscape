@@ -17,6 +17,7 @@ import {
 import { validatePresentationCaptureSnapshot } from "./presentation-snapshot.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const presentationCaptureEncodingTimeoutMilliseconds = 30_000;
 const captureDisplayConfiguration = {
   trackedOutputId: "visual-acceptance-capture",
   inactivity: {
@@ -230,7 +231,7 @@ async function captureNativeViewport(width, height, capturePath, environment) {
     {
       cwd: repositoryRoot,
       environment,
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: presentationCaptureEncodingTimeoutMilliseconds,
     },
   );
 }
