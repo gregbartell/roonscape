@@ -43,6 +43,16 @@ playback. It corresponds to Roon's stopped playback state and contains no Now
 Playing content.
 _Avoid_: Stopped in viewer-facing copy
 
+**Live Capture Frame**:
+A retained screenshot from a Live Capture Session that records a visually
+meaningful presentation state.
+_Avoid_: Presentation Capture, raw frame
+
+**Live Capture Session**:
+A bounded observation of RoonScape in Live Mode that produces a curated visual
+chronology for human verification.
+_Avoid_: Presentation Capture session, live test, recording
+
 **Live Mode**:
 The normal RoonScape workflow in which its presentation reflects current state
 observed from Roon.
