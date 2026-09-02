@@ -304,14 +304,7 @@ async function startFirstRevealedPaintControl(taskDirectory) {
 async function captureFullscreenFrame(outputPath, environment, description) {
   await runMonitoredProcess(
     "scrot",
-    [
-      "--autoselect",
-      "0,0,3840,2160",
-      "--format",
-      "ppm",
-      "--overwrite",
-      outputPath,
-    ],
+    ["--autoselect", "0,0,3840,2160", "--overwrite", outputPath],
     { cwd: repositoryRoot, environment, description },
   );
   return readFile(outputPath);
