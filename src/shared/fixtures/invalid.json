@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "revision": 8,
   "availability": "available",
   "playback": "playing",
@@ -15,5 +15,6 @@
     "durationSeconds": 60,
     "sampledAt": "not-a-timestamp"
   },
-  "artwork": null
+  "artwork": null,
+  "lyrics": null
 }

@@ -24,8 +24,8 @@ use roonscape_renderer::{
     FixtureNavigation, FixtureSelection, FixtureSelectionIdentity, InactivityConfiguration,
     NowPlayingTitleFace, PaintedFixtureSelection, Presentation, PresentationBehavior,
     PresentationState, PresentationTime, PresentationUpdate, RendererAction, RendererKey,
-    RendererKeyboard, SnapshotEvent, SnapshotSubscription, Viewport, current_process_memory_bytes,
-    display_configuration_file_path, load_inactivity_configuration,
+    RendererKeyboard, SnapshotEvent, SnapshotSubscription, Viewport, classify_presentation_update,
+    current_process_memory_bytes, display_configuration_file_path, load_inactivity_configuration,
     register_packaged_fallback_fonts, reject_removed_display_configuration_override,
     select_capture_typography, select_typography,
 };
@@ -64,6 +64,8 @@ struct RendererConnections {
 
 struct PresentationRuntime {
     presentation: Rc<RefCell<PresentationState>>,
+    rendered_presentation: RefCell<Presentation>,
+    reported_lyric_visibility: Cell<Option<u64>>,
     presentation_view: Rc<RefCell<PresentationView>>,
     updates: Option<Rc<SnapshotSubscription>>,
     capture_control: Option<Rc<CaptureControl>>,
@@ -333,6 +335,8 @@ fn build_window(
 
     let runtime = Rc::new(PresentationRuntime {
         presentation,
+        rendered_presentation: RefCell::new(initial_frame.presentation.clone()),
+        reported_lyric_visibility: Cell::new(None),
         presentation_view: presentation_view.clone(),
         updates: connections.snapshots,
         capture_control: connections.capture_control,
@@ -453,12 +457,12 @@ fn build_window(
             ready_runtime.prepare_capture_acknowledgement();
             glib::ControlFlow::Continue
         });
-        let painted_runtime = Rc::clone(&runtime);
-        window
-            .frame_clock()
-            .ok_or("capture-controlled renderer window has no frame clock after presentation")?
-            .connect_after_paint(move |_| painted_runtime.after_paint());
     }
+    let painted_runtime = Rc::clone(&runtime);
+    window
+        .frame_clock()
+        .ok_or("renderer window has no frame clock after presentation")?
+        .connect_after_paint(move |_| painted_runtime.after_paint());
     Ok(())
 }
 
@@ -547,16 +551,16 @@ impl PresentationRuntime {
     fn tick(&self) {
         self.apply_viewport();
         let now = self.progress_clock.elapsed();
-        let presentation_update = self.apply_snapshot_events(now);
-        self.render(now, presentation_update);
+        self.apply_snapshot_events(now);
+        self.render(now);
         self.presentation_view.borrow_mut().finish_transition();
     }
 
     fn apply_pending_updates(&self) {
         self.apply_viewport();
         let now = self.progress_clock.elapsed();
-        let presentation_update = self.apply_snapshot_events(now);
-        self.render(now, presentation_update);
+        self.apply_snapshot_events(now);
+        self.render(now);
     }
 
     fn apply_viewport(&self) -> bool {
@@ -580,11 +584,12 @@ impl PresentationRuntime {
         true
     }
 
-    fn apply_snapshot_events(&self, now: Duration) -> Option<PresentationUpdate> {
-        let updates = self.updates.as_ref()?;
-        let mut presentation_update = None;
+    fn apply_snapshot_events(&self, now: Duration) {
+        let Some(updates) = self.updates.as_ref() else {
+            return;
+        };
         loop {
-            let update = match updates.try_recv() {
+            match updates.try_recv() {
                 Ok(SnapshotEvent::Snapshot(snapshot)) => {
                     if let Some(diagnostics) = self.diagnostics.as_ref() {
                         diagnostics
@@ -601,38 +606,26 @@ impl PresentationRuntime {
                             .borrow_mut()
                             .update(*snapshot, anchored_at)
                     };
-                    match update {
-                        Ok(update) => Some(update),
-                        Err(error) => {
-                            eprintln!("RoonScape Renderer: {error}");
-                            None
-                        }
+                    if let Err(error) = update {
+                        eprintln!("RoonScape Renderer: {error}");
                     }
                 }
                 Ok(SnapshotEvent::ConnectionChanged(connection)) => {
                     if let Some(diagnostics) = self.diagnostics.as_ref() {
                         diagnostics.borrow_mut().observe_connection(connection);
                     }
-                    match connection {
-                        ConnectionState::Disconnected => {
-                            Some(self.presentation.borrow_mut().disconnect(now))
-                        }
-                        ConnectionState::Connected => None,
+                    if connection == ConnectionState::Disconnected {
+                        self.presentation.borrow_mut().disconnect(now);
                     }
                 }
                 Ok(SnapshotEvent::RevisionRejected { incoming, accepted }) => {
                     eprintln!(
                         "RoonScape Renderer: ignored presentation revision {incoming}; current revision is {accepted}"
                     );
-                    None
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
-            };
-            if let Some(update) = update {
-                presentation_update = combine_presentation_update(presentation_update, update);
             }
         }
-        presentation_update
     }
 
     fn apply_capture_commands(&self) -> bool {
@@ -640,7 +633,6 @@ impl PresentationRuntime {
             return true;
         };
         let now = self.progress_clock.elapsed();
-        let mut presentation_update = None;
         loop {
             match control.try_recv() {
                 Ok(CaptureControlEvent::Selection(selection)) => {
@@ -651,10 +643,8 @@ impl PresentationRuntime {
                         .borrow_mut()
                         .update_for_fixture_selection((*selection).into_snapshot(), anchored_at)
                     {
-                        Ok(update) => {
+                        Ok(_) => {
                             self.painted_capture.borrow_mut().select(identity);
-                            presentation_update =
-                                combine_presentation_update(presentation_update, update);
                         }
                         Err(error) => {
                             self.fail(format!("could not select Fixture Scenario: {error}"));
@@ -678,7 +668,7 @@ impl PresentationRuntime {
             }
         }
         self.apply_viewport();
-        self.render(now, presentation_update);
+        self.render(now);
         self.display.queue_draw();
         true
     }
@@ -705,6 +695,7 @@ impl PresentationRuntime {
     }
 
     fn after_paint(&self) {
+        self.report_visible_lyrics();
         let Some(selection) = self.painted_capture.borrow_mut().after_paint() else {
             return;
         };
@@ -718,6 +709,31 @@ impl PresentationRuntime {
         }
     }
 
+    fn report_visible_lyrics(&self) {
+        let revision = self.presentation.borrow().revision();
+        let has_visible_lyrics = matches!(
+            &*self.rendered_presentation.borrow(),
+            Presentation::NowPlaying(now_playing) if now_playing.lyrics.is_some()
+        );
+        if !has_visible_lyrics {
+            self.reported_lyric_visibility.set(None);
+            return;
+        }
+        if self.reported_lyric_visibility.get() == Some(revision) {
+            return;
+        }
+        let Some(updates) = self.updates.as_ref() else {
+            return;
+        };
+        match updates.report_lyrics_visible(revision) {
+            Ok(true) => self.reported_lyric_visibility.set(Some(revision)),
+            Ok(false) => {}
+            Err(error) => {
+                eprintln!("RoonScape Renderer: could not report visible lyrics: {error}");
+            }
+        }
+    }
+
     fn fail(&self, error: String) {
         if self.runtime_error.borrow().is_none() {
             *self.runtime_error.borrow_mut() = Some(error);
@@ -725,7 +741,7 @@ impl PresentationRuntime {
         self.application.quit();
     }
 
-    fn render(&self, now: Duration, presentation_update: Option<PresentationUpdate>) {
+    fn render(&self, now: Duration) {
         let current_frame = match self.presentation.borrow().frame_at(now) {
             Ok(current_frame) => current_frame,
             Err(error) => {
@@ -734,43 +750,31 @@ impl PresentationRuntime {
             }
         };
 
+        let presentation_update = classify_presentation_update(
+            &self.rendered_presentation.borrow(),
+            &current_frame.presentation,
+        );
         match presentation_update {
-            Some(PresentationUpdate::TransitionRequired) => {
+            PresentationUpdate::TransitionRequired => {
                 self.presentation_view.borrow_mut().replace(
                     self.presentation.borrow().revision(),
                     &current_frame.presentation,
                     &self.repository_root,
                 );
             }
-            Some(PresentationUpdate::InPlace) => {
+            PresentationUpdate::InPlace => {
                 self.presentation_view.borrow_mut().update_in_place(
                     self.presentation.borrow().revision(),
                     &current_frame.presentation,
                 );
             }
-            None => {
-                if let Presentation::NowPlaying(current_presentation) = &current_frame.presentation
-                    && let Some(progress) = current_presentation.progress.as_ref()
-                {
-                    self.presentation_view.borrow().update_progress(progress);
-                }
-            }
         }
+        self.rendered_presentation
+            .replace(current_frame.presentation.clone());
         self.presentation_view
             .borrow_mut()
             .apply_inactivity(current_frame.inactivity);
     }
-}
-
-fn combine_presentation_update(
-    current: Option<PresentationUpdate>,
-    next: PresentationUpdate,
-) -> Option<PresentationUpdate> {
-    Some(match (current, next) {
-        (Some(PresentationUpdate::TransitionRequired), _)
-        | (_, PresentationUpdate::TransitionRequired) => PresentationUpdate::TransitionRequired,
-        _ => PresentationUpdate::InPlace,
-    })
 }
 
 fn install_diagnostics_updates(
@@ -826,21 +830,5 @@ fn host_inactivity_configuration(configuration_file: &Path) -> InactivityConfigu
             eprintln!("RoonScape Renderer: {error}; using default OLED inactivity calibration");
             InactivityConfiguration::default()
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{PresentationUpdate, combine_presentation_update};
-
-    #[test]
-    fn batch_preserves_a_composition_change_before_a_final_in_place_update() {
-        assert_eq!(
-            combine_presentation_update(
-                Some(PresentationUpdate::TransitionRequired),
-                PresentationUpdate::InPlace,
-            ),
-            Some(PresentationUpdate::TransitionRequired)
-        );
     }
 }

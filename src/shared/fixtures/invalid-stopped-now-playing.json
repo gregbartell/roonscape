@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "revision": 15,
   "availability": "available",
   "playback": "stopped",
@@ -15,5 +15,6 @@
     "album": "Stale album"
   },
   "progress": null,
-  "artwork": null
+  "artwork": null,
+  "lyrics": null
 }

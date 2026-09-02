@@ -71,7 +71,7 @@ fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
     let fixture = support::fixture("playing.json");
     let snapshot = parse_snapshot(&fixture).expect("shared Playing fixture should be valid");
 
-    assert_eq!(snapshot.schema_version, 2);
+    assert_eq!(snapshot.schema_version, 3);
     assert_eq!(snapshot.revision, 7);
     assert_eq!(snapshot.availability, Availability::Available);
     assert_eq!(snapshot.playback, Some(Playback::Playing));
@@ -124,6 +124,7 @@ fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
             .map(|artwork| artwork.path.as_str()),
         Some("src/shared/fixtures/artwork/playing.jpg")
     );
+    assert_eq!(snapshot.lyrics, None);
 }
 
 #[test]
@@ -349,6 +350,42 @@ fn rejects_invalid_timing_and_stopped_snapshots_with_stale_now_playing() {
 
         assert!(error.to_string().contains("violates the schema"));
     }
+}
+
+#[test]
+fn rejects_unordered_duplicate_or_excessive_lyric_text() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(&support::fixture("lyrics-one-line.json")).expect("fixture is JSON");
+
+    for cues in [
+        serde_json::json!([
+            {"atSeconds": 2.0, "text": "Second"},
+            {"atSeconds": 1.0, "text": "First"}
+        ]),
+        serde_json::json!([
+            {"atSeconds": 1.0, "text": "First"},
+            {"atSeconds": 1.0, "text": "Replacement"}
+        ]),
+    ] {
+        let mut candidate = fixture.clone();
+        candidate["lyrics"]["cues"] = cues;
+        let error = parse_snapshot(&candidate.to_string())
+            .expect_err("normalized cue timestamps should be strictly increasing");
+        assert!(error.to_string().contains("strictly increasing"));
+    }
+
+    let mut excessive = fixture;
+    excessive["lyrics"]["cues"] = serde_json::json!(
+        (0..33)
+            .map(|index| serde_json::json!({
+                "atSeconds": index,
+                "text": "x".repeat(512)
+            }))
+            .collect::<Vec<_>>()
+    );
+    let error =
+        parse_snapshot(&excessive.to_string()).expect_err("total lyric text should remain bounded");
+    assert!(error.to_string().contains("total lyric text"));
 }
 
 #[test]

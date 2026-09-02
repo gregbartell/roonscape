@@ -27,6 +27,47 @@ window {
   font-weight: 400;
 }
 
+.lyric-masthead-title {
+  font-weight: 700;
+}
+
+.lyric-masthead-artist {
+  font-weight: 600;
+}
+
+.lyric-current {
+  font-weight: 600;
+  line-height: 1.04;
+}
+
+.lyric-previous,
+.lyric-next {
+  font-weight: 400;
+  line-height: 1.18;
+}
+
+.lyric-previous,
+.lyric-current,
+.lyric-next {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.lyric-reel.lyric-promoting-out .lyric-previous,
+.lyric-reel.lyric-promoting-out .lyric-current,
+.lyric-reel.lyric-promoting-out .lyric-next {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.lyric-reel.lyric-promoting-in .lyric-previous,
+.lyric-reel.lyric-promoting-in .lyric-current,
+.lyric-reel.lyric-promoting-in .lyric-next {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
 .activity-heading {
   font-weight: 600;
 }

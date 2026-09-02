@@ -63,8 +63,8 @@ An ordinary capture writes directly to the current directory unless
 Repeat `--resolution WIDTHxHEIGHT` to capture every requested landscape
 resolution. `--artwork /path/to/image` substitutes a maintainer-supplied image
 when the selected Fixture Scenario supports custom artwork. Use `--all` to
-capture the 17 maintained nonduplicate Fixture Scenarios, with custom artwork
-applied to the nine compatible scenarios when requested.
+capture the maintained nonduplicate Fixture Scenarios, with custom artwork
+applied to every compatible scenario when requested.
 
 ```sh
 npm run capture:presentations -- --all --artwork /path/to/image --resolution 1920x1080 --output /path/to/captures

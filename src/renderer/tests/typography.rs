@@ -7,7 +7,7 @@ use roonscape_renderer::{
     register_packaged_fallback_fonts, select_capture_typography, select_typography,
 };
 
-const NOW_PLAYING_SUPPORTING_RULE: &str = ".now-playing .artist, .now-playing .album, .now-playing .status-label, .now-playing .time, .now-playing .activity-heading, .now-playing .activity-detail, .now-playing .identity-label, .now-playing .identity-name { font-family: \"IBM Plex Sans\", sans-serif; }";
+const NOW_PLAYING_SUPPORTING_RULE: &str = ".now-playing .artist, .now-playing .album, .now-playing .utility-text, .now-playing .status-label, .now-playing .time, .now-playing .activity-heading, .now-playing .activity-detail, .now-playing .identity-label, .now-playing .identity-name { font-family: \"IBM Plex Sans\", sans-serif; }";
 
 #[test]
 fn selects_now_playing_title_and_supporting_faces_independently() {
@@ -62,7 +62,7 @@ fn generated_styles_assign_now_playing_roles_without_changing_full_field_roles()
     let styles = TypographyStyles::new(selection).to_css();
 
     assert!(styles.contains(
-        ".now-playing .title { font-family: \"Sitka Display\", \"Libre Baskerville\", serif; font-style: normal; font-weight: 700; }"
+        ".now-playing .title, .now-playing .editorial-text { font-family: \"Sitka Display\", \"Libre Baskerville\", serif; font-style: normal; font-weight: 700; }"
     ));
     assert!(styles.contains(NOW_PLAYING_SUPPORTING_RULE));
     assert!(styles.contains(
@@ -91,7 +91,7 @@ fn generated_fallback_title_style_preserves_ordinary_glyph_fallback() {
     let styles = TypographyStyles::new(select_typography(&available_families(&[]))).to_css();
 
     assert!(styles.contains(
-        ".now-playing .title { font-family: \"Libre Baskerville\", serif; font-style: normal; font-weight: 700; }"
+        ".now-playing .title, .now-playing .editorial-text { font-family: \"Libre Baskerville\", serif; font-style: normal; font-weight: 700; }"
     ));
     assert!(styles.contains(NOW_PLAYING_SUPPORTING_RULE));
 }

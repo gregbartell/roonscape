@@ -6,6 +6,13 @@ import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import type { FormatsPlugin } from "ajv-formats";
 
 import { repositoryRoot } from "./repository-root.js";
+import {
+  MAX_LYRIC_CUE_CODE_POINTS,
+  MAX_LYRIC_CUES,
+  MAX_LYRIC_TOTAL_CODE_POINTS,
+  type SynchronizedLyrics,
+} from "./synchronized-lyrics.js";
+import { hasUnpairedSurrogate } from "./unicode.js";
 
 export type Availability =
   "pairingRequired" | "disconnected" | "outputUnavailable" | "available";
@@ -15,7 +22,7 @@ export type Playback = "playing" | "paused" | "loading" | "stopped";
 export const MAX_TRACKED_IDENTITY_CODE_POINTS = 256;
 export const MAX_NOW_PLAYING_CODE_POINTS = 1_024;
 
-export type SnapshotDisplayStringViolationCode =
+export type SnapshotContentViolationCode =
   | "trackedOutputNameTooLong"
   | "trackedOutputNameInvalidUnicode"
   | "trackedZoneNameTooLong"
@@ -25,15 +32,19 @@ export type SnapshotDisplayStringViolationCode =
   | "artistTooLong"
   | "artistInvalidUnicode"
   | "albumTooLong"
-  | "albumInvalidUnicode";
+  | "albumInvalidUnicode"
+  | "lyricCueTooLong"
+  | "lyricCueInvalidUnicode"
+  | "lyricCueOrderInvalid"
+  | "lyricTotalTooLong";
 
-export interface SnapshotDisplayStringViolation {
-  code: SnapshotDisplayStringViolationCode;
+export interface SnapshotContentViolation {
+  code: SnapshotContentViolationCode;
   message: string;
 }
 
 export interface PresentationSnapshot {
-  schemaVersion: 2;
+  schemaVersion: 3;
   revision: number;
   availability: Availability;
   playback: Playback | null;
@@ -50,6 +61,7 @@ export interface PresentationSnapshot {
     sampledAt: string;
   } | null;
   artwork: { revision: number; path: string } | null;
+  lyrics: SynchronizedLyrics | null;
 }
 
 const loadCommonJsModule = createRequire(import.meta.url);
@@ -97,25 +109,25 @@ export async function validateSnapshot(
     );
   }
 
-  const displayStringViolation = findSnapshotDisplayStringViolation(candidate);
-  if (displayStringViolation !== undefined) {
+  const contentViolation = findSnapshotContentViolation(candidate);
+  if (contentViolation !== undefined) {
     throw new Error(
-      `Invalid presentation snapshot: ${displayStringViolation.message}`,
+      `Invalid presentation snapshot: ${contentViolation.message}`,
     );
   }
 
   return candidate;
 }
 
-export function findSnapshotDisplayStringViolation(
+export function findSnapshotContentViolation(
   snapshot: PresentationSnapshot,
-): SnapshotDisplayStringViolation | undefined {
+): SnapshotContentViolation | undefined {
   const fields: Array<{
     label: string;
     value: string | null | undefined;
     limit: number;
-    tooLong: SnapshotDisplayStringViolationCode;
-    invalidUnicode: SnapshotDisplayStringViolationCode;
+    tooLong: SnapshotContentViolationCode;
+    invalidUnicode: SnapshotContentViolationCode;
   }> = [
     {
       label: "Tracked Output name",
@@ -172,27 +184,46 @@ export function findSnapshotDisplayStringViolation(
     }
   }
 
-  return undefined;
-}
-
-function hasUnpairedSurrogate(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
-    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
-      const nextCodeUnit = value.charCodeAt(index + 1);
-      if (
-        index + 1 >= value.length ||
-        nextCodeUnit < 0xdc00 ||
-        nextCodeUnit > 0xdfff
-      ) {
-        return true;
-      }
-      index += 1;
-    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
-      return true;
-    }
+  if ((snapshot.lyrics?.cues.length ?? 0) > MAX_LYRIC_CUES) {
+    return {
+      code: "lyricTotalTooLong",
+      message: `Synchronized lyrics exceed ${MAX_LYRIC_CUES.toLocaleString("en-US")} cues`,
+    };
   }
-  return false;
+  let lyricCodePoints = 0;
+  let previousCueTime = -1;
+  for (const cue of snapshot.lyrics?.cues ?? []) {
+    if (cue.atSeconds <= previousCueTime) {
+      return {
+        code: "lyricCueOrderInvalid",
+        message:
+          "Synchronized lyric cue timestamps must be strictly increasing",
+      };
+    }
+    previousCueTime = cue.atSeconds;
+    if (hasUnpairedSurrogate(cue.text)) {
+      return {
+        code: "lyricCueInvalidUnicode",
+        message: "Synchronized lyric cue contains invalid Unicode",
+      };
+    }
+    const cueCodePoints = [...cue.text].length;
+    if (cueCodePoints > MAX_LYRIC_CUE_CODE_POINTS) {
+      return {
+        code: "lyricCueTooLong",
+        message: `Synchronized lyric cue exceeds ${MAX_LYRIC_CUE_CODE_POINTS.toLocaleString("en-US")} Unicode code points`,
+      };
+    }
+    lyricCodePoints += cueCodePoints;
+  }
+  if (lyricCodePoints > MAX_LYRIC_TOTAL_CODE_POINTS) {
+    return {
+      code: "lyricTotalTooLong",
+      message: `Synchronized lyric total text exceeds ${MAX_LYRIC_TOTAL_CODE_POINTS.toLocaleString("en-US")} Unicode code points`,
+    };
+  }
+
+  return undefined;
 }
 
 function ajvErrors(errors: ValidateFunction["errors"]): string {

@@ -48,6 +48,11 @@ The normal RoonScape workflow in which its presentation reflects current state
 observed from Roon.
 _Avoid_: Live version, production mode
 
+**Lyric Feed**:
+An optional RoonScape Bridge capability that observes synchronized lyric cues
+for the current Tracked Zone without controlling playback or a Web Display.
+_Avoid_: Lyrics service, Web Display connection
+
 **Now Playing**:
 The Roon-provided content currently associated with the Tracked Zone.
 _Avoid_: Now-playing presentation, current content

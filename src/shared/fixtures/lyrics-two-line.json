@@ -1,14 +1,10 @@
 {
   "schemaVersion": 3,
-  "revision": 20,
+  "revision": 31,
   "availability": "available",
   "playback": "playing",
-  "trackedOutput": {
-    "name": "Speaker System with Floorstanding Loudspeakers Beside the Tall Windows Overlooking the Courtyard"
-  },
-  "trackedZone": {
-    "name": "Living Room, Library, Conservatory, North Hall, and the Entire Lantern-Lit Upper Floor"
-  },
+  "trackedOutput": { "name": "Speaker System" },
+  "trackedZone": { "name": "Living Room" },
   "nowPlaying": {
     "title": "Last Light on Phobos",
     "artist": "Evelyn Lark & The Orbital Choir",
@@ -23,5 +19,14 @@
     "revision": 3,
     "path": "src/shared/fixtures/artwork/playing.jpg"
   },
-  "lyrics": null
+  "lyrics": {
+    "cues": [
+      { "atSeconds": 160, "text": "A quiet orbit fades" },
+      {
+        "atSeconds": 170,
+        "text": "We find the signal where the last blue horizon meets the dark"
+      },
+      { "atSeconds": 180, "text": "Beyond the cobalt tide" }
+    ]
+  }
 }

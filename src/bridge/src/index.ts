@@ -34,9 +34,13 @@ const displayConfigurationStore = new FileDisplayConfigurationStore(
 const artworkFiles = await ArtworkFileStore.open(
   path.join(path.dirname(socketPath), "artwork"),
 );
+const bridgeOwner: { current?: ReturnType<typeof startRoonBridge> } = {};
 const publisher = await startSnapshotPublisher(
   initialAvailabilitySnapshot(authorizationStore),
   socketPath,
+  {
+    onLyricsVisible: (revision) => bridgeOwner.current?.lyricsVisible(revision),
+  },
 );
 const bridge = startRoonBridge({
   authorizationStore,
@@ -45,6 +49,7 @@ const bridge = startRoonBridge({
   createRoonServices: createSupportedRoonServices,
   publish: (snapshot) => publisher.publish(snapshot),
 });
+bridgeOwner.current = bridge;
 
 process.stdout.write(`RoonScape Bridge listening at ${socketPath}\n`);
 

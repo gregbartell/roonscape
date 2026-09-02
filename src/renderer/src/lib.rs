@@ -20,8 +20,8 @@ pub use capture_control::{
     FixtureSelectionIdentity, PaintedFixtureSelection,
 };
 pub use contract::{
-    ArtworkReference, Availability, NowPlaying, Playback, PresentationSnapshot, Progress,
-    SnapshotError, TrackedOutput, TrackedZone, parse_snapshot,
+    ArtworkReference, Availability, LyricCue, NowPlaying, Playback, PresentationSnapshot, Progress,
+    SnapshotError, SynchronizedLyrics, TrackedOutput, TrackedZone, parse_snapshot,
 };
 pub use diagnostics::{
     Diagnostics, DiagnosticsConfiguration, DiagnosticsConfigurationError,
@@ -44,9 +44,10 @@ pub use layout::{
     ArtworkFit, ArtworkLayout, ArtworkPrintPlateGeometry, ArtworkPrintPlateLayout, BottomAnchor,
     FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, FullFieldSlot, IdentityLineLayout,
     IdentityPhraseAlignment, IdentityPlacement, IdentityRowLayout, InactivityLayout,
-    MetadataFitting, MetadataFontSizes, NowPlayingField, NowPlayingFooterContent,
-    NowPlayingInformationLayout, NowPlayingLayout, NowPlayingRole, NowPlayingTypography,
-    PresentationStatusDecoration, PresentationStatusLayout, TextOverflow, Viewport,
+    LyricNeighborVisibility, MetadataFitting, MetadataFontSizes, NowPlayingField,
+    NowPlayingFooterContent, NowPlayingInformationLayout, NowPlayingLayout, NowPlayingRole,
+    NowPlayingTypography, PresentationStatusDecoration, PresentationStatusLayout, TextOverflow,
+    Viewport,
 };
 pub use metadata::{
     MetadataDensity, MetadataGroupPlan, MetadataLayout, MetadataLineLayout, MetadataLinePlan,
@@ -55,11 +56,12 @@ pub use metadata::{
 pub use palette::{PaletteError, PresentationPalette, Rgb};
 pub use presentation::{
     FullFieldPresentation, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform,
-    LayoutOffset, NowPlayingPresentation, Presentation, PresentationActivity,
+    LayoutOffset, LyricPresentation, NowPlayingPresentation, Presentation, PresentationActivity,
     PresentationActivityMotion, PresentationActivityWaveform, PresentationBehavior,
     PresentationError, PresentationFrame, PresentationIdentity, PresentationProgress,
     PresentationState, PresentationStatus, PresentationStatusEmphasis, PresentationStatusMotion,
-    PresentationStatusSymbol, PresentationTime, PresentationUpdate, presentation_from_snapshot,
+    PresentationStatusSymbol, PresentationTime, PresentationUpdate, classify_presentation_update,
+    presentation_from_snapshot,
 };
 pub use resolution::{
     ArtworkResolutionError, ResolvedPresentation, resolve_capture_presentation,

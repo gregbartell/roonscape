@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
 use std::sync::mpsc;
 use std::thread;
@@ -61,6 +61,53 @@ fn reads_availability_transitions_from_one_local_socket_connection() {
 
     assert_eq!(initial.availability, Availability::PairingRequired);
     assert_eq!(transition.availability, Availability::OutputUnavailable);
+    publisher.join().expect("fixture publisher should finish");
+}
+
+#[test]
+fn reports_a_visible_lyric_revision_to_the_snapshot_publisher() {
+    let runtime_directory = runtime_directory();
+    let socket_path = runtime_directory.path().join("roonscape.sock");
+    let listener = UnixListener::bind(&socket_path).expect("fixture socket should bind");
+    let lyrics = compact_fixture("lyrics-one-line.json");
+    let (report, reported) = mpsc::channel();
+    let publisher = thread::spawn(move || {
+        let (mut connection, _) = listener.accept().expect("renderer should connect");
+        let reader_connection = connection
+            .try_clone()
+            .expect("publisher should clone the connection for reports");
+        connection
+            .write_all(format!("{lyrics}\n").as_bytes())
+            .expect("lyric snapshot should be sent");
+        let mut line = String::new();
+        BufReader::new(reader_connection)
+            .read_line(&mut line)
+            .expect("visibility report should be readable");
+        report.send(line).expect("test should receive the report");
+    });
+    let subscription = SnapshotSubscription::start(socket_path, Duration::from_millis(10));
+
+    expect_connection(&subscription, ConnectionState::Disconnected);
+    expect_connection(&subscription, ConnectionState::Connected);
+    let revision = match subscription
+        .recv_timeout(Duration::from_secs(1))
+        .expect("renderer should receive lyric state")
+    {
+        SnapshotEvent::Snapshot(snapshot) => snapshot.revision,
+        event => panic!("expected a snapshot, got {event:?}"),
+    };
+    assert!(
+        subscription
+            .report_lyrics_visible(revision)
+            .expect("visibility report should be sent")
+    );
+    assert_eq!(
+        reported
+            .recv_timeout(Duration::from_secs(1))
+            .expect("publisher should receive visibility"),
+        format!("{{\"type\":\"lyricsVisible\",\"revision\":{revision}}}\n")
+    );
+
     publisher.join().expect("fixture publisher should finish");
 }
 

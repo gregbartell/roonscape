@@ -39,6 +39,95 @@ test("sends the current complete snapshot when a renderer connects", async () =>
   });
 });
 
+test("accepts lyric visibility only when a renderer reports its revision", async () => {
+  await withTaskDirectory(async (runtimeDirectory) => {
+    const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+    const snapshot = await loadSnapshot(
+      "src/shared/fixtures/lyrics-one-line.json",
+    );
+    const visibleRevisions: number[] = [];
+    let reportVisibility: (() => void) | undefined;
+    const visibilityReported = new Promise<void>((resolve) => {
+      reportVisibility = resolve;
+    });
+    const publisher = await startSnapshotPublisher(snapshot, socketPath, {
+      onLyricsVisible: (revision) => {
+        visibleRevisions.push(revision);
+        reportVisibility?.();
+      },
+    });
+
+    try {
+      assert.deepEqual(visibleRevisions, []);
+      const client = createConnection(socketPath);
+      const lines = createInterface({ input: client });
+      await once(lines, "line");
+      assert.deepEqual(visibleRevisions, []);
+      client.write(
+        `${JSON.stringify({ type: "lyricsVisible", revision: snapshot.revision })}\n`,
+      );
+      await visibilityReported;
+      assert.deepEqual(visibleRevisions, [snapshot.revision]);
+      client.destroy();
+    } finally {
+      await publisher.close();
+    }
+  });
+});
+
+test("accepts coalesced bounded visibility reports without closing snapshots", async () => {
+  await withTaskDirectory(async (runtimeDirectory) => {
+    const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+    const snapshot = await loadSnapshot(
+      "src/shared/fixtures/lyrics-one-line.json",
+    );
+    const visibleRevisions: number[] = [];
+    let reportsComplete: (() => void) | undefined;
+    const allReports = new Promise<void>((resolve) => {
+      reportsComplete = resolve;
+    });
+    const publisher = await startSnapshotPublisher(snapshot, socketPath, {
+      onLyricsVisible: (revision) => {
+        visibleRevisions.push(revision);
+        if (visibleRevisions.length === 40) {
+          reportsComplete?.();
+        }
+      },
+    });
+
+    try {
+      const client = createConnection(socketPath);
+      const lines = createInterface({ input: client });
+      await once(lines, "line");
+      client.write(
+        Array.from(
+          { length: 40 },
+          () =>
+            `${JSON.stringify({ type: "lyricsVisible", revision: snapshot.revision })}\n`,
+        ).join(""),
+      );
+      await Promise.race([
+        allReports,
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("visibility reports timed out")),
+            1_000,
+          ),
+        ),
+      ]);
+
+      const nextSnapshot = { ...snapshot, revision: snapshot.revision + 1 };
+      publisher.publish(nextSnapshot);
+      const [line] = (await once(lines, "line")) as [string];
+      assert.deepEqual(JSON.parse(line), nextSnapshot);
+      assert.equal(visibleRevisions.length, 40);
+      client.destroy();
+    } finally {
+      await publisher.close();
+    }
+  });
+});
+
 test("re-anchors Playing at fixture launch before using the shared publisher", async () => {
   await withTaskDirectory(async (runtimeDirectory) => {
     const socketPath = path.join(runtimeDirectory, "roonscape.sock");

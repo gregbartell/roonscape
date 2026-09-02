@@ -61,6 +61,13 @@ const REPRESENTATIVE_VIEWPORTS = [
 const REQUIRED_SCENARIOS = [
   "playing",
   "paused",
+  "lyrics-one-line",
+  "lyrics-two-line",
+  "lyrics-three-line",
+  "lyrics-four-lines",
+  "lyrics-blank-cue",
+  "lyrics-long-masthead",
+  "lyrics-missing-artwork",
   "loading-with-content",
   "loading-without-content",
   "idle",
@@ -85,6 +92,12 @@ const ORDINARY_SCENARIOS = REQUIRED_SCENARIOS.filter(
 const CUSTOM_ARTWORK_SCENARIOS = new Set([
   "playing",
   "paused",
+  "lyrics-one-line",
+  "lyrics-two-line",
+  "lyrics-three-line",
+  "lyrics-four-lines",
+  "lyrics-blank-cue",
+  "lyrics-long-masthead",
   "loading-with-content",
   "missing-metadata",
   "missing-artist",
@@ -338,6 +351,13 @@ test("capture command lists stable Fixture Scenario identifiers and labels witho
     [
       "playing\tPlaying",
       "paused\tPaused",
+      "lyrics-one-line\tLyrics — one line",
+      "lyrics-two-line\tLyrics — two lines",
+      "lyrics-three-line\tLyrics — three lines",
+      "lyrics-four-lines\tLyrics — four or more lines",
+      "lyrics-blank-cue\tLyrics — blank cue",
+      "lyrics-long-masthead\tLyrics — long masthead",
+      "lyrics-missing-artwork\tLyrics — missing artwork",
       "loading-with-content\tStarting with content",
       "loading-without-content\tStarting without content",
       "idle\tIdle",
@@ -679,23 +699,36 @@ test("visual-acceptance profile publishes its maintained plan through reusable p
     await writeFile(failureMarker, "fail");
     await assert.rejects(runProfile(), (error) => {
       const completedPaths = error.stdout.trimEnd().split("\n");
-      assert.deepEqual(completedPaths, [
-        path.join(outputDirectory, "1280x720--playing.png"),
-        path.join(outputDirectory, "1280x720--paused.png"),
-      ]);
+      const completedScenarios = REQUIRED_SCENARIOS.slice(
+        0,
+        REQUIRED_SCENARIOS.indexOf("loading-with-content"),
+      );
+      assert.deepEqual(
+        completedPaths,
+        completedScenarios.map((scenario) =>
+          path.join(outputDirectory, `1280x720--${scenario}.png`),
+        ),
+      );
       assert.match(
         error.stderr,
-        /Visual-acceptance profile is incomplete \(2\/210 captures completed\)/,
+        new RegExp(
+          `Visual-acceptance profile is incomplete \\(${completedScenarios.length}\\/${plan.length} captures completed\\)`,
+        ),
       );
       assert.match(error.stderr, /Completed captures:/);
       assert.match(error.stderr, /1280x720--playing\.png/);
       assert.match(error.stderr, /1280x720--paused\.png/);
       return true;
     });
-    assert.deepEqual((await readdir(outputDirectory)).toSorted(), [
-      "1280x720--paused.png",
-      "1280x720--playing.png",
-    ]);
+    assert.deepEqual(
+      (await readdir(outputDirectory)).toSorted(),
+      REQUIRED_SCENARIOS.slice(
+        0,
+        REQUIRED_SCENARIOS.indexOf("loading-with-content"),
+      )
+        .map((scenario) => `1280x720--${scenario}.png`)
+        .toSorted(),
+    );
     assert.deepEqual(await readdir(runtimeRoot), []);
   } finally {
     await Promise.all([
@@ -812,8 +845,14 @@ test("ordinary all-scenario capture publishes its maintained set through one pai
       })),
     );
     assert.equal((processes.match(/^renderer\|/gm) ?? []).length, 1);
-    assert.equal((processes.match(/^painted\|/gm) ?? []).length, 17);
-    assert.equal((processes.match(/^scrot\|/gm) ?? []).length, 17);
+    assert.equal(
+      (processes.match(/^painted\|/gm) ?? []).length,
+      ORDINARY_SCENARIOS.length,
+    );
+    assert.equal(
+      (processes.match(/^scrot\|/gm) ?? []).length,
+      ORDINARY_SCENARIOS.length,
+    );
 
     await rm(outputDirectory, { force: true, recursive: true });
     await mkdir(outputDirectory);
@@ -874,14 +913,14 @@ test("ordinary all-scenario capture publishes its maintained set through one pai
           ({ scenario, artwork }) =>
             artwork === canonicalArtworkByScenario.get(scenario),
         ),
-      "the eight incompatible scenarios should retain canonical fixture content",
+      "incompatible scenarios should retain canonical fixture content",
     );
     assert.deepEqual(
       processes
         .split("\n")
         .filter((line) => /^(selection|painted|scrot)\|/.test(line))
         .map((line) => line.slice(0, line.indexOf("|"))),
-      Array.from({ length: 34 }, () => [
+      Array.from({ length: ORDINARY_SCENARIOS.length * 2 }, () => [
         "selection",
         "painted",
         "scrot",
@@ -913,21 +952,36 @@ test("ordinary all-scenario capture publishes its maintained set through one pai
     await writeFile(processLog, "");
     await writeFile(failureMarker, "fail");
     await assert.rejects(runAll("--resolution", "1280x720"), (error) => {
+      const completedScenarios = ORDINARY_SCENARIOS.slice(
+        0,
+        ORDINARY_SCENARIOS.indexOf("loading-with-content"),
+      );
       assert.equal(
         error.stdout,
-        `${path.join(outputDirectory, "1280x720--playing.png")}\n${path.join(outputDirectory, "1280x720--paused.png")}\n`,
+        `${completedScenarios
+          .map((scenario) =>
+            path.join(outputDirectory, `1280x720--${scenario}.png`),
+          )
+          .join("\n")}\n`,
       );
       assert.match(
         error.stderr,
-        /All-scenario capture is incomplete \(2\/17 captures completed\)/,
+        new RegExp(
+          `All-scenario capture is incomplete \\(${completedScenarios.length}\\/${ORDINARY_SCENARIOS.length} captures completed\\)`,
+        ),
       );
       assert.match(error.stderr, /Completed captures:/);
       return true;
     });
-    assert.deepEqual((await readdir(outputDirectory)).toSorted(), [
-      "1280x720--paused.png",
-      "1280x720--playing.png",
-    ]);
+    assert.deepEqual(
+      (await readdir(outputDirectory)).toSorted(),
+      ORDINARY_SCENARIOS.slice(
+        0,
+        ORDINARY_SCENARIOS.indexOf("loading-with-content"),
+      )
+        .map((scenario) => `1280x720--${scenario}.png`)
+        .toSorted(),
+    );
 
     for (const scenario of ORDINARY_SCENARIOS.slice(2)) {
       await writeFile(
@@ -937,7 +991,9 @@ test("ordinary all-scenario capture publishes its maintained set through one pai
     }
     await assert.rejects(
       runAll("--resolution", "1280x720", "--overwrite"),
-      /All-scenario capture is incomplete \(2\/17 captures completed\)/,
+      new RegExp(
+        `All-scenario capture is incomplete \\(${ORDINARY_SCENARIOS.indexOf("loading-with-content")}\\/${ORDINARY_SCENARIOS.length} captures completed\\)`,
+      ),
     );
     assert.deepEqual(
       await readFile(path.join(outputDirectory, "1280x720--playing.png")),

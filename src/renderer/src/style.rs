@@ -47,8 +47,8 @@ impl TypographyStyles {
                 String::new()
             };
         format!(
-            ".now-playing .title {{ font-family: \"{}\"{}, serif; font-style: normal; font-weight: 700; }}\n\
-             .now-playing .artist, .now-playing .album, .now-playing .status-label, .now-playing .time, .now-playing .activity-heading, .now-playing .activity-detail, .now-playing .identity-label, .now-playing .identity-name {{ font-family: \"{}\", sans-serif; }}\n\
+            ".now-playing .title, .now-playing .editorial-text {{ font-family: \"{}\"{}, serif; font-style: normal; font-weight: 700; }}\n\
+             .now-playing .artist, .now-playing .album, .now-playing .utility-text, .now-playing .status-label, .now-playing .time, .now-playing .activity-heading, .now-playing .activity-detail, .now-playing .identity-label, .now-playing .identity-name {{ font-family: \"{}\", sans-serif; }}\n\
              .full-field .editorial-text, .full-field-heading {{ font-family: \"{}\", serif; }}\n\
              .full-field .utility-text, .full-field .status-label, .full-field .identity-label, .full-field .identity-name, .full-field .full-field-explanation, .diagnostics {{ font-family: \"{}\", sans-serif; }}\n\
              .now-playing .status-label, .now-playing .time, .now-playing .identity-label, .now-playing .identity-name {{ font-variation-settings: \"wdth\" 96; }}\n\
@@ -138,11 +138,11 @@ fn presentation_palette_styles(
          .{class_name}.full-field .full-copy {{ border-left: {accent_width}px solid {accent}; }}\n\
          .{class_name} .status-full {{ color: {accent}; }}\n\
          .{class_name} .status-muted {{ color: {muted_accent}; }}\n\
-         .{class_name} .title, .{class_name} .full-field-heading {{ color: {primary_text}; }}\n\
-         .{class_name} .artist, .{class_name} .album, .{class_name} .time, .{class_name} .identity-name {{ color: {secondary_text}; }}\n\
+         .{class_name} .title, .{class_name} .lyric-current, .{class_name} .lyric-masthead-title, .{class_name} .full-field-heading {{ color: {primary_text}; }}\n\
+         .{class_name} .artist, .{class_name} .album, .{class_name} .lyric-next, .{class_name} .lyric-masthead-artist, .{class_name} .time, .{class_name} .identity-name {{ color: {secondary_text}; }}\n\
          .{class_name} .activity-waveform {{ color: {accent}; }}\n\
          .{class_name} .activity-heading {{ color: {primary_text}; }}\n\
-         .{class_name} .activity-detail, .{class_name} .full-field-explanation {{ color: {muted_text}; }}\n\
+         .{class_name} .activity-detail, .{class_name} .lyric-previous, .{class_name} .full-field-explanation {{ color: {muted_text}; }}\n\
          .{class_name} .identity-label {{ color: {muted_text}; }}\n\
          .{class_name} .identity-separator {{ background-color: {muted_text}; }}\n\
          .{class_name} .progress-track {{ background-color: {progress_track}; }}\n\

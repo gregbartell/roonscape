@@ -20,6 +20,11 @@ import {
   type RoonStatusService,
 } from "../src/roon-bridge.js";
 import type {
+  LyricFeedConnectionFactory,
+  PrivateLyricEvent,
+} from "../src/lyric-feed.js";
+import { trackedNowPlaying } from "../src/lyric-feed.js";
+import type {
   DisplayConfiguration,
   DisplayConfigurationStore,
 } from "../src/display-configuration.js";
@@ -28,6 +33,7 @@ import {
   type PresentationSnapshot,
   validateSnapshot,
 } from "../src/snapshot.js";
+import { parseSynchronizedLyrics } from "../src/synchronized-lyrics.js";
 
 interface RoonBoundary {
   authorizationStore: AuthorizationStore;
@@ -54,6 +60,7 @@ interface RoonBoundary {
   publicationDiagnostics: string[];
   savedConfigurations: DisplayConfiguration[];
   currentSnapshot(): PresentationSnapshot;
+  lyricsVisible(revision: number): void;
   stop(): Promise<void>;
 }
 
@@ -61,6 +68,7 @@ function createRoonBoundary(
   configuredOutput?: string | DisplayConfiguration,
   artworkFiles: ArtworkFiles = unusedArtworkFiles(),
   now: () => Date = () => new Date("2026-08-15T19:20:00Z"),
+  createLyricFeedConnection?: LyricFeedConnectionFactory,
 ): RoonBoundary {
   let persistedState: unknown = {};
   let capturedOptions: RoonExtensionOptions | undefined;
@@ -106,8 +114,14 @@ function createRoonBoundary(
     stop_discovery: () => undefined,
     disconnect_all: () => undefined,
   };
-  const core: RoonCore = {
+  const core: RoonCore & {
+    moo?: { transport: { host: string; port: number } };
+  } = {
     core_id: "core-1",
+    moo:
+      createLyricFeedConnection === undefined
+        ? undefined
+        : { transport: { host: "roon.local", port: 9330 } },
     services: {
       RoonApiImage: {
         get_image: (imageKey, options, callback) => {
@@ -149,6 +163,7 @@ function createRoonBoundary(
       };
     },
     now,
+    createLyricFeedConnection,
   });
 
   return {
@@ -192,6 +207,7 @@ function createRoonBoundary(
     publicationDiagnostics,
     savedConfigurations,
     currentSnapshot: () => bridge.currentSnapshot(),
+    lyricsVisible: (revision) => bridge.lyricsVisible(revision),
     stop: () => bridge.stop(),
   };
 }
@@ -495,7 +511,7 @@ test("publishes truthful availability across authorization and connection events
       "disconnected",
       "outputUnavailable",
     ].map((availability, revision) => ({
-      schemaVersion: 2,
+      schemaVersion: 3,
       revision,
       availability,
       playback: null,
@@ -504,6 +520,7 @@ test("publishes truthful availability across authorization and connection events
       nowPlaying: null,
       progress: null,
       artwork: null,
+      lyrics: null,
     })),
   );
 
@@ -520,7 +537,7 @@ test("publishes the saved Tracked Output identity only when that output is unava
 
   extensionOptions.core_paired(core);
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 1,
     availability: "outputUnavailable",
     playback: null,
@@ -529,6 +546,7 @@ test("publishes the saved Tracked Output identity only when that output is unava
     nowPlaying: null,
     progress: null,
     artwork: null,
+    lyrics: null,
   });
 
   extensionOptions.core_unpaired(core);
@@ -632,7 +650,7 @@ test("resolves the configured Tracked Output from the initial full zone state", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 2,
     availability: "available",
     playback: "paused",
@@ -645,6 +663,7 @@ test("resolves the configured Tracked Output from the initial full zone state", 
     },
     progress: null,
     artwork: null,
+    lyrics: null,
   });
   await validateSnapshot(boundary.snapshots.at(-1));
 });
@@ -718,7 +737,7 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
                 : { revision: snapshot.artwork.revision },
           },
       {
-        schemaVersion: 2,
+        schemaVersion: 3,
         revision: 4,
         availability: "available",
         playback: "playing",
@@ -735,6 +754,7 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
           sampledAt: "2026-08-15T19:20:00.000Z",
         },
         artwork: { revision: 4 },
+        lyrics: null,
       },
     );
     assert.equal(path.dirname(snapshot?.artwork?.path ?? ""), artworkDirectory);
@@ -846,7 +866,7 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
     });
 
     assert.deepEqual(boundary.snapshots.at(-1), {
-      schemaVersion: 2,
+      schemaVersion: 3,
       revision: 9,
       availability: "available",
       playback: "stopped",
@@ -855,6 +875,7 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
       nowPlaying: null,
       progress: null,
       artwork: null,
+      lyrics: null,
     });
     assert.equal(boundary.imageRequests.length, 3);
     await waitFor(async () => (await readdir(artworkDirectory)).length === 0);
@@ -1337,7 +1358,7 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 3,
     availability: "available",
     playback: "playing",
@@ -1354,8 +1375,248 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
       sampledAt: "2026-08-15T19:20:05.000Z",
     },
     artwork: null,
+    lyrics: null,
   });
   await validateSnapshot(boundary.snapshots.at(-1));
+});
+
+test("correlates the optional Lyric Feed with current Tracked Zone Now Playing", () => {
+  let emitLyrics:
+    | ((
+        event: PrivateLyricEvent,
+        observedNowPlayingIdentity?: string | null,
+      ) => void)
+    | undefined;
+  const reports: string[] = [];
+  const connectionEndpoints: unknown[] = [];
+  const createLyricFeedConnection: LyricFeedConnectionFactory = (options) => {
+    connectionEndpoints.push({
+      endpoint: options.endpoint,
+      coreId: options.expectedCoreId,
+    });
+    emitLyrics = options.onEvent;
+    return {
+      reportViewed: (key) => reports.push(key),
+      stop: () => undefined,
+    };
+  };
+  const boundary = createRoonBoundary(
+    "output-speaker-system",
+    unusedArtworkFiles(),
+    () => new Date("2026-08-15T19:20:00Z"),
+    createLyricFeedConnection,
+  );
+  boundary.extensionOptions().core_paired(boundary.core());
+  const trackAZone: RoonZone = {
+    ...artworkZone("track-a-artwork", "Track A"),
+    now_playing: {
+      seek_position: 1,
+      length: 120,
+      three_line: { line1: "Track A", line2: "Artist" },
+    },
+  };
+  boundary.emitZones("Subscribed", {
+    zones: [trackAZone],
+  });
+
+  emitLyrics?.({
+    zone_id: "zone-office",
+    key: "wrong-zone-key",
+    lrc: "[00:01.00]Wrong zone",
+  });
+  emitLyrics?.(
+    {
+      zone_id: "zone-living-room",
+      key: "track-a-key",
+      lrc: "[00:01.00]First\n[00:04.00]Second",
+    },
+    trackedNowPlaying(trackAZone)?.nowPlayingIdentity,
+  );
+
+  assert.deepEqual(connectionEndpoints, [
+    { endpoint: { host: "roon.local", port: 9330 }, coreId: "core-1" },
+  ]);
+  assert.deepEqual(boundary.currentSnapshot().lyrics, {
+    cues: [
+      { atSeconds: 1, text: "First" },
+      { atSeconds: 4, text: "Second" },
+    ],
+  });
+  assert.deepEqual(reports, []);
+  boundary.lyricsVisible(boundary.currentSnapshot().revision);
+  boundary.lyricsVisible(boundary.currentSnapshot().revision);
+  assert.deepEqual(reports, ["track-a-key"]);
+
+  const trackTransitionSnapshotStart = boundary.snapshots.length;
+  const trackBZone: RoonZone = {
+    ...artworkZone("track-b-artwork", "Track B"),
+    now_playing: {
+      seek_position: 0,
+      length: 140,
+      three_line: { line1: "Track B", line2: "Artist" },
+    },
+  };
+  emitLyrics?.(
+    {
+      zone_id: "zone-living-room",
+      key: "track-b-key",
+      lrc: "[00:01.00]Track B cue",
+    },
+    trackedNowPlaying(trackBZone)?.nowPlayingIdentity,
+  );
+  assert.equal(boundary.currentSnapshot().nowPlaying?.title, "Track A");
+  assert.equal(boundary.currentSnapshot().lyrics?.cues[0]?.text, "First");
+
+  boundary.emitZones("Changed", {
+    zones_changed: [trackBZone],
+  });
+  assert.equal(boundary.currentSnapshot().nowPlaying?.title, "Track B");
+  assert.equal(boundary.currentSnapshot().lyrics?.cues[0]?.text, "Track B cue");
+  assert.ok(
+    boundary.snapshots
+      .slice(trackTransitionSnapshotStart)
+      .every(
+        (snapshot) =>
+          snapshot.nowPlaying?.title !== "Track A" ||
+          snapshot.lyrics?.cues[0]?.text !== "Track B cue",
+      ),
+  );
+
+  emitLyrics?.(
+    {
+      zone_id: "zone-living-room",
+      key: "track-b-key",
+      lrc: "[00:02.00]Track B updated cue",
+    },
+    trackedNowPlaying(trackBZone)?.nowPlayingIdentity,
+  );
+  assert.equal(
+    boundary.currentSnapshot().lyrics?.cues[0]?.text,
+    "Track B updated cue",
+  );
+  emitLyrics?.(
+    {
+      zone_id: "zone-living-room",
+      key: "track-a-key",
+      lrc: "[00:02.00]Late stale text",
+    },
+    trackedNowPlaying(trackBZone)?.nowPlayingIdentity,
+  );
+
+  assert.equal(boundary.currentSnapshot().nowPlaying?.title, "Track B");
+  assert.equal(
+    boundary.currentSnapshot().lyrics?.cues[0]?.text,
+    "Track B updated cue",
+  );
+});
+
+test("publishes an accepted lyric timeline when progress becomes meaningful", () => {
+  let emitLyrics: ((event: PrivateLyricEvent) => void) | undefined;
+  const boundary = createRoonBoundary(
+    "output-speaker-system",
+    unusedArtworkFiles(),
+    () => new Date("2026-08-15T19:20:00Z"),
+    (options) => {
+      emitLyrics = options.onEvent;
+      return { reportViewed: () => undefined, stop: () => undefined };
+    },
+  );
+  boundary.extensionOptions().core_paired(boundary.core());
+  boundary.emitZones("Subscribed", {
+    zones: [
+      {
+        ...artworkZone("track-a-artwork", "Track A"),
+        now_playing: {
+          length: 120,
+          three_line: { line1: "Track A", line2: "Artist" },
+        },
+      },
+    ],
+  });
+  emitLyrics?.({
+    zone_id: "zone-living-room",
+    key: "track-a-key",
+    lrc: "[00:01.00]First\n[00:04.00]Second",
+  });
+  assert.equal(boundary.currentSnapshot().lyrics, null);
+
+  boundary.emitZones("Changed", {
+    zones_seek_changed: [{ zone_id: "zone-living-room", seek_position: 2 }],
+  });
+
+  assert.deepEqual(boundary.currentSnapshot().lyrics, {
+    cues: [
+      { atSeconds: 1, text: "First" },
+      { atSeconds: 4, text: "Second" },
+    ],
+  });
+});
+
+test("drops an unpublishable lyric timeline without blocking ordinary snapshots", () => {
+  let emitLyrics: ((event: PrivateLyricEvent) => void) | undefined;
+  const boundary = createRoonBoundary(
+    "output-speaker-system",
+    unusedArtworkFiles(),
+    () => new Date("2026-08-15T19:20:00Z"),
+    (options) => {
+      emitLyrics = options.onEvent;
+      return { reportViewed: () => undefined, stop: () => undefined };
+    },
+  );
+  boundary.extensionOptions().core_paired(boundary.core());
+  const initialZone: RoonZone = {
+    ...artworkZone("track-a-artwork", "Track A"),
+    now_playing: {
+      seek_position: 1,
+      length: 300,
+      three_line: { line1: "Track A", line2: "Artist" },
+    },
+  };
+  boundary.emitZones("Subscribed", { zones: [initialZone] });
+
+  const largeLrc = Array.from({ length: 256 }, (_, index) => {
+    const minutes = String(Math.floor(index / 60)).padStart(2, "0");
+    const seconds = String(index % 60).padStart(2, "0");
+    return `[${minutes}:${seconds}.00]${"🎵".repeat(60)}`;
+  }).join("\n");
+  assert.ok(Buffer.byteLength(largeLrc, "utf8") <= 64 * 1024);
+  const largeTimeline = parseSynchronizedLyrics(largeLrc);
+  assert.ok(largeTimeline);
+  assert.throws(
+    () =>
+      assertSnapshotPublishable({
+        ...boundary.currentSnapshot(),
+        revision: boundary.currentSnapshot().revision + 1,
+        lyrics: largeTimeline,
+      }),
+    /Snapshot exceeds 64 KiB/u,
+  );
+  emitLyrics?.({
+    zone_id: "zone-living-room",
+    key: "large-track-a-key",
+    lrc: largeLrc,
+  });
+
+  assert.equal(boundary.currentSnapshot().lyrics, null);
+  assert.deepEqual(boundary.publicationDiagnostics, []);
+
+  boundary.emitZones("Changed", {
+    zones_changed: [
+      {
+        ...initialZone,
+        now_playing: {
+          ...initialZone.now_playing,
+          three_line: { line1: "Track A (Remastered)", line2: "Artist" },
+        },
+      },
+    ],
+  });
+
+  assert.equal(
+    boundary.currentSnapshot().nowPlaying?.title,
+    "Track A (Remastered)",
+  );
+  assert.equal(boundary.currentSnapshot().lyrics, null);
 });
 
 test("follows the configured Tracked Output through grouping and ungrouping", () => {
@@ -1573,7 +1834,7 @@ test("clears presentation state when the configured Tracked Output is removed", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 3,
     availability: "outputUnavailable",
     playback: null,
@@ -1582,6 +1843,7 @@ test("clears presentation state when the configured Tracked Output is removed", 
     nowPlaying: null,
     progress: null,
     artwork: null,
+    lyrics: null,
   });
   await validateSnapshot(boundary.snapshots.at(-1));
 });

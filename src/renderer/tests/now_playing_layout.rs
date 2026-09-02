@@ -9,10 +9,77 @@ use gtk::prelude::FontMapExt;
 use roonscape_renderer::{
     ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
     ArtworkLayout, ArtworkReference, IdentityLineLayout, IdentityPhraseAlignment,
-    IdentityPlacement, NowPlayingField, NowPlayingFooterContent, NowPlayingLayout, NowPlayingRole,
-    Presentation, PresentationStatusDecoration, TextOverflow, parse_snapshot,
-    presentation_from_snapshot, register_packaged_fallback_fonts, resolve_presentation,
+    IdentityPlacement, LyricNeighborVisibility, NowPlayingField, NowPlayingFooterContent,
+    NowPlayingLayout, NowPlayingRole, Presentation, PresentationStatusDecoration, TextOverflow,
+    parse_snapshot, presentation_from_snapshot, register_packaged_fallback_fonts,
+    resolve_presentation,
 };
+
+#[test]
+fn omits_lyric_neighbors_as_the_current_cue_grows() {
+    assert_eq!(
+        LyricNeighborVisibility::for_rendered_lines(2),
+        LyricNeighborVisibility {
+            previous: true,
+            next: true
+        }
+    );
+    assert_eq!(
+        LyricNeighborVisibility::for_rendered_lines(3),
+        LyricNeighborVisibility {
+            previous: false,
+            next: true
+        }
+    );
+    assert_eq!(
+        LyricNeighborVisibility::for_rendered_lines(4),
+        LyricNeighborVisibility {
+            previous: false,
+            next: false
+        }
+    );
+}
+
+#[test]
+fn lyric_composition_yields_artwork_space_at_every_peer_viewport() {
+    for fixture_name in [
+        "lyrics-one-line.json",
+        "lyrics-two-line.json",
+        "lyrics-three-line.json",
+        "lyrics-four-lines.json",
+        "lyrics-long-masthead.json",
+        "lyrics-missing-artwork.json",
+    ] {
+        let presentation = now_playing(fixture_name);
+        assert!(presentation.lyrics.is_some(), "{fixture_name}");
+
+        for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+            let ordinary = NowPlayingLayout::for_viewport(viewport);
+            let lyrics = NowPlayingLayout::for_presentation(&presentation, viewport);
+
+            assert!(
+                lyrics.artwork_column_width_px < ordinary.artwork_column_width_px,
+                "lyrics should make room without removing artwork: {fixture_name} at {viewport:?}"
+            );
+            assert_eq!(
+                lyrics.artwork_column_width_px,
+                ((viewport.height_px as f64 * 0.68).round() as u32)
+                    .min((viewport.width_px as f64 * 0.42).round() as u32),
+                "{fixture_name} at {viewport:?}"
+            );
+            assert!(
+                lyrics.information.utility_width_px > ordinary.information.utility_width_px,
+                "the lyric rail should receive the yielded space: {fixture_name} at {viewport:?}"
+            );
+            assert_eq!(lyrics.footer_anchor, ordinary.footer_anchor);
+            assert_eq!(
+                lyrics.presentation_status, ordinary.presentation_status,
+                "status geometry should remain anchored: {fixture_name} at {viewport:?}"
+            );
+            assert!(lyrics.metadata_height_budget_px > 0);
+        }
+    }
+}
 
 struct UtilitySizeExpectation {
     symbol_px: u32,
@@ -964,7 +1031,7 @@ fn defensively_ellipsizes_long_identities_without_moving_the_footer() {
 #[test]
 fn applies_one_complete_now_playing_policy_to_fixture_and_roon_snapshots() {
     let roon_snapshot = r#"{
-      "schemaVersion": 2,
+      "schemaVersion": 3,
       "revision": 41,
       "availability": "available",
       "playback": "playing",
@@ -980,7 +1047,8 @@ fn applies_one_complete_now_playing_policy_to_fixture_and_roon_snapshots() {
         "durationSeconds": 234,
         "sampledAt": "2026-08-15T19:20:00.000Z"
       },
-      "artwork": { "revision": 41, "path": "artwork/artwork-41.jpg" }
+      "artwork": { "revision": 41, "path": "artwork/artwork-41.jpg" },
+      "lyrics": null
     }"#;
     let expected_roles = vec![
         NowPlayingRole::PresentationStatus,

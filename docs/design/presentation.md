@@ -81,6 +81,33 @@ The peer acceptance set is exactly 1280×720, 1600×900, 1600×1200, 1920×1200,
 2560×1080, 3840×2160, and 3840×2400; all seven viewports carry equal design
 authority.
 
+## Synchronized lyric composition
+
+When the Lyric Feed supplies a relevant timed cue, the Now Playing composition
+temporarily gives the current lyric the central role. The artwork remains the
+same persistent object but yields space: its square becomes the lesser of 68%
+of viewport height and 42% of viewport width. Presentation Status and the
+unified footer retain their established anchors. A compact Title/Artist
+masthead replaces the ordinary Title/Artist/Album group; Album is omitted in
+this composition.
+
+The current cue is the room-scale focal point on the information rail. The
+nearest nonblank previous cue uses muted text as memory, while the nearest
+nonblank next cue uses secondary text as anticipation. A timed blank cue keeps
+the composition and its current-line anchor present as intentional breathing
+room. When the current cue occupies three rendered lines, the previous cue is
+omitted; at four or more lines both neighbors are omitted. The current tier is
+never reduced merely to retain neighbors, and defensive overflow is limited to
+four lines with an end ellipsis.
+
+Lyric entry and exit use the coordinated composition crossfade. Nearby cue
+changes update the lyric reel in place with a restrained fade and vertical
+movement, preserving the current-line spatial anchor. External seeks jump
+directly to the selected cue rather than replaying skipped lines. The
+platform's reduced-animation preference and deterministic Presentation
+Capture behavior suppress this motion while preserving the complete lyric
+hierarchy.
+
 ## Artwork and palette
 
 Artwork composition always reserves the same imaginary square field. Supplied

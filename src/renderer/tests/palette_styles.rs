@@ -14,7 +14,9 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
 
     for declaration in [
         "background-color: #071522; color: #F3EAD7",
-        ".artist, .presentation-current .album, .presentation-current .time, .presentation-current .identity-name { color: #C9C5BD; }",
+        ".artist, .presentation-current .album, .presentation-current .lyric-next, .presentation-current .lyric-masthead-artist, .presentation-current .time, .presentation-current .identity-name { color: #C9C5BD; }",
+        ".title, .presentation-current .lyric-current, .presentation-current .lyric-masthead-title, .presentation-current .full-field-heading { color: #F3EAD7; }",
+        ".activity-detail, .presentation-current .lyric-previous, .presentation-current .full-field-explanation { color: #9299A8; }",
         ".identity-label { color: #9299A8; }",
         ".identity-separator { background-color: #9299A8; }",
         ".full-field .full-copy { border-left: 6px solid #FF7051; }",
@@ -23,7 +25,6 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
         ".full-field-explanation { color: #9299A8; }",
         ".activity-waveform { color: #FF7051; }",
         ".activity-heading { color: #F3EAD7; }",
-        ".activity-detail, .presentation-current .full-field-explanation { color: #9299A8; }",
         ".progress-track { background-color: #2F3645; }",
         ".progress-fill trough, .presentation-current .progress-fill progress { min-height: 5px; }",
         ".progress-fill progress { background-color: #FF7051; }",

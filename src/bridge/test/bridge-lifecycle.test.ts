@@ -15,6 +15,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         currentSnapshot: () => {
           throw new Error("unused");
         },
+        lyricsVisible: () => undefined,
         stop: async () => {
           events.push("bridge stopped");
         },
@@ -49,6 +50,7 @@ test("bridge shutdown attempts every cleanup and preserves every failure", async
         currentSnapshot: () => {
           throw new Error("unused");
         },
+        lyricsVisible: () => undefined,
         stop: async () => {
           events.push("bridge stopped");
           throw new Error("Roon services remained open");
@@ -87,6 +89,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         currentSnapshot: () => {
           throw new Error("unused");
         },
+        lyricsVisible: () => undefined,
         stop: async () => {
           throw new AggregateError(
             [

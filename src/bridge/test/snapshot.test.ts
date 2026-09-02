@@ -2,12 +2,128 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadSnapshot, validateSnapshot } from "../src/snapshot.js";
+import {
+  MAX_LYRIC_CUE_CODE_POINTS,
+  MAX_LYRIC_CUES,
+  MAX_LYRIC_TOTAL_CODE_POINTS,
+} from "../src/synchronized-lyrics.js";
+
+test("accepts a bounded normalized synchronized lyric timeline", async () => {
+  const snapshot = await validateSnapshot({
+    schemaVersion: 3,
+    revision: 1,
+    availability: "available",
+    playback: "playing",
+    trackedOutput: { name: "Speaker System" },
+    trackedZone: { name: "Living Room" },
+    nowPlaying: { title: "A Moment Apart", artist: "ODESZA", album: null },
+    progress: {
+      positionSeconds: 1,
+      durationSeconds: 120,
+      sampledAt: "2026-08-15T19:20:00Z",
+    },
+    artwork: null,
+    lyrics: { cues: [{ atSeconds: 1.2, text: "月へ 🌙" }] },
+  });
+
+  assert.equal(snapshot.lyrics?.cues[0]?.text, "月へ 🌙");
+});
+
+test("rejects synchronized lyric timelines beyond defensive bounds", async () => {
+  const base = {
+    schemaVersion: 3,
+    revision: 1,
+    availability: "available",
+    playback: "playing",
+    trackedOutput: { name: "Speaker System" },
+    trackedZone: { name: "Living Room" },
+    nowPlaying: { title: "A Moment Apart", artist: null, album: null },
+    progress: {
+      positionSeconds: 1,
+      durationSeconds: 120,
+      sampledAt: "2026-08-15T19:20:00Z",
+    },
+    artwork: null,
+  } as const;
+
+  await assert.rejects(
+    validateSnapshot({
+      ...base,
+      lyrics: {
+        cues: Array.from({ length: MAX_LYRIC_CUES + 1 }, (_, index) => ({
+          atSeconds: index,
+          text: "cue",
+        })),
+      },
+    }),
+    /Invalid presentation snapshot/,
+  );
+  await assert.rejects(
+    validateSnapshot({
+      ...base,
+      lyrics: {
+        cues: [
+          { atSeconds: 1, text: "x".repeat(MAX_LYRIC_CUE_CODE_POINTS + 1) },
+        ],
+      },
+    }),
+    /Invalid presentation snapshot/,
+  );
+  await assert.rejects(
+    validateSnapshot({
+      ...base,
+      lyrics: {
+        cues: Array.from({ length: MAX_LYRIC_CUES }, (_, index) => ({
+          atSeconds: index,
+          text: "x".repeat(
+            Math.ceil(MAX_LYRIC_TOTAL_CODE_POINTS / MAX_LYRIC_CUES) + 1,
+          ),
+        })),
+      },
+    }),
+    /total text exceeds/,
+  );
+});
+
+test("rejects unordered or duplicate normalized lyric cue timestamps", async () => {
+  const base = {
+    schemaVersion: 3,
+    revision: 1,
+    availability: "available",
+    playback: "playing",
+    trackedOutput: { name: "Speaker System" },
+    trackedZone: { name: "Living Room" },
+    nowPlaying: { title: "A Moment Apart", artist: null, album: null },
+    progress: {
+      positionSeconds: 1,
+      durationSeconds: 120,
+      sampledAt: "2026-08-15T19:20:00Z",
+    },
+    artwork: null,
+  } as const;
+
+  for (const cues of [
+    [
+      { atSeconds: 2, text: "Second" },
+      { atSeconds: 1, text: "First" },
+    ],
+    [
+      { atSeconds: 1, text: "First" },
+      { atSeconds: 1, text: "Replacement" },
+    ],
+  ]) {
+    await assert.rejects(
+      validateSnapshot({ ...base, lyrics: { cues } }),
+      /strictly increasing/,
+    );
+  }
+});
 
 test("loads the shared Playing fixture as a complete snapshot", async () => {
   const snapshot = await loadSnapshot("src/shared/fixtures/playing.json");
 
   assert.deepEqual(snapshot, {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 7,
     availability: "available",
     playback: "playing",
@@ -27,6 +143,7 @@ test("loads the shared Playing fixture as a complete snapshot", async () => {
       revision: 3,
       path: "src/shared/fixtures/artwork/playing.jpg",
     },
+    lyrics: null,
   });
 });
 
@@ -280,7 +397,7 @@ test("loads every shared unavailable fixture without stale Now Playing", async (
 
 test("accepts legacy Output unavailable without a persisted Tracked Output name", async () => {
   await validateSnapshot({
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 1,
     availability: "outputUnavailable",
     playback: null,
@@ -289,12 +406,13 @@ test("accepts legacy Output unavailable without a persisted Tracked Output name"
     nowPlaying: null,
     progress: null,
     artwork: null,
+    lyrics: null,
   });
 });
 
 test("rejects identities that are not authoritative for unavailable states", async () => {
   const unavailable = {
-    schemaVersion: 2 as const,
+    schemaVersion: 3 as const,
     revision: 1,
     playback: null,
     nowPlaying: null,
@@ -373,7 +491,7 @@ test("rejects the shared invalid fixture", async () => {
 test("rejects the removed displayZone snapshot field", async () => {
   await assert.rejects(
     validateSnapshot({
-      schemaVersion: 2,
+      schemaVersion: 3,
       revision: 1,
       availability: "available",
       playback: "playing",

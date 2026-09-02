@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "revision": 27,
   "availability": "available",
   "playback": "playing",
@@ -22,5 +22,6 @@
   "artwork": {
     "revision": 27,
     "path": "src/shared/fixtures/artwork/cellout-direction.jpg"
-  }
+  },
+  "lyrics": null
 }

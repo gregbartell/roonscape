@@ -169,7 +169,11 @@ test("navigation publishes all Fixture Scenarios in order with wraparound revisi
       const expectedPlaying = await loadSnapshot(
         "src/shared/fixtures/playing.json",
       );
-      assertSelectedSnapshot(wrappedPlaying, expectedPlaying, 20);
+      assertSelectedSnapshot(
+        wrappedPlaying,
+        expectedPlaying,
+        catalog.scenarios.length + 1,
+      );
       assert.notEqual(
         wrappedPlaying.progress?.sampledAt,
         observed[0]?.progress?.sampledAt,
@@ -179,7 +183,7 @@ test("navigation publishes all Fixture Scenarios in order with wraparound revisi
       assertSelectedSnapshot(
         await snapshots.read(),
         await loadSnapshot("src/shared/fixtures/light-artwork.json"),
-        21,
+        catalog.scenarios.length + 2,
       );
       snapshots.close();
     } finally {
@@ -209,7 +213,7 @@ test("rapid distinct navigation publishes the latest deliberate selection", asyn
       }
       assertSelectedSnapshot(
         latest,
-        await loadSnapshot("src/shared/fixtures/loading.json"),
+        await loadSnapshot("src/shared/fixtures/lyrics-one-line.json"),
         5,
       );
       snapshots.close();

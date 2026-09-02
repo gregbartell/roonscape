@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::path::Path;
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gtk::gdk;
 use gtk::pango;
@@ -10,14 +10,15 @@ use roonscape_renderer::{
     ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
     ArtworkLayout, FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, FullFieldPresentation,
     IdentityLineLayout, IdentityPhraseAlignment, IdentityPlacement, IdentityRowLayout,
-    InactivityLayout, InactivityTransform, MetadataGroupPlan, MetadataLayout, MetadataLineLayout,
-    MetadataTypography, NowPlayingField, NowPlayingFooterContent, NowPlayingLayout,
-    NowPlayingPresentation, NowPlayingRole, Presentation, PresentationActivity,
-    PresentationBehavior, PresentationPalette, PresentationProgress, PresentationRevision,
-    PresentationStatus, PresentationStatusEmphasis, PresentationStatusLayout,
-    PresentationStyleLayer, PresentationTransition, PresentationTransitionStyles,
-    ResolvedPresentation, TextOverflow, TypographySelection, TypographyStyles, Viewport,
-    metadata_layout, resolve_capture_presentation, resolve_presentation,
+    InactivityLayout, InactivityTransform, LyricNeighborVisibility, LyricPresentation,
+    MetadataGroupPlan, MetadataLayout, MetadataLineLayout, MetadataTypography, NowPlayingField,
+    NowPlayingFooterContent, NowPlayingLayout, NowPlayingPresentation, NowPlayingRole,
+    Presentation, PresentationActivity, PresentationBehavior, PresentationPalette,
+    PresentationProgress, PresentationRevision, PresentationStatus, PresentationStatusEmphasis,
+    PresentationStatusLayout, PresentationStyleLayer, PresentationTransition,
+    PresentationTransitionStyles, ResolvedPresentation, TextOverflow, TypographySelection,
+    TypographyStyles, Viewport, metadata_layout, resolve_capture_presentation,
+    resolve_presentation,
 };
 
 use crate::activity_waveform::activity_waveform;
@@ -155,10 +156,33 @@ struct RenderedMetadata {
     title: Option<RenderedMetadataLine>,
     artist: Option<RenderedMetadataLine>,
     album: Option<RenderedMetadataLine>,
+    lyrics: Option<RenderedLyrics>,
     progress: Option<RenderedProgress>,
     activity: Option<RenderedActivity>,
     footer: gtk::Box,
     identity: RenderedIdentity,
+}
+
+struct RenderedLyrics {
+    root: gtk::Box,
+    masthead: gtk::Box,
+    masthead_title: Option<gtk::Label>,
+    masthead_artist: Option<gtk::Label>,
+    reel_region: gtk::CenterBox,
+    reel: gtk::CenterBox,
+    previous: gtk::Label,
+    current: gtk::Label,
+    next: gtk::Label,
+    presentation: LyricPresentation,
+    line_width_px: Cell<i32>,
+    transition_generation: Rc<Cell<u64>>,
+    behavior: PresentationBehavior,
+}
+
+#[derive(Clone, Copy)]
+enum LyricTransition {
+    NaturalProgression,
+    Immediate,
 }
 
 struct RenderedActivity {
@@ -427,15 +451,14 @@ impl PresentationView {
         self.install_palette_styles();
     }
 
-    pub(crate) fn update_progress(&self, progress: &PresentationProgress) {
-        if let Some(rendered_progress) = self.transition.current().value().progress.as_ref() {
-            rendered_progress.update(progress);
-        }
-    }
-
     pub(crate) fn update_in_place(&mut self, revision: u64, presentation: &Presentation) {
+        let lyric_transition = if self.transition.current().revision() == revision {
+            LyricTransition::NaturalProgression
+        } else {
+            LyricTransition::Immediate
+        };
         self.transition.update_current(revision, |current| {
-            current.update_in_place(presentation);
+            current.update_in_place(presentation, lyric_transition);
         });
     }
 
@@ -622,7 +645,7 @@ impl RenderedPresentation {
         Ok(self.layout_ready())
     }
 
-    fn update_in_place(&mut self, presentation: &Presentation) {
+    fn update_in_place(&mut self, presentation: &Presentation, lyric_transition: LyricTransition) {
         match (
             self.now_playing.as_mut(),
             self.full_field.as_mut(),
@@ -637,6 +660,12 @@ impl RenderedPresentation {
                     (self.progress.as_ref(), presentation.progress.as_ref())
                 {
                     rendered.update(progress);
+                }
+                if let (Some(rendered), Some(lyrics)) = (
+                    rendered.metadata.lyrics.as_mut(),
+                    presentation.lyrics.as_ref(),
+                ) {
+                    rendered.update(lyrics, lyric_transition);
                 }
             }
             (None, Some(rendered), Presentation::FullField(presentation)) => {
@@ -1124,48 +1153,60 @@ fn metadata(
     root.set_measure_overlay(&rendered_status.root, false);
 
     let layout = metadata_layout(presentation, Viewport::WINDOWED_FIXTURE);
-    let title = layout.title.as_ref().map(|layout| {
-        metadata_line(
-            layout,
-            "title",
-            rendering.typography.now_playing_title_family(),
+    let (title, artist, album) = if presentation.lyrics.is_some() {
+        (None, None, None)
+    } else {
+        (
+            layout.title.as_ref().map(|layout| {
+                metadata_line(
+                    layout,
+                    "title",
+                    rendering.typography.now_playing_title_family(),
+                )
+            }),
+            layout.artist.as_ref().map(|layout| {
+                metadata_line(
+                    layout,
+                    "artist",
+                    rendering.typography.now_playing_supporting_family(),
+                )
+            }),
+            layout.album.as_ref().map(|layout| {
+                metadata_line(
+                    layout,
+                    "album",
+                    rendering.typography.now_playing_supporting_family(),
+                )
+            }),
         )
-    });
-    let artist = layout.artist.as_ref().map(|layout| {
-        metadata_line(
-            layout,
-            "artist",
-            rendering.typography.now_playing_supporting_family(),
-        )
-    });
-    let album = layout.album.as_ref().map(|layout| {
-        metadata_line(
-            layout,
-            "album",
-            rendering.typography.now_playing_supporting_family(),
-        )
-    });
+    };
     let progress = presentation.progress.as_ref().map(progress_view);
     let activity = presentation
         .activity
         .as_deref()
         .map(|activity| activity_view(activity, rendering.behavior));
+    let lyrics = presentation
+        .lyrics
+        .as_ref()
+        .map(|lyrics| lyric_view(presentation, lyrics, rendering.behavior));
     let footer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     footer.add_css_class("utility-footer");
     footer.set_hexpand(true);
 
-    for role in &now_playing_layout.metadata_roles {
-        match role {
-            NowPlayingRole::PresentationStatus => {}
-            NowPlayingRole::Title => {
-                musical_metadata.append(&title.as_ref().expect("Title role requires a label").label)
+    if let Some(lyrics) = lyrics.as_ref() {
+        musical_metadata.append(&lyrics.root);
+    } else {
+        for role in &now_playing_layout.metadata_roles {
+            match role {
+                NowPlayingRole::PresentationStatus => {}
+                NowPlayingRole::Title => musical_metadata
+                    .append(&title.as_ref().expect("Title role requires a label").label),
+                NowPlayingRole::Artist => musical_metadata
+                    .append(&artist.as_ref().expect("Artist role requires a label").label),
+                NowPlayingRole::Album => musical_metadata
+                    .append(&album.as_ref().expect("Album role requires a label").label),
+                NowPlayingRole::Progress | NowPlayingRole::Activity => {}
             }
-            NowPlayingRole::Artist => musical_metadata
-                .append(&artist.as_ref().expect("Artist role requires a label").label),
-            NowPlayingRole::Album => {
-                musical_metadata.append(&album.as_ref().expect("Album role requires a label").label)
-            }
-            NowPlayingRole::Progress | NowPlayingRole::Activity => {}
         }
     }
 
@@ -1210,11 +1251,93 @@ fn metadata(
         title,
         artist,
         album,
+        lyrics,
         progress,
         activity,
         footer,
         identity,
     }
+}
+
+fn lyric_view(
+    presentation: &NowPlayingPresentation,
+    lyrics: &LyricPresentation,
+    behavior: PresentationBehavior,
+) -> RenderedLyrics {
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    root.add_css_class("lyric-composition");
+    root.set_hexpand(true);
+    let masthead = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    masthead.add_css_class("lyric-masthead");
+    let masthead_title = presentation.title.as_ref().map(|text| {
+        let label = metadata_label(text, "lyric-masthead-title");
+        label.add_css_class("editorial-text");
+        masthead.append(&label);
+        label
+    });
+    let masthead_artist = presentation.artist.as_ref().map(|text| {
+        let label = metadata_label(text, "lyric-masthead-artist");
+        label.add_css_class("utility-text");
+        masthead.append(&label);
+        label
+    });
+    root.append(&masthead);
+
+    let previous = lyric_label(lyrics.previous.as_deref().unwrap_or(""), "lyric-previous");
+    let current = lyric_label(
+        if lyrics.current.is_empty() {
+            " "
+        } else {
+            &lyrics.current
+        },
+        "lyric-current",
+    );
+    current.set_lines(4);
+    current.set_ellipsize(pango::EllipsizeMode::End);
+    current.set_valign(gtk::Align::Center);
+    let next = lyric_label(lyrics.next.as_deref().unwrap_or(""), "lyric-next");
+    let reel = gtk::CenterBox::new();
+    reel.set_orientation(gtk::Orientation::Vertical);
+    reel.add_css_class("lyric-reel");
+    reel.set_hexpand(true);
+    reel.set_start_widget(Some(&previous));
+    reel.set_center_widget(Some(&current));
+    reel.set_end_widget(Some(&next));
+    // Center the naturally sized cue cluster without allowing its context
+    // labels to stretch toward the masthead and footer.
+    let reel_region = gtk::CenterBox::new();
+    reel_region.set_orientation(gtk::Orientation::Vertical);
+    reel_region.set_hexpand(true);
+    reel_region.set_vexpand(true);
+    reel_region.set_center_widget(Some(&reel));
+    root.append(&reel_region);
+
+    RenderedLyrics {
+        root,
+        masthead,
+        masthead_title,
+        masthead_artist,
+        reel_region,
+        reel,
+        previous,
+        current,
+        next,
+        presentation: lyrics.clone(),
+        line_width_px: Cell::new(1),
+        transition_generation: Rc::new(Cell::new(0)),
+        behavior,
+    }
+}
+
+fn lyric_label(text: &str, class_name: &str) -> gtk::Label {
+    let label = metadata_label(text, class_name);
+    label.add_css_class("utility-text");
+    label.set_halign(gtk::Align::Start);
+    label.set_xalign(0.0);
+    label.set_wrap(true);
+    label.set_wrap_mode(pango::WrapMode::Word);
+    label.set_max_width_chars(1);
+    label
 }
 
 fn metadata_line(
@@ -1494,7 +1617,17 @@ impl RenderedMetadata {
         {
             line.label.set_width_request(musical_metadata_width);
         }
-        self.apply_group_fitting(layout);
+        if let Some(lyrics) = self.lyrics.as_ref() {
+            lyrics.apply_layout(layout);
+            self.musical_metadata_alignment.set_margin_top(0);
+            self.musical_metadata_slot.set_height_request(dimension(
+                layout
+                    .metadata_region_bottom_viewport_y_px
+                    .saturating_sub(layout.metadata_region_top_viewport_y_px),
+            ));
+        } else {
+            self.apply_group_fitting(layout);
+        }
         if let Some(progress) = self.progress.as_ref() {
             progress.root.set_margin_top(0);
             progress
@@ -1591,6 +1724,138 @@ impl RenderedMetadata {
             apply_metadata_line_plan(&line.label, line_plan, spacing_px);
         }
     }
+}
+
+impl RenderedLyrics {
+    fn apply_layout(&self, layout: &NowPlayingLayout) {
+        let width = dimension(layout.information.musical_metadata_width_px);
+        self.line_width_px.set(width);
+        self.root.set_width_request(width);
+        self.root
+            .set_height_request(dimension(layout.metadata_height_budget_px));
+        self.masthead.set_spacing(dimension(
+            (layout.typography.lyric_masthead_artist_px as f64 * 0.25).round() as u32,
+        ));
+        if let Some(title) = self.masthead_title.as_ref() {
+            title.set_width_request(width);
+            set_label_font_size(title, layout.typography.lyric_masthead_title_px);
+        }
+        if let Some(artist) = self.masthead_artist.as_ref() {
+            artist.set_width_request(width);
+            set_label_font_size(artist, layout.typography.lyric_masthead_artist_px);
+        }
+        self.reel_region.set_margin_top(dimension(
+            (layout.typography.lyric_current_px as f64 * 0.52).round() as u32,
+        ));
+        self.reel.set_height_request(-1);
+        for label in [&self.previous, &self.current, &self.next] {
+            label.set_width_request(width);
+        }
+        set_label_font_size(&self.current, layout.typography.lyric_current_px);
+        self.current.set_height_request(dimension(
+            (layout.typography.lyric_current_px as f64 * 4.4).round() as u32,
+        ));
+        set_label_font_size(&self.previous, layout.typography.lyric_neighbor_px);
+        set_label_font_size(&self.next, layout.typography.lyric_neighbor_px);
+        let visibility = self.neighbor_visibility_for(&self.presentation.current);
+        self.apply_visibility(visibility);
+        // Reconcile against the allocated Pango layout once GTK has resolved
+        // the utility typeface; its final wrapping decides neighbor visibility.
+        let previous = self.previous.clone();
+        let current = self.current.clone();
+        let next = self.next.clone();
+        gtk::glib::idle_add_local_once(move || {
+            let visibility =
+                LyricNeighborVisibility::for_rendered_lines(current.layout().line_count());
+            apply_lyric_label_visibility(&previous, &current, &next, visibility);
+        });
+    }
+
+    fn update(&mut self, lyrics: &LyricPresentation, transition: LyricTransition) {
+        if self.presentation == *lyrics {
+            return;
+        }
+        let promotes_next =
+            lyrics.current_index == self.presentation.current_index.saturating_add(1);
+        self.presentation.clone_from(lyrics);
+        let previous_text = lyrics.previous.clone().unwrap_or_default();
+        let current_text = if lyrics.current.is_empty() {
+            " "
+        } else {
+            &lyrics.current
+        }
+        .to_owned();
+        let next_text = lyrics.next.clone().unwrap_or_default();
+        let visibility = self.neighbor_visibility_for(&current_text);
+        let system_animations_enabled =
+            gtk::Settings::default().is_none_or(|settings| settings.is_gtk_enable_animations());
+        let transition_generation = self.transition_generation.get().wrapping_add(1);
+        self.transition_generation.set(transition_generation);
+        for class_name in ["lyric-promoting-out", "lyric-promoting-in"] {
+            self.reel.remove_css_class(class_name);
+        }
+        if promotes_next
+            && matches!(transition, LyricTransition::NaturalProgression)
+            && self.behavior.animations_enabled(system_animations_enabled)
+        {
+            let out_class = "lyric-promoting-out";
+            let in_class = "lyric-promoting-in";
+            self.reel.add_css_class(out_class);
+            let reel = self.reel.clone();
+            let previous = self.previous.clone();
+            let current = self.current.clone();
+            let next = self.next.clone();
+            let active_generation = self.transition_generation.clone();
+            gtk::glib::timeout_add_local_once(Duration::from_millis(160), move || {
+                if active_generation.get() != transition_generation {
+                    return;
+                }
+                previous.set_text(&previous_text);
+                current.set_text(&current_text);
+                next.set_text(&next_text);
+                apply_lyric_label_visibility(&previous, &current, &next, visibility);
+                reel.remove_css_class(out_class);
+                reel.add_css_class(in_class);
+                let active_generation = active_generation.clone();
+                gtk::glib::timeout_add_local_once(Duration::from_millis(16), move || {
+                    if active_generation.get() == transition_generation {
+                        reel.remove_css_class(in_class);
+                    }
+                });
+            });
+        } else {
+            self.previous.set_text(&previous_text);
+            self.current.set_text(&current_text);
+            self.next.set_text(&next_text);
+            self.apply_visibility(visibility);
+        }
+    }
+
+    fn apply_visibility(&self, visibility: LyricNeighborVisibility) {
+        apply_lyric_label_visibility(&self.previous, &self.current, &self.next, visibility);
+    }
+
+    fn neighbor_visibility_for(&self, text: &str) -> LyricNeighborVisibility {
+        let previous_text = self.current.text();
+        self.current.set_text(text);
+        let layout = self.current.layout();
+        layout.set_width(self.line_width_px.get().saturating_mul(pango::SCALE));
+        let visibility = LyricNeighborVisibility::for_rendered_lines(layout.line_count());
+        self.current.set_text(&previous_text);
+        visibility
+    }
+}
+
+fn apply_lyric_label_visibility(
+    previous: &gtk::Label,
+    current: &gtk::Label,
+    next: &gtk::Label,
+    visibility: LyricNeighborVisibility,
+) {
+    let current_is_blank = current.text().trim().is_empty();
+    previous.set_visible(!current_is_blank && visibility.previous && !previous.text().is_empty());
+    current.set_opacity(if current_is_blank { 0.0 } else { 1.0 });
+    next.set_visible(visibility.next && !next.text().is_empty());
 }
 
 impl RenderedPresentationStatus {
@@ -1996,15 +2261,195 @@ mod tests {
     use std::sync::Arc;
 
     use gtk::glib::object::ObjectType;
+    use gtk::prelude::*;
 
     use super::{
-        PRESENTATION_CACHE_CAPACITY, PresentationCaches, PresentationLayoutSource,
-        RenderingConfiguration, STYLES,
+        LyricTransition, PRESENTATION_CACHE_CAPACITY, PresentationCaches, PresentationLayoutSource,
+        RenderingConfiguration, STYLES, lyric_view,
     };
     use roonscape_renderer::{
-        NowPlayingFooterContent, NowPlayingGradientCacheKey, PresentationBehavior,
-        PresentationPalette, Viewport, parse_snapshot, presentation_from_snapshot,
+        LyricNeighborVisibility, NowPlayingFooterContent, NowPlayingGradientCacheKey,
+        NowPlayingLayout, Presentation, PresentationBehavior, PresentationPalette, Viewport,
+        parse_snapshot, presentation_from_snapshot,
     };
+
+    fn lyric_presentation(fixture: &str) -> roonscape_renderer::NowPlayingPresentation {
+        let snapshot = parse_snapshot(match fixture {
+            "lyrics-one-line.json" => include_str!("../../shared/fixtures/lyrics-one-line.json"),
+            "lyrics-two-line.json" => include_str!("../../shared/fixtures/lyrics-two-line.json"),
+            "lyrics-blank-cue.json" => include_str!("../../shared/fixtures/lyrics-blank-cue.json"),
+            _ => panic!("unsupported lyric fixture"),
+        })
+        .expect("lyric fixture should satisfy the shared contract");
+        let Presentation::NowPlaying(presentation) =
+            presentation_from_snapshot(&snapshot).expect("lyric fixture should be presentable")
+        else {
+            panic!("lyric fixture should use Now Playing");
+        };
+        presentation
+    }
+
+    fn allocate_lyrics(lyrics: &super::RenderedLyrics, layout: &NowPlayingLayout) {
+        lyrics.apply_layout(layout);
+        lyrics.root.allocate(
+            layout.information.musical_metadata_width_px as i32,
+            layout.metadata_height_budget_px as i32,
+            -1,
+            None,
+        );
+        while gtk::glib::MainContext::default().iteration(false) {}
+    }
+
+    #[test]
+    fn allocated_lyric_reel_recomputes_neighbors_and_blank_visibility() {
+        gtk::init().expect("GTK should initialize for native lyric layout coverage");
+
+        let one_line = lyric_presentation("lyrics-one-line.json");
+        let one_line_lyrics = one_line
+            .lyrics
+            .as_deref()
+            .expect("fixture should have lyrics");
+        let rendered = lyric_view(
+            &one_line,
+            one_line_lyrics,
+            PresentationBehavior::StaticFixture,
+        );
+        let compact_layout =
+            NowPlayingLayout::for_presentation(&one_line, Viewport::new(1_280, 720));
+        allocate_lyrics(&rendered, &compact_layout);
+
+        assert_eq!(rendered.current.layout().line_count(), 1);
+        assert!(rendered.previous.is_visible());
+        assert!(rendered.next.is_visible());
+        let root_height = rendered.root.height() as f32;
+        for label in [&rendered.previous, &rendered.current, &rendered.next] {
+            let bounds = label
+                .compute_bounds(&rendered.root)
+                .expect("visible lyric label should have root-relative bounds");
+            assert!(bounds.y() >= 0.0);
+            assert!(bounds.y() + bounds.height() <= root_height);
+        }
+        let region_bounds = rendered
+            .reel_region
+            .compute_bounds(&rendered.root)
+            .expect("lyric region should have root-relative bounds");
+        let reel_bounds = rendered
+            .reel
+            .compute_bounds(&rendered.root)
+            .expect("lyric reel should have root-relative bounds");
+        assert!(
+            reel_bounds.height() + (compact_layout.typography.lyric_current_px as f32)
+                < region_bounds.height(),
+            "the cue cluster should retain breathing room inside the lyric region"
+        );
+        assert!(
+            ((reel_bounds.y() + reel_bounds.height() / 2.0)
+                - (region_bounds.y() + region_bounds.height() / 2.0))
+                .abs()
+                <= 1.0,
+            "the bounded cue cluster should preserve the lyric region's center anchor"
+        );
+        assert!(rendered.current.has_css_class("utility-text"));
+        assert!(!rendered.current.has_css_class("editorial-text"));
+
+        let two_line = lyric_presentation("lyrics-two-line.json");
+        let two_line_lyrics = two_line
+            .lyrics
+            .as_deref()
+            .expect("fixture should have lyrics");
+        let resized = lyric_view(
+            &two_line,
+            two_line_lyrics,
+            PresentationBehavior::StaticFixture,
+        );
+        for viewport in [
+            Viewport::new(1_280, 720),
+            Viewport::new(1_600, 1_200),
+            Viewport::new(3_840, 2_400),
+        ] {
+            let layout = NowPlayingLayout::for_presentation(&two_line, viewport);
+            allocate_lyrics(&resized, &layout);
+            let expected =
+                LyricNeighborVisibility::for_rendered_lines(resized.current.layout().line_count());
+            assert_eq!(resized.previous.is_visible(), expected.previous);
+            assert_eq!(resized.next.is_visible(), expected.next);
+            let root_height = resized.root.height() as f32;
+            for label in [&resized.previous, &resized.current, &resized.next] {
+                if label.is_visible() {
+                    let bounds = label
+                        .compute_bounds(&resized.root)
+                        .expect("visible lyric label should have root-relative bounds");
+                    assert!(bounds.y() >= 0.0);
+                    assert!(bounds.y() + bounds.height() <= root_height);
+                }
+            }
+        }
+
+        let blank = lyric_presentation("lyrics-blank-cue.json");
+        let blank_lyrics = blank.lyrics.as_deref().expect("fixture should have lyrics");
+        let blank_rendered = lyric_view(&blank, blank_lyrics, PresentationBehavior::StaticFixture);
+        let blank_layout = NowPlayingLayout::for_presentation(&blank, Viewport::new(1_280, 720));
+        allocate_lyrics(&blank_rendered, &blank_layout);
+
+        assert!(!blank_rendered.previous.is_visible());
+        assert_eq!(blank_rendered.current.opacity(), 0.0);
+        assert_eq!(
+            blank_rendered.next.is_visible(),
+            blank_lyrics.next.is_some(),
+        );
+        gtk::Settings::default()
+            .expect("GTK settings should be available")
+            .set_gtk_enable_animations(true);
+
+        let presentation = lyric_presentation("lyrics-one-line.json");
+        let initial = presentation
+            .lyrics
+            .as_deref()
+            .expect("fixture should have lyrics");
+        let mut rendered = lyric_view(&presentation, initial, PresentationBehavior::Dynamic);
+
+        let mut adjacent = initial.clone();
+        adjacent.current_index += 1;
+        adjacent.previous = Some(initial.current.clone());
+        adjacent.current = initial
+            .next
+            .clone()
+            .expect("fixture should have a next cue");
+        rendered.update(&adjacent, LyricTransition::NaturalProgression);
+        assert!(rendered.reel.has_css_class("lyric-promoting-out"));
+        assert!(!rendered.root.has_css_class("lyric-changing"));
+
+        let mut adjacent_seek = adjacent.clone();
+        adjacent_seek.current_index += 1;
+        adjacent_seek.current = "An adjacent seek cue".to_owned();
+        rendered.update(&adjacent_seek, LyricTransition::Immediate);
+        assert!(!rendered.reel.has_css_class("lyric-promoting-out"));
+        assert!(!rendered.reel.has_css_class("lyric-promoting-in"));
+        assert!(!rendered.root.has_css_class("lyric-changing"));
+
+        assert_eq!(
+            rendered.current.text(),
+            adjacent_seek.current,
+            "an adjacent external seek should select its cue without transition delay"
+        );
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(220);
+        while std::time::Instant::now() < deadline {
+            while gtk::glib::MainContext::default().iteration(false) {}
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        while gtk::glib::MainContext::default().iteration(false) {}
+
+        assert_eq!(
+            rendered.current.text(),
+            adjacent_seek.current,
+            "a pending promotion should not overwrite a newer seek"
+        );
+
+        assert!(!STYLES.contains(".lyric-composition.lyric-changing"));
+        assert!(STYLES.contains(".lyric-reel.lyric-promoting-out"));
+        assert!(!STYLES.contains(".lyric-reel.lyric-seeking-out"));
+    }
 
     fn populate_presentation_caches(
         caches: &PresentationCaches,

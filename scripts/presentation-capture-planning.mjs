@@ -22,6 +22,12 @@ const captureFontPaths = [
 const customArtworkScenarios = new Set([
   "playing",
   "paused",
+  "lyrics-one-line",
+  "lyrics-two-line",
+  "lyrics-three-line",
+  "lyrics-four-lines",
+  "lyrics-blank-cue",
+  "lyrics-long-masthead",
   "loading-with-content",
   "missing-metadata",
   "missing-artist",

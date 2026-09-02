@@ -7,7 +7,8 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::contract::{
-    Availability, Playback, PresentationSnapshot, Progress, TrackedOutput, TrackedZone,
+    Availability, Playback, PresentationSnapshot, Progress, SynchronizedLyrics, TrackedOutput,
+    TrackedZone,
 };
 use crate::display_configuration::InactivityConfiguration;
 
@@ -92,6 +93,15 @@ pub struct NowPlayingPresentation {
     pub activity: Option<Box<PresentationActivity>>,
     pub artwork_revision: Option<u64>,
     pub artwork_path: Option<String>,
+    pub lyrics: Option<Box<LyricPresentation>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LyricPresentation {
+    pub current_index: usize,
+    pub previous: Option<String>,
+    pub current: String,
+    pub next: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -362,12 +372,7 @@ impl PresentationState {
         let previous_presentation = presentation_from_snapshot(&self.snapshot)
             .expect("PresentationState retains a validated snapshot");
         let next_presentation = presentation_from_snapshot(&snapshot)?;
-        let update =
-            if !presentation_composition_changed(&previous_presentation, &next_presentation) {
-                PresentationUpdate::InPlace
-            } else {
-                PresentationUpdate::TransitionRequired
-            };
+        let update = classify_presentation_update(&previous_presentation, &next_presentation);
         let next_inactivity_condition = inactivity_condition(&snapshot);
         let has_new_source_sample = self.snapshot.playback != snapshot.playback
             || self.snapshot.progress != snapshot.progress;
@@ -394,8 +399,7 @@ impl PresentationState {
             .expect("PresentationState retains a validated snapshot");
         let next_presentation =
             presentation_from_snapshot(&snapshot).expect("the disconnected snapshot is valid");
-        let content_changed =
-            presentation_composition_changed(&previous_presentation, &next_presentation);
+        let update = classify_presentation_update(&previous_presentation, &next_presentation);
         let next_inactivity_condition = inactivity_condition(&snapshot);
         if self.inactivity_condition != next_inactivity_condition {
             self.inactivity_condition = next_inactivity_condition;
@@ -404,11 +408,7 @@ impl PresentationState {
         self.snapshot = snapshot;
         self.progress_anchored_at = anchored_at;
         self.source_sample_age = Duration::ZERO;
-        if content_changed {
-            PresentationUpdate::TransitionRequired
-        } else {
-            PresentationUpdate::InPlace
-        }
+        update
     }
 
     pub fn presentation_at(&self, now: Duration) -> Result<Presentation, PresentationError> {
@@ -460,7 +460,10 @@ impl PresentationState {
     }
 }
 
-fn presentation_composition_changed(previous: &Presentation, next: &Presentation) -> bool {
+pub fn classify_presentation_update(
+    previous: &Presentation,
+    next: &Presentation,
+) -> PresentationUpdate {
     let mut comparable = previous.clone();
     match (&mut comparable, next) {
         (Presentation::NowPlaying(previous), Presentation::NowPlaying(next)) => {
@@ -468,13 +471,20 @@ fn presentation_composition_changed(previous: &Presentation, next: &Presentation
             if previous.progress.is_some() && next.progress.is_some() {
                 previous.progress.clone_from(&next.progress);
             }
+            if previous.lyrics.is_some() && next.lyrics.is_some() {
+                previous.lyrics.clone_from(&next.lyrics);
+            }
         }
         (Presentation::FullField(previous), Presentation::FullField(next)) => {
             previous.status = next.status;
         }
-        _ => return true,
+        _ => return PresentationUpdate::TransitionRequired,
     }
-    comparable != *next
+    if comparable == *next {
+        PresentationUpdate::InPlace
+    } else {
+        PresentationUpdate::TransitionRequired
+    }
 }
 
 fn inactivity_condition(snapshot: &PresentationSnapshot) -> Option<InactivityCondition> {
@@ -491,7 +501,7 @@ fn inactivity_condition(snapshot: &PresentationSnapshot) -> Option<InactivityCon
 
 fn disconnected_snapshot(revision: u64) -> PresentationSnapshot {
     PresentationSnapshot {
-        schema_version: 2,
+        schema_version: 3,
         revision,
         availability: Availability::Disconnected,
         playback: None,
@@ -500,6 +510,7 @@ fn disconnected_snapshot(revision: u64) -> PresentationSnapshot {
         now_playing: None,
         progress: None,
         artwork: None,
+        lyrics: None,
     }
 }
 
@@ -560,6 +571,11 @@ fn presentation_from_snapshot_after(
         )));
     }
     let now_playing = snapshot.now_playing.as_ref();
+    let lyric_presentation = snapshot.progress.as_ref().and_then(|progress| {
+        snapshot.lyrics.as_ref().and_then(|lyrics| {
+            lyric_presentation(lyrics, projected_position(progress, playback, elapsed))
+        })
+    });
     let now_playing = NowPlayingPresentation {
         title: usable_metadata_line(
             now_playing.and_then(|now_playing| now_playing.title.as_deref()),
@@ -584,6 +600,7 @@ fn presentation_from_snapshot_after(
             .artwork
             .as_ref()
             .map(|artwork| artwork.path.clone()),
+        lyrics: lyric_presentation.map(Box::new),
     };
     if !now_playing.has_usable_metadata() && now_playing.artwork_path.is_none() {
         return Ok(Presentation::FullField(trackless_full_field(&now_playing)));
@@ -757,12 +774,7 @@ fn presentation_progress(
     playback: Playback,
     elapsed: Duration,
 ) -> PresentationProgress {
-    let advancement = if playback == Playback::Playing {
-        elapsed.as_secs_f64()
-    } else {
-        0.0
-    };
-    let position = (progress.position_seconds + advancement).clamp(0.0, progress.duration_seconds);
+    let position = projected_position(progress, playback, elapsed);
     let remaining = progress.duration_seconds - position;
 
     PresentationProgress {
@@ -770,6 +782,57 @@ fn presentation_progress(
         elapsed: format_duration(position),
         remaining: format!("−{}", format_duration(remaining)),
     }
+}
+
+fn projected_position(progress: &Progress, playback: Playback, elapsed: Duration) -> f64 {
+    let advancement = if playback == Playback::Playing {
+        elapsed.as_secs_f64()
+    } else {
+        0.0
+    };
+    (progress.position_seconds + advancement).clamp(0.0, progress.duration_seconds)
+}
+
+fn lyric_presentation(
+    lyrics: &SynchronizedLyrics,
+    position_seconds: f64,
+) -> Option<LyricPresentation> {
+    const LOOK_AHEAD_SECONDS: f64 = 0.7;
+    const BLANK_PREPARATION_SECONDS: f64 = 2.0;
+    const FINAL_HOLD_SECONDS: f64 = 3.0;
+
+    let first = lyrics.cues.first()?;
+    let last = lyrics.cues.last()?;
+    let selection_position = position_seconds + LOOK_AHEAD_SECONDS;
+    if selection_position < first.at_seconds
+        || position_seconds > last.at_seconds + FINAL_HOLD_SECONDS
+    {
+        return None;
+    }
+    let current_index = lyrics
+        .cues
+        .partition_point(|cue| cue.at_seconds <= selection_position)
+        .saturating_sub(1);
+    let current = lyrics.cues.get(current_index)?;
+    let previous = lyrics.cues[..current_index]
+        .iter()
+        .rev()
+        .find(|cue| !cue.text.trim().is_empty())
+        .map(|cue| cue.text.clone());
+    let next = lyrics.cues[current_index + 1..]
+        .iter()
+        .find(|cue| !cue.text.trim().is_empty())
+        .filter(|cue| {
+            !current.text.trim().is_empty()
+                || cue.at_seconds - position_seconds <= BLANK_PREPARATION_SECONDS
+        })
+        .map(|cue| cue.text.clone());
+    Some(LyricPresentation {
+        current_index,
+        previous,
+        current: current.text.clone(),
+        next,
+    })
 }
 
 fn format_duration(seconds: f64) -> String {

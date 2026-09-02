@@ -8,15 +8,15 @@ import {
 import path from "node:path";
 
 import {
-  findSnapshotDisplayStringViolation,
-  type SnapshotDisplayStringViolationCode,
+  findSnapshotContentViolation,
+  type SnapshotContentViolationCode,
   type PresentationSnapshot,
 } from "./snapshot.js";
 
 export const MAX_SNAPSHOT_BYTES = 64 * 1024;
 
 export type SnapshotPublicationFailureCode =
-  SnapshotDisplayStringViolationCode | "snapshotTooLarge";
+  SnapshotContentViolationCode | "snapshotTooLarge";
 
 export class SnapshotPublicationError extends RangeError {
   constructor(
@@ -33,9 +33,14 @@ export interface SnapshotPublisher {
   close(): Promise<void>;
 }
 
+interface SnapshotPublisherOptions {
+  onLyricsVisible?(revision: number): void;
+}
+
 export async function startSnapshotPublisher(
   snapshot: PresentationSnapshot,
   socketPath: string,
+  { onLyricsVisible = () => undefined }: SnapshotPublisherOptions = {},
 ): Promise<SnapshotPublisher> {
   let message = serializeSnapshot(snapshot);
   const runtimeDirectory = path.dirname(socketPath);
@@ -60,6 +65,7 @@ export async function startSnapshotPublisher(
       socket.once("close", removeConnection);
       socket.once("error", removeConnection);
       socket.on("drain", () => flushPending(connection));
+      observeRenderer(socket, onLyricsVisible);
       writeLatest(connection, message);
     },
   );
@@ -141,12 +147,49 @@ function flushPending(connection: SnapshotConnection): void {
   }
 }
 
+function observeRenderer(
+  socket: Socket,
+  onLyricsVisible: (revision: number) => void,
+): void {
+  let pending = "";
+  socket.on("data", (chunk) => {
+    pending += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    let newline = pending.indexOf("\n");
+    while (newline >= 0) {
+      const line = pending.slice(0, newline);
+      pending = pending.slice(newline + 1);
+      if (Buffer.byteLength(line, "utf8") > 1_024) {
+        socket.destroy();
+        return;
+      }
+      try {
+        const report: unknown = JSON.parse(line);
+        if (
+          isRecord(report) &&
+          report.type === "lyricsVisible" &&
+          typeof report.revision === "number" &&
+          Number.isSafeInteger(report.revision) &&
+          report.revision >= 0
+        ) {
+          onLyricsVisible(report.revision);
+        }
+      } catch {
+        // Renderer observations are optional and never affect publication.
+      }
+      newline = pending.indexOf("\n");
+    }
+    if (Buffer.byteLength(pending, "utf8") > 1_024) {
+      socket.destroy();
+    }
+  });
+}
+
 function serializeSnapshot(snapshot: PresentationSnapshot): string {
-  const displayStringViolation = findSnapshotDisplayStringViolation(snapshot);
-  if (displayStringViolation !== undefined) {
+  const contentViolation = findSnapshotContentViolation(snapshot);
+  if (contentViolation !== undefined) {
     throw new SnapshotPublicationError(
-      displayStringViolation.code,
-      displayStringViolation.message,
+      contentViolation.code,
+      contentViolation.message,
     );
   }
   const message = `${JSON.stringify(snapshot)}\n`;
@@ -223,6 +266,10 @@ function acceptsConnections(socketPath: string): Promise<boolean> {
 
 function isErrorCode(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function close(server: Server): Promise<void> {

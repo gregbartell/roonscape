@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "revision": 20,
   "availability": "available",
   "playback": "playing",
@@ -22,5 +22,6 @@
   "artwork": {
     "revision": 20,
     "path": "src/shared/fixtures/artwork/light.jpg"
-  }
+  },
+  "lyrics": null
 }

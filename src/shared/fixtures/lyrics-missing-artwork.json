@@ -1,14 +1,10 @@
 {
   "schemaVersion": 3,
-  "revision": 8,
+  "revision": 36,
   "availability": "available",
   "playback": "playing",
-  "trackedOutput": {
-    "name": "Speaker System"
-  },
-  "trackedZone": {
-    "name": "Living Room"
-  },
+  "trackedOutput": { "name": "Speaker System" },
+  "trackedZone": { "name": "Living Room" },
   "nowPlaying": {
     "title": "Last Light on Phobos",
     "artist": "Evelyn Lark & The Orbital Choir",
@@ -20,5 +16,5 @@
     "sampledAt": "2026-08-15T19:20:00Z"
   },
   "artwork": null,
-  "lyrics": null
+  "lyrics": { "cues": [{ "atSeconds": 170, "text": "We find the signal" }] }
 }

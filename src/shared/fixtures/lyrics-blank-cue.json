@@ -1,21 +1,17 @@
 {
   "schemaVersion": 3,
-  "revision": 35,
+  "revision": 34,
   "availability": "available",
-  "playback": "playing",
-  "trackedOutput": {
-    "name": "Speaker System"
-  },
-  "trackedZone": {
-    "name": "Living Room"
-  },
+  "playback": "paused",
+  "trackedOutput": { "name": "Speaker System" },
+  "trackedZone": { "name": "Living Room" },
   "nowPlaying": {
     "title": "Last Light on Phobos",
     "artist": "Evelyn Lark & The Orbital Choir",
     "album": "Signals from the Quiet Sea"
   },
   "progress": {
-    "positionSeconds": 37,
+    "positionSeconds": 171,
     "durationSeconds": 266,
     "sampledAt": "2026-08-15T19:20:00Z"
   },
@@ -23,5 +19,11 @@
     "revision": 3,
     "path": "src/shared/fixtures/artwork/playing.jpg"
   },
-  "lyrics": null
+  "lyrics": {
+    "cues": [
+      { "atSeconds": 160, "text": "A quiet orbit fades" },
+      { "atSeconds": 170, "text": "" },
+      { "atSeconds": 180, "text": "Beyond the cobalt tide" }
+    ]
+  }
 }
