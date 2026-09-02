@@ -435,6 +435,7 @@ async function prepareArtworkTestContext({
   image = "stable artwork",
   imageKey = "same-track-artwork",
   now,
+  createLyricFeedConnection,
   output = {
     output_id: "output-speaker-system",
     display_name: "Speaker System",
@@ -443,6 +444,7 @@ async function prepareArtworkTestContext({
   image?: string;
   imageKey?: string;
   now?: () => Date;
+  createLyricFeedConnection?: LyricFeedConnectionFactory;
   output?: RoonZone["outputs"][number];
 } = {}): Promise<ArtworkTestContext> {
   const taskDirectory = await mkdtemp(
@@ -454,6 +456,7 @@ async function prepareArtworkTestContext({
     "output-speaker-system",
     artworkFiles,
     now,
+    createLyricFeedConnection,
   );
   const zone: RoonZone = {
     zone_id: "zone-living-room",
@@ -738,7 +741,7 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
           },
       {
         schemaVersion: 3,
-        revision: 4,
+        revision: 2,
         availability: "available",
         playback: "playing",
         trackedOutput: { name: "Speaker System" },
@@ -753,14 +756,14 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
           durationSeconds: 234,
           sampledAt: "2026-08-15T19:20:00.000Z",
         },
-        artwork: { revision: 4 },
+        artwork: { revision: 2 },
         lyrics: null,
       },
     );
     assert.equal(path.dirname(snapshot?.artwork?.path ?? ""), artworkDirectory);
     assert.match(
       path.basename(snapshot?.artwork?.path ?? ""),
-      /^artwork-4-.+\.jpg$/,
+      /^artwork-2-.+\.jpg$/,
     );
     await validateSnapshot(snapshot);
     assert.equal(
@@ -794,13 +797,19 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
       ],
     });
 
-    assert.deepEqual(boundary.snapshots.at(-1), {
-      ...snapshot,
-      revision: 5,
-      playback: "loading",
-    });
+    assert.deepEqual(boundary.snapshots.at(-1), snapshot);
     boundary.resolveImage("image/jpeg", Buffer.from("loading artwork"));
-    await waitFor(() => boundary.snapshots.at(-1)?.artwork?.revision === 6);
+    await waitFor(() => boundary.snapshots.at(-1)?.artwork?.revision === 3);
+    const loadingSnapshot = boundary.snapshots.at(-1);
+    assert.deepEqual(loadingSnapshot, {
+      ...snapshot,
+      revision: 3,
+      playback: "loading",
+      artwork: {
+        revision: 3,
+        path: loadingSnapshot?.artwork?.path ?? "",
+      },
+    });
 
     boundary.emitZones("Changed", {
       zones_changed: [
@@ -827,16 +836,17 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
         },
       ],
     });
+    assert.deepEqual(boundary.snapshots.at(-1), loadingSnapshot);
     boundary.resolveImage("image/jpeg", Buffer.from("revised artwork"));
     await waitFor(async () => {
       const files = await readdir(artworkDirectory);
-      return files.length === 1 && /^artwork-8-.+\.jpg$/.test(files[0] ?? "");
+      return files.length === 1 && /^artwork-4-.+\.jpg$/.test(files[0] ?? "");
     });
 
-    assert.equal(boundary.snapshots.at(-1)?.artwork?.revision, 8);
+    assert.equal(boundary.snapshots.at(-1)?.artwork?.revision, 4);
     assert.match(
       path.basename(boundary.snapshots.at(-1)?.artwork?.path ?? ""),
-      /^artwork-8-.+\.jpg$/,
+      /^artwork-4-.+\.jpg$/,
     );
     assert.equal(
       await readFile(boundary.snapshots.at(-1)?.artwork?.path ?? "", "utf8"),
@@ -867,7 +877,7 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
 
     assert.deepEqual(boundary.snapshots.at(-1), {
       schemaVersion: 3,
-      revision: 9,
+      revision: 5,
       availability: "available",
       playback: "stopped",
       trackedOutput: { name: "Speaker System" },
@@ -1037,7 +1047,7 @@ test("ignores a volume-only Tracked Zone update", async () => {
   }
 });
 
-test("transitions once and cleans up when artwork identity changes", async () => {
+test("publishes changed Now Playing and artwork as one Presentation Snapshot", async () => {
   const context = await prepareArtworkTestContext({
     image: "first artwork",
     imageKey: "first-artwork-key",
@@ -1064,25 +1074,313 @@ test("transitions once and cleans up when artwork identity changes", async () =>
       ],
     });
 
-    assert.equal(boundary.snapshots.at(-1)?.artwork, null);
+    assert.equal(boundary.snapshots.length, snapshotCount);
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "A Moment Apart",
+    );
+    assert.deepEqual(boundary.currentSnapshot().artwork, firstArtwork);
     assert.deepEqual(
       boundary.imageRequests.map(({ imageKey }) => imageKey),
       ["first-artwork-key", "second-artwork-key"],
     );
 
     boundary.resolveImage("image/jpeg", Buffer.from("second artwork"));
-    await waitFor(() => boundary.snapshots.at(-1)?.artwork !== null);
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
     await waitFor(async () => (await readdir(artworkDirectory)).length === 1);
 
     const transitionSnapshots = boundary.snapshots.slice(snapshotCount);
     const secondArtwork = transitionSnapshots.at(-1)?.artwork;
-    assert.equal(transitionSnapshots.length, 2);
-    assert.equal(transitionSnapshots[0]?.artwork, null);
+    assert.equal(transitionSnapshots.length, 1);
+    assert.equal(transitionSnapshots[0]?.nowPlaying?.title, "Across the Room");
     assert.notDeepEqual(secondArtwork, firstArtwork);
     assert.equal(secondArtwork?.revision, transitionSnapshots.at(-1)?.revision);
     assert.equal(
       await readFile(secondArtwork?.path ?? "", "utf8"),
       "second artwork",
+    );
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("supersedes pending artwork when grouping selects a retained Tracked Zone", async () => {
+  await withArtworkTestBoundary(async (boundary) => {
+    const outgoingZone = artworkZone("outgoing-artwork-key", "Outgoing Track");
+    const incomingZone: RoonZone = {
+      ...artworkZone("incoming-artwork-key", "Incoming Track"),
+      zone_id: "zone-whole-home",
+      display_name: "Whole Home",
+    };
+
+    boundary.extensionOptions().core_paired(boundary.core());
+    boundary.emitZones("Subscribed", {
+      zones: [outgoingZone, incomingZone],
+    });
+    const snapshotCount = boundary.snapshots.length;
+
+    boundary.emitZones("Changed", {
+      zones_removed: [outgoingZone.zone_id],
+    });
+
+    assert.deepEqual(
+      boundary.imageRequests.map(({ imageKey }) => imageKey),
+      ["outgoing-artwork-key", "incoming-artwork-key"],
+    );
+
+    boundary.resolveImageRequest(
+      0,
+      "image/jpeg",
+      Buffer.from("superseded artwork"),
+    );
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.resolveImageRequest(
+      1,
+      "image/jpeg",
+      Buffer.from("incoming artwork"),
+    );
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
+    assert.equal(boundary.currentSnapshot().trackedZone?.name, "Whole Home");
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.equal(
+      await readFile(boundary.currentSnapshot().artwork?.path ?? "", "utf8"),
+      "incoming artwork",
+    );
+  });
+});
+
+test("clears artwork when grouping selects a retained zone without an image", async () => {
+  await withArtworkTestBoundary(async (boundary) => {
+    const outgoingZone = artworkZone("outgoing-artwork-key", "Outgoing Track");
+    const incomingZone: RoonZone = {
+      ...artworkZone("unused-artwork-key", "Incoming Track"),
+      zone_id: "zone-whole-home",
+      display_name: "Whole Home",
+      now_playing: {
+        three_line: { line1: "Incoming Track", line2: "Incoming Artist" },
+      },
+    };
+
+    boundary.extensionOptions().core_paired(boundary.core());
+    boundary.emitZones("Subscribed", {
+      zones: [outgoingZone, incomingZone],
+    });
+    boundary.resolveImage("image/jpeg", Buffer.from("outgoing artwork"));
+    await waitFor(() => boundary.currentSnapshot().artwork !== null);
+    const snapshotCount = boundary.snapshots.length;
+
+    boundary.emitZones("Changed", {
+      zones_removed: [outgoingZone.zone_id],
+    });
+
+    assert.equal(boundary.snapshots.length, snapshotCount + 1);
+    assert.equal(boundary.currentSnapshot().trackedZone?.name, "Whole Home");
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.equal(boundary.currentSnapshot().artwork, null);
+    assert.deepEqual(
+      boundary.imageRequests.map(({ imageKey }) => imageKey),
+      ["outgoing-artwork-key"],
+    );
+  });
+});
+
+test("publishes only the latest playback state when incoming artwork arrives", async () => {
+  const context = await prepareArtworkTestContext();
+  const { boundary, zone } = context;
+
+  try {
+    const incomingNowPlaying = {
+      image_key: "incoming-artwork-key",
+      three_line: { line1: "Incoming Track", line2: "Incoming Artist" },
+    };
+    const snapshotCount = boundary.snapshots.length;
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        { ...zone, state: "loading", now_playing: incomingNowPlaying },
+      ],
+    });
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        { ...zone, state: "playing", now_playing: incomingNowPlaying },
+      ],
+    });
+
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.resolveImage("image/jpeg", Buffer.from("incoming artwork"));
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
+    assert.equal(boundary.currentSnapshot().playback, "playing");
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.ok(boundary.currentSnapshot().artwork);
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("coalesces metadata that precedes its changed artwork identity", async () => {
+  const context = await prepareArtworkTestContext();
+  const { boundary, zone } = context;
+
+  try {
+    const metadataChanged: RoonZone = {
+      ...zone,
+      now_playing: {
+        ...zone.now_playing,
+        three_line: { line1: "Incoming Track", line2: "Incoming Artist" },
+      },
+    };
+    const snapshotCount = boundary.snapshots.length;
+    boundary.emitZones("Changed", { zones_changed: [metadataChanged] });
+
+    assert.equal(boundary.snapshots.length, snapshotCount);
+    assert.deepEqual(
+      boundary.imageRequests.map(({ imageKey }) => imageKey),
+      ["same-track-artwork", "same-track-artwork"],
+    );
+
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          ...metadataChanged,
+          now_playing: {
+            ...metadataChanged.now_playing,
+            image_key: "incoming-artwork-key",
+          },
+        },
+      ],
+    });
+    boundary.resolveImageRequest(
+      1,
+      "image/jpeg",
+      Buffer.from("superseded artwork"),
+    );
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.resolveImageRequest(
+      2,
+      "image/jpeg",
+      Buffer.from("incoming artwork"),
+    );
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.equal(
+      await readFile(boundary.currentSnapshot().artwork?.path ?? "", "utf8"),
+      "incoming artwork",
+    );
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("coalesces an artwork identity that precedes its changed metadata", async () => {
+  const context = await prepareArtworkTestContext();
+  const { boundary, zone } = context;
+
+  try {
+    const artworkIdentityChanged: RoonZone = {
+      ...zone,
+      now_playing: {
+        ...zone.now_playing,
+        image_key: "incoming-artwork-key",
+      },
+    };
+    const snapshotCount = boundary.snapshots.length;
+    boundary.emitZones("Changed", {
+      zones_changed: [artworkIdentityChanged],
+    });
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          ...artworkIdentityChanged,
+          now_playing: {
+            ...artworkIdentityChanged.now_playing,
+            three_line: {
+              line1: "Incoming Track",
+              line2: "Incoming Artist",
+            },
+          },
+        },
+      ],
+    });
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.resolveImage("image/jpeg", Buffer.from("incoming artwork"));
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.equal(
+      await readFile(boundary.currentSnapshot().artwork?.path ?? "", "utf8"),
+      "incoming artwork",
+    );
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("holds incoming lyrics with the pending Now Playing composition", async () => {
+  let emitLyrics:
+    | ((
+        event: PrivateLyricEvent,
+        observedNowPlayingIdentity?: string | null,
+      ) => void)
+    | undefined;
+  const context = await prepareArtworkTestContext({
+    createLyricFeedConnection: (options) => {
+      emitLyrics = options.onEvent;
+      return { reportViewed: () => undefined, stop: () => undefined };
+    },
+  });
+  const { boundary, zone } = context;
+
+  try {
+    const incomingZone: RoonZone = {
+      ...zone,
+      now_playing: {
+        image_key: "incoming-artwork-key",
+        seek_position: 0,
+        length: 180,
+        three_line: { line1: "Incoming Track", line2: "Incoming Artist" },
+      },
+    };
+    const snapshotCount = boundary.snapshots.length;
+    boundary.emitZones("Changed", { zones_changed: [incomingZone] });
+    emitLyrics?.(
+      {
+        zone_id: incomingZone.zone_id,
+        key: "incoming-lyrics-key",
+        lrc: "[00:01.00]Incoming lyric",
+      },
+      trackedNowPlaying(incomingZone)?.nowPlayingIdentity,
+    );
+
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.resolveImage("image/jpeg", Buffer.from("incoming artwork"));
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.equal(
+      boundary.currentSnapshot().lyrics?.cues[0]?.text,
+      "Incoming lyric",
     );
   } finally {
     await context.cleanup();

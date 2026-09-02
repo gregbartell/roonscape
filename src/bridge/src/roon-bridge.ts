@@ -5,7 +5,10 @@ import type {
   DisplayConfiguration,
   DisplayConfigurationStore,
 } from "./display-configuration.js";
-import { SnapshotPublicationError } from "./fixture-publisher.js";
+import {
+  SnapshotPublicationError,
+  assertSnapshotPublishable,
+} from "./fixture-publisher.js";
 import {
   startLyricFeed,
   trackedNowPlaying,
@@ -201,6 +204,35 @@ export function startRoonBridge({
   let activeLyrics: PresentationSnapshot["lyrics"] = null;
   let reconcilingTrackedNowPlaying = false;
 
+  const recoverFromPublicationFailure = (
+    state: SnapshotState,
+    error: unknown,
+  ): SnapshotState | undefined => {
+    const failure = snapshotPublicationFailure(error);
+    if (failure.code === "snapshotTooLarge" && state.lyrics !== null) {
+      activeLyrics = null;
+      return { ...state, lyrics: null };
+    }
+    if (failure.code !== lastPublicationFailureCode) {
+      lastPublicationFailureCode = failure.code;
+      reportPublicationFailure(failure.message);
+      updatePublicationFailureStatus(failure.message);
+    }
+    return undefined;
+  };
+  const prepareStateForPublication = (
+    state: SnapshotState,
+  ): SnapshotState | undefined => {
+    try {
+      assertSnapshotPublishable({ revision: revision + 1, ...state });
+      return state;
+    } catch (error) {
+      const recoveredState = recoverFromPublicationFailure(state, error);
+      return recoveredState === undefined
+        ? undefined
+        : prepareStateForPublication(recoveredState);
+    }
+  };
   const publishState: PublishState = (state) => {
     if (
       samePresentation(currentSnapshot, state) &&
@@ -209,21 +241,21 @@ export function startRoonBridge({
       return false;
     }
 
-    const candidate = { revision: revision + 1, ...state };
+    const publishableState = prepareStateForPublication(state);
+    if (publishableState === undefined) {
+      return false;
+    }
+    const candidate = { revision: revision + 1, ...publishableState };
     try {
       publish(candidate);
     } catch (error) {
-      const failure = snapshotPublicationFailure(error);
-      if (failure.code === "snapshotTooLarge" && state.lyrics !== null) {
-        activeLyrics = null;
-        return publishState({ ...state, lyrics: null });
-      }
-      if (failure.code !== lastPublicationFailureCode) {
-        lastPublicationFailureCode = failure.code;
-        reportPublicationFailure(failure.message);
-        updatePublicationFailureStatus(failure.message);
-      }
-      return false;
+      const recoveredState = recoverFromPublicationFailure(
+        publishableState,
+        error,
+      );
+      return recoveredState === undefined
+        ? false
+        : publishState(recoveredState);
     }
 
     revision = candidate.revision;
@@ -239,11 +271,15 @@ export function startRoonBridge({
     currentRevision: () => revision,
     currentSnapshot: () => currentSnapshot,
     currentLyrics: () => activeLyrics,
+    prepareStateForPublication,
   });
 
   const publishLyrics = (lyrics: PresentationSnapshot["lyrics"]): void => {
     activeLyrics = lyrics;
     if (reconcilingTrackedNowPlaying) {
+      return;
+    }
+    if (artworkPresentation.updatePendingLyrics(lyrics)) {
       return;
     }
     const latest = currentSnapshot;
@@ -397,16 +433,7 @@ export function startRoonBridge({
           displayConfigurationStore.save(configuration);
         }
 
-        const artworkIdentityMayHaveChanged =
-          response === "Subscribed" ||
-          [...(event.zones_added ?? []), ...(event.zones_changed ?? [])].some(
-            (zone) => zone.zone_id === trackedZone.zone.zone_id,
-          );
-        artworkPresentation.present(
-          core,
-          { ...trackedZone, trackedOutput },
-          artworkIdentityMayHaveChanged,
-        );
+        artworkPresentation.present(core, { ...trackedZone, trackedOutput });
       });
     },
     coreUnpaired: (core) => {
@@ -454,6 +481,7 @@ interface ArtworkPresentationCoordinatorOptions {
   currentRevision(): number;
   currentSnapshot(): PresentationSnapshot;
   currentLyrics(): PresentationSnapshot["lyrics"];
+  prepareStateForPublication(state: SnapshotState): SnapshotState | undefined;
 }
 
 class ArtworkPresentationCoordinator {
@@ -463,10 +491,14 @@ class ArtworkPresentationCoordinator {
   readonly #currentRevision: () => number;
   readonly #currentSnapshot: () => PresentationSnapshot;
   readonly #currentLyrics: () => PresentationSnapshot["lyrics"];
-  #artworkIdentity: string | null | undefined;
+  readonly #prepareStateForPublication: (
+    state: SnapshotState,
+  ) => SnapshotState | undefined;
+  #artworkIdentity: { zoneId: string; imageKey: string | null } | undefined;
   #cancelScheduledArtworkRetry: (() => void) | undefined;
   #consecutiveFailures = 0;
   #requestGeneration = 0;
+  #pendingState: SnapshotState | undefined;
 
   constructor({
     artworkFiles,
@@ -475,6 +507,7 @@ class ArtworkPresentationCoordinator {
     currentRevision,
     currentSnapshot,
     currentLyrics,
+    prepareStateForPublication,
   }: ArtworkPresentationCoordinatorOptions) {
     this.#artworkFiles = artworkFiles;
     this.#publishState = publishState;
@@ -482,21 +515,16 @@ class ArtworkPresentationCoordinator {
     this.#currentRevision = currentRevision;
     this.#currentSnapshot = currentSnapshot;
     this.#currentLyrics = currentLyrics;
+    this.#prepareStateForPublication = prepareStateForPublication;
   }
 
   cancelAndClear(): Promise<void> {
-    this.#cancelScheduledRetry();
-    this.#requestGeneration += 1;
-    this.#consecutiveFailures = 0;
+    this.#resetArtworkRequest();
     this.#artworkIdentity = undefined;
     return this.#artworkFiles.clear();
   }
 
-  present(
-    core: RoonCore,
-    trackedZone: TrackedZoneState,
-    artworkIdentityMayHaveChanged: boolean,
-  ): void {
+  present(core: RoonCore, trackedZone: TrackedZoneState): void {
     const { zone } = trackedZone;
     const currentSnapshot = this.#currentSnapshot();
     const available = availableState(trackedZone);
@@ -504,9 +532,12 @@ class ArtworkPresentationCoordinator {
       ...available,
       lyrics: available.progress === null ? null : this.#currentLyrics(),
     };
-    const stateChanged = !samePresentationExceptArtwork(currentSnapshot, state);
 
     if (zone.state === "stopped") {
+      const stateChanged = !samePresentationExceptArtwork(
+        currentSnapshot,
+        state,
+      );
       const published = this.#publishState(state);
       if (stateChanged && !published) {
         return;
@@ -515,50 +546,89 @@ class ArtworkPresentationCoordinator {
       return;
     }
 
-    const imageKey = zone.now_playing?.image_key;
-    const artworkIdentity = imageKey ?? null;
-    const artworkIdentityChanged =
-      artworkIdentityMayHaveChanged &&
-      this.#artworkIdentity !== artworkIdentity;
-
-    if (!stateChanged && !artworkIdentityChanged) {
-      this.#publishState({ ...state, artwork: currentSnapshot.artwork });
+    const publishableState = this.#prepareStateForPublication(state);
+    if (publishableState === undefined) {
       return;
     }
+
+    const imageKey = zone.now_playing?.image_key;
+    const artworkIdentity = {
+      zoneId: zone.zone_id,
+      imageKey: imageKey ?? null,
+    };
+    const artworkIdentityChanged =
+      this.#artworkIdentity === undefined ||
+      this.#artworkIdentity.zoneId !== artworkIdentity.zoneId ||
+      this.#artworkIdentity.imageKey !== artworkIdentity.imageKey;
+    const imageService = core.services.RoonApiImage;
 
     if (!artworkIdentityChanged) {
-      this.#publishState({ ...state, artwork: currentSnapshot.artwork });
-      return;
-    }
-
-    const retainArtworkWhileLoading =
-      zone.state === "loading" && imageKey !== undefined;
-    if (
-      stateChanged &&
-      !this.#publishState({
-        ...state,
-        artwork: retainArtworkWhileLoading ? currentSnapshot.artwork : null,
-      })
-    ) {
+      if (this.#pendingState !== undefined) {
+        this.#pendingState = publishableState;
+        return;
+      }
+      if (
+        !sameNowPlaying(
+          currentSnapshot.nowPlaying,
+          publishableState.nowPlaying,
+        ) &&
+        imageKey !== undefined &&
+        imageService !== undefined
+      ) {
+        // Re-resolve a retained key so a following image-key report can
+        // supersede this pending composition before either becomes visible.
+        this.#beginArtworkRequest(publishableState, imageService, imageKey);
+        return;
+      }
+      this.#publishState({
+        ...publishableState,
+        artwork: currentSnapshot.artwork,
+      });
       return;
     }
 
     this.#artworkIdentity = artworkIdentity;
-    this.#cancelScheduledRetry();
-    this.#consecutiveFailures = 0;
-    this.#requestGeneration += 1;
-    const imageService = core.services.RoonApiImage;
     if (imageKey === undefined || imageService === undefined) {
-      this.#publishLatestWithArtwork(null);
+      this.#resetArtworkRequest();
+      this.#publishState({ ...publishableState, artwork: null });
       void this.#artworkFiles.clear().catch(reportArtworkError);
       return;
     }
 
-    if (stateChanged && !retainArtworkWhileLoading) {
-      void this.#artworkFiles.clear().catch(reportArtworkError);
-    }
+    this.#beginArtworkRequest(publishableState, imageService, imageKey);
+  }
 
+  updatePendingLyrics(lyrics: PresentationSnapshot["lyrics"]): boolean {
+    const pending = this.#pendingState;
+    if (pending === undefined) {
+      return false;
+    }
+    const candidate = {
+      ...pending,
+      lyrics: pending.progress === null ? null : lyrics,
+    };
+    const publishableState = this.#prepareStateForPublication(candidate);
+    if (publishableState !== undefined) {
+      this.#pendingState = publishableState;
+    }
+    return true;
+  }
+
+  #beginArtworkRequest(
+    state: SnapshotState,
+    imageService: RoonImageService,
+    imageKey: string,
+  ): void {
+    this.#resetArtworkRequest();
+    this.#pendingState = state;
     this.#requestArtwork(imageService, imageKey);
+  }
+
+  #resetArtworkRequest(): void {
+    this.#cancelScheduledRetry();
+    this.#requestGeneration += 1;
+    this.#consecutiveFailures = 0;
+    this.#pendingState = undefined;
   }
 
   #requestArtwork(imageService: RoonImageService, imageKey: string): void {
@@ -607,7 +677,7 @@ class ArtworkPresentationCoordinator {
       return;
     }
 
-    this.#publishLatestWithArtwork(reference);
+    this.#publishPendingWithArtwork(reference);
     await this.#artworkFiles.commit(reference);
     this.#consecutiveFailures = 0;
   }
@@ -621,7 +691,7 @@ class ArtworkPresentationCoordinator {
       return;
     }
 
-    this.#publishLatestWithArtwork(null);
+    this.#publishPendingWithArtwork(null);
     void this.#artworkFiles.clear().catch(reportArtworkError);
     this.#consecutiveFailures += 1;
     const delayMilliseconds = Math.min(
@@ -655,6 +725,16 @@ class ArtworkPresentationCoordinator {
       artwork,
       lyrics: latest.lyrics,
     });
+  }
+
+  #publishPendingWithArtwork(artwork: PresentationSnapshot["artwork"]): void {
+    const pending = this.#pendingState;
+    this.#pendingState = undefined;
+    if (pending === undefined) {
+      this.#publishLatestWithArtwork(artwork);
+      return;
+    }
+    this.#publishState({ ...pending, artwork });
   }
 }
 
@@ -770,6 +850,13 @@ function samePresentationExceptArtwork(
     ...state,
     artwork: snapshot.artwork,
   });
+}
+
+function sameNowPlaying(
+  left: PresentationSnapshot["nowPlaying"],
+  right: PresentationSnapshot["nowPlaying"],
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function sameZonePresentationSource(
