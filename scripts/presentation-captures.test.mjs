@@ -318,9 +318,7 @@ test("plans early middle and near-complete progress evidence", async () => {
         const fixture = JSON.parse(
           await readFile(new URL(`../${capture.fixture}`, import.meta.url)),
         );
-        return (
-          fixture.progress.positionSeconds / fixture.progress.durationSeconds
-        );
+        return fixture.timing.position.seconds / fixture.timing.durationSeconds;
       }),
     );
     assert.ok(fractions[0] < 0.2, "the early rail should remain below 20%");

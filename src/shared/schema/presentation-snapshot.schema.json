@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://roonscape.local/schema/presentation-snapshot-v3.json",
+  "$id": "https://roonscape.local/schema/presentation-snapshot-v4.json",
   "title": "RoonScape presentation snapshot",
   "type": "object",
   "additionalProperties": false,
@@ -12,14 +12,14 @@
     "trackedOutput",
     "trackedZone",
     "nowPlaying",
-    "progress",
+    "timing",
     "artwork",
     "lyrics"
   ],
   "properties": {
     "schemaVersion": {
       "description": "Version of this complete snapshot contract.",
-      "const": 3
+      "const": 4
     },
     "revision": {
       "description": "Monotonic presentation revision. A publisher MUST increase it whenever the presentation changes and MUST NOT reuse a lower value during its lifetime.",
@@ -58,8 +58,9 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name"],
+          "required": ["id", "name"],
           "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 256 },
             "name": { "type": "string", "minLength": 1, "maxLength": 256 }
           }
         },
@@ -90,17 +91,36 @@
         { "type": "null" }
       ]
     },
-    "progress": {
+    "timing": {
       "oneOf": [
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["positionSeconds", "durationSeconds", "sampledAt"],
+          "required": ["position", "durationSeconds"],
           "properties": {
-            "positionSeconds": { "type": "number", "minimum": 0 },
-            "durationSeconds": { "type": "number", "exclusiveMinimum": 0 },
-            "sampledAt": { "type": "string", "format": "date-time" }
-          }
+            "position": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["seconds", "sampledAt"],
+                  "properties": {
+                    "seconds": { "type": "number", "minimum": 0 },
+                    "sampledAt": { "type": "string", "format": "date-time" }
+                  }
+                },
+                { "type": "null" }
+              ]
+            },
+            "durationSeconds": {
+              "type": ["number", "null"],
+              "exclusiveMinimum": 0
+            }
+          },
+          "anyOf": [
+            { "properties": { "position": { "type": "object" } } },
+            { "properties": { "durationSeconds": { "type": "number" } } }
+          ]
         },
         { "type": "null" }
       ]
@@ -167,7 +187,7 @@
         "properties": {
           "playback": { "type": "null" },
           "nowPlaying": { "type": "null" },
-          "progress": { "type": "null" },
+          "timing": { "type": "null" },
           "artwork": { "type": "null" },
           "lyrics": { "type": "null" }
         }
@@ -208,7 +228,7 @@
       "then": {
         "properties": {
           "nowPlaying": { "type": "null" },
-          "progress": { "type": "null" },
+          "timing": { "type": "null" },
           "artwork": { "type": "null" },
           "lyrics": { "type": "null" }
         }

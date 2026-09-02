@@ -144,12 +144,17 @@ test("re-anchors Playing at fixture launch before using the shared publisher", a
       const [line] = (await once(lines, "line")) as [string];
       const published = JSON.parse(line) as PresentationSnapshot;
 
-      assert.deepEqual(published.progress, {
-        positionSeconds: 171,
+      assert.deepEqual(published.timing, {
+        position: {
+          seconds: 171,
+          sampledAt: "2030-01-02T03:04:05.000Z",
+        },
         durationSeconds: 266,
-        sampledAt: "2030-01-02T03:04:05.000Z",
       });
-      assert.equal(snapshot.progress?.sampledAt, "2026-08-15T19:20:00Z");
+      assert.equal(
+        snapshot.timing?.position?.sampledAt,
+        "2026-08-15T19:20:00Z",
+      );
       client.destroy();
     } finally {
       await publisher.close();
@@ -157,7 +162,7 @@ test("re-anchors Playing at fixture launch before using the shared publisher", a
   });
 });
 
-test("does not re-anchor Paused or Loading fixture progress", async () => {
+test("does not re-anchor Paused or Starting fixture timing", async () => {
   for (const fixtureName of ["paused.json", "loading.json"]) {
     await withTaskDirectory(async (runtimeDirectory) => {
       const socketPath = path.join(runtimeDirectory, "roonscape.sock");
@@ -174,7 +179,7 @@ test("does not re-anchor Paused or Loading fixture progress", async () => {
         const [line] = (await once(lines, "line")) as [string];
         const published = JSON.parse(line) as PresentationSnapshot;
 
-        assert.deepEqual(published.progress, snapshot.progress);
+        assert.deepEqual(published.timing, snapshot.timing);
         client.destroy();
       } finally {
         await publisher.close();

@@ -42,14 +42,17 @@ test("ordinary Fixture Mode starts predictably at Playing", async () => {
       assert.deepEqual(published, {
         ...expected,
         revision: 1,
-        progress: {
-          ...expected.progress,
-          sampledAt: published.progress?.sampledAt,
+        timing: {
+          ...expected.timing,
+          position: {
+            ...expected.timing?.position,
+            sampledAt: published.timing?.position?.sampledAt,
+          },
         },
       });
       assert.notEqual(
-        published.progress?.sampledAt,
-        expected.progress?.sampledAt,
+        published.timing?.position?.sampledAt,
+        expected.timing?.position?.sampledAt,
       );
       assert.equal((await stat(controlSocketPath)).mode & 0o777, 0o600);
     } finally {
@@ -175,8 +178,8 @@ test("navigation publishes all Fixture Scenarios in order with wraparound revisi
         catalog.scenarios.length + 1,
       );
       assert.notEqual(
-        wrappedPlaying.progress?.sampledAt,
-        observed[0]?.progress?.sampledAt,
+        wrappedPlaying.timing?.position?.sampledAt,
+        observed[0]?.timing?.position?.sampledAt,
       );
 
       await sendNavigationIntent(fixture.child, controlSocketPath, "Previous");
@@ -458,13 +461,22 @@ function assertSelectedSnapshot(
   assert.deepEqual(actual, {
     ...expected,
     revision,
-    progress:
-      expected.playback === "playing" && expected.progress !== null
-        ? { ...expected.progress, sampledAt: actual.progress?.sampledAt }
-        : expected.progress,
+    timing:
+      expected.playback === "playing" && expected.timing?.position != null
+        ? {
+            ...expected.timing,
+            position: {
+              ...expected.timing.position,
+              sampledAt: actual.timing?.position?.sampledAt,
+            },
+          }
+        : expected.timing,
   });
-  if (expected.playback === "playing" && expected.progress !== null) {
-    assert.notEqual(actual.progress?.sampledAt, expected.progress.sampledAt);
+  if (expected.playback === "playing" && expected.timing?.position != null) {
+    assert.notEqual(
+      actual.timing?.position?.sampledAt,
+      expected.timing.position.sampledAt,
+    );
   }
 }
 

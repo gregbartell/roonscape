@@ -1,12 +1,12 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "revision": 2,
   "availability": "disconnected",
   "playback": null,
   "trackedOutput": null,
   "trackedZone": null,
   "nowPlaying": null,
-  "progress": null,
   "artwork": null,
-  "lyrics": null
+  "lyrics": null,
+  "timing": null
 }

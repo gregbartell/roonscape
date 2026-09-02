@@ -5,7 +5,8 @@ use std::time::{Duration, UNIX_EPOCH};
 use roonscape_renderer::{
     InactivityConfiguration, InactivityTransform, LayoutOffset, LyricCue, NowPlaying, Playback,
     Presentation, PresentationIdentity, PresentationState, PresentationTime, PresentationUpdate,
-    SynchronizedLyrics, classify_presentation_update, parse_snapshot, presentation_from_snapshot,
+    SynchronizedLyrics, Timing, TimingPosition, classify_presentation_update, parse_snapshot,
+    presentation_from_snapshot,
 };
 
 const PLAYING_SAMPLED_AT: u64 = 1_786_821_600;
@@ -33,6 +34,42 @@ fn snapshot_with_lyrics(
             .collect(),
     });
     snapshot
+}
+
+fn snapshot_with_timing(
+    fixture_name: &str,
+    revision: u64,
+    position_seconds: Option<f64>,
+    duration_seconds: Option<f64>,
+) -> roonscape_renderer::PresentationSnapshot {
+    let mut snapshot =
+        parse_snapshot(&support::fixture(fixture_name)).expect("fixture should be valid");
+    snapshot.revision = revision;
+    snapshot.timing = if position_seconds.is_none() && duration_seconds.is_none() {
+        None
+    } else {
+        Some(Timing {
+            position: position_seconds.map(|seconds| TimingPosition {
+                seconds,
+                sampled_at: "2026-08-15T19:20:00Z".to_owned(),
+            }),
+            duration_seconds,
+        })
+    };
+    snapshot
+}
+
+fn now_playing(
+    state: &PresentationState,
+    monotonic_seconds: u64,
+) -> roonscape_renderer::NowPlayingPresentation {
+    let Presentation::NowPlaying(presentation) = state
+        .presentation_at(Duration::from_secs(monotonic_seconds))
+        .expect("state should remain presentable")
+    else {
+        panic!("expected Now Playing");
+    };
+    presentation
 }
 
 #[test]
@@ -93,10 +130,13 @@ fn preserves_blank_cues_and_freezes_the_reel_while_paused() {
     ];
     let mut snapshot = snapshot_with_lyrics("paused.json", &cues);
     snapshot
-        .progress
+        .timing
         .as_mut()
         .expect("Paused fixture has progress")
-        .position_seconds = 171.0;
+        .position
+        .as_mut()
+        .expect("Paused fixture has position")
+        .seconds = 171.0;
     let state = PresentationState::new(snapshot, presentation_time(0, PLAYING_SAMPLED_AT))
         .expect("lyric snapshot should be presentable");
 
@@ -117,10 +157,13 @@ fn preserves_blank_cues_and_freezes_the_reel_while_paused() {
 
     let mut approaching_snapshot = snapshot_with_lyrics("paused.json", &cues);
     approaching_snapshot
-        .progress
+        .timing
         .as_mut()
         .expect("Paused fixture has progress")
-        .position_seconds = 173.0;
+        .position
+        .as_mut()
+        .expect("Paused fixture has position")
+        .seconds = 173.0;
     approaching_snapshot.revision += 1;
     let approaching = PresentationState::new(
         approaching_snapshot,
@@ -151,10 +194,13 @@ fn classifies_cue_changes_in_place_but_lyric_entry_as_a_composition_change() {
     let mut advanced = snapshot_with_lyrics("playing.json", &[(170.0, "First"), (180.0, "Second")]);
     advanced.revision += 1;
     advanced
-        .progress
+        .timing
         .as_mut()
         .expect("Playing fixture has progress")
-        .position_seconds = 180.0;
+        .position
+        .as_mut()
+        .expect("Playing fixture has position")
+        .seconds = 180.0;
     assert_eq!(
         state
             .update(advanced, presentation_time(1, PLAYING_SAMPLED_AT))
@@ -318,11 +364,11 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
 }
 
 #[test]
-fn legacy_output_unavailable_without_a_saved_name_omits_the_identity() {
+fn output_unavailable_without_a_saved_name_omits_the_identity() {
     let snapshot = parse_snapshot(
-        r#"{"schemaVersion":3,"revision":1,"availability":"outputUnavailable","playback":null,"trackedOutput":null,"trackedZone":null,"nowPlaying":null,"progress":null,"artwork":null,"lyrics":null}"#,
+        r#"{"schemaVersion":4,"revision":1,"availability":"outputUnavailable","playback":null,"trackedOutput":null,"trackedZone":null,"nowPlaying":null,"timing":null,"artwork":null,"lyrics":null}"#,
     )
-    .expect("legacy Output unavailable should remain valid");
+    .expect("Output unavailable should remain valid without a saved name");
     let Presentation::FullField(presentation) =
         presentation_from_snapshot(&snapshot).expect("legacy snapshot should be presentable")
     else {
@@ -503,12 +549,15 @@ fn reanchors_playing_progress_when_a_new_source_sample_arrives() {
     let mut seeked =
         parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
     seeked.revision = 8;
-    let seeked_progress = seeked
-        .progress
+    let seeked_position = seeked
+        .timing
         .as_mut()
-        .expect("Playing fixture should contain progress");
-    seeked_progress.position_seconds = 30.0;
-    seeked_progress.sampled_at = "2026-08-15T19:20:05Z".to_owned();
+        .expect("Playing fixture should contain timing")
+        .position
+        .as_mut()
+        .expect("Playing fixture should contain position");
+    seeked_position.seconds = 30.0;
+    seeked_position.sampled_at = "2026-08-15T19:20:05Z".to_owned();
 
     state
         .update(seeked, presentation_time(5, PLAYING_SAMPLED_AT + 5))
@@ -532,10 +581,13 @@ fn clamps_source_and_locally_advanced_progress_at_duration() {
         let mut snapshot = parse_snapshot(&support::fixture("playing.json"))
             .expect("Playing fixture should be valid");
         snapshot
-            .progress
+            .timing
             .as_mut()
             .expect("Playing fixture should have progress")
-            .position_seconds = source_position;
+            .position
+            .as_mut()
+            .expect("Playing fixture should have position")
+            .seconds = source_position;
         let state = PresentationState::new(snapshot, presentation_time(0, PLAYING_SAMPLED_AT))
             .expect("clamping fixture should anchor a presentation");
         let presentation = state
@@ -677,7 +729,7 @@ fn hides_progress_for_indeterminate_now_playing() {
 }
 
 #[test]
-fn distinguishes_progress_samples_from_visual_revision_changes() {
+fn updates_authoritative_and_provisional_timing_in_place() {
     let initial =
         parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
     let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
@@ -686,10 +738,13 @@ fn distinguishes_progress_samples_from_visual_revision_changes() {
         parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
     progress_sample.revision = 8;
     progress_sample
-        .progress
+        .timing
         .as_mut()
         .expect("Playing fixture should include progress")
-        .position_seconds = 83.0;
+        .position
+        .as_mut()
+        .expect("Playing fixture should include position")
+        .seconds = 83.0;
 
     let progress_update = state
         .update(
@@ -702,11 +757,11 @@ fn distinguishes_progress_samples_from_visual_revision_changes() {
     let mut indeterminate =
         parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
     indeterminate.revision = 9;
-    indeterminate.progress = None;
+    indeterminate.timing = None;
     let progress_disappeared = state
         .update(indeterminate, presentation_time(2, PLAYING_SAMPLED_AT + 2))
         .expect("indeterminate timing should update the presentation");
-    assert_eq!(progress_disappeared, PresentationUpdate::TransitionRequired);
+    assert_eq!(progress_disappeared, PresentationUpdate::InPlace);
 
     let mut determinate_again =
         parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid");
@@ -717,7 +772,7 @@ fn distinguishes_progress_samples_from_visual_revision_changes() {
             presentation_time(3, PLAYING_SAMPLED_AT + 3),
         )
         .expect("determinate timing should update the presentation");
-    assert_eq!(progress_appeared, PresentationUpdate::TransitionRequired);
+    assert_eq!(progress_appeared, PresentationUpdate::InPlace);
 
     let mut revised = parse_snapshot(&support::fixture("artwork-revision-changed.json"))
         .expect("artwork revision fixture should be valid");
@@ -793,7 +848,7 @@ fn every_composition_field_requests_one_coordinated_transition() {
         .expect("Playing fixture should contain Now Playing")
         .title = Some("A different track".to_owned());
     let mut progress_presence = playing_snapshot();
-    progress_presence.progress = None;
+    progress_presence.timing = None;
     let mut artwork = playing_snapshot();
     let artwork_reference = artwork
         .artwork
@@ -802,11 +857,19 @@ fn every_composition_field_requests_one_coordinated_transition() {
     artwork_reference.revision = 12;
     artwork_reference.path = "src/shared/fixtures/artwork/revised.jpg".to_owned();
 
-    for (index, (field, mut changed)) in [
-        ("identity", identity),
-        ("metadata", metadata),
-        ("progress presence", progress_presence),
-        ("artwork and palette", artwork),
+    for (index, (field, mut changed, expected_update)) in [
+        ("identity", identity, PresentationUpdate::TransitionRequired),
+        ("metadata", metadata, PresentationUpdate::TransitionRequired),
+        (
+            "timing presence",
+            progress_presence,
+            PresentationUpdate::InPlace,
+        ),
+        (
+            "artwork and palette",
+            artwork,
+            PresentationUpdate::TransitionRequired,
+        ),
     ]
     .into_iter()
     .enumerate()
@@ -823,8 +886,8 @@ fn every_composition_field_requests_one_coordinated_transition() {
                     presentation_time(index as u64 + 1, PLAYING_SAMPLED_AT + index as u64 + 1),
                 )
                 .expect("visual snapshot change should be accepted"),
-            PresentationUpdate::TransitionRequired,
-            "a {field} change should replace the complete presentation once"
+            expected_update,
+            "{field} should use its intended update path"
         );
     }
 }
@@ -1200,4 +1263,446 @@ fn clears_now_playing_while_the_bridge_is_disconnected_and_recovers_after_reconn
         panic!("reconnected current state should replace the Disconnected presentation");
     };
     assert_eq!(reconnected.status.label, "PAUSED");
+}
+
+#[test]
+fn continues_from_each_retained_authoritative_timing_dimension_and_reconciles_in_place() {
+    let initial = snapshot_with_timing("playing.json", 1, Some(10.0), Some(100.0));
+    let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("complete Authoritative Timing should anchor the state");
+
+    let missing_position = snapshot_with_timing("playing.json", 2, None, Some(100.0));
+    assert_eq!(
+        state
+            .update(
+                missing_position,
+                presentation_time(1, PLAYING_SAMPLED_AT + 1),
+            )
+            .expect("partial timing should be accepted"),
+        PresentationUpdate::InPlace
+    );
+    assert_eq!(
+        now_playing(&state, 3)
+            .progress
+            .map(|progress| progress.elapsed),
+        Some("0:13".to_owned())
+    );
+
+    let mut missing_duration = snapshot_with_timing("playing.json", 3, Some(20.0), None);
+    missing_duration
+        .timing
+        .as_mut()
+        .and_then(|timing| timing.position.as_mut())
+        .expect("snapshot should carry position")
+        .sampled_at = "2026-08-15T19:20:03Z".to_owned();
+    state
+        .update(
+            missing_duration,
+            presentation_time(3, PLAYING_SAMPLED_AT + 3),
+        )
+        .expect("the current position should replace only retained position");
+    assert_eq!(
+        now_playing(&state, 4)
+            .progress
+            .map(|progress| progress.elapsed),
+        Some("0:21".to_owned())
+    );
+
+    let mut reconciled = snapshot_with_timing("playing.json", 4, Some(5.0), Some(100.0));
+    reconciled
+        .timing
+        .as_mut()
+        .and_then(|timing| timing.position.as_mut())
+        .expect("snapshot should carry position")
+        .sampled_at = "2026-08-15T19:20:04Z".to_owned();
+    assert_eq!(
+        state
+            .update(reconciled, presentation_time(4, PLAYING_SAMPLED_AT + 4),)
+            .expect("Authoritative Timing should reconcile immediately"),
+        PresentationUpdate::InPlace
+    );
+    assert_eq!(
+        now_playing(&state, 4)
+            .progress
+            .map(|progress| progress.elapsed),
+        Some("0:05".to_owned())
+    );
+}
+
+#[test]
+fn zero_anchors_changed_now_playing_and_keeps_the_original_grace_when_duration_arrives_later() {
+    for fixture_name in ["playing.json", "paused.json", "loading.json"] {
+        let initial = snapshot_with_timing("playing.json", 1, Some(50.0), Some(100.0));
+        let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+            .expect("initial timing should be complete");
+        let mut changed = snapshot_with_timing(fixture_name, 2, None, None);
+        changed
+            .now_playing
+            .as_mut()
+            .expect("fixture should contain Now Playing")
+            .title = Some("Changed track".to_owned());
+        state
+            .update(changed, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+            .expect("changed Now Playing should begin grace");
+        assert_eq!(now_playing(&state, 2).progress, None);
+
+        let mut duration = snapshot_with_timing(fixture_name, 3, None, Some(80.0));
+        duration
+            .now_playing
+            .as_mut()
+            .expect("fixture should contain Now Playing")
+            .title = Some("Changed track".to_owned());
+        state
+            .update(duration, presentation_time(3, PLAYING_SAMPLED_AT + 3))
+            .expect("duration should arrive within the original grace");
+        let expected = if fixture_name == "playing.json" {
+            "0:02"
+        } else {
+            "0:00"
+        };
+        assert_eq!(
+            now_playing(&state, 3)
+                .progress
+                .map(|progress| progress.elapsed),
+            Some(expected.to_owned())
+        );
+        assert_eq!(
+            now_playing(&state, 6).progress,
+            None,
+            "{fixture_name} grace should expire five monotonic seconds after changed Now Playing"
+        );
+    }
+}
+
+#[test]
+fn compatible_metadata_and_unrelated_snapshots_do_not_restart_grace() {
+    let initial = snapshot_with_timing("playing.json", 1, Some(10.0), Some(100.0));
+    let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("complete timing should be valid");
+    let mut incomplete = snapshot_with_timing("playing.json", 2, None, Some(100.0));
+    incomplete
+        .now_playing
+        .as_mut()
+        .expect("fixture should contain Now Playing")
+        .artist = None;
+    state
+        .update(incomplete, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+        .expect("compatible missing metadata should start timing grace");
+
+    let mut enriched = snapshot_with_timing("playing.json", 3, None, Some(100.0));
+    enriched
+        .artwork
+        .as_mut()
+        .expect("fixture has artwork")
+        .revision += 1;
+    state
+        .update(enriched, presentation_time(4, PLAYING_SAMPLED_AT + 4))
+        .expect("metadata enrichment and artwork should not restart grace");
+    assert_eq!(now_playing(&state, 6).progress, None);
+
+    let later_incomplete = snapshot_with_timing("playing.json", 4, None, Some(100.0));
+    state
+        .update(
+            later_incomplete,
+            presentation_time(7, PLAYING_SAMPLED_AT + 7),
+        )
+        .expect("post-expiry timing should remain valid");
+    assert_eq!(now_playing(&state, 7).progress, None);
+
+    let complete = snapshot_with_timing("playing.json", 5, Some(30.0), Some(100.0));
+    state
+        .update(complete, presentation_time(8, PLAYING_SAMPLED_AT + 8))
+        .expect("complete timing should re-arm grace");
+    let missing_again = snapshot_with_timing("playing.json", 6, None, Some(100.0));
+    state
+        .update(missing_again, presentation_time(9, PLAYING_SAMPLED_AT + 9))
+        .expect("a later loss should begin a new grace");
+    assert!(now_playing(&state, 9).progress.is_some());
+}
+
+#[test]
+fn retained_metadata_detects_a_conflict_after_an_absent_field_observation() {
+    let initial = snapshot_with_timing("playing.json", 1, Some(40.0), Some(100.0));
+    let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("initial state should be valid");
+    let mut absent = snapshot_with_timing("playing.json", 2, None, Some(100.0));
+    absent
+        .now_playing
+        .as_mut()
+        .expect("fixture has Now Playing")
+        .title = None;
+    state
+        .update(absent, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+        .expect("an absent field remains compatible");
+
+    let mut conflict = snapshot_with_timing("playing.json", 3, None, Some(100.0));
+    conflict
+        .now_playing
+        .as_mut()
+        .expect("fixture has Now Playing")
+        .title = Some("Conflicting title".to_owned());
+    state
+        .update(conflict, presentation_time(2, PLAYING_SAMPLED_AT + 2))
+        .expect("a later conflict should begin changed Now Playing");
+    assert_eq!(
+        now_playing(&state, 2)
+            .progress
+            .map(|progress| progress.elapsed),
+        Some("0:00".to_owned())
+    );
+}
+
+#[test]
+fn excludes_zero_based_estimates_on_initial_subscription_reconnection_and_zone_change() {
+    let initial_partial = snapshot_with_timing("playing.json", 1, None, Some(100.0));
+    let state = PresentationState::new(
+        initial_partial.clone(),
+        presentation_time(0, PLAYING_SAMPLED_AT),
+    )
+    .expect("initial partial timing should remain presentable");
+    assert_eq!(now_playing(&state, 0).progress, None);
+
+    let mut reconnected = PresentationState::disconnected();
+    reconnected
+        .update(
+            initial_partial,
+            presentation_time(1, PLAYING_SAMPLED_AT + 1),
+        )
+        .expect("reconnection should accept partial timing");
+    assert_eq!(now_playing(&reconnected, 1).progress, None);
+
+    let initial = snapshot_with_timing("playing.json", 1, Some(40.0), Some(100.0));
+    let mut moved = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("initial complete timing should be valid");
+    let mut new_zone = snapshot_with_timing("playing.json", 2, None, Some(100.0));
+    let zone = new_zone
+        .tracked_zone
+        .as_mut()
+        .expect("fixture should identify its Tracked Zone");
+    zone.id = "zone-kitchen".to_owned();
+    zone.name = "Kitchen".to_owned();
+    moved
+        .update(new_zone, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+        .expect("Tracked Zone change should remain presentable");
+    assert_eq!(now_playing(&moved, 1).progress, None);
+}
+
+#[test]
+fn preserves_incoming_authoritative_timing_on_reconnection_and_zone_change() {
+    let complete = snapshot_with_timing("playing.json", 1, Some(20.0), Some(100.0));
+    let mut reconnected = PresentationState::disconnected();
+    reconnected
+        .update(complete.clone(), presentation_time(1, PLAYING_SAMPLED_AT))
+        .expect("reconnection should retain incoming Authoritative Timing");
+    assert!(now_playing(&reconnected, 1).progress.is_some());
+
+    let mut moved = PresentationState::new(complete, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("initial complete timing should be valid");
+    let mut new_zone = snapshot_with_timing("playing.json", 2, Some(30.0), Some(100.0));
+    let zone = new_zone
+        .tracked_zone
+        .as_mut()
+        .expect("fixture should identify its Tracked Zone");
+    zone.id = "zone-kitchen".to_owned();
+    zone.name = "Kitchen".to_owned();
+    moved
+        .update(new_zone, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+        .expect("Tracked Zone change should retain incoming Authoritative Timing");
+    assert_eq!(
+        now_playing(&moved, 1)
+            .progress
+            .map(|progress| progress.elapsed),
+        Some("0:31".to_owned())
+    );
+}
+
+#[test]
+fn combines_complementary_partial_samples_from_initial_subscription() {
+    let initial = snapshot_with_timing("playing.json", 1, Some(10.0), None);
+    let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("initial position-only timing should be valid");
+    let duration = snapshot_with_timing("playing.json", 2, None, Some(100.0));
+    state
+        .update(duration, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+        .expect("compatible duration should combine within the original grace");
+    assert_eq!(
+        now_playing(&state, 1)
+            .progress
+            .map(|progress| progress.elapsed),
+        Some("0:11".to_owned())
+    );
+}
+
+#[test]
+fn selects_lyrics_from_authoritative_position_without_duration_and_both_provisional_forms() {
+    let cues = [(5.0, "Current"), (20.0, "Later")];
+    let mut position_only = snapshot_with_timing("playing.json", 1, Some(5.0), None);
+    position_only.lyrics = snapshot_with_lyrics("playing.json", &cues).lyrics;
+    let state = PresentationState::new(position_only, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("position-only timing should be presentable");
+    assert_eq!(
+        now_playing(&state, 0).lyrics.map(|lyrics| lyrics.current),
+        Some("Current".to_owned())
+    );
+
+    let mut initial = snapshot_with_timing("playing.json", 1, Some(5.0), Some(100.0));
+    initial.lyrics = snapshot_with_lyrics("playing.json", &cues).lyrics;
+    let mut compatible = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("complete lyric timing should be presentable");
+    let mut missing_position = snapshot_with_timing("playing.json", 2, None, Some(100.0));
+    missing_position.lyrics = snapshot_with_lyrics("playing.json", &cues).lyrics;
+    compatible
+        .update(
+            missing_position,
+            presentation_time(1, PLAYING_SAMPLED_AT + 1),
+        )
+        .expect("compatible timing loss should retain lyric position");
+    assert_eq!(
+        now_playing(&compatible, 1)
+            .lyrics
+            .map(|lyrics| lyrics.current),
+        Some("Current".to_owned())
+    );
+
+    let mut changed_without_duration = snapshot_with_timing("playing.json", 3, None, None);
+    changed_without_duration
+        .now_playing
+        .as_mut()
+        .expect("fixture has Now Playing")
+        .title = Some("Changed lyric track".to_owned());
+    changed_without_duration.lyrics =
+        snapshot_with_lyrics("playing.json", &[(0.0, "Opening")]).lyrics;
+    compatible
+        .update(
+            changed_without_duration,
+            presentation_time(2, PLAYING_SAMPLED_AT + 2),
+        )
+        .expect("changed Now Playing should zero-anchor lyrics");
+    assert_eq!(now_playing(&compatible, 2).lyrics, None);
+
+    let mut changed_with_duration = snapshot_with_timing("playing.json", 4, None, Some(100.0));
+    changed_with_duration
+        .now_playing
+        .as_mut()
+        .expect("fixture has Now Playing")
+        .title = Some("Changed lyric track".to_owned());
+    changed_with_duration.lyrics = snapshot_with_lyrics("playing.json", &[(0.0, "Opening")]).lyrics;
+    compatible
+        .update(
+            changed_with_duration,
+            presentation_time(3, PLAYING_SAMPLED_AT + 3),
+        )
+        .expect("authoritative duration should activate the zero anchor");
+    assert_eq!(
+        now_playing(&compatible, 3)
+            .lyrics
+            .map(|lyrics| lyrics.current),
+        Some("Opening".to_owned())
+    );
+}
+
+#[test]
+fn saturates_provisional_position_then_reconciles_or_expires() {
+    let initial = snapshot_with_timing("playing.json", 1, Some(98.0), Some(100.0));
+    let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("initial state should be valid");
+    let missing = snapshot_with_timing("playing.json", 2, None, Some(100.0));
+    state
+        .update(missing, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+        .expect("missing position should begin grace");
+    let saturated = now_playing(&state, 4)
+        .progress
+        .expect("Provisional Timing should remain determinate");
+    assert_eq!(saturated.fraction, 1.0);
+    assert_eq!(saturated.elapsed, "1:40");
+
+    let mut reconciled = snapshot_with_timing("playing.json", 3, Some(50.0), Some(100.0));
+    reconciled
+        .timing
+        .as_mut()
+        .and_then(|timing| timing.position.as_mut())
+        .expect("snapshot should carry position")
+        .sampled_at = "2026-08-15T19:20:04Z".to_owned();
+    state
+        .update(reconciled, presentation_time(4, PLAYING_SAMPLED_AT + 4))
+        .expect("Authoritative Timing should replace saturation");
+    assert_eq!(
+        now_playing(&state, 4)
+            .progress
+            .map(|progress| progress.elapsed),
+        Some("0:50".to_owned())
+    );
+
+    let missing_again = snapshot_with_timing("playing.json", 4, None, Some(100.0));
+    state
+        .update(missing_again, presentation_time(5, PLAYING_SAMPLED_AT + 5))
+        .expect("later loss should begin another grace");
+    assert_eq!(now_playing(&state, 10).progress, None);
+}
+
+#[test]
+fn discards_provisional_timing_on_idle_unavailability_and_absent_now_playing() {
+    for discard_fixture in [
+        "stopped.json",
+        "disconnected.json",
+        "output-unavailable.json",
+        "playing-empty.json",
+    ] {
+        let initial = snapshot_with_timing("playing.json", 1, Some(20.0), Some(100.0));
+        let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+            .expect("initial state should be valid");
+        let missing = snapshot_with_timing("playing.json", 2, None, Some(100.0));
+        state
+            .update(missing, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+            .expect("timing loss should begin grace");
+        assert!(now_playing(&state, 1).progress.is_some());
+
+        let mut discarded = parse_snapshot(&support::fixture(discard_fixture))
+            .expect("discard fixture should be valid");
+        discarded.revision = 3;
+        state
+            .update(discarded, presentation_time(2, PLAYING_SAMPLED_AT + 2))
+            .expect("discard state should be accepted");
+
+        let resumed = snapshot_with_timing("playing.json", 4, None, Some(100.0));
+        state
+            .update(resumed, presentation_time(3, PLAYING_SAMPLED_AT + 3))
+            .expect("resumed partial timing should be accepted");
+        assert_eq!(
+            now_playing(&state, 3).progress,
+            None,
+            "{discard_fixture} should discard and block retained timing"
+        );
+    }
+}
+
+#[test]
+fn authoritative_reconciliation_stays_in_place_when_a_backward_correction_removes_lyrics() {
+    let cues = [(5.0, "First")];
+    let mut initial = snapshot_with_timing("playing.json", 1, Some(5.0), Some(100.0));
+    initial.lyrics = snapshot_with_lyrics("playing.json", &cues).lyrics;
+    let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
+        .expect("initial lyrics should be presentable");
+    let mut missing = snapshot_with_timing("playing.json", 2, None, Some(100.0));
+    missing.lyrics = snapshot_with_lyrics("playing.json", &cues).lyrics;
+    state
+        .update(missing, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+        .expect("missing position should retain the lyric cue");
+    assert!(now_playing(&state, 1).lyrics.is_some());
+
+    let mut reconciled = snapshot_with_timing("playing.json", 3, Some(0.0), None);
+    reconciled.lyrics = snapshot_with_lyrics("playing.json", &cues).lyrics;
+    reconciled
+        .timing
+        .as_mut()
+        .and_then(|timing| timing.position.as_mut())
+        .expect("snapshot should carry position")
+        .sampled_at = "2026-08-15T19:20:02Z".to_owned();
+    assert_eq!(
+        state
+            .update(reconciled, presentation_time(2, PLAYING_SAMPLED_AT + 2),)
+            .expect("backward reconciliation should be accepted"),
+        PresentationUpdate::InPlace
+    );
+    assert_eq!(now_playing(&state, 2).lyrics, None);
 }

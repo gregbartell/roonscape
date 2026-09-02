@@ -18,7 +18,7 @@ static SNAPSHOT_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
         .expect("embedded presentation snapshot schema should compile")
 });
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PresentationSnapshot {
     pub schema_version: u32,
@@ -28,7 +28,7 @@ pub struct PresentationSnapshot {
     pub tracked_output: Option<TrackedOutput>,
     pub tracked_zone: Option<TrackedZone>,
     pub now_playing: Option<NowPlaying>,
-    pub progress: Option<Progress>,
+    pub timing: Option<Timing>,
     pub artwork: Option<ArtworkReference>,
     pub lyrics: Option<SynchronizedLyrics>,
 }
@@ -51,19 +51,20 @@ pub enum Playback {
     Stopped,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TrackedOutput {
     pub name: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TrackedZone {
+    pub id: String,
     pub name: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct NowPlaying {
     pub title: Option<String>,
@@ -71,15 +72,21 @@ pub struct NowPlaying {
     pub album: Option<String>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Progress {
-    pub position_seconds: f64,
-    pub duration_seconds: f64,
+pub struct Timing {
+    pub position: Option<TimingPosition>,
+    pub duration_seconds: Option<f64>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TimingPosition {
+    pub seconds: f64,
     pub sampled_at: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ArtworkReference {
     pub revision: u64,

@@ -514,14 +514,14 @@ test("publishes truthful availability across authorization and connection events
       "disconnected",
       "outputUnavailable",
     ].map((availability, revision) => ({
-      schemaVersion: 3,
+      schemaVersion: 4,
       revision,
       availability,
       playback: null,
       trackedOutput: null,
       trackedZone: null,
       nowPlaying: null,
-      progress: null,
+      timing: null,
       artwork: null,
       lyrics: null,
     })),
@@ -540,14 +540,14 @@ test("publishes the saved Tracked Output identity only when that output is unava
 
   extensionOptions.core_paired(core);
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 3,
+    schemaVersion: 4,
     revision: 1,
     availability: "outputUnavailable",
     playback: null,
     trackedOutput: { name: "Speaker System" },
     trackedZone: null,
     nowPlaying: null,
-    progress: null,
+    timing: null,
     artwork: null,
     lyrics: null,
   });
@@ -653,18 +653,18 @@ test("resolves the configured Tracked Output from the initial full zone state", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 3,
+    schemaVersion: 4,
     revision: 2,
     availability: "available",
     playback: "paused",
     trackedOutput: { name: "Speaker System" },
-    trackedZone: { name: "Living Room" },
+    trackedZone: { id: "zone-living-room", name: "Living Room" },
     nowPlaying: {
       title: "A Moment Apart",
       artist: "ODESZA",
       album: "A Moment Apart",
     },
-    progress: null,
+    timing: null,
     artwork: null,
     lyrics: null,
   });
@@ -740,21 +740,23 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
                 : { revision: snapshot.artwork.revision },
           },
       {
-        schemaVersion: 3,
+        schemaVersion: 4,
         revision: 2,
         availability: "available",
         playback: "playing",
         trackedOutput: { name: "Speaker System" },
-        trackedZone: { name: "Living Room" },
+        trackedZone: { id: "zone-living-room", name: "Living Room" },
         nowPlaying: {
           title: "A Moment Apart",
           artist: "ODESZA",
           album: "A Moment Apart",
         },
-        progress: {
-          positionSeconds: 30,
+        timing: {
+          position: {
+            seconds: 30,
+            sampledAt: "2026-08-15T19:20:00.000Z",
+          },
           durationSeconds: 234,
-          sampledAt: "2026-08-15T19:20:00.000Z",
         },
         artwork: { revision: 2 },
         lyrics: null,
@@ -876,14 +878,14 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
     });
 
     assert.deepEqual(boundary.snapshots.at(-1), {
-      schemaVersion: 3,
+      schemaVersion: 4,
       revision: 5,
       availability: "available",
       playback: "stopped",
       trackedOutput: { name: "Speaker System" },
-      trackedZone: { name: "Living Room" },
+      trackedZone: { id: "zone-living-room", name: "Living Room" },
       nowPlaying: null,
-      progress: null,
+      timing: null,
       artwork: null,
       lyrics: null,
     });
@@ -926,15 +928,17 @@ test("retains artwork through a full same-track timing update", async () => {
     assert.deepEqual(
       timingSnapshots.map((snapshot) => ({
         artwork: snapshot.artwork,
-        progress: snapshot.progress,
+        timing: snapshot.timing,
       })),
       [
         {
           artwork,
-          progress: {
-            positionSeconds: 90,
+          timing: {
+            position: {
+              seconds: 90,
+              sampledAt: "2026-08-15T19:20:05.000Z",
+            },
             durationSeconds: 234,
-            sampledAt: "2026-08-15T19:20:05.000Z",
           },
         },
       ],
@@ -980,23 +984,27 @@ test("retains artwork while pause and resume update playback truthfully", async 
     assert.deepEqual(
       playbackSnapshots.map((snapshot) => ({
         playback: snapshot.playback,
-        progress: snapshot.progress,
+        timing: snapshot.timing,
       })),
       [
         {
           playback: "paused",
-          progress: {
-            positionSeconds: 90,
+          timing: {
+            position: {
+              seconds: 90,
+              sampledAt: "2026-08-15T19:20:05.000Z",
+            },
             durationSeconds: 234,
-            sampledAt: "2026-08-15T19:20:05.000Z",
           },
         },
         {
           playback: "playing",
-          progress: {
-            positionSeconds: 91,
+          timing: {
+            position: {
+              seconds: 91,
+              sampledAt: "2026-08-15T19:20:10.000Z",
+            },
             durationSeconds: 234,
-            sampledAt: "2026-08-15T19:20:10.000Z",
           },
         },
       ],
@@ -1479,7 +1487,7 @@ async function waitFor(
   assert.fail("Timed out waiting for asynchronous bridge work");
 }
 
-test("publishes meaningful progress from the Tracked Zone timing sample", async () => {
+test("publishes meaningful timing from the Tracked Zone sample", async () => {
   const boundary = createRoonBoundary("output-speaker-system");
 
   boundary.extensionOptions().core_paired(boundary.core());
@@ -1503,15 +1511,17 @@ test("publishes meaningful progress from the Tracked Zone timing sample", async 
     ],
   });
 
-  assert.deepEqual(boundary.snapshots.at(-1)?.progress, {
-    positionSeconds: 82,
+  assert.deepEqual(boundary.snapshots.at(-1)?.timing, {
+    position: {
+      seconds: 82,
+      sampledAt: "2026-08-15T19:20:00.000Z",
+    },
     durationSeconds: 234,
-    sampledAt: "2026-08-15T19:20:00.000Z",
   });
   await validateSnapshot(boundary.snapshots.at(-1));
 });
 
-test("clamps source progress at duration", () => {
+test("clamps source position at duration", () => {
   const boundary = createRoonBoundary("output-speaker-system");
 
   boundary.extensionOptions().core_paired(boundary.core());
@@ -1532,22 +1542,56 @@ test("clamps source progress at duration", () => {
     ],
   });
 
-  assert.equal(boundary.snapshots.at(-1)?.progress?.positionSeconds, 234);
+  assert.equal(boundary.snapshots.at(-1)?.timing?.position?.seconds, 234);
 });
 
-test("omits progress when Roon timing is not meaningful", () => {
-  const invalidTiming = [
-    { seek_position: Number.NaN, length: 234 },
-    { seek_position: Number.POSITIVE_INFINITY, length: 234 },
-    { seek_position: -1, length: 234 },
-    { seek_position: 82, length: 0 },
-    { seek_position: 82, length: -1 },
-    { seek_position: 82, length: Number.POSITIVE_INFINITY },
-    { seek_position: 82 },
-    { length: 234 },
+test("retains each independently meaningful Roon timing field", () => {
+  const timingCases = [
+    [
+      { seek_position: Number.NaN, length: 234 },
+      { position: null, durationSeconds: 234 },
+    ],
+    [
+      { seek_position: Number.POSITIVE_INFINITY, length: 234 },
+      { position: null, durationSeconds: 234 },
+    ],
+    [
+      { seek_position: -1, length: 234 },
+      { position: null, durationSeconds: 234 },
+    ],
+    [
+      { seek_position: 82, length: 0 },
+      {
+        position: { seconds: 82, sampledAt: "2026-08-15T19:20:00.000Z" },
+        durationSeconds: null,
+      },
+    ],
+    [
+      { seek_position: 82, length: -1 },
+      {
+        position: { seconds: 82, sampledAt: "2026-08-15T19:20:00.000Z" },
+        durationSeconds: null,
+      },
+    ],
+    [
+      { seek_position: 82, length: Number.POSITIVE_INFINITY },
+      {
+        position: { seconds: 82, sampledAt: "2026-08-15T19:20:00.000Z" },
+        durationSeconds: null,
+      },
+    ],
+    [
+      { seek_position: 82 },
+      {
+        position: { seconds: 82, sampledAt: "2026-08-15T19:20:00.000Z" },
+        durationSeconds: null,
+      },
+    ],
+    [{ length: 234 }, { position: null, durationSeconds: 234 }],
+    [{ seek_position: Number.NaN, length: 0 }, null],
   ];
 
-  for (const nowPlaying of invalidTiming) {
+  for (const [nowPlaying, expected] of timingCases) {
     const boundary = createRoonBoundary("output-speaker-system");
     boundary.extensionOptions().core_paired(boundary.core());
     boundary.emitZones("Subscribed", {
@@ -1562,12 +1606,12 @@ test("omits progress when Roon timing is not meaningful", () => {
               display_name: "Speaker System",
             },
           ],
-          now_playing: nowPlaying,
+          now_playing: nowPlaying as RoonZone["now_playing"],
         },
       ],
     });
 
-    assert.equal(boundary.snapshots.at(-1)?.progress, null);
+    assert.deepEqual(boundary.snapshots.at(-1)?.timing, expected);
   }
 });
 
@@ -1604,7 +1648,7 @@ test("publishes each playback state and clears timing when stopped", () => {
     boundary.snapshots.slice(-4).map((snapshot) => ({
       playback: snapshot.playback,
       title: snapshot.nowPlaying?.title ?? null,
-      progress: snapshot.progress?.positionSeconds ?? null,
+      progress: snapshot.timing?.position?.seconds ?? null,
     })),
     [
       { playback: "playing", title: "A Moment Apart", progress: 82 },
@@ -1656,21 +1700,23 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 3,
+    schemaVersion: 4,
     revision: 3,
     availability: "available",
     playback: "playing",
     trackedOutput: { name: "Speaker System" },
-    trackedZone: { name: "Living Room" },
+    trackedZone: { id: "zone-living-room", name: "Living Room" },
     nowPlaying: {
       title: "A Moment Apart",
       artist: "ODESZA",
       album: "A Moment Apart",
     },
-    progress: {
-      positionSeconds: 30,
+    timing: {
+      position: {
+        seconds: 30,
+        sampledAt: "2026-08-15T19:20:05.000Z",
+      },
       durationSeconds: 234,
-      sampledAt: "2026-08-15T19:20:05.000Z",
     },
     artwork: null,
     lyrics: null,
@@ -1808,8 +1854,13 @@ test("correlates the optional Lyric Feed with current Tracked Zone Now Playing",
   );
 });
 
-test("publishes an accepted lyric timeline when progress becomes meaningful", () => {
-  let emitLyrics: ((event: PrivateLyricEvent) => void) | undefined;
+test("publishes an accepted lyric timeline independently of timing completeness", () => {
+  let emitLyrics:
+    | ((
+        event: PrivateLyricEvent,
+        observedNowPlayingIdentity?: string | null,
+      ) => void)
+    | undefined;
   const boundary = createRoonBoundary(
     "output-speaker-system",
     unusedArtworkFiles(),
@@ -1831,12 +1882,27 @@ test("publishes an accepted lyric timeline when progress becomes meaningful", ()
       },
     ],
   });
-  emitLyrics?.({
-    zone_id: "zone-living-room",
-    key: "track-a-key",
-    lrc: "[00:01.00]First\n[00:04.00]Second",
+  const zone = {
+    ...artworkZone("track-a-artwork", "Track A"),
+    now_playing: {
+      length: 120,
+      three_line: { line1: "Track A", line2: "Artist" },
+    },
+  };
+  emitLyrics?.(
+    {
+      zone_id: "zone-living-room",
+      key: "track-a-key",
+      lrc: "[00:01.00]First\n[00:04.00]Second",
+    },
+    trackedNowPlaying(zone)?.nowPlayingIdentity,
+  );
+  assert.deepEqual(boundary.currentSnapshot().lyrics, {
+    cues: [
+      { atSeconds: 1, text: "First" },
+      { atSeconds: 4, text: "Second" },
+    ],
   });
-  assert.equal(boundary.currentSnapshot().lyrics, null);
 
   boundary.emitZones("Changed", {
     zones_seek_changed: [{ zone_id: "zone-living-room", seek_position: 2 }],
@@ -1964,6 +2030,7 @@ test("follows the configured Tracked Output through grouping and ungrouping", ()
     ],
   });
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedZone, {
+    id: "zone-whole-home",
     name: "Whole Home",
   });
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedOutput, {
@@ -2007,13 +2074,13 @@ test("follows the configured Tracked Output through grouping and ungrouping", ()
         revision: 3,
         playback: "playing",
         trackedOutput: { name: "Speaker System" },
-        trackedZone: { name: "Whole Home" },
+        trackedZone: { id: "zone-whole-home", name: "Whole Home" },
       },
       {
         revision: 4,
         playback: "paused",
         trackedOutput: { name: "Speaker System" },
-        trackedZone: { name: "Living Room" },
+        trackedZone: { id: "zone-living-room-new", name: "Living Room" },
       },
     ],
   );
@@ -2071,6 +2138,7 @@ test("publishes Tracked Output and Zone renames but ignores unrelated zones", ()
 
   assert.equal(boundary.snapshots.length, snapshotCount);
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedZone, {
+    id: "zone-living-room",
     name: "Living Room",
   });
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedOutput, {
@@ -2092,6 +2160,7 @@ test("publishes Tracked Output and Zone renames but ignores unrelated zones", ()
 
   assert.equal(boundary.snapshots.length, snapshotCount + 1);
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedZone, {
+    id: "zone-living-room",
     name: "Listening Room",
   });
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedOutput, {
@@ -2132,14 +2201,14 @@ test("clears presentation state when the configured Tracked Output is removed", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 3,
+    schemaVersion: 4,
     revision: 3,
     availability: "outputUnavailable",
     playback: null,
     trackedOutput: { name: "Speaker System" },
     trackedZone: null,
     nowPlaying: null,
-    progress: null,
+    timing: null,
     artwork: null,
     lyrics: null,
   });

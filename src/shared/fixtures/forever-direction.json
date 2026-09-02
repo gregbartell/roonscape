@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "revision": 28,
   "availability": "available",
   "playback": "playing",
@@ -7,6 +7,7 @@
     "name": "Speaker System"
   },
   "trackedZone": {
+    "id": "zone-living-room",
     "name": "Living Room"
   },
   "nowPlaying": {
@@ -14,14 +15,16 @@
     "artist": "Synthetic Fixture",
     "album": "Forever and a Day direction"
   },
-  "progress": {
-    "positionSeconds": 202,
-    "durationSeconds": 276,
-    "sampledAt": "2026-08-15T19:20:00Z"
-  },
   "artwork": {
     "revision": 28,
     "path": "src/shared/fixtures/artwork/forever-direction.jpg"
   },
-  "lyrics": null
+  "lyrics": null,
+  "timing": {
+    "position": {
+      "seconds": 202,
+      "sampledAt": "2026-08-15T19:20:00Z"
+    },
+    "durationSeconds": 276
+  }
 }

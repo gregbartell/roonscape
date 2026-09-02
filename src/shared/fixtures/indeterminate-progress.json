@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "revision": 12,
   "availability": "available",
   "playback": "playing",
@@ -7,6 +7,7 @@
     "name": "Speaker System"
   },
   "trackedZone": {
+    "id": "zone-living-room",
     "name": "Living Room"
   },
   "nowPlaying": {
@@ -14,10 +15,10 @@
     "artist": null,
     "album": null
   },
-  "progress": null,
   "artwork": {
     "revision": 3,
     "path": "src/shared/fixtures/artwork/playing.jpg"
   },
-  "lyrics": null
+  "lyrics": null,
+  "timing": null
 }

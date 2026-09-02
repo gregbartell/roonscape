@@ -17,6 +17,11 @@ Roon's second Now Playing display line, presented as the artist even though the
 API does not independently guarantee that semantic.
 _Avoid_: Secondary text, line 2
 
+**Authoritative Timing**:
+Playback position or duration observed directly from Roon, independently of
+whether both are currently available.
+_Avoid_: Reported timing, real timing
+
 **Display Configuration**:
 A choice that changes what or how RoonScape presents without changing
 Roon state.
@@ -82,6 +87,11 @@ The viewer-facing condition label that identifies RoonScape's current
 playback or availability condition, such as Playing, Paused, Idle, or
 Disconnected.
 _Avoid_: Screen name, eyebrow
+
+**Provisional Timing**:
+A short-lived viewer-facing estimate that preserves determinate timing while
+Authoritative Timing is briefly incomplete during continuous Live Mode.
+_Avoid_: Fabricated progress, interpolated timing
 
 **Roon Authorization**:
 Roon's persisted approval for RoonScape to connect as an extension. It is

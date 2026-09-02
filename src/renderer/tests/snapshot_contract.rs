@@ -71,7 +71,7 @@ fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
     let fixture = support::fixture("playing.json");
     let snapshot = parse_snapshot(&fixture).expect("shared Playing fixture should be valid");
 
-    assert_eq!(snapshot.schema_version, 3);
+    assert_eq!(snapshot.schema_version, 4);
     assert_eq!(snapshot.revision, 7);
     assert_eq!(snapshot.availability, Availability::Available);
     assert_eq!(snapshot.playback, Some(Playback::Playing));
@@ -86,8 +86,8 @@ fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
         snapshot
             .tracked_zone
             .as_ref()
-            .map(|zone| zone.name.as_str()),
-        Some("Living Room")
+            .map(|zone| (zone.id.as_str(), zone.name.as_str())),
+        Some(("zone-living-room", "Living Room"))
     );
     assert_eq!(
         snapshot
@@ -111,11 +111,11 @@ fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
         Some("Signals from the Quiet Sea")
     );
     assert_eq!(
-        snapshot
-            .progress
-            .as_ref()
-            .map(|progress| (progress.position_seconds, progress.duration_seconds)),
-        Some((171.0, 266.0))
+        snapshot.timing.as_ref().map(|timing| (
+            timing.position.as_ref().map(|position| position.seconds),
+            timing.duration_seconds,
+        )),
+        Some((Some(171.0), Some(266.0)))
     );
     assert_eq!(
         snapshot
@@ -125,6 +125,49 @@ fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
         Some("src/shared/fixtures/artwork/playing.jpg")
     );
     assert_eq!(snapshot.lyrics, None);
+}
+
+#[test]
+fn accepts_every_version_4_timing_shape_and_rejects_retired_or_invalid_timing() {
+    let base: Value =
+        serde_json::from_str(&support::fixture("playing.json")).expect("fixture should be JSON");
+    for timing in [
+        Value::Null,
+        serde_json::json!({
+            "position": {"seconds": 42, "sampledAt": "2026-09-02T20:15:00Z"},
+            "durationSeconds": 180
+        }),
+        serde_json::json!({
+            "position": {"seconds": 42, "sampledAt": "2026-09-02T20:15:00Z"},
+            "durationSeconds": null
+        }),
+        serde_json::json!({"position": null, "durationSeconds": 180}),
+    ] {
+        let mut candidate = base.clone();
+        candidate["timing"] = timing;
+        parse_snapshot(&candidate.to_string()).expect("version 4 timing shape should be accepted");
+    }
+
+    let mut retired = base.clone();
+    retired["schemaVersion"] = 3.into();
+    assert!(parse_snapshot(&retired.to_string()).is_err());
+
+    for timing in [
+        serde_json::json!({"position": null, "durationSeconds": null}),
+        serde_json::json!({
+            "position": {"seconds": -1, "sampledAt": "2026-09-02T20:15:00Z"},
+            "durationSeconds": 180
+        }),
+        serde_json::json!({
+            "position": {"seconds": 1, "sampledAt": "not-a-date"},
+            "durationSeconds": 180
+        }),
+        serde_json::json!({"position": null, "durationSeconds": 0}),
+    ] {
+        let mut candidate = base.clone();
+        candidate["timing"] = timing;
+        assert!(parse_snapshot(&candidate.to_string()).is_err());
+    }
 }
 
 #[test]
@@ -295,7 +338,7 @@ fn parses_every_shared_unavailable_fixture_without_stale_content() {
         );
         assert_eq!(snapshot.tracked_zone, None);
         assert_eq!(snapshot.now_playing, None);
-        assert_eq!(snapshot.progress, None);
+        assert_eq!(snapshot.timing, None);
         assert_eq!(snapshot.artwork, None);
     }
 }
@@ -319,7 +362,7 @@ fn parses_every_shared_playback_state_with_truthful_now_playing() {
         assert_eq!(snapshot.availability, Availability::Available);
         assert_eq!(snapshot.playback, Some(playback));
         assert_eq!(snapshot.now_playing.is_some(), has_now_playing);
-        assert_eq!(snapshot.progress.is_some(), has_progress);
+        assert_eq!(snapshot.timing.is_some(), has_progress);
         if playback == Playback::Stopped {
             assert_eq!(snapshot.artwork, None);
         }
@@ -333,12 +376,13 @@ fn parses_absent_and_past_duration_progress_samples() {
     let past_duration = parse_snapshot(&support::fixture("playing-past-duration.json"))
         .expect("past-duration fixture should be valid");
 
-    assert_eq!(indeterminate.progress, None);
+    assert_eq!(indeterminate.timing, None);
     assert_eq!(
-        past_duration
-            .progress
-            .map(|progress| (progress.position_seconds, progress.duration_seconds)),
-        Some((300.0, 266.0))
+        past_duration.timing.map(|timing| (
+            timing.position.map(|position| position.seconds),
+            timing.duration_seconds,
+        )),
+        Some((Some(300.0), Some(266.0)))
     );
 }
 
@@ -391,7 +435,7 @@ fn rejects_unordered_duplicate_or_excessive_lyric_text() {
 #[test]
 fn rejects_the_removed_display_zone_snapshot_field() {
     let error = parse_snapshot(
-        r#"{"schemaVersion":2,"revision":1,"availability":"available","playback":"playing","trackedOutput":{"name":"Speaker System"},"trackedZone":{"name":"Living Room"},"displayZone":{"name":"Living Room"},"nowPlaying":null,"progress":null,"artwork":null}"#,
+        r#"{"schemaVersion":4,"revision":1,"availability":"available","playback":"playing","trackedOutput":{"name":"Speaker System"},"trackedZone":{"id":"zone-living-room","name":"Living Room"},"displayZone":{"name":"Living Room"},"nowPlaying":null,"timing":null,"artwork":null,"lyrics":null}"#,
     )
     .expect_err("the removed displayZone field should be rejected");
 

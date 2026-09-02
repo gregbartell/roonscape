@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "revision": 20,
   "availability": "available",
   "playback": "playing",
@@ -7,6 +7,7 @@
     "name": "Speaker System with Floorstanding Loudspeakers Beside the Tall Windows Overlooking the Courtyard"
   },
   "trackedZone": {
+    "id": "zone-living-room-library-conservatory-north-hall-and-the-entire-lantern-lit-upper-floor",
     "name": "Living Room, Library, Conservatory, North Hall, and the Entire Lantern-Lit Upper Floor"
   },
   "nowPlaying": {
@@ -14,14 +15,16 @@
     "artist": "Evelyn Lark & The Orbital Choir",
     "album": "Signals from the Quiet Sea"
   },
-  "progress": {
-    "positionSeconds": 171,
-    "durationSeconds": 266,
-    "sampledAt": "2026-08-15T19:20:00Z"
-  },
   "artwork": {
     "revision": 3,
     "path": "src/shared/fixtures/artwork/playing.jpg"
   },
-  "lyrics": null
+  "lyrics": null,
+  "timing": {
+    "position": {
+      "seconds": 171,
+      "sampledAt": "2026-08-15T19:20:00Z"
+    },
+    "durationSeconds": 266
+  }
 }

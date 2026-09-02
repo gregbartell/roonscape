@@ -1031,21 +1031,23 @@ fn defensively_ellipsizes_long_identities_without_moving_the_footer() {
 #[test]
 fn applies_one_complete_now_playing_policy_to_fixture_and_roon_snapshots() {
     let roon_snapshot = r#"{
-      "schemaVersion": 3,
+      "schemaVersion": 4,
       "revision": 41,
       "availability": "available",
       "playback": "playing",
       "trackedOutput": { "name": "Speaker System" },
-      "trackedZone": { "name": "Living Room" },
+      "trackedZone": { "id": "zone-living-room", "name": "Living Room" },
       "nowPlaying": {
         "title": "A Moment Apart",
         "artist": "ODESZA",
         "album": "A Moment Apart"
       },
-      "progress": {
-        "positionSeconds": 30,
-        "durationSeconds": 234,
-        "sampledAt": "2026-08-15T19:20:00.000Z"
+      "timing": {
+        "position": {
+          "seconds": 30,
+          "sampledAt": "2026-08-15T19:20:00.000Z"
+        },
+        "durationSeconds": 234
       },
       "artwork": { "revision": 41, "path": "artwork/artwork-41.jpg" },
       "lyrics": null

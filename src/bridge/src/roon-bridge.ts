@@ -284,9 +284,7 @@ export function startRoonBridge({
     }
     const latest = currentSnapshot;
     const acceptedLyrics =
-      latest.availability === "available" &&
-      latest.nowPlaying !== null &&
-      latest.progress !== null
+      latest.availability === "available" && latest.nowPlaying !== null
         ? lyrics
         : null;
     publishState({
@@ -296,7 +294,7 @@ export function startRoonBridge({
       trackedOutput: latest.trackedOutput,
       trackedZone: latest.trackedZone,
       nowPlaying: latest.nowPlaying,
-      progress: latest.progress,
+      timing: latest.timing,
       artwork: latest.artwork,
       lyrics: acceptedLyrics,
     });
@@ -530,7 +528,7 @@ class ArtworkPresentationCoordinator {
     const available = availableState(trackedZone);
     const state = {
       ...available,
-      lyrics: available.progress === null ? null : this.#currentLyrics(),
+      lyrics: available.nowPlaying === null ? null : this.#currentLyrics(),
     };
 
     if (zone.state === "stopped") {
@@ -605,7 +603,7 @@ class ArtworkPresentationCoordinator {
     }
     const candidate = {
       ...pending,
-      lyrics: pending.progress === null ? null : lyrics,
+      lyrics: pending.nowPlaying === null ? null : lyrics,
     };
     const publishableState = this.#prepareStateForPublication(candidate);
     if (publishableState !== undefined) {
@@ -721,7 +719,7 @@ class ArtworkPresentationCoordinator {
       trackedOutput: latest.trackedOutput,
       trackedZone: latest.trackedZone,
       nowPlaying: latest.nowPlaying,
-      progress: latest.progress,
+      timing: latest.timing,
       artwork,
       lyrics: latest.lyrics,
     });
@@ -772,7 +770,7 @@ function unavailableState(
   trackedOutputName?: string,
 ): SnapshotState {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     availability,
     playback: null,
     trackedOutput:
@@ -781,7 +779,7 @@ function unavailableState(
         : null,
     trackedZone: null,
     nowPlaying: null,
-    progress: null,
+    timing: null,
     artwork: null,
     lyrics: null,
   };
@@ -792,44 +790,53 @@ function availableState({
   sampledAt,
   trackedOutput,
 }: TrackedZoneState): SnapshotState {
-  const { playback, trackedZone, nowPlaying, progress } =
-    zonePresentationSource({ zone, sampledAt });
+  const { playback, trackedZone, nowPlaying, timing } = zonePresentationSource({
+    zone,
+    sampledAt,
+  });
 
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     availability: "available",
     playback,
     trackedOutput: { name: trackedOutput.display_name },
     trackedZone,
     nowPlaying,
-    progress,
+    timing,
     artwork: null,
     lyrics: null,
   };
 }
 
-function meaningfulProgress(
+function meaningfulTiming(
   nowPlaying: RoonNowPlaying | undefined,
   sampledAt: string,
-): PresentationSnapshot["progress"] {
-  const positionSeconds = nowPlaying?.seek_position;
-  const durationSeconds = nowPlaying?.length;
-  if (
-    positionSeconds === undefined ||
-    !Number.isFinite(positionSeconds) ||
-    positionSeconds < 0 ||
-    durationSeconds === undefined ||
-    !Number.isFinite(durationSeconds) ||
-    durationSeconds <= 0
-  ) {
+): PresentationSnapshot["timing"] {
+  const sourcePosition = nowPlaying?.seek_position;
+  const sourceDuration = nowPlaying?.length;
+  const durationSeconds =
+    sourceDuration !== undefined &&
+    Number.isFinite(sourceDuration) &&
+    sourceDuration > 0
+      ? sourceDuration
+      : null;
+  const position =
+    sourcePosition !== undefined &&
+    Number.isFinite(sourcePosition) &&
+    sourcePosition >= 0
+      ? {
+          seconds:
+            durationSeconds === null
+              ? sourcePosition
+              : Math.min(sourcePosition, durationSeconds),
+          sampledAt,
+        }
+      : null;
+  if (position === null && durationSeconds === null) {
     return null;
   }
 
-  return {
-    positionSeconds: Math.min(positionSeconds, durationSeconds),
-    durationSeconds,
-    sampledAt,
-  };
+  return { position, durationSeconds };
 }
 
 function samePresentation(
@@ -879,7 +886,7 @@ function zonePresentationSource({
   sampledAt,
 }: RetainedZone): Pick<
   SnapshotState,
-  "playback" | "trackedZone" | "nowPlaying" | "progress"
+  "playback" | "trackedZone" | "nowPlaying" | "timing"
 > {
   const retainsNowPlaying = zone.state !== "stopped";
   const displayLines = retainsNowPlaying
@@ -888,7 +895,7 @@ function zonePresentationSource({
 
   return {
     playback: zone.state,
-    trackedZone: { name: zone.display_name },
+    trackedZone: { id: zone.zone_id, name: zone.display_name },
     nowPlaying:
       displayLines === undefined
         ? null
@@ -897,8 +904,8 @@ function zonePresentationSource({
             artist: displayLines.line2 ?? null,
             album: displayLines.line3 ?? null,
           },
-    progress: retainsNowPlaying
-      ? meaningfulProgress(zone.now_playing, sampledAt)
+    timing: retainsNowPlaying
+      ? meaningfulTiming(zone.now_playing, sampledAt)
       : null,
   };
 }

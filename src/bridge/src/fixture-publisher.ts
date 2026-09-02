@@ -110,15 +110,22 @@ function reanchorPlayingFixture(
   snapshot: PresentationSnapshot,
   launchedAt: Date,
 ): PresentationSnapshot {
-  if (snapshot.playback !== "playing" || snapshot.progress === null) {
+  if (
+    snapshot.playback !== "playing" ||
+    snapshot.timing?.position === null ||
+    snapshot.timing?.position === undefined
+  ) {
     return snapshot;
   }
 
   return {
     ...snapshot,
-    progress: {
-      ...snapshot.progress,
-      sampledAt: launchedAt.toISOString(),
+    timing: {
+      ...snapshot.timing,
+      position: {
+        ...snapshot.timing.position,
+        sampledAt: launchedAt.toISOString(),
+      },
     },
   };
 }

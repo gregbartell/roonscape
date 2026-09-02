@@ -7,13 +7,14 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::contract::{
-    Availability, Playback, PresentationSnapshot, Progress, SynchronizedLyrics, TrackedOutput,
-    TrackedZone,
+    Availability, NowPlaying, Playback, PresentationSnapshot, SynchronizedLyrics, TimingPosition,
+    TrackedOutput, TrackedZone,
 };
 use crate::display_configuration::InactivityConfiguration;
 
 pub const INACTIVE_HORIZONTAL_BOUND: i32 = 18;
 pub const INACTIVE_VERTICAL_BOUND: i32 = 12;
+const PROVISIONAL_TIMING_GRACE: Duration = Duration::from_secs(5);
 
 const INACTIVE_POSITIONS: [LayoutOffset; 8] = [
     LayoutOffset {
@@ -226,12 +227,247 @@ impl PresentationStatusMotion {
 
 pub struct PresentationState {
     snapshot: PresentationSnapshot,
-    progress_anchored_at: Duration,
-    source_sample_age: Duration,
+    timing: TimingContinuity,
     inactivity_configuration: InactivityConfiguration,
     inactivity_condition: Option<InactivityCondition>,
     inactivity_anchored_at: Duration,
     behavior: PresentationBehavior,
+}
+
+struct TimingContinuity {
+    retained_position: Option<PositionAnchor>,
+    retained_duration_seconds: Option<f64>,
+    grace: TimingGrace,
+    known_now_playing: Option<KnownNowPlaying>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PositionAnchor {
+    seconds: f64,
+    anchored_at: Duration,
+    basis: PositionBasis,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PositionBasis {
+    Authoritative,
+    Zero,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TimingGrace {
+    Ready,
+    Active { started_at: Duration },
+    Expired,
+}
+
+#[derive(Clone, Debug)]
+struct KnownNowPlaying {
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ResolvedTiming {
+    position_seconds: Option<f64>,
+    duration_seconds: Option<f64>,
+}
+
+impl TimingContinuity {
+    fn new(
+        snapshot: &PresentationSnapshot,
+        anchored_at: PresentationTime,
+        behavior: PresentationBehavior,
+    ) -> Result<Self, PresentationError> {
+        let retained_position = authoritative_position_anchor(snapshot, anchored_at, behavior)?;
+        let retained_duration_seconds = authoritative_duration(snapshot);
+        let grace = if has_complete_authoritative_timing(snapshot) {
+            TimingGrace::Ready
+        } else if can_observe_timing(snapshot) && behavior == PresentationBehavior::Dynamic {
+            TimingGrace::Active {
+                started_at: anchored_at.monotonic,
+            }
+        } else {
+            TimingGrace::Expired
+        };
+        Ok(Self {
+            retained_position,
+            retained_duration_seconds,
+            grace,
+            known_now_playing: snapshot.now_playing.as_ref().map(KnownNowPlaying::from),
+        })
+    }
+
+    fn discarded() -> Self {
+        Self {
+            retained_position: None,
+            retained_duration_seconds: None,
+            grace: TimingGrace::Expired,
+            known_now_playing: None,
+        }
+    }
+
+    fn update(
+        &mut self,
+        previous: &PresentationSnapshot,
+        next: &PresentationSnapshot,
+        anchored_at: PresentationTime,
+        behavior: PresentationBehavior,
+    ) -> Result<(), PresentationError> {
+        let next_authoritative_position =
+            authoritative_position_anchor(next, anchored_at, behavior)?;
+        let zone_continues = previous.availability == Availability::Available
+            && next.availability == Availability::Available
+            && previous.tracked_zone.as_ref().map(|zone| zone.id.as_str())
+                == next.tracked_zone.as_ref().map(|zone| zone.id.as_str());
+        let next_known = next.now_playing.as_ref().map(KnownNowPlaying::from);
+        let now_playing_continues = zone_continues
+            && self.known_now_playing.as_ref().is_some_and(|known| {
+                next_known
+                    .as_ref()
+                    .is_some_and(|next| known.is_compatible_with(next))
+            });
+        let now_playing_changed = zone_continues
+            && self.known_now_playing.is_some()
+            && next_known.is_some()
+            && !now_playing_continues;
+        let keeps_timing =
+            can_observe_timing(next) && (now_playing_continues || now_playing_changed);
+
+        if self.grace.has_expired_at(anchored_at.monotonic) {
+            self.grace = TimingGrace::Expired;
+        }
+
+        let retained_position_now = self.retained_position.map(|position| PositionAnchor {
+            seconds: projected_position(
+                position,
+                previous.playback,
+                self.retained_duration_seconds,
+                anchored_at.monotonic,
+                behavior,
+            ),
+            anchored_at: anchored_at.monotonic,
+            basis: position.basis,
+        });
+
+        if !keeps_timing {
+            self.retained_position = next_authoritative_position;
+            self.retained_duration_seconds = authoritative_duration(next);
+            self.grace = if has_complete_authoritative_timing(next) {
+                TimingGrace::Ready
+            } else if can_observe_timing(next) && behavior == PresentationBehavior::Dynamic {
+                TimingGrace::Active {
+                    started_at: anchored_at.monotonic,
+                }
+            } else {
+                TimingGrace::Expired
+            };
+        } else {
+            if now_playing_changed {
+                self.retained_position = None;
+                self.retained_duration_seconds = None;
+            } else {
+                self.retained_position = retained_position_now;
+            }
+
+            if let Some(duration_seconds) = authoritative_duration(next) {
+                self.retained_duration_seconds = Some(duration_seconds);
+            }
+            if let Some(position) = next_authoritative_position {
+                self.retained_position = Some(position);
+            } else if now_playing_changed {
+                self.retained_position = Some(PositionAnchor {
+                    seconds: 0.0,
+                    anchored_at: anchored_at.monotonic,
+                    basis: PositionBasis::Zero,
+                });
+            }
+
+            if let (Some(position), Some(duration_seconds)) =
+                (&mut self.retained_position, self.retained_duration_seconds)
+            {
+                position.seconds = position.seconds.min(duration_seconds);
+            }
+
+            if has_complete_authoritative_timing(next) {
+                self.grace = TimingGrace::Ready;
+            } else if behavior == PresentationBehavior::StaticFixture {
+                self.grace = TimingGrace::Expired;
+            } else if now_playing_changed || self.grace == TimingGrace::Ready {
+                self.grace = TimingGrace::Active {
+                    started_at: anchored_at.monotonic,
+                };
+            }
+        }
+
+        self.known_now_playing = match (now_playing_continues, next_known) {
+            (true, Some(next)) => self
+                .known_now_playing
+                .take()
+                .map(|known| known.enriched_with(next)),
+            (_, next) => next,
+        };
+        Ok(())
+    }
+
+    fn resolved_at(
+        &self,
+        snapshot: &PresentationSnapshot,
+        now: Duration,
+        behavior: PresentationBehavior,
+    ) -> ResolvedTiming {
+        let position_is_authoritative = authoritative_position(snapshot).is_some();
+        let duration_is_authoritative = authoritative_duration(snapshot).is_some();
+        let provisional_allowed = self.grace.is_active_at(now);
+        let provisional_position_allowed = provisional_allowed
+            && self.retained_position.is_some_and(|position| {
+                position.basis == PositionBasis::Authoritative
+                    || self.retained_duration_seconds.is_some()
+            });
+        let position_seconds = (position_is_authoritative || provisional_position_allowed)
+            .then(|| {
+                self.retained_position.map(|position| {
+                    projected_position(
+                        position,
+                        snapshot.playback,
+                        self.retained_duration_seconds,
+                        now,
+                        behavior,
+                    )
+                })
+            })
+            .flatten();
+        let duration_seconds = (duration_is_authoritative || provisional_allowed)
+            .then_some(self.retained_duration_seconds)
+            .flatten();
+
+        ResolvedTiming {
+            position_seconds,
+            duration_seconds,
+        }
+        .clamped()
+    }
+
+    fn influences_presentation_at(
+        &self,
+        snapshot: &PresentationSnapshot,
+        now: Duration,
+        behavior: PresentationBehavior,
+    ) -> bool {
+        if !self.grace.is_active_at(now) {
+            return false;
+        }
+        let timing = self.resolved_at(snapshot, now, behavior);
+        let progress_depends_on_provisional = timing.position_seconds.is_some()
+            && timing.duration_seconds.is_some()
+            && (authoritative_position(snapshot).is_none()
+                || authoritative_duration(snapshot).is_none());
+        let lyrics_depend_on_provisional = snapshot.lyrics.is_some()
+            && timing.position_seconds.is_some()
+            && authoritative_position(snapshot).is_none();
+        progress_depends_on_provisional || lyrics_depend_on_provisional
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -293,8 +529,7 @@ impl PresentationState {
     ) -> Self {
         Self {
             snapshot: disconnected_snapshot(0),
-            progress_anchored_at: anchored_at,
-            source_sample_age: Duration::ZERO,
+            timing: TimingContinuity::discarded(),
             inactivity_configuration,
             inactivity_condition: Some(InactivityCondition::Unavailable(
                 Availability::Disconnected,
@@ -331,15 +566,11 @@ impl PresentationState {
         behavior: PresentationBehavior,
     ) -> Result<Self, PresentationError> {
         presentation_from_snapshot(&snapshot)?;
-        let source_sample_age = match behavior {
-            PresentationBehavior::Dynamic => source_sample_age(&snapshot, anchored_at.utc)?,
-            PresentationBehavior::StaticFixture => Duration::ZERO,
-        };
+        let timing = TimingContinuity::new(&snapshot, anchored_at, behavior)?;
         let inactivity_condition = inactivity_condition(&snapshot);
         Ok(Self {
             snapshot,
-            progress_anchored_at: anchored_at.monotonic,
-            source_sample_age,
+            timing,
             inactivity_configuration,
             inactivity_condition,
             inactivity_anchored_at: anchored_at.monotonic,
@@ -369,20 +600,18 @@ impl PresentationState {
         anchored_at: PresentationTime,
         restart_inactivity: bool,
     ) -> Result<PresentationUpdate, PresentationError> {
-        let previous_presentation = presentation_from_snapshot(&self.snapshot)
-            .expect("PresentationState retains a validated snapshot");
-        let next_presentation = presentation_from_snapshot(&snapshot)?;
-        let update = classify_presentation_update(&previous_presentation, &next_presentation);
+        let previous_presentation = self.presentation_at(anchored_at.monotonic)?;
+        let reconciles_provisional_timing =
+            self.timing.influences_presentation_at(
+                &self.snapshot,
+                anchored_at.monotonic,
+                self.behavior,
+            ) && replaces_provisional_dimension(&self.snapshot, &snapshot)
+                && same_composition_except_timing(&self.snapshot, &snapshot);
+        presentation_from_snapshot(&snapshot)?;
         let next_inactivity_condition = inactivity_condition(&snapshot);
-        let has_new_source_sample = self.snapshot.playback != snapshot.playback
-            || self.snapshot.progress != snapshot.progress;
-        if has_new_source_sample {
-            self.source_sample_age = match self.behavior {
-                PresentationBehavior::Dynamic => source_sample_age(&snapshot, anchored_at.utc)?,
-                PresentationBehavior::StaticFixture => Duration::ZERO,
-            };
-            self.progress_anchored_at = anchored_at.monotonic;
-        }
+        self.timing
+            .update(&self.snapshot, &snapshot, anchored_at, self.behavior)?;
         if self.inactivity_condition != next_inactivity_condition
             || (restart_inactivity && next_inactivity_condition.is_some())
         {
@@ -390,7 +619,12 @@ impl PresentationState {
             self.inactivity_anchored_at = anchored_at.monotonic;
         }
         self.snapshot = snapshot;
-        Ok(update)
+        let next_presentation = self.presentation_at(anchored_at.monotonic)?;
+        Ok(if reconciles_provisional_timing {
+            PresentationUpdate::InPlace
+        } else {
+            classify_presentation_update(&previous_presentation, &next_presentation)
+        })
     }
 
     pub fn disconnect(&mut self, anchored_at: Duration) -> PresentationUpdate {
@@ -406,19 +640,15 @@ impl PresentationState {
             self.inactivity_anchored_at = anchored_at;
         }
         self.snapshot = snapshot;
-        self.progress_anchored_at = anchored_at;
-        self.source_sample_age = Duration::ZERO;
+        self.timing = TimingContinuity::discarded();
         update
     }
 
     pub fn presentation_at(&self, now: Duration) -> Result<Presentation, PresentationError> {
-        let elapsed = match self.behavior {
-            PresentationBehavior::Dynamic => self
-                .source_sample_age
-                .saturating_add(now.saturating_sub(self.progress_anchored_at)),
-            PresentationBehavior::StaticFixture => Duration::ZERO,
-        };
-        presentation_from_snapshot_after(&self.snapshot, elapsed)
+        presentation_from_snapshot_with_timing(
+            &self.snapshot,
+            self.timing.resolved_at(&self.snapshot, now, self.behavior),
+        )
     }
 
     pub fn revision(&self) -> u64 {
@@ -458,6 +688,69 @@ impl PresentationState {
             offset: INACTIVE_POSITIONS[position_index as usize],
         }
     }
+}
+
+impl TimingGrace {
+    fn is_active_at(self, now: Duration) -> bool {
+        matches!(self, Self::Active { started_at } if now.saturating_sub(started_at) < PROVISIONAL_TIMING_GRACE)
+    }
+
+    fn has_expired_at(self, now: Duration) -> bool {
+        matches!(self, Self::Active { started_at } if now.saturating_sub(started_at) >= PROVISIONAL_TIMING_GRACE)
+    }
+}
+
+impl KnownNowPlaying {
+    fn is_compatible_with(&self, other: &Self) -> bool {
+        [
+            (&self.title, &other.title),
+            (&self.artist, &other.artist),
+            (&self.album, &other.album),
+        ]
+        .into_iter()
+        .all(|(left, right)| left.is_none() || right.is_none() || left == right)
+    }
+
+    fn enriched_with(self, other: Self) -> Self {
+        Self {
+            title: other.title.or(self.title),
+            artist: other.artist.or(self.artist),
+            album: other.album.or(self.album),
+        }
+    }
+}
+
+impl From<&NowPlaying> for KnownNowPlaying {
+    fn from(now_playing: &NowPlaying) -> Self {
+        Self {
+            title: usable_metadata_line(now_playing.title.as_deref()),
+            artist: usable_metadata_line(now_playing.artist.as_deref()),
+            album: usable_metadata_line(now_playing.album.as_deref()),
+        }
+    }
+}
+
+impl ResolvedTiming {
+    fn clamped(mut self) -> Self {
+        if let (Some(position_seconds), Some(duration_seconds)) =
+            (self.position_seconds, self.duration_seconds)
+        {
+            self.position_seconds = Some(position_seconds.min(duration_seconds));
+        }
+        self
+    }
+}
+
+fn same_composition_except_timing(
+    left: &PresentationSnapshot,
+    right: &PresentationSnapshot,
+) -> bool {
+    left.availability == right.availability
+        && left.tracked_output == right.tracked_output
+        && left.tracked_zone == right.tracked_zone
+        && left.now_playing == right.now_playing
+        && left.artwork == right.artwork
+        && left.lyrics == right.lyrics
 }
 
 pub fn classify_presentation_update(
@@ -501,50 +794,116 @@ fn inactivity_condition(snapshot: &PresentationSnapshot) -> Option<InactivityCon
 
 fn disconnected_snapshot(revision: u64) -> PresentationSnapshot {
     PresentationSnapshot {
-        schema_version: 3,
+        schema_version: 4,
         revision,
         availability: Availability::Disconnected,
         playback: None,
         tracked_output: None,
         tracked_zone: None,
         now_playing: None,
-        progress: None,
+        timing: None,
         artwork: None,
         lyrics: None,
     }
 }
 
-fn source_sample_age(
+fn authoritative_position_anchor(
     snapshot: &PresentationSnapshot,
+    received_at: PresentationTime,
+    behavior: PresentationBehavior,
+) -> Result<Option<PositionAnchor>, PresentationError> {
+    let Some(position) = authoritative_position(snapshot) else {
+        return Ok(None);
+    };
+    let sample_age = if behavior == PresentationBehavior::Dynamic
+        && snapshot.playback == Some(Playback::Playing)
+    {
+        source_sample_age(position, received_at.utc)?
+    } else {
+        Duration::ZERO
+    };
+    let duration_seconds = authoritative_duration(snapshot);
+    let seconds = (position.seconds + sample_age.as_secs_f64())
+        .min(duration_seconds.unwrap_or(f64::INFINITY));
+    Ok(Some(PositionAnchor {
+        seconds,
+        anchored_at: received_at.monotonic,
+        basis: PositionBasis::Authoritative,
+    }))
+}
+
+fn source_sample_age(
+    position: &TimingPosition,
     received_at: SystemTime,
 ) -> Result<Duration, PresentationError> {
-    if snapshot.playback != Some(Playback::Playing) {
-        return Ok(Duration::ZERO);
-    }
-    let Some(progress) = snapshot.progress.as_ref() else {
-        return Ok(Duration::ZERO);
-    };
-
-    let sampled_at = OffsetDateTime::parse(&progress.sampled_at, &Rfc3339)
-        .map_err(|_| PresentationError("progress sampledAt must be an RFC 3339 timestamp"))?;
+    let sampled_at = OffsetDateTime::parse(&position.sampled_at, &Rfc3339).map_err(|_| {
+        PresentationError("timing position sampledAt must be an RFC 3339 timestamp")
+    })?;
     let sample_age = OffsetDateTime::from(received_at) - sampled_at;
     if sample_age.is_negative() {
         return Ok(Duration::ZERO);
     }
 
     Duration::try_from(sample_age)
-        .map_err(|_| PresentationError("progress sampledAt is outside the supported range"))
+        .map_err(|_| PresentationError("timing position sampledAt is outside the supported range"))
+}
+
+fn authoritative_position(snapshot: &PresentationSnapshot) -> Option<&TimingPosition> {
+    snapshot.timing.as_ref()?.position.as_ref()
+}
+
+fn authoritative_duration(snapshot: &PresentationSnapshot) -> Option<f64> {
+    snapshot.timing.as_ref()?.duration_seconds
+}
+
+fn can_observe_timing(snapshot: &PresentationSnapshot) -> bool {
+    snapshot.availability == Availability::Available
+        && snapshot.playback != Some(Playback::Stopped)
+        && snapshot.now_playing.is_some()
+}
+
+fn has_complete_authoritative_timing(snapshot: &PresentationSnapshot) -> bool {
+    authoritative_position(snapshot).is_some() && authoritative_duration(snapshot).is_some()
+}
+
+fn replaces_provisional_dimension(
+    previous: &PresentationSnapshot,
+    next: &PresentationSnapshot,
+) -> bool {
+    (authoritative_position(previous).is_none() && authoritative_position(next).is_some())
+        || (authoritative_duration(previous).is_none() && authoritative_duration(next).is_some())
+}
+
+fn projected_position(
+    position: PositionAnchor,
+    playback: Option<Playback>,
+    duration_seconds: Option<f64>,
+    now: Duration,
+    behavior: PresentationBehavior,
+) -> f64 {
+    let advancement =
+        if behavior == PresentationBehavior::Dynamic && playback == Some(Playback::Playing) {
+            now.saturating_sub(position.anchored_at).as_secs_f64()
+        } else {
+            0.0
+        };
+    (position.seconds + advancement).min(duration_seconds.unwrap_or(f64::INFINITY))
 }
 
 pub fn presentation_from_snapshot(
     snapshot: &PresentationSnapshot,
 ) -> Result<Presentation, PresentationError> {
-    presentation_from_snapshot_after(snapshot, Duration::ZERO)
+    let timing = ResolvedTiming {
+        position_seconds: authoritative_position(snapshot).map(|position| position.seconds),
+        duration_seconds: authoritative_duration(snapshot),
+    }
+    .clamped();
+    presentation_from_snapshot_with_timing(snapshot, timing)
 }
 
-fn presentation_from_snapshot_after(
+fn presentation_from_snapshot_with_timing(
     snapshot: &PresentationSnapshot,
-    elapsed: Duration,
+    timing: ResolvedTiming,
 ) -> Result<Presentation, PresentationError> {
     if snapshot.availability != Availability::Available {
         return Ok(Presentation::FullField(unavailable_presentation(
@@ -571,10 +930,11 @@ fn presentation_from_snapshot_after(
         )));
     }
     let now_playing = snapshot.now_playing.as_ref();
-    let lyric_presentation = snapshot.progress.as_ref().and_then(|progress| {
-        snapshot.lyrics.as_ref().and_then(|lyrics| {
-            lyric_presentation(lyrics, projected_position(progress, playback, elapsed))
-        })
+    let lyric_presentation = timing.position_seconds.and_then(|position_seconds| {
+        snapshot
+            .lyrics
+            .as_ref()
+            .and_then(|lyrics| lyric_presentation(lyrics, position_seconds))
     });
     let now_playing = NowPlayingPresentation {
         title: usable_metadata_line(
@@ -589,12 +949,14 @@ fn presentation_from_snapshot_after(
         tracked_output: tracked_output.name.clone(),
         tracked_zone: tracked_zone.name.clone(),
         status: presentation_status_for_playback(playback),
-        progress: snapshot
-            .progress
-            .as_ref()
-            .map(|progress| presentation_progress(progress, playback, elapsed)),
-        activity: (playback == Playback::Playing && snapshot.progress.is_none())
-            .then(|| Box::new(indeterminate_activity())),
+        progress: timing.position_seconds.zip(timing.duration_seconds).map(
+            |(position_seconds, duration_seconds)| {
+                presentation_progress(position_seconds, duration_seconds)
+            },
+        ),
+        activity: (playback == Playback::Playing
+            && (timing.position_seconds.is_none() || timing.duration_seconds.is_none()))
+        .then(|| Box::new(indeterminate_activity())),
         artwork_revision: snapshot.artwork.as_ref().map(|artwork| artwork.revision),
         artwork_path: snapshot
             .artwork
@@ -769,28 +1131,14 @@ fn presentation_status_for_availability(availability: Availability) -> Presentat
     }
 }
 
-fn presentation_progress(
-    progress: &Progress,
-    playback: Playback,
-    elapsed: Duration,
-) -> PresentationProgress {
-    let position = projected_position(progress, playback, elapsed);
-    let remaining = progress.duration_seconds - position;
+fn presentation_progress(position_seconds: f64, duration_seconds: f64) -> PresentationProgress {
+    let remaining = duration_seconds - position_seconds;
 
     PresentationProgress {
-        fraction: position / progress.duration_seconds,
-        elapsed: format_duration(position),
+        fraction: position_seconds / duration_seconds,
+        elapsed: format_duration(position_seconds),
         remaining: format!("−{}", format_duration(remaining)),
     }
-}
-
-fn projected_position(progress: &Progress, playback: Playback, elapsed: Duration) -> f64 {
-    let advancement = if playback == Playback::Playing {
-        elapsed.as_secs_f64()
-    } else {
-        0.0
-    };
-    (progress.position_seconds + advancement).clamp(0.0, progress.duration_seconds)
 }
 
 fn lyric_presentation(

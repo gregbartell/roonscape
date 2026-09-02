@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "revision": 18,
   "availability": "available",
   "playback": "playing",
@@ -7,6 +7,7 @@
     "name": "Speaker System"
   },
   "trackedZone": {
+    "id": "zone-living-room",
     "name": "Living Room"
   },
   "nowPlaying": {
@@ -14,14 +15,16 @@
     "artist": "The International Assembly of Patient Astronomers, Metropolitan Chamber Players, Northern Coast Signal Choir, Cartographers Without Borders, and Friends",
     "album": "Collected Nocturnes for Temporary Cities, Fading Radio Signals, Unmapped Roads, Impossible Weather, Borrowed Telescopes, and All of the Quiet Rooms We Remember Only After Waking"
   },
-  "progress": {
-    "positionSeconds": 171,
-    "durationSeconds": 266,
-    "sampledAt": "2026-08-15T19:20:00Z"
-  },
   "artwork": {
     "revision": 3,
     "path": "src/shared/fixtures/artwork/playing.jpg"
   },
-  "lyrics": null
+  "lyrics": null,
+  "timing": {
+    "position": {
+      "seconds": 171,
+      "sampledAt": "2026-08-15T19:20:00Z"
+    },
+    "durationSeconds": 266
+  }
 }

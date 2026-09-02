@@ -20,8 +20,9 @@ pub use capture_control::{
     FixtureSelectionIdentity, PaintedFixtureSelection,
 };
 pub use contract::{
-    ArtworkReference, Availability, LyricCue, NowPlaying, Playback, PresentationSnapshot, Progress,
-    SnapshotError, SynchronizedLyrics, TrackedOutput, TrackedZone, parse_snapshot,
+    ArtworkReference, Availability, LyricCue, NowPlaying, Playback, PresentationSnapshot,
+    SnapshotError, SynchronizedLyrics, Timing, TimingPosition, TrackedOutput, TrackedZone,
+    parse_snapshot,
 };
 pub use diagnostics::{
     Diagnostics, DiagnosticsConfiguration, DiagnosticsConfigurationError,

@@ -44,21 +44,23 @@ export interface SnapshotContentViolation {
 }
 
 export interface PresentationSnapshot {
-  schemaVersion: 3;
+  schemaVersion: 4;
   revision: number;
   availability: Availability;
   playback: Playback | null;
   trackedOutput: { name: string } | null;
-  trackedZone: { name: string } | null;
+  trackedZone: { id: string; name: string } | null;
   nowPlaying: {
     title: string | null;
     artist: string | null;
     album: string | null;
   } | null;
-  progress: {
-    positionSeconds: number;
-    durationSeconds: number;
-    sampledAt: string;
+  timing: {
+    position: {
+      seconds: number;
+      sampledAt: string;
+    } | null;
+    durationSeconds: number | null;
   } | null;
   artwork: { revision: number; path: string } | null;
   lyrics: SynchronizedLyrics | null;
