@@ -59,7 +59,7 @@ function createBoundary() {
   return { connections, endpoints, feed, schedules, timelines };
 }
 
-test("targets only the ordinary connection's exact Core endpoint", () => {
+test("targets only the Roon Server paired through ordinary discovery", () => {
   const boundary = createBoundary();
 
   assert.deepEqual(boundary.endpoints, [

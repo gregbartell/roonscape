@@ -35,7 +35,7 @@ const defaultResolution = { width: 1280, height: 720 };
 const maximumDimension = 32_767;
 
 const usage = `Usage:
-  live-capture-session.mjs record --event DESCRIPTION [--resolution WIDTHxHEIGHT] [--fullscreen] [--duration SECONDS] [--config PATH]
+  live-capture-session.mjs record --event DESCRIPTION [--resolution WIDTHxHEIGHT] [--fullscreen] [--duration SECONDS] [--config PATH] [--roon-server HOST]
   live-capture-session.mjs snapshot --session DIRECTORY
   live-capture-session.mjs stop --session DIRECTORY
   live-capture-session.mjs review --session DIRECTORY
@@ -288,6 +288,7 @@ export function parseRecordOptions(arguments_) {
     fullscreen: false,
     durationSeconds: undefined,
     configurationFile: undefined,
+    roonServerHost: undefined,
   };
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
@@ -321,6 +322,9 @@ export function parseRecordOptions(arguments_) {
         options.configurationFile = path.resolve(
           optionValue(arguments_, ++index, argument),
         );
+        break;
+      case "--roon-server":
+        options.roonServerHost = optionValue(arguments_, ++index, argument);
         break;
       default:
         throw new Error(`unknown record option: ${argument}`);
@@ -387,6 +391,9 @@ async function recordSession(options) {
     const launcherArguments = [];
     if (options.configurationFile) {
       launcherArguments.push("--config", options.configurationFile);
+    }
+    if (options.roonServerHost) {
+      launcherArguments.push("--roon-server", options.roonServerHost);
     }
     roonscape = startMonitoredProcess(
       path.join(repositoryRoot, "src/launcher/roonscape"),

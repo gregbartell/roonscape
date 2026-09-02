@@ -30,6 +30,7 @@ import type { PresentationSnapshot } from "../src/snapshot.js";
 import { withTaskDirectory } from "./support.js";
 
 const bridgeEntry = fileURLToPath(new URL("../src/index.js", import.meta.url));
+const maximumAbsoluteHostname = `${"a".repeat(63)}.${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(61)}.`;
 
 test("help describes the owner-facing command", async () => {
   const output: string[] = [];
@@ -49,6 +50,10 @@ test("help describes the owner-facing command", async () => {
     /Show what Roon's playing\.\n {2}Display only, no controls\./,
   );
   assert.match(output.join("\n"), /--setup/);
+  assert.match(
+    output.join("\n"),
+    /--roon-server HOST\n {17}Discover this Roon Server Host directly/,
+  );
   assert.match(output.join("\n"), /--help/);
   assert.match(output.join("\n"), /--version/);
 });
@@ -113,6 +118,104 @@ test("configured start launches bridge then renderer as one session", async () =
     "bridge:SIGTERM",
     "runtime:cleanup",
   ]);
+});
+
+for (const [description, roonServerHost] of [
+  ["a hostname", "roll.local"],
+  ["an IPv4 address", "100.100.110.72"],
+  ["a maximum-length absolute hostname", maximumAbsoluteHostname],
+] as const) {
+  test(`--roon-server propagates ${description} to Live Mode`, async () => {
+    let bridgeOptions:
+      Parameters<RoonScapeCommandDependencies["launchBridge"]>[0] | undefined;
+    const bridge = pendingChild(() => undefined);
+    const result = await runRoonScapeCommand(
+      ["--roon-server", roonServerHost],
+      commandDependencies({
+        loadConfiguration: () => ({ trackedOutputId: "output-studio" }),
+        openRuntime: async () => ({
+          socketPath: "/runtime/roonscape/roonscape.sock",
+          cleanup: async () => undefined,
+        }),
+        launchBridge: (options) => {
+          bridgeOptions = options;
+          return bridge;
+        },
+        launchRenderer: () => completedChild({ exitCode: 0, signal: null }),
+      }),
+    );
+
+    assert.equal(result, 0);
+    assert.equal(bridgeOptions?.roonServerHost, roonServerHost);
+  });
+}
+
+for (const invalidArguments of [
+  ["--roon-server"],
+  ["--roon-server", ""],
+  ["--roon-server", "roll:9330"],
+  ["--roon-server", "https://roll.local"],
+  ["--roon-server", "999.100.110.72"],
+  ["--roon-server", "roll..local"],
+  ["--roon-server", "roll.local", "--roon-server", "other.local"],
+]) {
+  test(`rejects malformed Roon Server arguments: ${JSON.stringify(invalidArguments)}`, async () => {
+    const errors: string[] = [];
+    const result = await runRoonScapeCommand(
+      invalidArguments,
+      commandDependencies({ writeError: (line) => errors.push(line) }),
+    );
+
+    assert.equal(result, 2);
+    assert.match(errors.join("\n"), /Usage: roonscape/);
+  });
+}
+
+test("Roon Server Host remains absent from Display Configuration", async () => {
+  let bridgeOptions:
+    Parameters<RoonScapeCommandDependencies["launchBridge"]>[0] | undefined;
+  let savedConfiguration:
+    | Parameters<RoonScapeCommandDependencies["saveConfiguration"]>[1]
+    | undefined;
+  const bridge = pendingChild(() => undefined);
+  const result = await runRoonScapeCommand(
+    ["--roon-server", "roll.local"],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      discoverTrackedOutputs: async () => [
+        {
+          trackedOutputId: "output-studio",
+          trackedOutputName: "Studio DAC",
+          trackedZoneName: "Studio",
+        },
+      ],
+      readSetupKey: async () => "enter",
+      saveConfiguration: (_file, configuration) => {
+        savedConfiguration = configuration;
+      },
+      openRuntime: async () => ({
+        socketPath: "/runtime/roonscape/roonscape.sock",
+        cleanup: async () => undefined,
+      }),
+      launchBridge: (options) => {
+        bridgeOptions = options;
+        return bridge;
+      },
+      launchRenderer: () => completedChild({ exitCode: 0, signal: null }),
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.equal(bridgeOptions?.roonServerHost, "roll.local");
+  assert.deepEqual(savedConfiguration, {
+    trackedOutputId: "output-studio",
+    trackedOutputName: "Studio DAC",
+    inactivity: {
+      gracePeriodSeconds: 300,
+      dimmedOpacity: 0.35,
+      repositionCadenceSeconds: 60,
+    },
+  });
 });
 
 test("rejects the removed Display Configuration environment override", async () => {
@@ -354,6 +457,35 @@ test("--setup preserves the saved choices and exits without launching", async ()
   assert.match(output.join("\n"), /45 seconds/);
   assert.deepEqual(saved, savedConfiguration);
 });
+
+for (const roonServerHost of ["roll.local", "100.100.110.72"]) {
+  test(`--setup --roon-server uses ${roonServerHost}`, async () => {
+    let discoveredWith: string | undefined;
+    const result = await runRoonScapeCommand(
+      ["--setup", "--roon-server", roonServerHost],
+      commandDependencies({
+        terminalIsInteractive: () => true,
+        loadConfiguration: () => ({ trackedOutputId: "output-studio" }),
+        configurationFileExists: () => true,
+        discoverTrackedOutputs: async (_authorizationFile, _signal, host) => {
+          discoveredWith = host;
+          return [
+            {
+              trackedOutputId: "output-studio",
+              trackedOutputName: "Studio DAC",
+              trackedZoneName: "Studio",
+            },
+          ];
+        },
+        readSetupKey: scriptedSetupKeys("enter", "enter"),
+        saveConfiguration: () => undefined,
+      }),
+    );
+
+    assert.equal(result, 0);
+    assert.equal(discoveredWith, roonServerHost);
+  });
+}
 
 test("--setup refuses to wait for input without an interactive terminal", async () => {
   const errors: string[] = [];

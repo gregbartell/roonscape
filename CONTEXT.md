@@ -108,6 +108,11 @@ An action that changes Roon playback, volume, or playback settings. Roon
 Control is outside this product's scope.
 _Avoid_: Display interaction
 
+**Roon Server Host**:
+A hostname or IPv4 address identifying the Roon Server RoonScape should contact
+when ordinary Roon discovery is unsuitable.
+_Avoid_: Core endpoint, direct Core, Roon Core Host
+
 **RoonScape**:
 An unattended, read-only presentation of current Roon playback.
 _Avoid_: Roon Display, web controller, remote

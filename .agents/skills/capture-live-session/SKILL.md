@@ -26,8 +26,8 @@ Start the helper as a long-running command from the repository root:
 node .agents/skills/capture-live-session/scripts/live-capture-session.mjs record --event "<event description>"
 ```
 
-Add `--resolution WIDTHxHEIGHT`, `--fullscreen`, or `--duration SECONDS` only
-when the request calls for them. The helper
+Add `--resolution WIDTHxHEIGHT`, `--fullscreen`, `--duration SECONDS`, or
+`--roon-server HOST` only when the request calls for them. The helper
 preflights its optional tools and existing RoonScape setup, refuses to disturb
 another Live Mode session, builds the app, starts an isolated X display, and
 records losslessly at 20 fps. It prints the session directory before

@@ -20,7 +20,11 @@ import {
   createPrivateLyricFeedConnection,
   lyricFeedEndpointForCore,
 } from "./private-lyric-connection.js";
-import { initializeRoonExtension } from "./roon-extension.js";
+import {
+  connectRoonExtension,
+  initializeRoonExtension,
+} from "./roon-extension.js";
+import type { RoonServerHost } from "./roon-server-host.js";
 
 type Unavailable = Exclude<Availability, "available">;
 type SnapshotState = Omit<PresentationSnapshot, "revision">;
@@ -130,6 +134,13 @@ export interface RoonStatusService extends RoonServiceDescriptor {
   set_status(message: string, isError: boolean): void;
 }
 
+export interface RoonConnectionOptions {
+  host: string;
+  port: number;
+  onclose?: () => void;
+  onerror?: (connection: unknown) => void;
+}
+
 export interface RoonExtension {
   init_services(services: {
     required_services: RoonServiceDescriptor[];
@@ -138,6 +149,9 @@ export interface RoonExtension {
   start_discovery(): void;
   stop_discovery(): void;
   disconnect_all(): void;
+  ws_connect?(options: RoonConnectionOptions): {
+    transport: { close(): void };
+  };
 }
 
 export interface RoonServices {
@@ -161,6 +175,7 @@ interface StartRoonBridgeOptions {
   artworkFiles: ArtworkFiles;
   displayConfigurationStore: DisplayConfigurationStore;
   createRoonServices: CreateRoonServices;
+  roonServerHost?: RoonServerHost;
   publish(snapshot: PresentationSnapshot): void;
   reportPublicationFailure?: (reason: string) => void;
   scheduleArtworkRetry?: ScheduleArtworkRetry;
@@ -182,6 +197,7 @@ export function startRoonBridge({
   artworkFiles,
   displayConfigurationStore,
   createRoonServices,
+  roonServerHost,
   publish,
   reportPublicationFailure = reportSnapshotPublicationFailure,
   scheduleArtworkRetry = scheduleRetryWithTimeout,
@@ -450,7 +466,13 @@ export function startRoonBridge({
     status.set_status(`Publication failed: ${reason}`, true);
   publish(currentSnapshot);
   setExtensionStatus(status, currentSnapshot.availability);
-  services.extension.start_discovery();
+  const directedConnection =
+    roonServerHost === undefined
+      ? undefined
+      : connectRoonExtension(services.extension, roonServerHost);
+  if (directedConnection === undefined) {
+    services.extension.start_discovery();
+  }
 
   return {
     currentSnapshot: () => currentSnapshot,
@@ -463,12 +485,21 @@ export function startRoonBridge({
       }
     },
     stop: () =>
-      attemptAllCleanup("Could not stop RoonScape Bridge", [
-        () => services.extension.stop_discovery(),
-        () => services.extension.disconnect_all(),
-        () => activeLyricFeed?.stop(),
-        () => artworkPresentation.cancelAndClear(),
-      ]),
+      attemptAllCleanup(
+        "Could not stop RoonScape Bridge",
+        directedConnection === undefined
+          ? [
+              () => services.extension.stop_discovery(),
+              () => services.extension.disconnect_all(),
+              () => activeLyricFeed?.stop(),
+              () => artworkPresentation.cancelAndClear(),
+            ]
+          : [
+              () => directedConnection.stop(),
+              () => activeLyricFeed?.stop(),
+              () => artworkPresentation.cancelAndClear(),
+            ],
+      ),
   };
 }
 

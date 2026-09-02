@@ -9,7 +9,7 @@ import {
   type PrivateZoneSubscriptionEvent,
 } from "../src/private-lyric-connection.js";
 
-test("uses the first-party identity, exact Core endpoint, and inert display service", () => {
+test("uses the paired Roon Server, first-party identity, and inert display service", () => {
   let options: PrivateRoonApiOptions | undefined;
   let initialized:
     { required_services: unknown[]; provided_services: unknown[] } | undefined;

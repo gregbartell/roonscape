@@ -24,6 +24,17 @@ import {
 const executeFile = promisify(execFile);
 const scratchRoot = "/var/tmp/codex/roonscape";
 
+test("record options forward an explicit Roon Server Host", () => {
+  const options = parseRecordOptions([
+    "--event",
+    "lyrics begin",
+    "--roon-server",
+    "roll.local",
+  ]);
+
+  assert.equal(options.roonServerHost, "roll.local");
+});
+
 test("resolution validation keeps captures small but supports overrides", () => {
   assert.deepEqual(parseResolution("1280x720"), { width: 1280, height: 720 });
   assert.deepEqual(parseResolution("1920x1200"), {
