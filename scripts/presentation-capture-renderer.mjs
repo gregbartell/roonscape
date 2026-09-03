@@ -17,6 +17,10 @@ import {
 import { validatePresentationCaptureSnapshot } from "./presentation-snapshot.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const defaultRendererExecutable = path.join(
+  repositoryRoot,
+  "target/debug/roonscape-renderer",
+);
 const presentationCaptureEncodingTimeoutMilliseconds = 30_000;
 const captureDisplayConfiguration = {
   trackedOutputId: "visual-acceptance-capture",
@@ -27,6 +31,23 @@ const captureDisplayConfiguration = {
   },
 };
 
+export function createControlledRendererSessionAdapter({
+  environment = process.env,
+  publishCapture,
+  rendererExecutable = defaultRendererExecutable,
+}) {
+  return {
+    execute: (captures, observer) =>
+      runControlledRendererSession(captures, {
+        environment,
+        publishCapture,
+        rendererExecutable,
+        onCaptureStarted: observer.captureStarted,
+        onCapturePublished: observer.capturePublished,
+      }),
+  };
+}
+
 export async function runControlledRendererSession(
   captures,
   {
@@ -34,6 +55,7 @@ export async function runControlledRendererSession(
     publishCapture,
     onCaptureStarted = () => {},
     onCapturePublished = () => {},
+    rendererExecutable = defaultRendererExecutable,
   },
 ) {
   const [firstCapture] = captures;
@@ -76,6 +98,7 @@ export async function runControlledRendererSession(
     renderer = startNativeRenderer(
       displayConfigurationPath,
       rendererEnvironment,
+      rendererExecutable,
     );
     await renderer.spawned;
     [control] = await waitFor(
@@ -208,18 +231,14 @@ function assertExpectedAcknowledgement(acknowledgement, capture, revision) {
   }
 }
 
-function startNativeRenderer(displayConfigurationPath, environment) {
+function startNativeRenderer(
+  displayConfigurationPath,
+  environment,
+  rendererExecutable,
+) {
   return startMonitoredProcess(
-    "cargo",
-    [
-      "run",
-      "--quiet",
-      "--package",
-      "roonscape-renderer",
-      "--",
-      "--config",
-      displayConfigurationPath,
-    ],
+    rendererExecutable,
+    ["--config", displayConfigurationPath],
     { cwd: repositoryRoot, environment },
   );
 }

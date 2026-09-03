@@ -193,18 +193,6 @@ test("explicit windowed operation retains the windowed viewport", async () => {
   );
 });
 
-test("Presentation Capture retains its requested viewport", async () => {
-  await assertRendererGeometry(
-    { ROONSCAPE_CAPTURE_VIEWPORT: "1280x720" },
-    {
-      x: 0,
-      y: 0,
-      width: 1280,
-      height: 720,
-    },
-  );
-});
-
 async function assertRendererGeometry(environment, expected) {
   await withBareXRenderer(
     { environment },

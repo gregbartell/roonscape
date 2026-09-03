@@ -9,7 +9,6 @@ import {
   presentationCaptureResolution,
   selectFocusedPresentationCapture,
 } from "./presentation-captures.mjs";
-import { runMonitoredProcess } from "./process-harness.mjs";
 import { loadPresentationCaptureSnapshot } from "./presentation-snapshot.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -113,16 +112,8 @@ async function preflightVisualAcceptanceProfile(
     snapshot: snapshots.get(capture.fixture),
   }));
   await addUnreadableInputFailures(runtimeInputPaths, failures);
-  const availableExecutables = await addMissingExecutableFailures(
-    failures,
-    context.environment,
-  );
+  await addMissingExecutableFailures(failures, context.environment);
   await addDestinationFailures(captures, outputDirectory, overwrite, failures);
-  await addRendererBuildFailure(
-    availableExecutables,
-    failures,
-    context.environment,
-  );
   assertCapturePreflightSucceeded(failures);
   return captures;
 }
@@ -160,10 +151,7 @@ async function preflightFocusedCapture(
     };
   });
   const failures = [];
-  const availableExecutables = await addMissingExecutableFailures(
-    failures,
-    context.environment,
-  );
+  await addMissingExecutableFailures(failures, context.environment);
   const runtimeInputPaths = [...captureFontPaths, selected.fixture];
   let selectedSnapshot;
   try {
@@ -181,11 +169,6 @@ async function preflightFocusedCapture(
   }
   await addUnreadableInputFailures(runtimeInputPaths, failures);
   await addDestinationFailures(captures, outputDirectory, overwrite, failures);
-  await addRendererBuildFailure(
-    availableExecutables,
-    failures,
-    context.environment,
-  );
   assertCapturePreflightSucceeded(failures);
   return captures.map((capture) => ({
     ...capture,
@@ -253,17 +236,9 @@ async function preflightOrdinaryScenarioSet(
     }),
   );
 
-  const availableExecutables = await addMissingExecutableFailures(
-    failures,
-    context.environment,
-  );
+  await addMissingExecutableFailures(failures, context.environment);
   await addUnreadableInputFailures(runtimeInputPaths, failures);
   await addDestinationFailures(captures, outputDirectory, overwrite, failures);
-  await addRendererBuildFailure(
-    availableExecutables,
-    failures,
-    context.environment,
-  );
   assertCapturePreflightSucceeded(failures);
   return captures;
 }
@@ -347,15 +322,11 @@ async function addUnreadableInputFailures(inputPaths, failures) {
 }
 
 async function addMissingExecutableFailures(failures, environment) {
-  const availableExecutables = new Set();
-  for (const executableName of ["Xvfb", "xwininfo", "scrot", "cargo"]) {
-    if (await executableOnPath(executableName, environment)) {
-      availableExecutables.add(executableName);
-    } else {
+  for (const executableName of ["Xvfb", "xwininfo", "scrot"]) {
+    if (!(await executableOnPath(executableName, environment))) {
       failures.push(`required executable is unavailable: ${executableName}`);
     }
   }
-  return availableExecutables;
 }
 
 async function addDestinationFailures(
@@ -403,30 +374,6 @@ async function addDestinationFailures(
   }
   if (collisions.length > 0) {
     failures.push(`destination files already exist:\n${collisions.join("\n")}`);
-  }
-}
-
-async function addRendererBuildFailure(
-  availableExecutables,
-  failures,
-  environment,
-) {
-  if (!availableExecutables.has("cargo") || failures.length > 0) {
-    return;
-  }
-  try {
-    await runMonitoredProcess(
-      "cargo",
-      ["build", "--locked", "--package", "roonscape-renderer"],
-      {
-        cwd: repositoryRoot,
-        environment,
-        description: "the renderer build preflight",
-        timeoutMilliseconds: 300_000,
-      },
-    );
-  } catch (error) {
-    failures.push(`renderer build preflight failed: ${errorMessage(error)}`);
   }
 }
 

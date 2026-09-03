@@ -82,6 +82,18 @@ The comprehensive design-review plan is available only through the explicit
 visual-acceptance profile described in the [presentation visual-acceptance
 guide](visual-acceptance/presentation.md).
 
+Run the self-contained design test suite before accepting changes to the
+Renderer, presentation design, capture planning or execution, Fixture
+Scenarios, artwork, fonts, styles, or capture-related build orchestration:
+
+```sh
+npm run test:design
+```
+
+The command builds its Bridge and Renderer prerequisites once, then runs the
+explicitly maintained Presentation Capture test family. These tests are not
+part of the regular repository test process.
+
 Run the complete repository check before submitting a change:
 
 ```sh

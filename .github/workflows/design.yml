@@ -1,0 +1,81 @@
+name: Design tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/actions/setup-native-test-environment/**"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/design.yml"
+      - ".github/workflows/release.yml"
+      - ".node-version"
+      - "package.json"
+      - "package-lock.json"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "src/bridge/package.json"
+      - "src/bridge/tsconfig.json"
+      - "src/bridge/src/fixture-scenario-catalog.ts"
+      - "src/renderer/**"
+      - "src/shared/fixtures/**"
+      - "src/shared/schema/presentation-snapshot.schema.json"
+      - "scripts/capture-presentations.mjs"
+      - "scripts/capture-control-renderer.test.mjs"
+      - "scripts/presentation-capture*.mjs"
+      - "scripts/presentation-snapshot.mjs"
+      - "scripts/process-harness.mjs"
+      - "scripts/test-fixtures/presentation-capture/**"
+      - "docs/design/presentation.md"
+      - "docs/visual-acceptance/presentation.md"
+  pull_request:
+    paths:
+      - ".github/actions/setup-native-test-environment/**"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/design.yml"
+      - ".github/workflows/release.yml"
+      - ".node-version"
+      - "package.json"
+      - "package-lock.json"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "src/bridge/package.json"
+      - "src/bridge/tsconfig.json"
+      - "src/bridge/src/fixture-scenario-catalog.ts"
+      - "src/renderer/**"
+      - "src/shared/fixtures/**"
+      - "src/shared/schema/presentation-snapshot.schema.json"
+      - "scripts/capture-presentations.mjs"
+      - "scripts/capture-control-renderer.test.mjs"
+      - "scripts/presentation-capture*.mjs"
+      - "scripts/presentation-snapshot.mjs"
+      - "scripts/process-harness.mjs"
+      - "scripts/test-fixtures/presentation-capture/**"
+      - "docs/design/presentation.md"
+      - "docs/visual-acceptance/presentation.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Set up native test environment
+        uses: ./.github/actions/setup-native-test-environment
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Run design tests
+        run: npm run test:design

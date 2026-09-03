@@ -5,13 +5,14 @@ display_number="${1#:}"
 socket="/tmp/.X11-unix/X${display_number}"
 mkdir -p /tmp/.X11-unix
 touch "$socket"
+stopped=0
 
 stop() {
-  if [ "${ROONSCAPE_CAPTURE_TEST_LOG_STYLE-general}" = "focused" ]; then
-    printf "Xvfb-stopped\n" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
-  fi
+  [ "$stopped" -eq 1 ] && return
+  stopped=1
+  printf "Xvfb-stopped\n" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
   rm -f "$socket"
 }
 
 trap 'stop; exit 0' TERM INT EXIT
-while :; do /usr/bin/sleep 1; done
+while :; do /usr/bin/sleep 0.05; done

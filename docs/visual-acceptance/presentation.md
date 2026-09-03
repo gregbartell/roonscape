@@ -16,8 +16,13 @@ guide](../development.md). The capture host also needs `Xvfb`, `xwininfo`, and
 From the repository root, run:
 
 ```sh
+npm run test:design
 npm run capture:presentations -- --profile visual-acceptance --output /path/to/presentation-review
 ```
+
+The design suite is the required automated verification for presentation and
+capture changes. The profile then produces the complete evidence set for human
+review.
 
 The explicit profile requires its destination and owns the complete maintained
 Fixture Scenario matrix, representative viewports, typography paths, palette

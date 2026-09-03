@@ -8,16 +8,20 @@ const fixtureDirectory = fileURLToPath(
 
 export async function installPresentationCaptureFixtures(binDirectory) {
   await mkdir(binDirectory, { recursive: true });
+  const renderer = path.join(binDirectory, "roonscape-renderer");
   await Promise.all(
-    ["Xvfb", "xwininfo", "cargo", "scrot"].map(async (name) => {
-      const destination = path.join(binDirectory, name);
-      await copyFile(path.join(fixtureDirectory, name), destination);
+    [
+      ["Xvfb", "Xvfb"],
+      ["xwininfo", "xwininfo"],
+      ["scrot", "scrot"],
+      ["renderer.mjs", "roonscape-renderer"],
+    ].map(async ([sourceName, executableName]) => {
+      const destination = path.join(binDirectory, executableName);
+      await copyFile(path.join(fixtureDirectory, sourceName), destination);
       await chmod(destination, 0o755);
     }),
   );
-  return {
-    renderer: path.join(fixtureDirectory, "renderer.mjs"),
-  };
+  return { renderer };
 }
 
 export function presentationCapturePngHeader(width, height) {
