@@ -163,14 +163,17 @@ test("ordinary discovery retains its existing idempotent cleanup", () => {
   ]);
 });
 
-test("directed discovery retries with a fresh transaction identifier", async () => {
+test("directed discovery retries with a fresh transaction identifier", async (context) => {
+  context.mock.timers.enable({ apis: ["setInterval"] });
   await withLoopbackResponder(async (responder) => {
     const transactionIds: string[] = [];
+    const firstQuery = Promise.withResolvers<void>();
     const connected = Promise.withResolvers<void>();
     responder.on("message", (query, requester) => {
       const transactionId = parseSoodProperties(query, "Q")._tid;
       assert.ok(transactionId);
       transactionIds.push(transactionId);
+      firstQuery.resolve();
       if (transactionIds.length === 2) {
         respond(responder, requester, validReply(transactionId, "9331"));
       }
@@ -184,6 +187,8 @@ test("directed discovery retries with a fresh transaction identifier", async () 
     );
 
     try {
+      await firstQuery.promise;
+      context.mock.timers.tick(1_100);
       await connected.promise;
       assert.equal(transactionIds.length, 2);
       assert.notEqual(transactionIds[0], transactionIds[1]);
@@ -214,7 +219,8 @@ test("a temporarily unresolvable Roon Server Host keeps waiting for cancellation
   await assert.rejects(discovery, { name: "AbortError" });
 });
 
-test("directed discovery cancellation closes an open socket idempotently", async () => {
+test("directed discovery cancellation closes an open socket idempotently", async (context) => {
+  context.mock.timers.enable({ apis: ["setInterval"] });
   await withLoopbackResponder(async (responder) => {
     const receivedQuery = Promise.withResolvers<void>();
     let queries = 0;
@@ -234,7 +240,7 @@ test("directed discovery cancellation closes an open socket idempotently", async
     await receivedQuery.promise;
     connection.stop();
     connection.stop();
-    await delay(1_100);
+    context.mock.timers.tick(1_100);
 
     assert.equal(connections, 0);
     assert.equal(queries, 1);
@@ -295,7 +301,8 @@ test("unrelated and malformed SOOD replies cannot select the endpoint", async ()
   });
 });
 
-test("a lost directed Live Mode connection stays Disconnected without rediscovery", async () => {
+test("a lost directed Live Mode connection stays Disconnected without rediscovery", async (context) => {
+  context.mock.timers.enable({ apis: ["setInterval"] });
   await withLoopbackResponder(async (responder) => {
     let queries = 0;
     let connectionLost: (() => void) | undefined;
@@ -354,7 +361,7 @@ test("a lost directed Live Mode connection stays Disconnected without rediscover
       await connected.promise;
       assert.equal(bridge.currentSnapshot().availability, "outputUnavailable");
       connectionLost?.();
-      await delay(1_100);
+      context.mock.timers.tick(1_100);
       assert.equal(queries, 1);
       assert.equal(bridge.currentSnapshot().availability, "disconnected");
     } finally {
@@ -449,10 +456,6 @@ function parseSoodProperties(
     offset += valueLength;
   }
   return properties;
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function requiredRoonServerHost(value: string): RoonServerHost {
