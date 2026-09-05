@@ -5,7 +5,7 @@ import {
 } from "./process-lifecycle.js";
 
 interface FixtureModeLifecycleOptions extends ProcessLifecycleEnvironment {
-  fixtureSession: FixtureModeSession;
+  fixtureSession: FixtureModeSession | Promise<FixtureModeSession>;
 }
 
 export function installFixtureModeLifecycle({
@@ -15,7 +15,7 @@ export function installFixtureModeLifecycle({
   exit,
 }: FixtureModeLifecycleOptions): void {
   installProcessLifecycle({
-    cleanup: () => fixtureSession.close(),
+    cleanup: async () => (await fixtureSession).close(),
     failureMessage: "Could not stop Fixture Mode",
     once,
     reportError,

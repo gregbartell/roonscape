@@ -63,6 +63,56 @@ test("ordinary Fixture Mode starts predictably at Playing", async () => {
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  for (const mode of ["catalog", "explicit"] as const) {
+    test(
+      `${signal} cleans up ${mode} Fixture Mode during startup`,
+      { timeout: subprocessWatchdogMilliseconds },
+      async (context) => {
+        await withTaskDirectory(async (taskDirectory) => {
+          const socketPath = path.join(taskDirectory, "roonscape.sock");
+          const controlSocketPath = path.join(taskDirectory, "control.sock");
+          const fixture = startFixture(
+            {
+              ROONSCAPE_SOCKET: socketPath,
+              ROONSCAPE_FIXTURE_CONTROL: controlSocketPath,
+              ROONSCAPE_FIXTURE:
+                mode === "explicit"
+                  ? "src/shared/fixtures/playing.json"
+                  : undefined,
+              ROONSCAPE_FIXTURE_CATALOG: undefined,
+              ROONSCAPE_TEST_STARTUP_SIGNAL: signal,
+              ROONSCAPE_TEST_STARTUP_SOCKET:
+                mode === "catalog" ? controlSocketPath : socketPath,
+            },
+            [
+              "--import",
+              fileURLToPath(
+                new URL("./fixture-startup-signal.js", import.meta.url),
+              ),
+            ],
+          );
+          const killOnTimeout = () => fixture.child.kill("SIGKILL");
+          context.signal.addEventListener("abort", killOnTimeout, {
+            once: true,
+          });
+
+          try {
+            assert.deepEqual(await fixture.closed, {
+              exitCode: 0,
+              signal: null,
+            });
+            assert.match(fixture.standardOutput(), /Fixture startup paused/);
+            await assert.rejects(access(socketPath), { code: "ENOENT" });
+            await assert.rejects(access(controlSocketPath), { code: "ENOENT" });
+          } finally {
+            context.signal.removeEventListener("abort", killOnTimeout);
+            await stop(fixture.child);
+          }
+        });
+      },
+    );
+  }
+
   test(`${signal} cleanly closes a Fixture Mode subprocess`, async () => {
     await withTaskDirectory(async (taskDirectory) => {
       const { socketPath, controlSocketPath, fixture } =
@@ -366,6 +416,7 @@ test(
 
 function startFixture(
   environmentOverrides: Record<string, string | undefined>,
+  nodeArguments: string[] = [],
 ) {
   let standardOutput = "";
   let standardError = "";
@@ -375,7 +426,7 @@ function startFixture(
       delete environment[name];
     }
   }
-  const child = spawn(process.execPath, [fixtureEntry], {
+  const child = spawn(process.execPath, [...nodeArguments, fixtureEntry], {
     env: environment,
     stdio: ["ignore", "pipe", "pipe"],
   });
