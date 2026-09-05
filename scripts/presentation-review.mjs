@@ -1,5 +1,12 @@
 import { appendFileSync, renameSync, writeFileSync } from "node:fs";
-import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  cp,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -180,10 +187,16 @@ async function captureReview(options) {
     runtime = await mkdtemp(path.join(os.tmpdir(), "rs-r."));
     const environment = { ...process.env };
     if (scope === "ci-fallback") {
+      // Older Fontconfig writes .uuid beside scanned fonts even with a private
+      // cache directory. Keep those writes out of the source worktree.
+      const fonts = path.join(runtime, "fonts");
+      await cp(path.join(root, "src/renderer/assets/fonts"), fonts, {
+        recursive: true,
+      });
       const config = path.join(runtime, "fonts.conf");
       await writeFile(
         config,
-        `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd"><fontconfig><dir>${escapeHtml(path.join(root, "src/renderer/assets/fonts"))}</dir><cachedir>${escapeHtml(runtime)}</cachedir></fontconfig>`,
+        `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd"><fontconfig><dir>${escapeHtml(fonts)}</dir><cachedir>${escapeHtml(runtime)}</cachedir></fontconfig>`,
       );
       environment.FONTCONFIG_FILE = config;
       environment.FONTCONFIG_PATH = runtime;

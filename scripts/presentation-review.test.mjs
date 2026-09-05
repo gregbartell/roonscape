@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 import { chmod, stat } from "node:fs/promises";
@@ -139,7 +146,14 @@ test("focused review publishes seven native captures with inspectable links and 
 });
 
 test("CI scope forces packaged fonts and retains four linked captures without visual acceptance", async (context) => {
+  const fonts = new URL("../src/renderer/assets/fonts/", import.meta.url);
+  const before = await readdir(fonts);
   const { report, result } = await capture(context, "ci-fallback");
+  assert.deepEqual(
+    await readdir(fonts),
+    before,
+    "source fonts remain untouched",
+  );
   assert.equal(result.code, undefined, result.stderr);
   assert.equal(report.requested.length, 4);
   assert.equal(report.completed.length, 4);
