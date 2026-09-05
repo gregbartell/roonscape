@@ -1,45 +1,41 @@
 # Review papercuts
 
-An explicit papercut review authorizes changes to the clone-local log, not to
-the repository or GitHub. An explicit read-only instruction still takes
-precedence: report proposed log changes instead of applying them.
+An explicit request to review recorded papercuts authorizes organizing and
+rewriting the local log. Fixes and issue promotion require separate
+authorization. Assume no other agent is writing the log during review.
 
-Locate `PAPERCUTS.md` beneath the directory returned by
-`git rev-parse --path-format=absolute --git-common-dir`, then read the complete
-log. If it is absent or empty, report that and stop.
+Read the complete log at the location defined in `SKILL.md`. If it is absent or
+empty, report that and stop.
 
 Review every observation:
 
-1. Apply the papercut test from `SKILL.md`. Delete environment noise, unsupported
-   workflows, product problems, and anything else that fails it.
-2. Group observations only when they describe the same obstruction with
-   substantially the same repository-side cause or remedy. Keep related but
-   distinct friction separate.
-3. Preserve every occurrence's timestamp and agent label. Combine grouped
-   observations into a cumulative occurrence count.
-4. Use the smallest direct sanity check to verify that each surviving papercut
-   remains reproducible. Delete entries that are already fixed or disproven.
-5. When verification would require meaningful setup or investigation, retain
-   the entry and ask the user whether to pursue it.
+1. Apply the papercut definition in `SKILL.md`; remove entries that fail it.
+2. Assess current status using existing evidence or a brief sanity check.
+   Remove entries established to be resolved or disproven, and manually promoted
+   entries whose useful diagnostic information survives in the destination
+   issue. Retain plausible observations with uncertain status, noting what
+   investigation would resolve it. A workaround, temporary recovery, or inability
+   to reproduce immediately does not establish resolution of the friction.
+3. Group retained observations when their symptoms and context support treating
+   them as the same obstruction; preserve meaningful environment differences.
+   Merge new observations into existing groups when equivalent, updating the
+   cumulative occurrence count. Preserve each occurrence's timestamp, model
+   label, and useful diagnostic details, impact, workarounds, and evidence
+   references. Consolidate redundant prose while keeping facts and suspected
+   causes distinguishable.
 
-Rewrite the log with open papercuts only. Represent grouped observations as:
+Rewrite the log with the remaining open observations, including uncertain ones.
+Use this format for groups:
 
 ```markdown
-- [ ] <friction; optional corrective direction> — **N occurrences**
-  - `YYYY-MM-DDTHH:MM:SSZ` — `agent`
-  - `YYYY-MM-DDTHH:MM:SSZ` — `agent`
+- [ ] <shared observation and current assessment> — **N occurrences**
+  - `YYYY-MM-DDTHH:MM:SSZ` — `model` — <distinctive details or evidence, if any>
+  - `YYYY-MM-DDTHH:MM:SSZ` — `model` — <distinctive details or evidence, if any>
 ```
-
-New raw observations may appear after previously grouped entries; incorporate
-them into the cumulative count when equivalent.
 
 Report a compact summary of:
 
-- Noise and fixed entries removed.
+- Removed entries and the reasons for removal.
 - Surviving papercuts and their occurrence counts.
-- Entries that could not be verified cheaply.
-- Repository fixes or GitHub promotion the user may wish to authorize.
-
-Do not implement fixes or create, modify, or close GitHub issues during review.
-Remove resolved or manually promoted papercuts rather than maintaining a local
-archive.
+- Uncertain status and proposed investigations.
+- Possible remedies and suitable issue promotion.

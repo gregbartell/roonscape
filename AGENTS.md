@@ -8,6 +8,11 @@ Issues and specs are tracked as GitHub issues. See `docs/agents/issue-tracker.md
 
 Triage state uses the default canonical label vocabulary. See `docs/agents/triage-labels.md`.
 
+### Papercuts
+
+Use [`papercuts`](.agents/skills/papercuts/SKILL.md) to record unexpected
+retries, workarounds, or avoidable investigation during a task.
+
 ### Domain docs
 
 For domain context, read

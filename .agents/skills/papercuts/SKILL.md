@@ -1,56 +1,47 @@
 ---
 name: papercuts
-description: "Papercuts: capture small, repeatable, repository-fixable friction encountered in supported agent workflows; review the clone-local log only when explicitly asked."
+description: "Capture workflow friction encountered during tasks: tool failures, confusing instructions, setup obstacles, and local host or permission problems. Review recorded observations on request."
 ---
 
 # Papercuts
 
-Keep the current task primary. A papercut is friction another agent could
-encounter in a supported repository workflow and the repository could reduce
-through its code, configuration, scripts, documentation, or agent instructions.
+A papercut is an observed obstacle or unnecessary effort worth preventing,
+explaining, or making easier to recover from. It may involve the repository,
+local host, tooling, or agent workflow. One encounter is sufficient; recurrence,
+root cause, and remedy may be unknown. Each independent encounter is one
+occurrence; retries within it belong to the same observation.
 
-Use at most one small sanity check to establish both conditions. If deciding
-would require more investigation, report the candidate for the user's judgment
-without logging it.
+Skip routine setup, ordinary implementation work, and harmless isolated typing
+mistakes. Capture recurring command pitfalls and unexpected setup or recovery
+effort. Product correctness, security, and user-data problems still require
+their normal handling.
 
-Route product correctness, security, and user-data problems through normal work.
-Treat unsupported environments, agent command mistakes, corrupted local state,
-and transient external failures as environment noise. A missing prerequisite
-qualifies only when the repository's guidance, checks, or error handling is the
-friction.
+The host-local log is `~/.local/state/roonscape/PAPERCUTS.md`, shared by all
+RoonScape worktrees. Create the parent directory if absent.
+
+For an incident encountered during a task, follow Capture below. For an explicit
+request to review recorded observations, follow [REVIEW.md](REVIEW.md).
 
 ## Capture
 
-Capture only the incident at hand. Capture requires authorization to write.
+The maintainer authorizes appends to this local log during all tasks, including
+read-only tasks and questions, without asking permission for each incident.
+This permission covers log entries only.
 
-When the current task is read-only or otherwise does not authorize writes,
-finish the task, report the candidate tersely, and ask permission to record it.
-The capture workflow is complete unless the user authorizes recording.
+1. Compose a concise observation from evidence already gathered for the current
+   task. Lead with the friction, then explain the attempted work, impact, and
+   relevant circumstances. Include useful diagnostics, evidence references,
+   or workarounds; distinguish facts from suspected causes and omit secrets.
+   Keep any extra check brief.
+2. Append the complete entry in one append-mode write, creating the file if
+   absent. Capture never reads, searches, or deduplicates the log.
+3. Report the capture tersely in the final task summary. If appending fails,
+   report the candidate and capture failure once, then continue the main task.
+   Logging failures can be recorded when logging is available; avoid recursive
+   attempts to record the failure.
 
-With write authorization:
-
-1. Resolve the clone's shared Git directory with
-   `git rev-parse --path-format=absolute --git-common-dir`.
-2. Append one observation to `PAPERCUTS.md` in that directory. Do not read,
-   search, or deduplicate the log.
-3. Lead with the friction and keep the entry to one or two sentences. Include a
-   likely correction only when it is immediately apparent.
-4. Mention the capture tersely in the final task summary.
-
-Use this observation format:
+Use UTC and the model name supplied by the session, or `unknown` if unavailable:
 
 ```markdown
-- [ ] `YYYY-MM-DDTHH:MM:SSZ` — `model` — <friction; optional corrective direction>
+- [ ] `YYYY-MM-DDTHH:MM:SSZ` — `model` — <observation>
 ```
-
-Use UTC and your model name, such as `gpt-5.6-sol` or `opus-5`.
-
-If appending fails, attempt no recovery beyond creating the local file. Continue
-the main task and report the candidate and capture failure. A failure of this
-logging mechanism is not itself a papercut.
-
-## Review
-
-When the user explicitly asks to review papercuts, read
-[`REVIEW.md`](REVIEW.md) completely and follow it. Ordinary capture never reads
-the log or the review procedure.
