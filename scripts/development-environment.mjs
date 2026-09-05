@@ -208,7 +208,7 @@ try {
         );
     }
     process.stdout.write(
-      "Development dependencies prepared. Run xvfb-run -a npm run check for verification.\n",
+      "Development dependencies prepared. Run npm run verify for verification; add -- --design when the change requires the design suite.\n",
     );
   }
 
