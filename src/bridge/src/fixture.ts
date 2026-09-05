@@ -1,5 +1,5 @@
 import { startFixturePublisher } from "./fixture-publisher.js";
-import { installFixtureModeLifecycle } from "./fixture-lifecycle.js";
+import { installProcessLifecycle } from "./process-lifecycle.js";
 import { startFixtureModeSession } from "./fixture-mode-session.js";
 import { loadFixtureScenarioCatalog } from "./fixture-scenario-catalog.js";
 import { loadSnapshot } from "./snapshot.js";
@@ -13,7 +13,10 @@ if (socketPath === undefined || socketPath.length === 0) {
 // Socket publication can precede startup completion. Install shutdown handlers
 // now so termination during startup waits for the session and closes its sockets.
 const fixtureSession = startFixtureSession(socketPath);
-installFixtureModeLifecycle({ fixtureSession });
+installProcessLifecycle({
+  cleanup: async () => (await fixtureSession).close(),
+  failureMessage: "Could not stop Fixture Mode",
+});
 await fixtureSession;
 
 process.stdout.write(`Fixture publisher listening at ${socketPath}\n`);

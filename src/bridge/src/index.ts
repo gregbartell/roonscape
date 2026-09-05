@@ -9,7 +9,8 @@ import {
   FileDisplayConfigurationStore,
   displayConfigurationFilePath,
 } from "./display-configuration.js";
-import { installBridgeLifecycle } from "./bridge-lifecycle.js";
+import { attemptAllCleanup } from "./cleanup.js";
+import { installProcessLifecycle } from "./process-lifecycle.js";
 import { startSnapshotPublisher } from "./fixture-publisher.js";
 import { initialAvailabilitySnapshot, startRoonBridge } from "./roon-bridge.js";
 import { createSupportedRoonServices } from "./roon-services.js";
@@ -55,7 +56,14 @@ bridgeOwner.current = bridge;
 
 process.stdout.write(`RoonScape Bridge listening at ${socketPath}\n`);
 
-installBridgeLifecycle({ bridge, publisher });
+installProcessLifecycle({
+  cleanup: () =>
+    attemptAllCleanup("Could not stop RoonScape Bridge", [
+      () => bridge.stop(),
+      () => publisher.close(),
+    ]),
+  failureMessage: "Could not stop RoonScape Bridge",
+});
 
 function parseBridgeOptions(arguments_: string[]): {
   authorizationFile?: string;

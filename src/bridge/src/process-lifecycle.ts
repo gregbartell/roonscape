@@ -1,17 +1,14 @@
 export type TerminationSignal = "SIGINT" | "SIGTERM";
 
-export interface ProcessLifecycleEnvironment {
+interface ProcessLifecycleOptions {
+  cleanup(): Promise<void>;
+  failureMessage: string;
   once?: (
     signal: TerminationSignal,
     handler: () => void | Promise<void>,
   ) => void;
   reportError?: (message: string) => void | Promise<void>;
   exit?: (code: number) => void;
-}
-
-interface ProcessLifecycleOptions extends ProcessLifecycleEnvironment {
-  cleanup(): Promise<void>;
-  failureMessage: string;
 }
 
 export function installProcessLifecycle({
