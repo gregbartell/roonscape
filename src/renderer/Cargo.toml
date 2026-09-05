@@ -10,11 +10,11 @@ repository = "https://github.com/gregbartell/roonscape"
 gdk-pixbuf = "0.22.0"
 glib-unix = "0.22.8"
 gtk = { package = "gtk4", version = "0.11.4", features = ["v4_6"] }
-jsonschema = { version = "0.52.0", default-features = false }
+jsonschema = { version = "0.52.1", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 time = { version = "0.3.55", features = ["parsing"] }
 
 [dev-dependencies]
-pangocairo = "0.22.8"
+pangocairo = "0.22.9"
 tempfile = "3.27.0"
