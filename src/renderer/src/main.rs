@@ -2,6 +2,7 @@ mod activity_waveform;
 mod artwork_cache;
 mod bounded_lru_cache;
 mod gradient_cache;
+mod lyric_motion;
 mod status_symbol;
 mod view;
 
@@ -39,6 +40,7 @@ const SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(250);
 struct CaptureConfiguration {
     viewport: Option<Viewport>,
     typography: Option<NowPlayingTitleFace>,
+    reduced_animation: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -222,7 +224,8 @@ fn build_window(
 ) -> Result<(), Box<dyn Error>> {
     let renderer_configuration = startup.configuration;
     let progress_clock = startup.progress_clock;
-    if renderer_configuration.behavior == PresentationBehavior::StaticFixture
+    if (renderer_configuration.behavior == PresentationBehavior::StaticFixture
+        || renderer_configuration.capture.reduced_animation)
         && let Some(settings) = gtk::Settings::default()
     {
         settings.set_gtk_enable_animations(false);
@@ -541,10 +544,17 @@ fn capture_configuration_from_environment() -> Result<CaptureConfiguration, Box<
     if typography.is_some() && viewport.is_none() {
         return Err("ROONSCAPE_CAPTURE_TYPOGRAPHY requires ROONSCAPE_CAPTURE_VIEWPORT".into());
     }
+    let reduced_animation = env::var("ROONSCAPE_CAPTURE_REDUCED_ANIMATION").as_deref() == Ok("1");
+    if reduced_animation && viewport.is_none() {
+        return Err(
+            "ROONSCAPE_CAPTURE_REDUCED_ANIMATION requires ROONSCAPE_CAPTURE_VIEWPORT".into(),
+        );
+    }
 
     Ok(CaptureConfiguration {
         viewport,
         typography,
+        reduced_animation,
     })
 }
 

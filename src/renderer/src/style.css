@@ -43,29 +43,7 @@ window {
 .lyric-previous,
 .lyric-next {
   font-weight: 400;
-  line-height: 1.18;
-}
-
-.lyric-previous,
-.lyric-current,
-.lyric-next {
-  transition:
-    opacity 180ms ease,
-    transform 180ms ease;
-}
-
-.lyric-reel.lyric-promoting-out .lyric-previous,
-.lyric-reel.lyric-promoting-out .lyric-current,
-.lyric-reel.lyric-promoting-out .lyric-next {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-
-.lyric-reel.lyric-promoting-in .lyric-previous,
-.lyric-reel.lyric-promoting-in .lyric-current,
-.lyric-reel.lyric-promoting-in .lyric-next {
-  opacity: 0;
-  transform: translateY(8px);
+  line-height: 1.04;
 }
 
 .activity-heading {

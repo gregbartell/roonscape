@@ -79,7 +79,7 @@ fn generated_styles_assign_now_playing_roles_without_changing_full_field_roles()
 
 #[test]
 fn identity_labels_use_a_subordinate_semibold_weight() {
-    let static_styles = include_str!("../src/style.css");
+    let static_styles = include_str!("../../src/style.css");
 
     assert!(static_styles.contains(".identity-label {\n  font-weight: 600;\n}"));
     assert!(!static_styles.contains(".identity-label {\n  font-weight: 700;\n}"));

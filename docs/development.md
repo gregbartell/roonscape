@@ -127,6 +127,41 @@ For end-to-end development-tooling acceptance, follow the
 [two-worktree exercise](agents/worktree-acceptance.md). It accepts existing fresh
 worktrees and retains concurrent verification and cancellation evidence.
 
+## Fast feedback loops
+
+`npm run build` uses TypeScript's incremental compilation. Its cache lives in
+`src/bridge/dist`, so removing that generated directory also resets the cache.
+Changed source and imported dependencies are still checked while unaffected
+work is reused. Release packaging removes `dist` before building.
+
+During implementation, build the Bridge once and select the relevant test file
+or test name:
+
+```sh
+npm run build
+node --test src/bridge/dist/test/snapshot.test.js
+node --test --test-name-pattern='invalid timing' src/bridge/dist/test/snapshot.test.js
+```
+
+The regular Node suite runs at most four test files concurrently, each in its
+own process. `npm run test:node:built` runs the Bridge and regular script tests
+together; the existing focused commands remain available. Live Capture Session
+helper tests, Rust tests, and the IPC smoke check follow in `test:built`.
+The design suite remains opt-in. No test coverage is omitted from these suites.
+
+Rust integration tests share one executable to avoid recompiling and linking
+each test file after a Renderer change. Select a module or test by name:
+
+```sh
+cargo test --package roonscape-renderer --test integration snapshot_contract::
+```
+
+Tests live in `src/renderer/tests/integration`; add new modules to its `main.rs`.
+Font-registration tests retain a separate executable so they exercise the
+process's first registration. Compiler profiles and debug information are
+unchanged. Use `npm run verify` (and `--design` when required) for final
+headless verification with retained evidence.
+
 ## Run from source
 
 Build and launch RoonScape in Live Mode:
@@ -287,6 +322,53 @@ verification directory with `npm run review:presentations`. Follow the
 [presentation visual-acceptance guide](visual-acceptance/presentation.md) for
 focused selection across all maintained viewports, the complete profile required
 for shared typography/layout/palette changes, and the CI fallback scope.
+
+### Lyric motion captures
+
+Static Presentation Captures intentionally suppress motion. Generate a
+repeatable dynamic Fixture Mode recording when lyric entry, a Natural Cue
+Handoff, Intentional Blanks, wrapping changes, exit, or external seeks need
+visual review:
+
+```sh
+npm run capture:lyrics
+```
+
+The default `reel-lift-tour` example runs at 1280x720. Select another
+maintained example or viewport with `--example` and `--resolution`:
+
+```sh
+npm run capture:lyrics -- --example reel-lift-tour
+npm run capture:lyrics -- --example wrapping-progression --resolution 1600x1200
+npm run capture:lyrics -- --example external-seek
+npm run capture:lyrics -- --example timeline-edge-cases
+npm run capture:lyrics -- --example availability-reversal
+npm run capture:lyrics -- --example timeline-revision
+npm run capture:lyrics -- --example short-blanks
+npm run capture:lyrics -- --example blank-lifecycle
+```
+
+The peer viewport review matrix is 1280x720, 1600x900, 1600x1200, 1920x1200,
+2560x1080, 3840x2160, and 3840x2400. Repeat a relevant motion example at each
+resolution before accepting a layout-sensitive change.
+
+Add `--reduced-animation` to any maintained example to record the same
+semantic cases at their complete, motion-free endpoints. Repeat it across the
+examples when reviewing the full reduced-animation matrix:
+
+```sh
+npm run capture:lyrics -- --example reel-lift-tour --reduced-animation
+```
+
+Use `--output DIRECTORY` for a specific new destination. The command refuses
+to overwrite an existing path; without `--output`, it creates a collision-safe
+dated directory under `/var/tmp/codex/roonscape`.
+
+Each result retains the lossless 20-fps recording, exact full-resolution
+review frames, a compact overview, every full-rate review sheet, and a
+manifest. Review every full-rate sheet before reaching a visual verdict so a
+one-frame transition is not hidden between selected frames. These artifacts
+remain disposable human-review evidence rather than pixel-golden inputs.
 
 Run the self-contained design test suite before accepting changes to the
 Renderer, presentation design, capture planning or execution, Fixture
