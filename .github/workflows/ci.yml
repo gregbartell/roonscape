@@ -39,9 +39,9 @@ jobs:
       - name: Prepare worktree
         if: ${{ !inputs.two_worktrees }}
         run: npm run dev:prepare
-      - name: Run checks, design tests, and fallback captures
+      - name: Run repository and design checks
         if: ${{ !inputs.two_worktrees }}
-        run: npm run verify -- --presentation-ci
+        run: npm run verify -- --design
       - name: Create acceptance worktrees
         if: ${{ inputs.two_worktrees }}
         run: |

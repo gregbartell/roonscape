@@ -18,15 +18,11 @@ async function main() {
   const options = process.argv.slice(2);
   if (options.includes("--help")) {
     console.log(
-      "Usage: npm run verify -- [--design | --presentation-ci]\nAlways runs repository checks; --design also runs the design suite; --presentation-ci also captures the maintained CI fallback scope.",
+      "Usage: npm run verify -- [--design]\nAlways runs repository checks; --design also runs the design suite.",
     );
     return;
   }
-  if (
-    options.some(
-      (option) => !["--design", "--presentation-ci"].includes(option),
-    )
-  )
+  if (options.some((option) => option !== "--design"))
     throw new Error("Unknown verification option; use --help");
   await mkdir(scratchRoot, { recursive: true });
   const review = await mkdtemp(path.join(scratchRoot, "review."));
@@ -36,11 +32,7 @@ async function main() {
     startedAt: new Date().toISOString(),
     outcome: "incomplete",
     commands: [],
-    designRequested:
-      options.includes("--design") || options.includes("--presentation-ci"),
-    presentationCiRequested: options.includes("--presentation-ci"),
-    automatedOutcome: "incomplete",
-    captureCompletion: "not assessed",
+    designRequested: options.includes("--design"),
   };
   let session;
   let runtime;
@@ -77,31 +69,9 @@ async function main() {
     await command(["run", "check"], session.environment);
     if (report.designRequested)
       await command(["run", "test:design"], session.environment);
-    report.automatedOutcome = "complete";
     report.outcome = "complete";
-    if (report.presentationCiRequested) {
-      report.captureCompletion = "incomplete";
-      await save();
-      await command(
-        [
-          "run",
-          "review:presentations:built",
-          "--",
-          "--output",
-          review,
-          "--scope",
-          "ci-fallback",
-        ],
-        environment,
-      );
-      report.captureCompletion = "complete";
-    }
   } catch (error) {
     report.outcome = cancellation.signal.aborted ? "cancelled" : "failed";
-    if (report.automatedOutcome !== "complete")
-      report.automatedOutcome = report.outcome;
-    if (report.captureCompletion === "incomplete")
-      report.captureCompletion = report.outcome;
     report.error = error.message;
     console.error(error.message);
     process.exitCode = cancellation.signal.aborted ? 130 : 1;
@@ -128,7 +98,7 @@ async function main() {
     }
   }
   console.log(
-    `Workflow: ${report.outcome}; automated checks: ${report.automatedOutcome}; captures: ${report.captureCompletion}${report.outcome === "complete" ? "" : `; diagnostics: ${review}`}`,
+    `Verification: ${report.outcome}${report.outcome === "complete" ? "" : `; diagnostics: ${review}`}`,
   );
 
   async function command(arguments_, commandEnvironment) {

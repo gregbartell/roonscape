@@ -1,8 +1,8 @@
 # Verification policy
 
-Select local verification by what the change affects. Ordinary CI continues to run
-repository checks, design tests, and representative fallback captures for all
-changes.
+Select local verification by what the change affects. Ordinary CI runs repository
+checks and design tests for all changes. The design suite includes asserted
+fallback captures; CI does not generate a second unreviewed capture set.
 
 ## Choose checks
 
@@ -28,6 +28,13 @@ Run applicable final verification when the change is ready. Reuse successful
 results while they cover the final change and relevant environment. Rerun when
 subsequent changes, failures, or new evidence invalidate that coverage; preparing
 a commit alone does not require another run.
+
+Target under five minutes for final local verification in a prepared worktree
+with existing build caches, including design checks when applicable. Measure
+fresh dependency installation and initial compilation separately. This is a
+performance target, not a timeout or permission to skip checks. Investigate slow
+stages and remove redundant work while preserving useful assertions; no timing
+report or benchmark artifact is required.
 
 ### Documentation-only changes
 
@@ -61,10 +68,12 @@ prepare dependencies automatically.
 When diagnosing or changing isolation, readiness, or cleanup, read the
 [native-runtime reference](native-runtime.md).
 
-For implementation changes to preparation, isolation, verification, or evidence
-orchestration, use the [two-worktree acceptance exercise](worktree-acceptance.md)
-to reproduce concurrent success, cancellation, diagnostic cleanup, and sentinel
-checks.
+Use the existing native-session, verification, and design regression tests for
+concurrency, cancellation, cleanup, and neighboring-session isolation. The
+[two-worktree acceptance exercise](worktree-acceptance.md) is a manual diagnostic
+for fresh dependency preparation or build-isolation changes that need coverage
+beyond those tests. It is not required for ordinary feature, verification-tool,
+or capture-tool changes.
 
 `verify` runs the preparation diagnostic, creates a private Xvfb/D-Bus native
 session, then runs `npm run check`. `--design` additionally runs the existing
@@ -111,7 +120,7 @@ leave command logs and `verification.json` with exit statuses and cleanup errors
 for diagnosis. Failed capture generation also leaves completed images and capture
 progress. These files are disposable task scratch.
 
-CI runs `--presentation-ci` for repository checks, design tests, and representative
+CI runs `--design` for repository checks and design tests, including asserted
 fallback-font captures. Verification diagnostics are uploaded to the failed
 GitHub Actions run with seven-day retention.
 
@@ -120,6 +129,10 @@ GitHub Actions run with seven-day retention.
 Visually assess affected presentation behavior. The
 [presentation review guide](../visual-acceptance/presentation.md) describes
 available capture scopes and useful comparisons.
+Generate captures that support this assessment or a specific automated
+assertion. Successful capture generation alone does not establish visual
+correctness; do not generate additional artifacts merely to demonstrate that
+verification ran.
 
 ## Live Capture Session helper tests
 

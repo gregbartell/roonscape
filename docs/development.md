@@ -13,17 +13,21 @@ prerequisites. For missing tools, fonts, or execution permissions, consult the
 relevant parts of [host provisioning](#provision-the-development-host-explicitly).
 For agent-run commands, first follow
 [Agent execution permissions](agents/verification.md#agent-execution-permissions).
-On a provisioned host, run these from your worktree:
+On a provisioned host, prepare your worktree with:
 
 ```sh
-npm run dev:diagnose
 npm run dev:prepare
 ```
 
-Both commands use Node's standard library and work before `node_modules`
-exists. If npm is unavailable, run `node scripts/development-environment.mjs
+Preparation and diagnosis use Node's standard library and work before
+`node_modules` exists. If npm is unavailable, run `node scripts/development-environment.mjs
 diagnose` directly. If Node itself is unavailable, select `.node-version`
 first; no JavaScript diagnostic can run without Node.
+
+Use `dev:diagnose` alone to inspect readiness without installing dependencies.
+Preparation already runs that preflight; running diagnosis immediately before
+preparation is unnecessary. Reuse prepared dependencies until their inputs
+change or a readiness failure calls for preparation again.
 
 `dev:diagnose` is read-only. Before assessing tools, it checks that a child Node
 process executes and returns known stdout and stderr. Execution errors, signals,

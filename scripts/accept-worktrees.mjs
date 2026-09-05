@@ -103,12 +103,6 @@ async function main() {
         delete environment[name];
       environments.push(environment);
       await complete(
-        start(root, environment, `diagnose-${index}`, "npm", [
-          "run",
-          "dev:diagnose",
-        ]),
-      );
-      await complete(
         start(root, environment, `prepare-${index}`, "npm", [
           "run",
           "dev:prepare",
@@ -153,7 +147,7 @@ async function main() {
         "run",
         "verify",
         "--",
-        "--presentation-ci",
+        "--design",
       ]),
     );
     const reviewPaths = await Promise.all(

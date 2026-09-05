@@ -1,8 +1,15 @@
 # Two-worktree acceptance
 
-Use this opt-in exercise after implementation changes to development preparation,
-native isolation, verification, or presentation evidence orchestration. It is
-not part of `verify`: it invokes that command in each supplied worktree.
+Use this manual diagnostic when changes to fresh dependency preparation or
+build isolation need coverage beyond the existing regression tests. Ordinary
+feature, verification-tool, capture-tool, and runtime-isolation changes do not
+require it. Native-session, verification, and design tests already exercise
+concurrent runtime isolation and cancellation using built executables.
+
+This exercise deliberately starts with fresh dependencies and build directories,
+so its cost includes initial compilation and is outside the prepared-worktree
+verification target. It is not part of `verify`: it invokes that command in each
+supplied worktree.
 
 ## Prepare and run
 
@@ -40,13 +47,13 @@ The separate five-second cancellation assertion below remains behavioral.
 
 The exercise performs these observable steps:
 
-1. Run `dev:diagnose` and `dev:prepare` in each fresh worktree. Start a static
-   headless Idle Fixture Mode sentinel through `npm run fixture` in A, using its
-   own private configuration, Xvfb display, D-Bus, and native Renderer.
-2. Start `npm run verify -- --presentation-ci` concurrently in A and B. Observe
+1. Run `dev:prepare`, including its readiness preflight, in each fresh worktree.
+   Start a static headless Idle Fixture Mode sentinel through `npm run fixture`
+   in A, using its own private configuration, Xvfb display, D-Bus, and native Renderer.
+2. Start `npm run verify -- --design` concurrently in A and B. Observe
    overlapping native session lifetimes and distinct runtime/configuration and
-   review directories. Both runs must complete repository checks, design tests,
-   and the maintained fallback capture scope. Check source cleanliness and
+   review directories. Both runs must complete repository checks and design
+   tests, including assertions on fallback captures. Check source cleanliness and
    removal of successful verification diagnostics and native runtime resources.
 3. Start focused `review:presentations:built` commands in both worktrees,
    reusing the prerequisites each verification command just built. A captures
@@ -76,7 +83,7 @@ neighboring resources or infer ownership from an X display number.
 
 ## Ubuntu CI
 
-Ordinary CI runs `verify -- --presentation-ci`. For this acceptance exercise,
+Ordinary CI runs `verify -- --design`. For this acceptance exercise,
 run the **CI** workflow manually on a published candidate ref with the
 `two_worktrees` input enabled. The workflow explicitly creates the two worktrees
 before invoking the exercise; repository preparation tooling does not do so.

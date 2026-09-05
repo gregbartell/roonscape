@@ -74,7 +74,7 @@ async function worktree(context) {
   };
 }
 
-for (const option of [undefined, "--design", "--presentation-ci"]) {
+for (const option of [undefined, "--design"]) {
   test(`successful verification cleans diagnostics (${option ?? "repository"})`, async (context) => {
     const fixture = await worktree(context);
     const { stdout } = await execute(
@@ -94,9 +94,9 @@ for (const option of [undefined, "--design", "--presentation-ci"]) {
       stdout.includes("command output: run test:design"),
       Boolean(option),
     );
-    assert.equal(
-      stdout.includes("command output: run review:presentations:built"),
-      option === "--presentation-ci",
+    assert.doesNotMatch(
+      stdout,
+      /command output: run review:presentations:built/,
     );
   });
 }
@@ -329,14 +329,14 @@ if (process.argv[3] === 'check') {
   });
 });
 
-test("CI presentation verification runs design and retains failed capture diagnostics", async (context) => {
+test("failed design checks preserve diagnostics", async (context) => {
   const fixture = await worktree(context);
   await writeFile(
     path.join(fixture.directory, "bin/npm"),
     `#!${process.execPath}
 console.log('command output: ' + process.argv.slice(2).join(' '));
-if (process.argv[3] === 'review:presentations:built') {
-  console.error('native capture generation failed after partial publication');
+if (process.argv[3] === 'test:design') {
+  console.error('design assertion failed');
   process.exitCode = 9;
 }
 `,
@@ -345,7 +345,7 @@ if (process.argv[3] === 'review:presentations:built') {
   try {
     await execute(
       process.execPath,
-      [path.join(fixture.directory, "scripts/verify.mjs"), "--presentation-ci"],
+      [path.join(fixture.directory, "scripts/verify.mjs"), "--design"],
       { env: fixture.environment },
     );
   } catch (error) {
@@ -358,17 +358,12 @@ if (process.argv[3] === 'review:presentations:built') {
     await readFile(path.join(review, "verification.json"), "utf8"),
   );
   assert.equal(report.outcome, "failed");
-  assert.equal(report.automatedOutcome, "complete");
-  assert.equal(report.captureCompletion, "failed");
-  assert.match(
-    failure.stdout,
-    /Workflow: failed; automated checks: complete; captures: failed/,
-  );
+  assert.match(failure.stdout, /Verification: failed/);
+  assert.equal(report.commands.length, 3);
   assert.deepEqual(report.commands[2].arguments, ["run", "test:design"]);
-  assert.ok(report.commands[3].arguments.includes("ci-fallback"));
-  assert.equal(report.commands[3].exitCode, 9);
+  assert.equal(report.commands[2].exitCode, 9);
   assert.match(
-    await readFile(path.join(review, report.commands[3].stderr), "utf8"),
-    /partial publication/,
+    await readFile(path.join(review, report.commands[2].stderr), "utf8"),
+    /design assertion failed/,
   );
 });

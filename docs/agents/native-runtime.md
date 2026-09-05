@@ -65,8 +65,8 @@ in the review directory, which is removed on success.
 
 ## Acceptance
 
-For implementation changes to this behavior, use the
-[two-worktree acceptance exercise](worktree-acceptance.md) to check concurrent
+The native-session, verification, and design regression tests cover concurrent
 sessions, cancellation, diagnostic cleanup, and noninterference with an owned
-Fixture Mode sentinel. The exercise's timing assertions are documented there;
-they are distinct from the individual process-cleanup bounds above.
+sentinel. Use the [two-worktree acceptance exercise](worktree-acceptance.md) as a
+manual diagnostic when fresh dependency preparation or build isolation needs
+additional coverage. It is not a routine requirement for runtime changes.
