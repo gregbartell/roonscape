@@ -3134,20 +3134,32 @@ mod tests {
             std::time::Duration::from_secs(2),
         );
 
+        let tall_layout =
+            NowPlayingLayout::for_presentation(&presentation, Viewport::new(1_600, 1_200));
+        let three_line_layout =
+            NowPlayingLayout::for_presentation(&presentation, Viewport::new(1_600, 900));
+        // Select naturally wrapped text using this host's Pango metrics while
+        // keeping the exact line-count boundaries exercised at both viewports.
+        let wrapped_cue = |tall_lines, shorter_lines| {
+            (1..=80)
+                .map(|words| vec!["signal"; words].join(" "))
+                .find(|text| {
+                    rendered.rendered_line_count_at(text, &tall_layout) == tall_lines
+                        && rendered.rendered_line_count_at(text, &three_line_layout)
+                            == shorter_lines
+                })
+                .expect("test text should cover the required Pango wrapping boundaries")
+        };
         let mut tall_source = initial.clone();
         tall_source.current_index = 20;
-        tall_source.current = "The quiet horizon turns until the room remembers".to_owned();
-        tall_source.next = Some(
-            "We find the signal where the last blue horizon meets the dark beyond us".to_owned(),
-        );
+        tall_source.current = wrapped_cue(3, 2);
+        tall_source.next = Some(wrapped_cue(4, 3));
         let tall_rendered = lyric_view(
             &presentation,
             Some(&tall_source),
             PresentationPalette::fallback(),
             PresentationBehavior::Dynamic,
         );
-        let tall_layout =
-            NowPlayingLayout::for_presentation(&presentation, Viewport::new(1_600, 1_200));
         allocate_lyrics(&tall_rendered, &tall_layout);
         let tall_source_lines = tall_rendered.rendered_line_count(&tall_source.current);
         assert_eq!(tall_source_lines, 3);
@@ -3162,8 +3174,6 @@ mod tests {
         tall_target.next = Some("The signal returns".to_owned());
         let tall_target_lines = tall_rendered.rendered_line_count(&tall_target.current);
         assert_eq!(tall_target_lines, 4);
-        let three_line_layout =
-            NowPlayingLayout::for_presentation(&presentation, Viewport::new(1_600, 900));
         assert_eq!(
             tall_rendered.rendered_line_count_at(&tall_source.current, &three_line_layout),
             2
