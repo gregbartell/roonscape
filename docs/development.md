@@ -323,6 +323,53 @@ verification directory with `npm run review:presentations`. Follow the
 focused selection across all maintained viewports, the complete profile required
 for shared typography/layout/palette changes, and the CI fallback scope.
 
+### Lyric motion captures
+
+Static Presentation Captures intentionally suppress motion. Generate a
+repeatable dynamic Fixture Mode recording when lyric entry, a Natural Cue
+Handoff, Intentional Blanks, wrapping changes, exit, or external seeks need
+visual review:
+
+```sh
+npm run capture:lyrics
+```
+
+The default `reel-lift-tour` example runs at 1280x720. Select another
+maintained example or viewport with `--example` and `--resolution`:
+
+```sh
+npm run capture:lyrics -- --example reel-lift-tour
+npm run capture:lyrics -- --example wrapping-progression --resolution 1600x1200
+npm run capture:lyrics -- --example external-seek
+npm run capture:lyrics -- --example timeline-edge-cases
+npm run capture:lyrics -- --example availability-reversal
+npm run capture:lyrics -- --example timeline-revision
+npm run capture:lyrics -- --example short-blanks
+npm run capture:lyrics -- --example blank-lifecycle
+```
+
+The peer viewport review matrix is 1280x720, 1600x900, 1600x1200, 1920x1200,
+2560x1080, 3840x2160, and 3840x2400. Repeat a relevant motion example at each
+resolution before accepting a layout-sensitive change.
+
+Add `--reduced-animation` to any maintained example to record the same
+semantic cases at their complete, motion-free endpoints. Repeat it across the
+examples when reviewing the full reduced-animation matrix:
+
+```sh
+npm run capture:lyrics -- --example reel-lift-tour --reduced-animation
+```
+
+Use `--output DIRECTORY` for a specific new destination. The command refuses
+to overwrite an existing path; without `--output`, it creates a collision-safe
+dated directory under `/var/tmp/codex/roonscape`.
+
+Each result retains the lossless 20-fps recording, exact full-resolution
+review frames, a compact overview, every full-rate review sheet, and a
+manifest. Review every full-rate sheet before reaching a visual verdict so a
+one-frame transition is not hidden between selected frames. These artifacts
+remain disposable human-review evidence rather than pixel-golden inputs.
+
 Run the self-contained design test suite before accepting changes to the
 Renderer, presentation design, capture planning or execution, Fixture
 Scenarios, artwork, fonts, styles, or capture-related build orchestration:

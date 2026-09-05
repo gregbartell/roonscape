@@ -80,6 +80,37 @@ fn lyric_composition_yields_artwork_space_at_every_peer_viewport() {
     }
 }
 
+#[test]
+fn lyric_composition_geometry_interpolates_without_moving_stable_roles() {
+    let presentation = now_playing("lyrics-one-line.json");
+    let viewport = roonscape_renderer::Viewport::new(1_280, 720);
+    let mut ordinary_presentation = presentation.clone();
+    ordinary_presentation.lyrics = None;
+    let ordinary = NowPlayingLayout::for_composition_progress(&presentation, viewport, 0.0);
+    let midpoint = NowPlayingLayout::for_composition_progress(&presentation, viewport, 0.5);
+    let lyrics = NowPlayingLayout::for_composition_progress(&presentation, viewport, 1.0);
+
+    assert_eq!(
+        ordinary,
+        NowPlayingLayout::for_presentation(&ordinary_presentation, viewport)
+    );
+    assert_eq!(
+        lyrics,
+        NowPlayingLayout::for_presentation(&presentation, viewport)
+    );
+    assert!(
+        lyrics.artwork_field_width_px < midpoint.artwork_field_width_px
+            && midpoint.artwork_field_width_px < ordinary.artwork_field_width_px
+    );
+    assert!(
+        ordinary.information.utility_width_px < midpoint.information.utility_width_px
+            && midpoint.information.utility_width_px < lyrics.information.utility_width_px
+    );
+    assert_eq!(midpoint.presentation_status, ordinary.presentation_status);
+    assert_eq!(midpoint.footer_anchor, ordinary.footer_anchor);
+    assert_eq!(midpoint.footer_height_px, ordinary.footer_height_px);
+}
+
 struct UtilitySizeExpectation {
     symbol_px: u32,
     status_px: u32,

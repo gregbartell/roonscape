@@ -48,6 +48,13 @@ playback. It corresponds to Roon's stopped playback state and contains no Now
 Playing content.
 _Avoid_: Stopped in viewer-facing copy
 
+**Intentional Blank**:
+A timed empty lyric cue marking a pause in focal lyrics. Within the
+Synchronized Lyric Composition, its settled presentation leaves the focal
+position empty while retaining available Previous Cue and Next Cue context;
+leading blanks do not establish that composition.
+_Avoid_: Missing lyric, composition exit
+
 **Live Capture Frame**:
 A retained screenshot from a Live Capture Session that records a visually
 meaningful presentation state.
@@ -63,10 +70,21 @@ The normal RoonScape workflow in which its presentation reflects current state
 observed from Roon.
 _Avoid_: Live version, production mode
 
+**Lyric Composition Transition**:
+The viewer-facing change into or out of the Synchronized Lyric Composition.
+It is distinct from a Natural Cue Handoff, an intentional blank, and an
+external seek.
+_Avoid_: Lyric transition, lyric layout change
+
 **Lyric Feed**:
 An optional RoonScape Bridge capability that observes synchronized lyric cues
 for the current Tracked Zone without controlling playback or a Web Display.
 _Avoid_: Lyrics service, Web Display connection
+
+**Natural Cue Handoff**:
+The viewer-facing progression from one nonblank timed lyric cue to its
+immediately adjacent nonblank cue as local playback advances.
+_Avoid_: Lyric transition, cue change
 
 **Now Playing**:
 The Roon-provided content currently associated with the Tracked Zone.
@@ -88,10 +106,22 @@ playback or availability condition, such as Playing, Paused, Idle, or
 Disconnected.
 _Avoid_: Screen name, eyebrow
 
+**Previous Cue**:
+The nearest nonblank timed cue preceding the current cue in the lyric
+timeline. It provides destination-relative context and is not a history of
+what the viewer actually saw.
+_Avoid_: Last-played lyric, displayed-cue history
+
 **Provisional Timing**:
 A short-lived viewer-facing estimate that preserves determinate timing while
 Authoritative Timing is briefly incomplete during continuous Live Mode.
 _Avoid_: Fabricated progress, interpolated timing
+
+**Reel Lift**:
+The selected viewer-facing treatment for a Natural Cue Handoff, in which the
+incoming cue rises into focus as the outgoing cue moves upward, retaining
+Previous Cue context when the settled hierarchy permits.
+_Avoid_: Lyric scroll, lyric crossfade
 
 **Roon Authorization**:
 Roon's persisted approval for RoonScape to connect as an extension. It is
@@ -137,6 +167,14 @@ Zone is loading, whether or not Now Playing content is available. Its
 Presentation Status is `STARTING`; when Now Playing is unavailable, its
 takeaway is `Preparing playback`.
 _Avoid_: Loading as a viewer-facing condition, Preparing as a condition name
+
+**Synchronized Lyric Composition**:
+The Now Playing composition in which a timed lyric cue temporarily holds the
+central viewer-facing role while artwork and compact metadata remain present.
+For a continuously available timeline containing nonblank lyrics, its interval
+spans the first nonblank cue through the final entry, including internal gaps
+and subsequent Intentional Blanks, with preparation and a final hold.
+_Avoid_: Lyrics screen, karaoke mode
 
 **Title**:
 Roon's first Now Playing display line, presented as the track title even though

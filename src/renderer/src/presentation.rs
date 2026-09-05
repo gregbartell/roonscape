@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::f64::consts::PI;
 use std::fmt;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::time::{Duration, SystemTime};
 
 use time::OffsetDateTime;
@@ -91,6 +92,7 @@ pub struct NowPlayingPresentation {
     pub tracked_zone: String,
     pub status: PresentationStatus,
     pub progress: Option<PresentationProgress>,
+    pub playback_position_seconds: Option<f64>,
     pub activity: Option<Box<PresentationActivity>>,
     pub artwork_revision: Option<u64>,
     pub artwork_path: Option<String>,
@@ -99,7 +101,9 @@ pub struct NowPlayingPresentation {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LyricPresentation {
+    pub timeline_signature: u64,
     pub current_index: usize,
+    pub previous_index: Option<usize>,
     pub previous: Option<String>,
     pub current: String,
     pub next: Option<String>,
@@ -761,12 +765,11 @@ pub fn classify_presentation_update(
     match (&mut comparable, next) {
         (Presentation::NowPlaying(previous), Presentation::NowPlaying(next)) => {
             previous.status = next.status;
+            previous.playback_position_seconds = next.playback_position_seconds;
             if previous.progress.is_some() && next.progress.is_some() {
                 previous.progress.clone_from(&next.progress);
             }
-            if previous.lyrics.is_some() && next.lyrics.is_some() {
-                previous.lyrics.clone_from(&next.lyrics);
-            }
+            previous.lyrics.clone_from(&next.lyrics);
         }
         (Presentation::FullField(previous), Presentation::FullField(next)) => {
             previous.status = next.status;
@@ -949,6 +952,7 @@ fn presentation_from_snapshot_with_timing(
         tracked_output: tracked_output.name.clone(),
         tracked_zone: tracked_zone.name.clone(),
         status: presentation_status_for_playback(playback),
+        playback_position_seconds: timing.position_seconds,
         progress: timing.position_seconds.zip(timing.duration_seconds).map(
             |(position_seconds, duration_seconds)| {
                 presentation_progress(position_seconds, duration_seconds)
@@ -1146,41 +1150,77 @@ fn lyric_presentation(
     position_seconds: f64,
 ) -> Option<LyricPresentation> {
     const LOOK_AHEAD_SECONDS: f64 = 0.7;
-    const BLANK_PREPARATION_SECONDS: f64 = 2.0;
     const FINAL_HOLD_SECONDS: f64 = 3.0;
+    const ENTRY_LEAD_SECONDS: f64 = 1.1;
 
-    let first = lyrics.cues.first()?;
+    let first_index = lyrics
+        .cues
+        .iter()
+        .position(|cue| !cue.text.trim().is_empty())?;
+    let first = &lyrics.cues[first_index];
     let last = lyrics.cues.last()?;
     let selection_position = position_seconds + LOOK_AHEAD_SECONDS;
-    if selection_position < first.at_seconds
+    if position_seconds + ENTRY_LEAD_SECONDS < first.at_seconds
         || position_seconds > last.at_seconds + FINAL_HOLD_SECONDS
     {
         return None;
     }
+    if selection_position < first.at_seconds {
+        return Some(LyricPresentation {
+            timeline_signature: lyric_timeline_signature(lyrics),
+            current_index: first_index,
+            previous_index: None,
+            previous: None,
+            current: String::new(),
+            next: Some(first.text.clone()),
+        });
+    }
+    // Nonblank cues anticipate their sung timestamp; blanks begin at their
+    // own timestamp. This lets advance promotion pass through a short blank
+    // without inventing a forced empty dwell or changing the source timeline.
     let current_index = lyrics
         .cues
-        .partition_point(|cue| cue.at_seconds <= selection_position)
-        .saturating_sub(1);
-    let current = lyrics.cues.get(current_index)?;
-    let previous = lyrics.cues[..current_index]
         .iter()
+        .enumerate()
         .rev()
-        .find(|cue| !cue.text.trim().is_empty())
-        .map(|cue| cue.text.clone());
+        .find(|(_, cue)| {
+            cue.at_seconds
+                <= if cue.text.trim().is_empty() {
+                    position_seconds
+                } else {
+                    selection_position
+                }
+        })
+        .map(|(index, _)| index)
+        .unwrap_or(first_index);
+    let current = lyrics.cues.get(current_index)?;
+    let timeline_signature = lyric_timeline_signature(lyrics);
+    let previous_index = lyrics.cues[..current_index]
+        .iter()
+        .rposition(|cue| !cue.text.trim().is_empty());
+    let previous = previous_index.map(|index| lyrics.cues[index].text.clone());
     let next = lyrics.cues[current_index + 1..]
         .iter()
         .find(|cue| !cue.text.trim().is_empty())
-        .filter(|cue| {
-            !current.text.trim().is_empty()
-                || cue.at_seconds - position_seconds <= BLANK_PREPARATION_SECONDS
-        })
         .map(|cue| cue.text.clone());
     Some(LyricPresentation {
+        timeline_signature,
         current_index,
+        previous_index,
         previous,
         current: current.text.clone(),
         next,
     })
+}
+
+fn lyric_timeline_signature(lyrics: &SynchronizedLyrics) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    lyrics.cues.len().hash(&mut hasher);
+    for cue in &lyrics.cues {
+        cue.at_seconds.to_bits().hash(&mut hasher);
+        cue.text.hash(&mut hasher);
+    }
+    hasher.finish()
 }
 
 fn format_duration(seconds: f64) -> String {

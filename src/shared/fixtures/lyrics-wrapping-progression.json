@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 4,
+  "revision": 41,
+  "availability": "available",
+  "playback": "playing",
+  "trackedOutput": {
+    "name": "Speaker System"
+  },
+  "trackedZone": {
+    "id": "zone-living-room",
+    "name": "Living Room"
+  },
+  "nowPlaying": {
+    "title": "Last Light on Phobos",
+    "artist": "Evelyn Lark & The Orbital Choir",
+    "album": "Signals from the Quiet Sea"
+  },
+  "artwork": {
+    "revision": 3,
+    "path": "src/shared/fixtures/artwork/playing.jpg"
+  },
+  "lyrics": {
+    "cues": [
+      {
+        "atSeconds": 1.5,
+        "text": "A quiet orbit fades"
+      },
+      {
+        "atSeconds": 2.7,
+        "text": "Beyond the cobalt tide"
+      },
+      {
+        "atSeconds": 3.9,
+        "text": "We find the signal where the horizon waits beneath the turning sky"
+      },
+      {
+        "atSeconds": 5.1,
+        "text": "The signal returns"
+      },
+      {
+        "atSeconds": 6.3,
+        "text": "We carry the answer through the patient night and home"
+      },
+      {
+        "atSeconds": 7.5,
+        "text": "The quiet horizon turns until the room remembers"
+      },
+      {
+        "atSeconds": 8.7,
+        "text": "We find the signal where the last blue horizon meets the dark beyond us"
+      },
+      {
+        "atSeconds": 9.9,
+        "text": "The signal returns"
+      },
+      {
+        "atSeconds": 11.1,
+        "text": "We find the signal where the last blue horizon meets the dark and every distant answer turns slowly toward the room while the patient stars remember all the names we carried through the silence"
+      },
+      {
+        "atSeconds": 12.3,
+        "text": "Beyond the cobalt tide"
+      }
+    ]
+  },
+  "timing": {
+    "position": {
+      "seconds": 0,
+      "sampledAt": "2026-08-15T19:20:00Z"
+    },
+    "durationSeconds": 20
+  }
+}

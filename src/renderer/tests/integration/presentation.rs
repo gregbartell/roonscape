@@ -84,7 +84,10 @@ fn selects_synchronized_lyrics_with_lookahead_and_a_bounded_final_hold() {
     else {
         panic!("Playing should use Now Playing");
     };
-    assert_eq!(before.lyrics, None);
+    assert_eq!(
+        before.lyrics.as_ref().map(|lyrics| lyrics.current.as_str()),
+        Some("")
+    );
 
     let Presentation::NowPlaying(active) = state
         .presentation_at(Duration::from_millis(400))
@@ -109,19 +112,19 @@ fn selects_synchronized_lyrics_with_lookahead_and_a_bounded_final_hold() {
             &Presentation::NowPlaying(before),
             &Presentation::NowPlaying(active.clone()),
         ),
-        PresentationUpdate::TransitionRequired,
+        PresentationUpdate::InPlace,
     );
     assert_eq!(
         classify_presentation_update(
             &Presentation::NowPlaying(active),
             &Presentation::NowPlaying(after),
         ),
-        PresentationUpdate::TransitionRequired,
+        PresentationUpdate::InPlace,
     );
 }
 
 #[test]
-fn preserves_blank_cues_and_freezes_the_reel_while_paused() {
+fn preserves_intentional_blanks_and_freezes_the_reel_while_paused() {
     let cues = [
         (170.0, "Previous"),
         (171.0, ""),
@@ -149,10 +152,10 @@ fn preserves_blank_cues_and_freezes_the_reel_while_paused() {
         };
         let lyrics = presentation
             .lyrics
-            .expect("blank cue should keep lyric composition");
+            .expect("Intentional Blank should keep the Synchronized Lyric Composition");
         assert_eq!(lyrics.current, "");
         assert_eq!(lyrics.previous.as_deref(), Some("Previous"));
-        assert_eq!(lyrics.next, None);
+        assert_eq!(lyrics.next.as_deref(), Some("Upcoming"));
     }
 
     let mut approaching_snapshot = snapshot_with_lyrics("paused.json", &cues);
@@ -169,25 +172,23 @@ fn preserves_blank_cues_and_freezes_the_reel_while_paused() {
         approaching_snapshot,
         presentation_time(0, PLAYING_SAMPLED_AT),
     )
-    .expect("approaching blank cue should be presentable");
+    .expect("approaching Intentional Blank should be presentable");
     let Presentation::NowPlaying(presentation) = approaching
         .presentation_at(Duration::ZERO)
         .expect("approaching cue should be presentable")
     else {
         panic!("Paused should use Now Playing");
     };
-    assert_eq!(
-        presentation
-            .lyrics
-            .expect("blank cue should remain active")
-            .next
-            .as_deref(),
-        Some("Upcoming")
-    );
+    let lyrics = presentation
+        .lyrics
+        .expect("Intentional Blank should remain active");
+    assert_eq!(lyrics.previous.as_deref(), Some("Previous"));
+    assert_eq!(lyrics.current, "   ");
+    assert_eq!(lyrics.next.as_deref(), Some("Upcoming"));
 }
 
 #[test]
-fn classifies_cue_changes_in_place_but_lyric_entry_as_a_composition_change() {
+fn classifies_cue_and_same_identity_lyric_composition_changes_in_place() {
     let initial = snapshot_with_lyrics("playing.json", &[(170.0, "First"), (180.0, "Second")]);
     let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
         .expect("initial lyrics should be presentable");
@@ -220,8 +221,132 @@ fn classifies_cue_changes_in_place_but_lyric_entry_as_a_composition_change() {
         without_lyrics
             .update(entering, presentation_time(1, PLAYING_SAMPLED_AT))
             .expect("lyric entry should be accepted"),
-        PresentationUpdate::TransitionRequired
+        PresentationUpdate::InPlace
     );
+}
+
+#[test]
+fn ignores_leading_blanks_and_retains_internal_and_trailing_blanks() {
+    let cues = [
+        (5.0, ""),
+        (7.0, "Opening"),
+        (40.0, "Still current"),
+        (42.0, " "),
+    ];
+    let mut snapshot = snapshot_with_lyrics("paused.json", &cues);
+    for (seconds, expected) in [
+        (4.3, None),
+        (5.5, None),
+        (20.0, Some("Opening")),
+        (41.0, Some("Still current")),
+        (42.0, Some(" ")),
+        (45.0, Some(" ")),
+        (45.1, None),
+    ] {
+        snapshot
+            .timing
+            .as_mut()
+            .and_then(|timing| timing.position.as_mut())
+            .expect("Paused fixture has position")
+            .seconds = seconds;
+        let presentation = presentation_from_snapshot(&snapshot)
+            .expect("every lyric interval position should be presentable");
+        let Presentation::NowPlaying(presentation) = presentation else {
+            panic!("lyric timeline should retain Now Playing");
+        };
+        assert_eq!(
+            presentation
+                .lyrics
+                .as_deref()
+                .map(|lyrics| lyrics.current.as_str()),
+            expected,
+            "unexpected lyric state at {seconds}s"
+        );
+    }
+}
+
+#[test]
+fn prepares_before_first_cue_and_ignores_all_leading_blanks() {
+    for cues in [
+        vec![(10.0, "Opening"), (20.0, "Final")],
+        vec![(0.0, ""), (4.0, " "), (10.0, "Opening"), (20.0, "Final")],
+    ] {
+        let mut snapshot = snapshot_with_lyrics("paused.json", &cues);
+        for (seconds, expected) in [
+            (8.8, None),
+            (9.0, Some("")),
+            (9.4, Some("Opening")),
+            (23.1, None),
+        ] {
+            snapshot
+                .timing
+                .as_mut()
+                .unwrap()
+                .position
+                .as_mut()
+                .unwrap()
+                .seconds = seconds;
+            let Presentation::NowPlaying(presentation) =
+                presentation_from_snapshot(&snapshot).unwrap()
+            else {
+                panic!("Now Playing");
+            };
+            assert_eq!(
+                presentation
+                    .lyrics
+                    .as_ref()
+                    .map(|lyrics| lyrics.current.as_str()),
+                expected,
+                "at {seconds}"
+            );
+        }
+    }
+    let snapshot = snapshot_with_lyrics("paused.json", &[(0.0, ""), (180.0, " ")]);
+    let Presentation::NowPlaying(presentation) = presentation_from_snapshot(&snapshot).unwrap()
+    else {
+        panic!("Now Playing");
+    };
+    assert!(presentation.lyrics.is_none());
+}
+
+#[test]
+fn short_blanks_preserve_advance_promotion_without_retiring_the_current_cue_early() {
+    let mut snapshot = snapshot_with_lyrics(
+        "paused.json",
+        &[
+            (0.0, "Before"),
+            (10.0, ""),
+            (10.3, "After"),
+            (15.0, ""),
+            (20.0, "Final"),
+        ],
+    );
+    for (seconds, expected) in [
+        (9.4, "Before"),
+        (9.7, "After"),
+        (10.0, "After"),
+        (14.8, "After"),
+        (15.0, ""),
+        (19.4, "Final"),
+    ] {
+        snapshot
+            .timing
+            .as_mut()
+            .unwrap()
+            .position
+            .as_mut()
+            .unwrap()
+            .seconds = seconds;
+        let Presentation::NowPlaying(presentation) = presentation_from_snapshot(&snapshot).unwrap()
+        else {
+            panic!("Now Playing");
+        };
+        assert_eq!(
+            presentation.lyrics.unwrap().current,
+            expected,
+            "at {seconds}"
+        );
+    }
 }
 
 fn inactivity_configuration() -> InactivityConfiguration {

@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspace @roonscape/bridge",
+    "capture:lyrics": "npm run build && cargo build --locked --package roonscape-renderer && node scripts/capture-lyrics.mjs",
     "capture:presentations": "npm run build && cargo build --locked --package roonscape-renderer && node scripts/capture-presentations.mjs",
     "check": "npm run check:versions && npm run check:native-test-environment && npm run format:check && npm run typecheck && npm run lint && npm run test:renderer:build && npm run test:built",
     "check:native-test-environment": "node scripts/check-native-test-environment.mjs",
@@ -38,7 +39,7 @@
     "test:fixture-launcher:built": "node --test scripts/run-fixture.test.mjs",
     "test:native-test-environment": "node --test scripts/check-native-test-environment.test.mjs",
     "test:orchestration": "node --test scripts/test-orchestration.test.mjs",
-    "test:design": "npm run build && cargo build --locked --package roonscape-renderer && node --test --test-concurrency=1 scripts/presentation-capture-options.test.mjs scripts/presentation-capture-planning.test.mjs scripts/presentation-capture-execution.test.mjs scripts/presentation-capture-publication.test.mjs scripts/presentation-capture-renderer.test.mjs scripts/presentation-captures.test.mjs scripts/capture-control-renderer.test.mjs scripts/presentation-review.test.mjs",
+    "test:design": "npm run build && cargo build --locked --package roonscape-renderer && node --test --test-concurrency=1 scripts/presentation-capture-options.test.mjs scripts/presentation-capture-planning.test.mjs scripts/presentation-capture-execution.test.mjs scripts/presentation-capture-publication.test.mjs scripts/presentation-capture-renderer.test.mjs scripts/presentation-captures.test.mjs scripts/capture-control-renderer.test.mjs scripts/presentation-review.test.mjs scripts/lyric-motion-capture.test.mjs",
     "test:native-session": "node --test scripts/native-session.test.mjs",
     "test:node:built": "node --test --test-concurrency=4 src/bridge/dist/test/*.test.js scripts/source-launcher.test.mjs scripts/run-fixture.test.mjs scripts/process-harness.test.mjs scripts/native-session.test.mjs scripts/bare-x-fullscreen.test.mjs scripts/test-orchestration.test.mjs scripts/check-versions.test.mjs scripts/check-native-test-environment.test.mjs scripts/development-environment.test.mjs scripts/install-desktop.test.mjs scripts/package-release.test.mjs scripts/verify.test.mjs",
     "test:process-harness": "node --test scripts/process-harness.test.mjs",
