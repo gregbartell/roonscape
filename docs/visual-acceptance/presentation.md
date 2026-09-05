@@ -14,86 +14,38 @@ Prepare the worktree using the
 The capture host also needs `Xvfb`, `xwininfo`, and `scrot`. No browser engine is
 involved.
 
-Start with required automation, then extend the printed retained review directory:
+Run the applicable checks from [verification policy](../agents/verification.md#choose-checks).
+For visual assessment, select useful Fixture Scenarios and viewports with
+`capture:presentations`, or use a maintained capture scope:
 
 ```sh
-npm run verify -- --design
-npm run review:presentations -- --review /var/tmp/codex/roonscape/review.EXAMPLE --scope focused --scenario paused --scenario playing --rationale "Playback status changes affect Playing and Paused compositions."
-```
-
-Focused presentation changes select relevant maintained Fixture Scenarios and
-capture each at **every maintained representative viewport**. Explain why the
-selected scenarios cover the change, including affected neighboring conditions.
-Shared typography, layout, or palette changes **require the complete profile**:
-
-```sh
-npm run review:presentations -- --review /var/tmp/codex/roonscape/review.EXAMPLE --scope complete --rationale "Shared layout affects every composition and typography path."
-```
-
-The complete profile includes the maintained matrix, typography, palette,
-identity, and diagnostics representatives. It fails clearly if required licensed
-host fonts or glyph fallback are unavailable. Do not provision or redistribute
-proprietary fonts in CI. Scenario and viewport lists come from the fixture
-catalog and native capture plan; inspect the current scopes with:
-
-```sh
+npm run review:presentations -- --output /var/tmp/codex/roonscape/task.EXAMPLE --scope focused --scenario paused --scenario playing
+npm run review:presentations -- --output /var/tmp/codex/roonscape/task.EXAMPLE --scope complete
 npm run review:presentations -- --list
 ```
 
-Each invocation creates a unique `presentation.*` directory inside the retained
-review directory. Open its `index.html` for linked images and coverage, and
-`captures.json` for requested/completed accounting and source identity. Progress
-and failures remain in `capture.log`. Captures use the existing native renderer,
-exact-revision layout/paint readiness, real window checks, PNG dimension
-validation, and progressive publication. Failure or cancellation retains completed
-images and diagnostics, marks the set incomplete, and removes owned runtime
-resources. Concurrent invocations cannot overwrite each other's evidence.
+The focused scope captures selected scenarios at all maintained viewports. The
+complete scope includes the maintained matrix, typography, palette, identity,
+and diagnostics representatives; it requires the licensed host fonts and glyph
+fallback. The smaller `ci-fallback` scope uses packaged fonts.
 
-Open every requested image and record reasons against the [review checklist](#review-checklist)
-before recording a verdict. Record uncertain clipping, hierarchy, palette, or
-typography judgments as unresolved and use `needs-work` or `unreviewed` until
-resolved. Write a JSON file
-containing `verdict` (`accepted`, `needs-work`, or `unreviewed`), `reasons` (text),
-`inspected` (an array of image filenames), and `unresolved` (an array of judgments).
-Then attach it to that capture set:
-
-```sh
-npm run review:presentations -- --record /var/tmp/codex/roonscape/review.EXAMPLE/presentation.EXAMPLE --verdict-file /path/to/verdict.json
-```
-
-Verdict records are immutable, retained separately, and linked from the image
-index. Generate a new capture review to revise a recorded verdict. An
-accepted verdict requires a complete capture set, every image inspected, and no
-unresolved judgments. Focused acceptance applies only to the selected scope;
-only a complete profile can claim complete-profile visual acceptance. Automated
-success, capture completion, and visual acceptance are independent outcomes.
-CI never supplies an aesthetic verdict.
+Each invocation writes PNGs, capture progress in `captures.json`, and diagnostics
+in `capture.log` to a unique `presentation.*` directory beneath `--output`.
+Captures are independent of verification runs. Failure or cancellation leaves
+completed images and removes owned runtime resources.
 
 Settled screenshots cannot establish motion quality, distance readability,
 physical display brightness/color, OLED behavior over time, or personal aesthetic
-preference. Request human review for those judgments and retain them explicitly
-as unresolved when they are necessary for acceptance. Actual Live Capture
-Sessions require Roon and human-caused events.
-
-CI runs `npm run verify -- --presentation-ci`, which runs repository checks,
-the design suite, and the maintained small `ci-fallback` capture scope through
-this same review workflow. It forces packaged fonts for both Now Playing and
-Full-field Presentations. Its artifacts include the review index, coverage,
-images, and logs even on failure. This scope is representative fallback-font
-evidence, not complete typography evidence or local visual acceptance. The
-complete workstation profile remains required for shared presentation changes.
-
-The lower-level `capture:presentations` command remains available for standalone
-captures, including `--profile visual-acceptance`; those standalone outputs do
-not include the review accounting or verdict workflow.
+preference. Human review is needed when those judgments matter to the change.
+Actual Live Capture Sessions require Roon and human-caused events.
 
 ## Maintained Fixture Scenario matrix
 
 The canonical sources are
 [`fixture-scenario-catalog.json`](../../src/shared/fixtures/fixture-scenario-catalog.json)
 and [`presentation-captures.mjs`](../../scripts/presentation-captures.mjs).
-The review workflow derives its scenarios, seven peer viewports, and complete
-profile from those sources rather than maintaining another documentation list.
+Capture scopes derive their scenarios, seven peer viewports, and complete
+profile from those sources.
 Treat all seven viewports as peers; no single size is the visual authority.
 
 ## Typography, palette, identity, and diagnostics representatives
@@ -128,11 +80,8 @@ matrix captures must not contain the overlay.
 
 ## Review checklist
 
-Use the linked design sections as the requirements for each item; this checklist
-identifies useful comparisons. Record **pass**, **needs work**, or **not
-applicable**, plus a short reason for each item across every representative
-viewport. Include all Full-field Fixture Scenarios as regression evidence when
-reviewing Now Playing changes.
+Use the linked design sections as requirements; this checklist identifies useful
+comparisons for affected behavior.
 
 | Inspect | Compare against the design |
 | --- | --- |
@@ -155,8 +104,8 @@ Static captures establish settled endpoints. Launch dynamic Fixture Mode:
 npm run fixture
 ```
 
-Keep the renderer focused and use Left and Right to visit the maintained catalog
-in order. Compare behavior with [motion and inactivity](../design/presentation.md#motion-and-inactivity):
+Use Left and Right to visit relevant Fixture Scenarios with the renderer focused.
+Compare behavior with [motion and inactivity](../design/presentation.md#motion-and-inactivity):
 
 - Exercise playback-only updates, simultaneous playback/content changes,
   availability loss, disconnection, and rapid revisions. Look for stale content,
@@ -175,7 +124,6 @@ For lyric entry, Natural Cue Handoffs, Intentional Blanks, seeks, and interrupte
 motion, use the [lyric motion captures](../development.md#lyric-motion-captures)
 against the [Synchronized Lyric Composition](../design/presentation.md#synchronized-lyric-composition).
 
-Keep generated captures as temporary human-review evidence. Automated checks
-belong at the shared fixture, layout, typography, palette-contrast, transition,
-and preserved-behavior seams; do not commit PNG goldens or add screenshot
+Automated checks belong at the shared fixture, layout, typography,
+palette-contrast, transition, and preserved-behavior seams; do not commit PNG goldens or add screenshot
 comparisons to CI.

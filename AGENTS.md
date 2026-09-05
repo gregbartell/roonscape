@@ -33,7 +33,7 @@ For missing tools, fonts, or execution permissions, read the relevant parts of
 
 Before choosing focused checks or final verification, read
 [Choose checks](docs/agents/verification.md#choose-checks). Follow its pointers
-to execution, evidence, and presentation review only when applicable to the task.
+to execution and presentation review only when applicable to the task.
 
 ### Durable repository content
 
@@ -41,9 +41,8 @@ Keep committed code, tests, and documentation focused on the current product.
 Do not retain completed implementation specs, disposable prototypes, one-off
 verification narratives, or historical benchmark results. Never commit
 references to particular personal or development hosts; use reserved example
-hostnames and addresses in examples and tests. Keep run evidence outside the
-repository. Preserve protocol knowledge with explicit confidence and limits,
-rather than the chronology of its collection.
+hostnames and addresses in examples and tests. Preserve protocol knowledge with
+explicit confidence and limits, rather than the chronology of its collection.
 
 RoonScape has no backwards-compatibility requirement. Maintain only the current
 configuration contract; do not add legacy accommodations, migration-only

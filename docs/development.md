@@ -129,14 +129,14 @@ changes permissions or reads personal application credentials.
 
 Select required checks from [Choose checks](agents/verification.md#choose-checks),
 including its documentation-only path. When executable checks are required,
-`npm run verify` runs them headlessly with retained evidence; use `--design`
+`npm run verify` runs them headlessly; use `--design`
 when the design suite is required. The policy also covers focused checks,
-evidence inspection, and the Live Capture Session helper-test distinction.
+failure diagnostics, and the Live Capture Session helper-test distinction.
 No Roon Server or Roon Authorization is required for either suite.
 
 For end-to-end development-tooling acceptance, follow the
 [two-worktree exercise](agents/worktree-acceptance.md). It accepts existing fresh
-worktrees and retains concurrent verification and cancellation evidence.
+worktrees and checks concurrent verification and cancellation.
 
 ## Fast feedback loops
 
@@ -170,7 +170,7 @@ cargo test --package roonscape-renderer --test integration snapshot_contract::
 Tests live in `src/renderer/tests/integration`; add new modules to its `main.rs`.
 Font-registration tests retain a separate executable so they exercise the
 process's first registration. Use `npm run verify` (and `--design` when required) for final
-headless verification with retained evidence.
+headless verification.
 
 ## Run from source
 
@@ -224,8 +224,7 @@ Configuration, private home/XDG directories, Xvfb display, D-Bus session bus,
 and process groups. They do not read personal Display Configuration or Roon
 Authorization and do not contact Roon. Cancel the owning command with SIGINT
 or SIGTERM and allow its bounded cleanup to finish. Stop only owned processes;
-an observed display number does not establish ownership. Keep completed
-captures and treat a failed or cancelled capture set as incomplete.
+an observed display number does not establish ownership.
 
 When diagnosing or changing isolation, readiness, or cleanup, read the
 [native-runtime reference](agents/native-runtime.md).
@@ -314,11 +313,8 @@ keeps completed Presentation Captures, lists their paths, and explicitly marks
 the planned set incomplete. An overwrite failure may therefore leave a mixture
 of refreshed and earlier captures.
 
-For indexed review evidence and recorded visual verdicts, extend the retained
-verification directory with `npm run review:presentations`. Follow the
-[presentation visual-acceptance guide](visual-acceptance/presentation.md) for
-focused selection across all maintained viewports, the complete profile required
-for shared typography/layout/palette changes, and the CI fallback scope.
+For maintained capture scopes and useful visual comparisons, see the
+[presentation review guide](visual-acceptance/presentation.md).
 
 ### Lyric motion captures
 
@@ -346,8 +342,7 @@ npm run capture:lyrics -- --example blank-lifecycle
 ```
 
 The peer viewport review matrix is 1280x720, 1600x900, 1600x1200, 1920x1200,
-2560x1080, 3840x2160, and 3840x2400. Repeat a relevant motion example at each
-resolution before accepting a layout-sensitive change.
+2560x1080, 3840x2160, and 3840x2400.
 
 Add `--reduced-animation` to any maintained example to record the same
 semantic cases at their complete, motion-free endpoints. Repeat it across the
@@ -363,9 +358,7 @@ dated directory under `/var/tmp/codex/roonscape`.
 
 Each result retains the lossless 20-fps recording, exact full-resolution
 review frames, a compact overview, every full-rate review sheet, and a
-manifest. Review every full-rate sheet before reaching a visual verdict so a
-one-frame transition is not hidden between selected frames. These artifacts
-remain disposable human-review evidence rather than pixel-golden inputs.
+manifest. Full-rate sheets expose transitions between selected frames.
 
 Run the self-contained design test suite before accepting changes to the
 Renderer, presentation design, capture planning or execution, Fixture

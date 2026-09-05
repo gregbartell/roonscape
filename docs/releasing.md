@@ -17,10 +17,9 @@ Use this checklist after the release version has been approved.
    npm run package
    ```
 
-   Verification runs repository checks and the design suite with retained
-   evidence. Follow the [evidence inspection instructions](agents/verification.md#inspect-retained-evidence)
-   to review its outcome and logs. These checks use controlled packaging inputs
-   and do not build or download release-package components. `npm run package`
+   Verification runs repository checks and the design suite. These checks use
+   controlled packaging inputs and do not build or download release-package
+   components. `npm run package`
    is the explicit end-to-end release check: it builds the RoonScape Bridge and
    RoonScape Renderer, installs production
    dependencies, downloads and verifies the pinned Node runtime, assembles the
@@ -29,7 +28,7 @@ Use this checklist after the release version has been approved.
 
    The release workflow uses the same pinned toolchains, preparation, and
    verification commands. Its `release-verification-<run-id>-<attempt>` workflow
-   artifact retains verification evidence even on failure, separately from
+   artifact provides failure diagnostics for seven days, separately from
    `release-artifacts`, which contains only the archive and checksum for
    publication.
 

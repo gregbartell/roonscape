@@ -1,7 +1,7 @@
 # Native runtime
 
 Read this reference when diagnosing or changing native-session isolation,
-readiness, or cleanup. For routine execution and evidence requirements, use
+readiness, or cleanup. For routine execution, use
 the [verification policy](verification.md#executable-checks-and-presentation-work).
 
 ## Isolation and registration
@@ -61,12 +61,12 @@ termination with its two-second grace and two-second escalation waits.
 Per-command exit codes in `verification.json` are the supervisor's shell-style
 outcomes, including 130 for cancellation. Nested temporary resources live under
 the run's disposable command runtime directory; completed logs live separately
-in the retained review directory.
+in the review directory, which is removed on success.
 
 ## Acceptance
 
 For implementation changes to this behavior, use the
 [two-worktree acceptance exercise](worktree-acceptance.md) to check concurrent
-sessions, cancellation, evidence retention, and noninterference with an owned
+sessions, cancellation, diagnostic cleanup, and noninterference with an owned
 Fixture Mode sentinel. The exercise's timing assertions are documented there;
 they are distinct from the individual process-cleanup bounds above.

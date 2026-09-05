@@ -1,12 +1,5 @@
 import { appendFileSync, renameSync, writeFileSync } from "node:fs";
-import {
-  appendFile,
-  cp,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,16 +91,7 @@ function parseOptions(args) {
   const options = { scenarios: [] };
   for (let index = 0; index < args.length; index++) {
     const name = args[index];
-    if (
-      ![
-        "--review",
-        "--scope",
-        "--scenario",
-        "--rationale",
-        "--record",
-        "--verdict-file",
-      ].includes(name)
-    )
+    if (!["--output", "--scope", "--scenario"].includes(name))
       throw new Error(`Unknown review option: ${name}`);
     const value = args[++index];
     if (!value?.trim() || value.startsWith("--"))
@@ -122,39 +106,22 @@ function parseOptions(args) {
 }
 
 async function captureReview(options) {
-  if (!options["--review"] || !options["--rationale"])
-    throw new Error("Capture reviews require --review and --rationale");
+  if (!options["--output"]) throw new Error("Capture reviews require --output");
   const scope = options["--scope"];
   if (scope !== "focused" && options.scenarios.length)
     throw new Error("Only focused reviews accept --scenario");
   const selected = selectCaptures(scope, options.scenarios);
-  const review = path.resolve(options["--review"]);
-  const verification = JSON.parse(
-    await readFile(path.join(review, "verification.json"), "utf8"),
-  );
-  if (!["complete", "failed", "cancelled"].includes(verification.outcome))
-    throw new Error(
-      "Wait for verification to finish before extending its evidence",
-    );
-  const directory = await mkdtemp(path.join(review, "presentation."));
+  const output = path.resolve(options["--output"]);
+  await mkdir(output, { recursive: true });
+  const directory = await mkdtemp(path.join(output, "presentation."));
   console.log(`Presentation review: ${directory}`);
-  await appendFile(
-    path.join(review, "README.md"),
-    `\n[Presentation review: ${path.basename(directory)}](${path.basename(directory)}/index.html)\n`,
-  );
   const cancellation = processCancellation();
   const report = {
     scope,
-    rationale: options["--rationale"],
     startedAt: new Date().toISOString(),
     outcome: "incomplete",
-    verificationSource: verification.source,
-    automatedOutcome: verification.automatedOutcome ?? verification.outcome,
-    source: { root },
     typography:
-      scope === "ci-fallback"
-        ? "packaged fallback only"
-        : "host automatic; inventory pending",
+      scope === "ci-fallback" ? "packaged fallback only" : "host automatic",
     requested: selected.map(
       ({ fileName, scenario, viewport, typography, variant }) => ({
         fileName,
@@ -165,7 +132,6 @@ async function captureReview(options) {
       }),
     ),
     completed: [],
-    visualAcceptance: "unreviewed",
   };
   let runtime;
   const log = (message) =>
@@ -173,17 +139,6 @@ async function captureReview(options) {
   try {
     saveCaptureReport(directory, report);
     log(`Requested ${selected.length} captures; scope ${scope}`);
-    report.source.revision = (
-      await runMonitoredProcess("git", ["rev-parse", "HEAD"], {
-        cwd: root,
-        signal: cancellation.signal,
-      })
-    ).trim();
-    report.source.workingTree = await runMonitoredProcess(
-      "git",
-      ["status", "--porcelain=v1", "--untracked-files=all"],
-      { cwd: root, signal: cancellation.signal },
-    );
     runtime = await mkdtemp(path.join(os.tmpdir(), "rs-r."));
     const environment = { ...process.env };
     if (scope === "ci-fallback") {
@@ -201,31 +156,30 @@ async function captureReview(options) {
       environment.FONTCONFIG_FILE = config;
       environment.FONTCONFIG_PATH = runtime;
     }
-    // Match the renderer's private home/XDG view rather than counting fonts
-    // that are visible only through the maintainer's personal configuration.
-    const fontEnvironment = {
-      ...environment,
-      HOME: runtime,
-      XDG_CONFIG_HOME: runtime,
-      XDG_DATA_HOME: runtime,
-      XDG_CACHE_HOME: runtime,
-    };
-    report.fontInventory = JSON.parse(
-      await runMonitoredProcess(
-        "python3",
-        [path.join(root, "scripts/inspect-host-fonts.py")],
-        { environment: fontEnvironment, signal: cancellation.signal },
-      ),
-    );
     if (scope === "complete") {
+      // Match the renderer's private home/XDG view rather than counting fonts
+      // that are visible only through the maintainer's personal configuration.
+      const fontEnvironment = {
+        ...environment,
+        HOME: runtime,
+        XDG_CONFIG_HOME: runtime,
+        XDG_DATA_HOME: runtime,
+        XDG_CACHE_HOME: runtime,
+      };
+      const fontInventory = JSON.parse(
+        await runMonitoredProcess(
+          "python3",
+          [path.join(root, "scripts/inspect-host-fonts.py")],
+          { environment: fontEnvironment, signal: cancellation.signal },
+        ),
+      );
       const families = new Set(
-        report.fontInventory.families.map((family) => family.toLowerCase()),
+        fontInventory.families.map((family) => family.toLowerCase()),
       );
       const missing = ["Sitka Display", "Palatino Linotype", "Segoe UI"].filter(
         (family) => !families.has(family.toLowerCase()),
       );
-      if (!report.fontInventory.hasMoonGlyph)
-        missing.push("glyph fallback for 月");
+      if (!fontInventory.hasMoonGlyph) missing.push("glyph fallback for 月");
       if (missing.length)
         throw new Error(
           `Complete profile requires host fonts: ${missing.join(", ")}; no fallback substitution is allowed`,
@@ -235,7 +189,7 @@ async function captureReview(options) {
       report.typography =
         scope === "complete"
           ? "complete host typography plus packaged fallback representative"
-          : "host automatic; see font inventory (not complete typography coverage)";
+          : "host automatic";
     saveCaptureReport(directory, report);
     const captures = await preflightPresentationCapturePlan(
       selected,
@@ -267,6 +221,7 @@ async function captureReview(options) {
   } catch (error) {
     report.outcome = cancellation.signal.aborted ? "cancelled" : "failed";
     report.error = error.message;
+    console.error(error.message);
     log(error.message);
     process.exitCode = cancellation.signal.aborted ? 130 : 1;
   } finally {
@@ -274,6 +229,7 @@ async function captureReview(options) {
       if (runtime) await rm(runtime, { recursive: true, force: true });
     } catch (error) {
       report.cleanupError = error.message;
+      console.error(error.message);
       report.outcome = "incomplete";
       process.exitCode = 1;
     }
@@ -286,7 +242,7 @@ async function captureReview(options) {
     cancellation.dispose();
   }
   console.log(
-    `Capture completion: ${report.outcome} (${report.completed.length}/${report.requested.length}); typography: ${report.typography}; visual acceptance: unreviewed`,
+    `Capture completion: ${report.outcome} (${report.completed.length}/${report.requested.length}); typography: ${report.typography}`,
   );
 }
 
@@ -300,104 +256,17 @@ function escapeHtml(value) {
 }
 
 function saveCaptureReport(directory, report) {
-  const completed = new Set(report.completed);
-  const index = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Presentation review</title><style>body{font:18px system-ui;max-width:1100px;margin:40px auto;padding:20px}img{max-width:100%;height:auto}li{margin:24px 0}pre{white-space:pre-wrap}</style><h1>Presentation review</h1><p>Scope: ${escapeHtml(report.scope)}. ${escapeHtml(report.typography)}</p><p>Capture completion: ${escapeHtml(report.outcome)}; ${report.completed.length}/${report.requested.length} completed. Visual acceptance: ${escapeHtml(report.visualAcceptance)}.</p><p>Selection rationale: ${escapeHtml(report.rationale)}</p><p>Automated outcome: ${escapeHtml(report.automatedOutcome)}. Automation does not establish visual acceptance. CI fallback evidence does not establish complete typography coverage.</p><p><a href="captures.json">Coverage and source identity</a> · <a href="capture.log">Capture diagnostics</a> · <a href="../README.md">Verification evidence</a></p><p>${report.verdict ? `<a href="verdict.json">Visual verdict and unresolved judgments</a>: ${escapeHtml(report.verdict.reasons)}` : "No visual verdict recorded."}</p><pre>${escapeHtml(report.error ?? "")}</pre><ul>${report.requested.map(({ fileName, scenario, viewport, typography }) => `<li>${escapeHtml(scenario)} — ${escapeHtml(viewport)} — ${escapeHtml(typography)}: ${completed.has(fileName) ? `<a href="${fileName}">${fileName}</a><br><img loading="lazy" src="${fileName}" alt="${escapeHtml(scenario)} at ${escapeHtml(viewport)}">` : "not completed"}</li>`).join("")}</ul></html>`;
-  for (const [name, contents] of [
-    ["captures.json", JSON.stringify(report, null, 2) + "\n"],
-    ["index.html", index],
-  ]) {
-    writeFileSync(path.join(directory, `${name}.tmp`), contents, {
-      mode: 0o600,
-    });
-    renameSync(path.join(directory, `${name}.tmp`), path.join(directory, name));
-  }
-}
-
-async function recordVerdict(options) {
-  if (
-    !options["--record"] ||
-    !options["--verdict-file"] ||
-    options["--review"] ||
-    options["--scope"] ||
-    options["--rationale"] ||
-    options.scenarios.length
-  )
-    throw new Error("Recording requires only --record and --verdict-file");
-  const directory = path.resolve(options["--record"]);
-  const report = JSON.parse(
-    await readFile(path.join(directory, "captures.json"), "utf8"),
-  );
-  if (!report.finishedAt)
-    throw new Error(
-      "Wait for capture generation to finish before recording a verdict",
-    );
-  const input = JSON.parse(await readFile(options["--verdict-file"], "utf8"));
-  if (
-    !["accepted", "needs-work", "unreviewed"].includes(input.verdict) ||
-    typeof input.reasons !== "string" ||
-    !input.reasons.trim() ||
-    !Array.isArray(input.inspected) ||
-    !Array.isArray(input.unresolved) ||
-    input.unresolved.some((item) => typeof item !== "string" || !item.trim())
-  )
-    throw new Error(
-      "Verdict requires verdict, reasons, inspected filenames, and unresolved judgments",
-    );
-  const inspected = new Set(input.inspected);
-  if (input.inspected.some((name) => !report.completed.includes(name)))
-    throw new Error(
-      "Inspected images must belong to the completed capture set",
-    );
-  if (input.verdict === "accepted") {
-    if (
-      report.outcome !== "complete" ||
-      report.completed.length !== report.requested.length ||
-      report.requested.some(({ fileName }) => !inspected.has(fileName))
-    )
-      throw new Error(
-        "Acceptance requires a complete set and inspection of every requested image",
-      );
-    if (report.scope === "ci-fallback")
-      throw new Error("CI fallback evidence cannot claim visual acceptance");
-    if (input.unresolved.length)
-      throw new Error(
-        "Acceptance requires resolving all outstanding judgments",
-      );
-    for (const name of inspected) await readFile(path.join(directory, name));
-  }
-  const verdict = {
-    verdict: input.verdict,
-    reasons: input.reasons,
-    inspected: [...inspected],
-    unresolved: input.unresolved,
-    rationale: report.rationale,
-    scope: report.scope,
-    completeProfileAccepted:
-      input.verdict === "accepted" && report.scope === "complete",
-    recordedAt: new Date().toISOString(),
-  };
-  // Exclusive creation keeps concurrent reviewers from replacing each other's
-  // judgment. A new capture review is required for a revised verdict.
-  await writeFile(
-    path.join(directory, "verdict.json"),
-    JSON.stringify(verdict, null, 2) + "\n",
-    { flag: "wx", mode: 0o600 },
-  );
-  report.verdict = verdict;
-  report.visualAcceptance =
-    input.verdict === "accepted"
-      ? `${report.scope} scope accepted`
-      : input.verdict;
-  saveCaptureReport(directory, report);
-  console.log(`Visual verdict: ${report.visualAcceptance}`);
+  const file = path.join(directory, "captures.json");
+  writeFileSync(`${file}.tmp`, JSON.stringify(report, null, 2) + "\n", {
+    mode: 0o600,
+  });
+  renameSync(`${file}.tmp`, file);
 }
 
 async function main() {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === "--list") return listScopes();
   const options = parseOptions(args);
-  if (options["--record"] || options["--verdict-file"])
-    return recordVerdict(options);
   await captureReview(options);
 }
 

@@ -52,12 +52,13 @@ jobs:
         timeout-minutes: 35
         if: ${{ inputs.two_worktrees }}
         run: npm run accept:worktrees -- "$RUNNER_TEMP/acceptance-a" "$RUNNER_TEMP/acceptance-b"
-      - name: Upload verification evidence
-        if: always()
+      - name: Upload failure diagnostics
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: verification-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             /var/tmp/codex/roonscape/review.*
             /var/tmp/codex/roonscape/acceptance.*
-          if-no-files-found: warn
+          if-no-files-found: ignore
+          retention-days: 7

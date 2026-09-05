@@ -8,7 +8,6 @@ import {
   readdir,
   realpath,
   rm,
-  writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 import { createAcceptanceBudget } from "./acceptance-budget.mjs";
@@ -28,7 +27,7 @@ async function main() {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === "--help") {
     console.log(
-      "Usage: npm run accept:worktrees -- /absolute/worktree-a /absolute/worktree-b\nRequires two fresh, existing, clean worktrees on a provisioned Linux host. Retains evidence under /var/tmp/codex/roonscape.",
+      "Usage: npm run accept:worktrees -- /absolute/worktree-a /absolute/worktree-b\nRequires two fresh, existing, clean worktrees on a provisioned Linux host. Leaves failure diagnostics under /var/tmp/codex/roonscape.",
     );
     return;
   }
@@ -71,28 +70,19 @@ async function main() {
   const scratch = "/var/tmp/codex/roonscape";
   await mkdir(scratch, { recursive: true });
   const evidence = await mkdtemp(path.join(scratch, "acceptance."));
-  // Short runtime path for Unix sockets; retained evidence never lives here.
+  // Short runtime path for Unix sockets.
   const runtime = await mkdtemp("/tmp/rs-a.");
   const cancellation = processCancellation();
   const budget = createAcceptanceBudget({ signal: cancellation.signal });
   const children = [];
   const streams = [];
-  const report = {
-    outcome: "incomplete",
-    startedAt: new Date().toISOString(),
-    roots,
-    workBudgetMilliseconds: budget.timeoutMilliseconds,
-    commands: [],
-    observations: [],
-    visualAcceptance: "unreviewed",
-    liveObservation: "not performed",
-  };
-  console.log(`Acceptance evidence: ${evidence}`);
+  let outcome = "incomplete";
+  let sentinelRuntime;
+  console.log(`Acceptance diagnostics: ${evidence}`);
   let sentinel;
   let sentinelEnvironment;
   let sentinelWindow;
   try {
-    await save();
     const environments = [];
     for (const [index, root] of roots.entries()) {
       const temporary = path.join(runtime, String(index));
@@ -155,7 +145,7 @@ async function main() {
       DISPLAY: ready[1],
       XAUTHORITY: "/dev/null",
     };
-    report.sentinel = { display: ready[1], runtimeDirectory: ready[2] };
+    sentinelRuntime = ready[2];
     await probeSentinel("before verification");
 
     const verification = roots.map((root, index) =>
@@ -183,8 +173,6 @@ async function main() {
       ),
     );
     assert.notEqual(...reviewPaths);
-    report.reviews = reviewPaths;
-    await save();
     // Observe both native sessions at once, rather than infer concurrency from
     // adjacent command timestamps. Their private configuration must differ.
     const nativeReports = await waitFor(
@@ -209,71 +197,50 @@ async function main() {
       nativeReports[0].runtimeDirectory,
       nativeReports[1].runtimeDirectory,
     );
-    assert.notEqual(
-      nativeReports[0].runtimeDirectory,
-      report.sentinel.runtimeDirectory,
-    );
-    assert.notEqual(
-      nativeReports[1].runtimeDirectory,
-      report.sentinel.runtimeDirectory,
-    );
-    report.observations.push({
-      phase: "concurrent verification",
-      nativeRuntimeDirectories: nativeReports.map(
-        (item) => item.runtimeDirectory,
-      ),
-    });
+    assert.notEqual(nativeReports[0].runtimeDirectory, sentinelRuntime);
+    assert.notEqual(nativeReports[1].runtimeDirectory, sentinelRuntime);
     await probeSentinel("during verification");
     await Promise.all(verification.map((run) => complete(run)));
     for (const [index, directory] of reviewPaths.entries()) {
-      const item = await json(path.join(directory, "verification.json"));
-      assert.equal(item.outcome, "complete");
-      assert.equal(item.automatedOutcome, "complete");
-      assert.equal(item.captureCompletion, "complete");
-      assert.equal(item.visualAcceptance, "not assessed");
-      assert.equal(await realpath(item.source.root), roots[index]);
-      assert.equal(
-        item.source.revision,
-        (
-          await runMonitoredProcess("git", ["rev-parse", "HEAD"], {
-            cwd: roots[index],
-            ...budget.waitOptions(5_000),
-          })
-        ).trim(),
-      );
-      assert.equal(item.source.workingTree, "");
-      for (const entry of item.commands) {
-        assert.equal(entry.exitCode, 0);
-        await access(path.join(directory, entry.stdout));
-        await access(path.join(directory, entry.stderr));
-      }
+      await assert.rejects(access(directory), { code: "ENOENT" });
+      const item = nativeReports[index];
       for (const owned of [item.runtimeDirectory, item.commandRuntimeDirectory])
         await assert.rejects(access(owned), { code: "ENOENT" });
-      const presentation = await findPresentation(directory);
-      await inspectCaptures(presentation, "complete", "ci-fallback");
+      assert.equal(
+        (
+          await runMonitoredProcess(
+            "git",
+            ["status", "--porcelain=v1", "--untracked-files=all"],
+            {
+              cwd: roots[index],
+              ...budget.waitOptions(5_000),
+            },
+          )
+        ).trim(),
+        "",
+        "verification leaves the source worktree clean",
+      );
     }
     await probeSentinel("after verification");
 
     // Both commands use the maintained focused scope at all seven viewports.
     // More scenarios in A keep useful native work running while B is cancelled.
-    const reviewArgs = (index, scenarios) => [
+    const reviewArgs = (scenarios) => [
       "run",
       "review:presentations:built",
       "--",
-      "--review",
-      reviewPaths[index],
+      "--output",
+      evidence,
       "--scope",
       "focused",
       ...scenarios.flatMap((scenario) => ["--scenario", scenario]),
-      "--rationale",
-      "Acceptance of concurrent capture publication and cancellation: Now Playing and Full-field representatives at all maintained viewports; no presentation design changes.",
     ];
     const survivor = start(
       roots[0],
       environments[0],
       "capture-survivor",
       "npm",
-      reviewArgs(0, ["playing", "idle", "long-metadata", "light-artwork"]),
+      reviewArgs(["playing", "idle", "long-metadata", "light-artwork"]),
     );
     const survivorDirectory = await presentationDirectory(survivor);
     const victim = start(
@@ -281,10 +248,10 @@ async function main() {
       environments[1],
       "capture-cancelled",
       "npm",
-      reviewArgs(1, ["playing", "idle"]),
+      reviewArgs(["playing", "idle"]),
     );
     const victimDirectory = await presentationDirectory(victim);
-    const { owned, surviving } = await waitFor(
+    const owned = await waitFor(
       async () => {
         const item = await json(path.join(victimDirectory, "captures.json"));
         assert.ok(
@@ -303,7 +270,7 @@ async function main() {
             "both reviews must have active native Renderers",
           );
         }
-        return { owned, surviving };
+        return owned;
       },
       victim.child,
       "published capture and overlapping native review work",
@@ -312,7 +279,6 @@ async function main() {
         ...budget.waitOptions(60_000),
       },
     );
-    const started = Date.now();
     // Signal the delivered JS CLI, not npm's shell: npm does not reliably
     // forward SIGTERM. The process is identified solely among owned descendants.
     const renderer = owned.find((entry) => entry.name.startsWith("roonscape"));
@@ -326,12 +292,6 @@ async function main() {
     );
     process.kill(cliPid, "SIGTERM");
     await complete(victim, 130, 5_000);
-    report.cancellation = {
-      elapsedMilliseconds: Date.now() - started,
-      processes: owned,
-      survivingProcesses: surviving,
-      directory: victimDirectory,
-    };
     await inspectCaptures(victimDirectory, "cancelled", "focused");
     for (const entry of owned)
       assert.throws(() => process.kill(entry.pid, 0), { code: "ESRCH" });
@@ -344,22 +304,18 @@ async function main() {
     await probeSentinel("after neighboring cancellation");
     await complete(survivor);
     await inspectCaptures(survivorDirectory, "complete", "focused");
-    report.focusedReviews = {
-      survivor: survivorDirectory,
-      cancelled: victimDirectory,
-    };
     await probeSentinel("after surviving capture completion");
     budget.waitOptions();
-    report.outcome = "complete";
+    outcome = "complete";
   } catch (error) {
-    report.outcome = cancellation.signal.aborted ? "cancelled" : "failed";
-    report.error = error.stack;
+    outcome = cancellation.signal.aborted ? "cancelled" : "failed";
+    console.error(error.stack);
     process.exitCode = 1;
   } finally {
     budget.dispose();
     try {
       try {
-        if (report.sentinel) {
+        if (sentinelRuntime) {
           const owned = await descendants(sentinel.child.pid);
           const renderer = owned.find((entry) =>
             entry.name.startsWith("roonscape"),
@@ -377,45 +333,31 @@ async function main() {
       } finally {
         await stopProcesses(children, { graceMilliseconds: 5_000 });
       }
-      for (const [index, child] of children.entries()) {
-        const entry = report.commands[index];
-        if (entry.outcome !== "incomplete") continue;
-        const [exitCode, signal] = await waitForProcessExit(child, {
-          timeoutMilliseconds: 5_000,
-        });
-        Object.assign(entry, {
-          exitCode,
-          signal,
-          finishedAt: new Date().toISOString(),
-          outcome:
-            entry.label === "sentinel" && report.outcome === "complete"
-              ? "stopped after observation"
-              : "stopped during cleanup",
-        });
-      }
-      if (report.sentinel)
-        await assert.rejects(access(report.sentinel.runtimeDirectory), {
+      if (sentinelRuntime)
+        await assert.rejects(access(sentinelRuntime), {
           code: "ENOENT",
         });
       // Check before deleting our containing runtime, so leaked child resources
       // cannot be hidden by the exercise's own cleanup.
       for (const entry of await readdir(runtime))
         assert.deepEqual(await readdir(path.join(runtime, entry)), []);
-      report.cleanup = "complete";
       await rm(runtime, { recursive: true });
     } catch (error) {
-      report.cleanup = error.message;
-      report.outcome = "failed";
+      console.error(error.stack);
+      outcome = "failed";
       process.exitCode = 1;
     }
     for (const stream of streams)
       await new Promise((resolve) => stream.end(resolve));
+    if (cancellation.signal.aborted) {
+      outcome = "cancelled";
+      process.exitCode = 130;
+    }
     cancellation.dispose();
-    report.finishedAt = new Date().toISOString();
-    await save();
+    if (outcome === "complete") await rm(evidence, { recursive: true });
   }
   console.log(
-    `Acceptance: ${report.outcome}; visual acceptance: unreviewed. See ${evidence}/README.md`,
+    `Acceptance: ${outcome}${outcome === "complete" ? "" : `; diagnostics: ${evidence}`}`,
   );
 
   function start(cwd, environment, label, command, arguments_) {
@@ -425,20 +367,9 @@ async function main() {
       environment,
     });
     children.push(child);
-    const entry = {
-      label,
-      cwd,
-      command,
-      arguments: arguments_,
-      startedAt: new Date().toISOString(),
-      outcome: "incomplete",
-      stdout: `${label}.stdout.log`,
-      stderr: `${label}.stderr.log`,
-    };
-    report.commands.push(entry);
     for (const [source, name] of [
-      [child.stdout, entry.stdout],
-      [child.stderr, entry.stderr],
+      [child.stdout, `${label}.stdout.log`],
+      [child.stderr, `${label}.stderr.log`],
     ]) {
       const stream = createWriteStream(path.join(evidence, name), {
         flags: "wx",
@@ -448,25 +379,18 @@ async function main() {
       source.pipe(stream, { end: false });
     }
     console.log(`${label}: ${command} ${arguments_.join(" ")}`);
-    return { child, entry };
+    return { child, label };
   }
 
   async function complete(run, expected = 0, timeoutMilliseconds) {
-    const [code, signal] = await waitForProcessExit(
+    const [code] = await waitForProcessExit(
       run.child,
       budget.waitOptions(timeoutMilliseconds),
     );
-    Object.assign(run.entry, {
-      exitCode: code,
-      signal,
-      finishedAt: new Date().toISOString(),
-      outcome: code === expected ? "expected" : "failed",
-    });
-    await save();
     assert.equal(
       code,
       expected,
-      `${run.entry.label}: ${run.child.capturedStandardError}`,
+      `${run.label}: ${run.child.capturedStandardError}`,
     );
   }
 
@@ -484,37 +408,13 @@ async function main() {
     assert.ok(identity);
     if (sentinelWindow) assert.equal(identity, sentinelWindow);
     sentinelWindow = identity;
-    report.observations.push({
-      phase,
-      window: identity,
-      at: new Date().toISOString(),
-    });
-    await save();
-  }
-
-  async function save() {
-    await writeFile(
-      path.join(evidence, "acceptance.json"),
-      JSON.stringify(report, null, 2) + "\n",
-    );
-    await writeFile(
-      path.join(evidence, "README.md"),
-      `# Two-worktree acceptance\n\nOutcome: **${report.outcome}**. Visual acceptance: **unreviewed**. Live observation: **not performed**.\n\n[Structured observations and commands](acceptance.json)\n\n${report.commands.map((entry) => `- ${entry.label}: ${entry.outcome}; [stdout](${entry.stdout}), [stderr](${entry.stderr})`).join("\n")}\n\n${(report.reviews ?? []).map((directory) => `- [Verification evidence](${path.relative(evidence, directory)}/README.md)`).join("\n")}\n\n${report.error ?? ""}\n\nInspect every completed capture and record agent-authored verdicts separately. This exercise does not establish complete typography, physical-display quality, or a real Live Capture Session.\n`,
-    );
+    console.log(`Sentinel: ${phase}; window ${identity}`);
   }
 
   async function inspectCaptures(directory, outcome, scope) {
     const item = await json(path.join(directory, "captures.json"));
     assert.equal(item.outcome, outcome);
     assert.equal(item.scope, scope);
-    assert.equal(item.visualAcceptance, "unreviewed");
-    assert.equal(item.verdict, undefined);
-    assert.equal(
-      await realpath(item.source.root),
-      await realpath(item.verificationSource.root),
-    );
-    assert.equal(item.source.revision, item.verificationSource.revision);
-    assert.equal(item.source.workingTree, "");
     if (scope === "ci-fallback") {
       assert.equal(item.typography, "packaged fallback only");
       assert.equal(item.requested.length, 4);
@@ -522,8 +422,6 @@ async function main() {
         item.requested.every((entry) => entry.typography === "fallback"),
       );
     }
-    assert.ok(item.rationale);
-    const index = await readFile(path.join(directory, "index.html"), "utf8");
     assert.equal(new Set(item.completed).size, item.completed.length);
     if (outcome === "complete")
       assert.equal(item.completed.length, item.requested.length);
@@ -534,7 +432,6 @@ async function main() {
       );
     for (const name of item.completed) {
       assert.ok(item.requested.some((entry) => entry.fileName === name));
-      assert.ok(index.includes(`href="${name}"`));
       const png = await readFile(path.join(directory, name));
       assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
     }
@@ -559,14 +456,6 @@ async function main() {
 
 async function json(file) {
   return JSON.parse(await readFile(file, "utf8"));
-}
-
-async function findPresentation(directory) {
-  const names = (await readdir(directory)).filter((name) =>
-    name.startsWith("presentation."),
-  );
-  assert.equal(names.length, 1);
-  return path.join(directory, names[0]);
 }
 
 // Read only PID, parent, and executable name; never collect environments or

@@ -1,19 +1,11 @@
 import { closeSync, openSync, writeSync } from "node:fs";
-import {
-  mkdir,
-  mkdtemp,
-  readdir,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createNativeSession } from "./native-session.mjs";
 import {
   processCancellation,
-  runMonitoredProcess,
   startMonitoredProcess,
   stopProcess,
   waitForProcessExit,
@@ -43,20 +35,12 @@ async function main() {
   const report = {
     startedAt: new Date().toISOString(),
     outcome: "incomplete",
-    source: { root },
-    environment: {
-      platform: os.platform(),
-      release: os.release(),
-      architecture: os.arch(),
-      node: process.version,
-    },
     commands: [],
     designRequested:
       options.includes("--design") || options.includes("--presentation-ci"),
     presentationCiRequested: options.includes("--presentation-ci"),
     automatedOutcome: "incomplete",
     captureCompletion: "not assessed",
-    visualAcceptance: "not assessed",
   };
   let session;
   let runtime;
@@ -78,39 +62,10 @@ async function main() {
     runtime = await mkdtemp(path.join(os.tmpdir(), "rs-v."));
     report.commandRuntimeDirectory = runtime;
     environment.TMPDIR = runtime;
-    report.source.revision = (
-      await runMonitoredProcess("git", ["rev-parse", "HEAD"], {
-        cwd: root,
-        signal: cancellation.signal,
-      })
-    ).trim();
-    report.source.workingTree = await runMonitoredProcess(
-      "git",
-      ["status", "--porcelain=v1", "--untracked-files=all"],
-      { cwd: root, signal: cancellation.signal },
-    );
     await command(
       ["run", "dev:diagnose", "--", "--evidence", review],
       environment,
     );
-    report.environment.tools = {};
-    for (const [name, args] of [
-      ["npm", ["--version"]],
-      ["rustc", ["--version"]],
-      ["cargo", ["--version"]],
-      ["ffmpeg", ["-version"]],
-      ["ffprobe", ["-version"]],
-      ["pkg-config", ["--modversion", "gtk4"]],
-    ]) {
-      report.environment.tools[name] = (
-        await runMonitoredProcess(name, args, {
-          cwd: root,
-          environment,
-          signal: cancellation.signal,
-        })
-      ).split("\n")[0];
-    }
-
     session = await createNativeSession({
       width: 1600,
       height: 900,
@@ -132,12 +87,10 @@ async function main() {
           "run",
           "review:presentations:built",
           "--",
-          "--review",
+          "--output",
           review,
           "--scope",
           "ci-fallback",
-          "--rationale",
-          "CI representative Now Playing, Full-field, long metadata, and light palette coverage using packaged fallback fonts.",
         ],
         environment,
       );
@@ -150,6 +103,7 @@ async function main() {
     if (report.captureCompletion === "incomplete")
       report.captureCompletion = report.outcome;
     report.error = error.message;
+    console.error(error.message);
     process.exitCode = cancellation.signal.aborted ? 130 : 1;
   } finally {
     try {
@@ -157,6 +111,7 @@ async function main() {
       if (runtime) await rm(runtime, { recursive: true, force: true });
     } catch (error) {
       report.cleanupError = error.message;
+      console.error(error.message);
       report.outcome = "incomplete";
       process.exitCode = 1;
     }
@@ -165,11 +120,15 @@ async function main() {
       report.outcome = "cancelled";
       process.exitCode = 130;
     }
-    await save();
-    cancellation.dispose();
+    try {
+      if (report.outcome === "complete") await rm(review, { recursive: true });
+      else await save();
+    } finally {
+      cancellation.dispose();
+    }
   }
   console.log(
-    `Workflow: ${report.outcome}; automated checks: ${report.automatedOutcome}; captures: ${report.captureCompletion}; visual acceptance: ${report.visualAcceptance}. See ${path.join(review, "README.md")}`,
+    `Workflow: ${report.outcome}; automated checks: ${report.automatedOutcome}; captures: ${report.captureCompletion}${report.outcome === "complete" ? "" : `; diagnostics: ${review}`}`,
   );
 
   async function command(arguments_, commandEnvironment) {
@@ -194,10 +153,11 @@ async function main() {
     const abort = () => commandCancellation.abort(cancellation.signal.reason);
     cancellation.signal.addEventListener("abort", abort, { once: true });
     if (cancellation.signal.aborted) abort();
-    const capture = (descriptor) => (data) => {
+    const capture = (descriptor, output) => (data) => {
       if (commandCancellation.signal.aborted) return;
       try {
         writeSync(descriptor, data);
+        output.write(data);
       } catch (error) {
         commandCancellation.abort(error);
       }
@@ -215,8 +175,8 @@ async function main() {
           environment: commandEnvironment,
         },
       );
-      child.stdout.on("data", capture(stdout));
-      child.stderr.on("data", capture(stderr));
+      child.stdout.on("data", capture(stdout, process.stdout));
+      child.stderr.on("data", capture(stderr, process.stderr));
       await child.spawned;
       const [exitCode, signal] = await waitForProcessExit(child, {
         signal: commandCancellation.signal,
@@ -252,24 +212,11 @@ async function main() {
   }
 
   async function save() {
-    const presentations = (
-      await readdir(review, { withFileTypes: true })
-    ).filter(
-      (entry) => entry.isDirectory() && entry.name.startsWith("presentation."),
-    );
-    const presentationLinks = presentations
-      .map(({ name }) => `- [Presentation review: ${name}](${name}/index.html)`)
-      .join("\n");
-    const index = `# Verification review\n\nWorkflow outcome: **${report.outcome}**\n\nAutomated outcome: **${report.automatedOutcome}**\nCapture completion: **${report.captureCompletion}**\nVisual acceptance: **${report.visualAcceptance}**\n\nSource: ${report.source.root}\nRevision: ${report.source.revision ?? "not recorded"}\nStarted: ${report.startedAt}\nFinished: ${report.finishedAt ?? "pending"}\n\nWorking-tree state (porcelain):\n\n\`\`\`\n${report.source.workingTree || "clean or not yet recorded\n"}\`\`\`\n\nEnvironment: ${JSON.stringify(report.environment)}\n\n${report.commands.map((entry) => `- \`npm ${entry.arguments.join(" ")}\`: ${entry.outcome}; exit ${entry.exitCode ?? "not available"}, signal ${entry.signal ?? "none"}; [stdout](${entry.stdout}), [stderr](${entry.stderr})`).join("\n")}\n\n${report.error ?? ""}\n${report.cleanupError ?? ""}\n\nAutomated completion does not establish capture completion or visual acceptance.\nLive Capture Session helper tests use deterministic logic and synthetic media; they do not verify an actual Live Capture Session.\n${presentationLinks}\n\nSee [structured outcomes](verification.json).\n`;
-    for (const [name, contents] of [
-      ["verification.json", `${JSON.stringify(report, null, 2)}\n`],
-      ["README.md", index],
-    ]) {
-      await writeFile(path.join(review, `${name}.tmp`), contents, {
-        mode: 0o600,
-      });
-      await rename(path.join(review, `${name}.tmp`), path.join(review, name));
-    }
+    const file = path.join(review, "verification.json");
+    await writeFile(`${file}.tmp`, `${JSON.stringify(report, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    await rename(`${file}.tmp`, file);
   }
 }
 

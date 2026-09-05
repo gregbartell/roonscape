@@ -39,14 +39,6 @@ async function reviewDirectory(context) {
   await mkdir(root, { recursive: true });
   const directory = await mkdtemp(path.join(root, "task.review-test."));
   context.after(() => rm(directory, { recursive: true, force: true }));
-  await writeFile(
-    path.join(directory, "verification.json"),
-    JSON.stringify({
-      outcome: "complete",
-      source: { revision: "test-revision" },
-    }),
-  );
-  await writeFile(path.join(directory, "README.md"), "# Verification\n");
   return directory;
 }
 
@@ -56,16 +48,7 @@ async function capture(context, scope, extra = [], environment = process.env) {
   try {
     result = await execute(
       process.execPath,
-      [
-        cli,
-        "--review",
-        review,
-        "--scope",
-        scope,
-        "--rationale",
-        "Exercise the affected presentation",
-        ...extra,
-      ],
+      [cli, "--output", review, "--scope", scope, ...extra],
       { env: environment },
     );
   } catch (error) {
@@ -79,73 +62,24 @@ async function capture(context, scope, extra = [], environment = process.env) {
   return { review, directory, report, result };
 }
 
-test("focused review publishes seven native captures with inspectable links and separate acceptance", async (context) => {
-  const { review, directory, report, result } = await capture(
-    context,
-    "focused",
-    ["--scenario", "idle"],
-  );
-  assert.equal(result.code, undefined, result.stderr);
+test("focused captures run independently and publish all requested PNGs", async (context) => {
+  const { directory, report, result } = await capture(context, "focused", [
+    "--scenario",
+    "idle",
+  ]);
+  assert.equal(result.code, undefined, report.error ?? result.stderr);
   assert.equal(report.outcome, "complete");
   assert.equal(report.requested.length, 7);
   assert.equal(report.completed.length, 7);
-  assert.equal(report.visualAcceptance, "unreviewed");
-  assert.equal(report.rationale, "Exercise the affected presentation");
-  assert.equal(report.verificationSource.revision, "test-revision");
-  const index = await readFile(path.join(directory, "index.html"), "utf8");
-  for (const filename of report.completed) {
-    assert.ok(index.includes(`href="${filename}"`));
+  for (const filename of report.completed)
     assert.ok((await readFile(path.join(directory, filename))).length > 1000);
-  }
-  assert.match(
-    await readFile(path.join(review, "README.md"), "utf8"),
-    /presentation\..+\/index.html/,
-  );
-  const verdictFile = path.join(directory, "input.json");
-  const verdict = {
-    verdict: "accepted",
-    reasons: "Every viewport inspected",
-    inspected: report.completed,
-    unresolved: ["Check the physical display"],
-  };
-  await writeFile(verdictFile, JSON.stringify(verdict));
-  await assert.rejects(
-    execute(process.execPath, [
-      cli,
-      "--record",
-      directory,
-      "--verdict-file",
-      verdictFile,
-    ]),
-    (error) => /outstanding judgments/.test(error.stderr),
-  );
-  verdict.unresolved = [];
-  await writeFile(verdictFile, JSON.stringify(verdict));
-  await execute(process.execPath, [
-    cli,
-    "--record",
-    directory,
-    "--verdict-file",
-    verdictFile,
-  ]);
-  const saved = JSON.parse(
-    await readFile(path.join(directory, "verdict.json"), "utf8"),
-  );
-  assert.equal(saved.verdict, "accepted");
-  assert.equal(saved.completeProfileAccepted, false);
-  await assert.rejects(
-    execute(process.execPath, [
-      cli,
-      "--record",
-      directory,
-      "--verdict-file",
-      verdictFile,
-    ]),
-    (error) => /EEXIST/.test(error.stderr),
+  assert.deepEqual(
+    (await readdir(directory)).filter((name) => !name.endsWith(".png")).sort(),
+    ["capture.log", "captures.json"],
   );
 });
 
-test("CI scope forces packaged fonts and retains four linked captures without visual acceptance", async (context) => {
+test("CI scope forces packaged fonts and publishes four captures", async (context) => {
   const fonts = new URL("../src/renderer/assets/fonts/", import.meta.url);
   const before = await readdir(fonts);
   const { report, result } = await capture(context, "ci-fallback");
@@ -154,14 +88,13 @@ test("CI scope forces packaged fonts and retains four linked captures without vi
     before,
     "source fonts remain untouched",
   );
-  assert.equal(result.code, undefined, result.stderr);
+  assert.equal(result.code, undefined, report.error ?? result.stderr);
   assert.equal(report.requested.length, 4);
   assert.equal(report.completed.length, 4);
   assert.equal(report.typography, "packaged fallback only");
-  assert.ok(report.fontInventory.families.includes("Libre Baskerville"));
-  assert.ok(!report.fontInventory.families.includes("Palatino Linotype"));
-  assert.ok(!report.fontInventory.families.includes("Sitka Display"));
-  assert.equal(report.visualAcceptance, "unreviewed");
+  assert.ok(
+    report.requested.every((capture) => capture.typography === "fallback"),
+  );
 });
 
 test("complete scope fails explicitly without required fonts and retains requested coverage", async (context) => {
@@ -181,65 +114,6 @@ test("complete scope fails explicitly without required fonts and retains request
   assert.equal(report.outcome, "failed");
   assert.ok(report.requested.length > 200);
   assert.equal(report.completed.length, 0);
-});
-
-test("visual verdict requires complete inspected coverage and retains reasons independently", async (context) => {
-  const { directory, report } = await capture(context, "ci-fallback");
-  const verdictFile = path.join(directory, "input.json");
-  const verdict = {
-    verdict: "accepted",
-    reasons: "All requested compositions are legible",
-    inspected: [],
-    unresolved: [],
-  };
-  await writeFile(verdictFile, JSON.stringify(verdict));
-  await assert.rejects(
-    execute(process.execPath, [
-      cli,
-      "--record",
-      directory,
-      "--verdict-file",
-      verdictFile,
-    ]),
-    (error) => /every requested image/.test(error.stderr),
-  );
-  verdict.inspected = report.completed;
-  await writeFile(verdictFile, JSON.stringify(verdict));
-  // CI scope cannot make an aesthetic acceptance claim even after inspection.
-  await assert.rejects(
-    execute(process.execPath, [
-      cli,
-      "--record",
-      directory,
-      "--verdict-file",
-      verdictFile,
-    ]),
-    (error) => /CI fallback/.test(error.stderr),
-  );
-  verdict.verdict = "needs-work";
-  verdict.unresolved = ["Physical display contrast requires human review"];
-  await writeFile(verdictFile, JSON.stringify(verdict));
-  await execute(process.execPath, [
-    cli,
-    "--record",
-    directory,
-    "--verdict-file",
-    verdictFile,
-  ]);
-  const saved = JSON.parse(
-    await readFile(path.join(directory, "verdict.json"), "utf8"),
-  );
-  assert.equal(saved.verdict, "needs-work");
-  assert.deepEqual(saved.unresolved, verdict.unresolved);
-  assert.match(
-    await readFile(path.join(directory, "index.html"), "utf8"),
-    /verdict.json/,
-  );
-  assert.equal(
-    JSON.parse(await readFile(path.join(directory, "captures.json"), "utf8"))
-      .outcome,
-    "complete",
-  );
 });
 
 async function failingCaptureEnvironment(context, mode) {
@@ -266,7 +140,7 @@ if (!fs.existsSync(marker)) {
   };
 }
 
-test("partial publication retains the first image, diagnostics, and denies acceptance", async (context) => {
+test("partial publication leaves the first image and failure diagnostics", async (context) => {
   const { environment } = await failingCaptureEnvironment(context, "fail");
   const { directory, report, result } = await capture(
     context,
@@ -278,30 +152,11 @@ test("partial publication retains the first image, diagnostics, and denies accep
   assert.equal(report.outcome, "failed");
   assert.equal(report.requested.length, 4);
   assert.equal(report.completed.length, 1);
+  assert.match(result.stderr, /deliberate second capture failure/);
   await stat(path.join(directory, report.completed[0]));
   assert.match(
     await readFile(path.join(directory, "capture.log"), "utf8"),
     /deliberate second capture failure/,
-  );
-  const verdictFile = path.join(directory, "attempt.json");
-  await writeFile(
-    verdictFile,
-    JSON.stringify({
-      verdict: "accepted",
-      reasons: "First image looks correct",
-      inspected: report.completed,
-      unresolved: [],
-    }),
-  );
-  await assert.rejects(
-    execute(process.execPath, [
-      cli,
-      "--record",
-      directory,
-      "--verdict-file",
-      verdictFile,
-    ]),
-    (error) => /complete set/.test(error.stderr),
   );
 });
 
@@ -311,15 +166,7 @@ test("cancelled review preserves partial images beside a concurrent successful r
     context,
     "wait",
   );
-  const args = [
-    cli,
-    "--review",
-    review,
-    "--scope",
-    "ci-fallback",
-    "--rationale",
-    "Cancellation evidence",
-  ];
+  const args = [cli, "--output", review, "--scope", "ci-fallback"];
   const child = startMonitoredProcess(process.execPath, args, { environment });
   context.after(() => stopProcess(child));
   await child.spawned;

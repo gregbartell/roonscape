@@ -74,46 +74,32 @@ async function worktree(context) {
   };
 }
 
-test("verification retains source identity, command logs and automated-only completion", async (context) => {
-  const fixture = await worktree(context);
-  const { stdout } = await execute(
-    process.execPath,
-    [path.join(fixture.directory, "scripts/verify.mjs"), "--design"],
-    { env: fixture.environment },
-  );
-  const review = stdout.match(/Review directory: (.+)/)?.[1];
-  assert.ok(review, stdout);
-  context.after(() => rm(review, { recursive: true, force: true }));
-  assert.equal(path.dirname(review), scratchRoot);
-  const report = JSON.parse(
-    await readFile(path.join(review, "verification.json"), "utf8"),
-  );
-  assert.equal(report.outcome, "complete");
-  assert.equal(report.source.root, fixture.directory);
-  assert.match(report.source.revision, /^[a-f0-9]{40}$/);
-  assert.match(report.source.workingTree, /M tracked.txt/);
-  assert.deepEqual(
-    report.commands.map((command) => command.arguments),
-    [
-      ["run", "dev:diagnose", "--", "--evidence", review],
-      ["run", "check"],
-      ["run", "test:design"],
-    ],
-  );
-  assert.ok(report.commands.every((command) => command.exitCode === 0));
-  assert.match(
-    await readFile(path.join(review, report.commands[1].stdout), "utf8"),
-    /command output: run check/,
-  );
-  assert.match(
-    await readFile(path.join(review, "README.md"), "utf8"),
-    /does not establish capture completion or visual acceptance/,
-  );
-  await assert.rejects(
-    readFile(path.join(report.runtimeDirectory, "display.json")),
-    { code: "ENOENT" },
-  );
-});
+for (const option of [undefined, "--design", "--presentation-ci"]) {
+  test(`successful verification cleans diagnostics (${option ?? "repository"})`, async (context) => {
+    const fixture = await worktree(context);
+    const { stdout } = await execute(
+      process.execPath,
+      [
+        path.join(fixture.directory, "scripts/verify.mjs"),
+        ...[option].filter(Boolean),
+      ],
+      { env: fixture.environment },
+    );
+    const review = stdout.match(/Review directory: (.+)/)?.[1];
+    assert.ok(review, stdout);
+    context.after(() => rm(review, { recursive: true, force: true }));
+    await assert.rejects(stat(review), { code: "ENOENT" });
+    assert.match(stdout, /command output: run check/);
+    assert.equal(
+      stdout.includes("command output: run test:design"),
+      Boolean(option),
+    );
+    assert.equal(
+      stdout.includes("command output: run review:presentations:built"),
+      option === "--presentation-ci",
+    );
+  });
+}
 
 test("a failed check preserves diagnostics and a later run uses a new directory", async (context) => {
   const fixture = await worktree(context);
@@ -157,10 +143,9 @@ test("a failed check preserves diagnostics and a later run uses a new directory"
     );
   }
   assert.notEqual(reviews[0], reviews[1]);
-  assert.match(
-    await readFile(path.join(reviews[0], "README.md"), "utf8"),
-    /failed/,
-  );
+  await assert.rejects(stat(path.join(reviews[0], "README.md")), {
+    code: "ENOENT",
+  });
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
@@ -379,7 +364,6 @@ if (process.argv[3] === 'review:presentations:built') {
     failure.stdout,
     /Workflow: failed; automated checks: complete; captures: failed/,
   );
-  assert.equal(report.visualAcceptance, "not assessed");
   assert.deepEqual(report.commands[2].arguments, ["run", "test:design"]);
   assert.ok(report.commands[3].arguments.includes("ci-fallback"));
   assert.equal(report.commands[3].exitCode, 9);

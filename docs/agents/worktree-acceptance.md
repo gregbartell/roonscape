@@ -23,11 +23,11 @@ or deletes Git worktrees, switches branches, or provisions the host.
 npm run accept:worktrees -- /absolute/worktree-a /absolute/worktree-b
 ```
 
-This command needs only Node before preparation. It retains a new
-`/var/tmp/codex/roonscape/acceptance.*` directory and the separate `review.*`
-directories printed by verification. Keep all three together when sharing evidence.
-Build products remain in their respective worktrees. Shared dependency download
-caches are allowed; build output sharing is not.
+This command needs only Node before preparation. Successful runs remove their
+scratch diagnostics and captures. Failures leave an `acceptance.*` directory
+under `/var/tmp/codex/roonscape`, plus any failed verification's `review.*`
+directory. Build products remain in their respective worktrees. Shared dependency
+download caches are allowed; build output sharing is not.
 
 The exercise shares a thirty-minute work budget across preparation, builds,
 verification, and captures. Each phase uses the smaller of its own deadline and
@@ -46,9 +46,8 @@ The exercise performs these observable steps:
 2. Start `npm run verify -- --presentation-ci` concurrently in A and B. Observe
    overlapping native session lifetimes and distinct runtime/configuration and
    review directories. Both runs must complete repository checks, design tests,
-   and the maintained fallback capture scope. Inspect source identity, clean
-   working-tree state, command exit codes/logs, runtime removal, coverage, PNG
-   publication, and image links.
+   and the maintained fallback capture scope. Check source cleanliness and
+   removal of successful verification diagnostics and native runtime resources.
 3. Start focused `review:presentations:built` commands in both worktrees,
    reusing the prerequisites each verification command just built. A captures
    Playing, Idle, long metadata, and light artwork; B captures Playing and Idle.
@@ -59,7 +58,7 @@ The exercise performs these observable steps:
    review remain active, send SIGTERM to B's owned review CLI. npm's shell does
    not reliably forward signals, so the exercise identifies the CLI among its
    owned descendants. Require exit 130 within five seconds, a cancelled partial
-   index with retained images/diagnostics, absent observed descendant PIDs, and
+   capture set with diagnostic images, absent observed descendant PIDs, and
    removal of B's temporary runtime resources. Require A to remain active and
    subsequently finish its full requested set.
 5. Probe the sentinel's mapped window, identity, and dimensions before/during
@@ -69,40 +68,11 @@ The exercise performs these observable steps:
    never command lines or environments.
 
 The expected cancellation is success for the **exercise**, but remains
-`cancelled` in the affected capture index. The earlier verification results
+`cancelled` in the capture progress file. The earlier verification results
 remain complete. Any unexpected command, assertion, timeout, or cleanup failure
-makes the exercise nonzero and preserves its evidence. SIGINT/SIGTERM stops only
+makes the exercise nonzero and leaves its diagnostics. SIGINT/SIGTERM stops only
 owned processes. SIGKILL or host failure cannot guarantee cleanup; do not remove
 neighboring resources or infer ownership from an X display number.
-
-## Inspect and report
-
-Open `acceptance.*/README.md` and `acceptance.json`, both verification indexes,
-and every linked presentation index. Confirm the recorded source roots/revisions
-match the intended worktrees, the native sessions overlapped, cancellation was
-bounded, cleanup passed, and the sentinel retained its window identity. Check
-requested/completed counts and image links, including the cancelled set.
-
-Automation validates publication and accounting, not appearance. Open every
-completed image and record a separate verdict through
-[`review:presentations --record`](../visual-acceptance/presentation.md). Include
-filenames, the selection rationale, concrete visual reasons, and unresolved
-judgments. Partial and fallback sets cannot be accepted as complete typography
-coverage. Do not replace an automated outcome with a visual verdict.
-
-The completion report must link retained evidence, list commands and outcomes,
-separate automation/capture completion/visual inspection, and state whether
-physical-display and live observation occurred. The sentinel demonstrates
-controlled native noninterference; window probes do not establish actual Live
-Mode behavior, motion quality, or physical display readability/color.
-
-If Live Mode is already available, a maintainer may additionally observe that
-its window and current playback presentation remain undisturbed while the
-exercise runs. Record the observation and its limits separately. Do not start,
-configure, capture, or disturb personal Live Mode just to satisfy this exercise.
-Lack of live access does not block automated acceptance. Synthetic Live Capture
-Session helper tests do not verify a real Live Capture Session; that still
-requires Roon and a human to cause the event being observed.
 
 ## Ubuntu CI
 
@@ -119,10 +89,5 @@ gh run download <run-id> --name verification-<run-id>-<attempt> --dir <destinati
 ```
 
 Dispatching a workflow or publishing a ref requires the applicable session
-permission. A local pass is not an Ubuntu CI run. Record the workflow run URL,
-revision, conclusion, and downloaded artifact location. Open the downloaded
-indexes and images, including the intentionally cancelled capture set, and
-confirm the always-run artifact step retained success and incomplete evidence.
-If CI fails earlier, report which evidence exists and which steps never ran.
-Fallback-font coverage remains representative CI evidence; complete typography
-acceptance requires the workstation profile. CI never authors a visual verdict.
+permission. Failure diagnostics are available as GitHub Actions artifacts for
+seven days. A local pass is not an Ubuntu CI run.
