@@ -9,7 +9,6 @@
     "src/bridge"
   ],
   "scripts": {
-    "prototype:icons": "python3 -m http.server 4173 --bind 127.0.0.1 --directory src/renderer/assets",
     "build": "npm run build --workspace @roonscape/bridge",
     "capture:presentations": "npm run build && cargo build --locked --package roonscape-renderer && node scripts/capture-presentations.mjs",
     "check": "npm run check:versions && npm run check:native-test-environment && npm run format:check && npm run typecheck && npm run lint && npm run test:renderer:build && npm run test:built",
