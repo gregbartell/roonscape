@@ -774,7 +774,8 @@ export async function extractCandidates(sessionDirectory, state) {
       path.join(sessionDirectory, "capture.mkv"),
       "-vf",
       "mpdecimate,showinfo",
-      "-fps_mode",
+      // Ubuntu 22.04 ships FFmpeg 4.4, before the per-stream -fps_mode option.
+      "-vsync",
       "vfr",
       "-start_number",
       "0",
