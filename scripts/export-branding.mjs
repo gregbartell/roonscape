@@ -103,7 +103,7 @@ try {
   <text x="472" y="275" font-family="Libre Baskerville" font-weight="700" font-size="72" fill="#203443">RoonScape</text>
   <g font-family="IBM Plex Sans" fill="#203443">
     <text x="476" y="346" font-size="32">Your music, on display.</text>
-    <text x="476" y="398" font-size="24">An unattended Now Playing display for Roon.</text>
+    <text x="476" y="398" font-size="24">A lightweight Now Playing display for Roon.</text>
     <text x="476" y="548" font-size="20" fill="#526878">github.com/gregbartell/roonscape</text>
   </g>
 </svg>`,
