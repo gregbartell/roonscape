@@ -1,7 +1,8 @@
 # Development
 
 RoonScape source development requires Node.js and npm, Rust and Cargo,
-`pkg-config`, and the GTK 4 development files. Use the versions pinned by
+`pkg-config`, the GTK 4 development files, and FFmpeg/FFprobe for synthetic
+Live Capture Session helper tests. Use the versions pinned by
 `.node-version`, `package.json`, and `rust-toolchain.toml` rather than versions
 copied into documentation.
 
@@ -116,9 +117,11 @@ or start Xvfb, or the success of a future capture. These need the corresponding
 verification command under the intended agent permissions. Neither command
 changes permissions or reads personal application credentials.
 
-Run `xvfb-run -a npm run check` for required automated checks; use
-`npm run test:design` for the separate design suite. No Roon Server or Roon
-Authorization is required for either suite.
+Run `npm run verify` for headless required checks with retained evidence; use
+`npm run verify -- --design` when the design suite is required. Follow the
+[verification policy](agents/verification.md) for change-to-command mapping,
+focused checks, evidence inspection, and the Live Capture Session helper-test
+distinction. No Roon Server or Roon Authorization is required for either suite.
 
 ## Run from source
 
@@ -258,7 +261,7 @@ part of the regular repository test process.
 Run the complete repository check before submitting a change:
 
 ```sh
-npm run check
+npm run verify -- --design
 ```
 
 For release work, follow the [Releasing guide](releasing.md).

@@ -13,7 +13,8 @@
     "x11-utils",
     "xauth",
     "fonts-noto-cjk",
-    "python3"
+    "python3",
+    "ffmpeg"
   ],
   "arch": [
     "base-devel",
@@ -28,6 +29,7 @@
     "xorg-xwininfo",
     "xorg-xauth",
     "noto-fonts-cjk",
-    "python"
+    "python",
+    "ffmpeg"
   ]
 }

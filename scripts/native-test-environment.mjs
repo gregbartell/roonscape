@@ -9,6 +9,8 @@ export function nativeTestFailures(environment = process.env) {
     "scrot",
     "dbus-daemon",
     "pkg-config",
+    "ffmpeg",
+    "ffprobe",
   ];
   const failures = requiredExecutables
     .filter((name) => findExecutable(name, environment) === undefined)

@@ -21,6 +21,8 @@ test("the native test preflight reports a missing capture executable", (context)
     "Xvfb",
     "dbus-daemon",
     "pkg-config",
+    "ffmpeg",
+    "ffprobe",
     "xwininfo",
   ]);
 
@@ -40,6 +42,8 @@ test("the native test preflight accepts the complete environment", (context) => 
     "Xvfb",
     "dbus-daemon",
     "pkg-config",
+    "ffmpeg",
+    "ffprobe",
     "scrot",
     "xwininfo",
   ]);

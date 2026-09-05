@@ -104,6 +104,8 @@ function environment(context) {
     "xwininfo",
     "scrot",
     "pkg-config",
+    "ffmpeg",
+    "ffprobe",
   ])
     command(name, "process.exit(0);");
   command(
