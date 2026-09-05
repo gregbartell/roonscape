@@ -10,7 +10,7 @@ Triage state uses the default canonical label vocabulary. See `docs/agents/triag
 
 ### Domain docs
 
-This is a single-context repository. Before exploring the codebase, read
+For domain context, read
 [`CONTEXT.md`](CONTEXT.md) and relevant decisions in [`docs/adr/`](docs/adr/).
 Use the glossary's canonical terms in code, tests, docs, and explanations.
 Surface conflicts with existing ADRs explicitly. Use `domain-modeling` when
