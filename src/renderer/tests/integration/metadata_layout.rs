@@ -1,6 +1,5 @@
-#[path = "support/representative_viewports.rs"]
-mod representative_viewports;
-mod support;
+use crate::representative_viewports;
+use crate::support;
 
 use std::sync::OnceLock;
 

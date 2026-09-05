@@ -1,5 +1,4 @@
-#[path = "support/representative_viewports.rs"]
-mod representative_viewports;
+use crate::representative_viewports;
 
 use roonscape_renderer::{
     FullFieldLayout, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityLayout,

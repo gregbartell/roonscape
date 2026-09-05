@@ -127,6 +127,41 @@ For end-to-end development-tooling acceptance, follow the
 [two-worktree exercise](agents/worktree-acceptance.md). It accepts existing fresh
 worktrees and retains concurrent verification and cancellation evidence.
 
+## Fast feedback loops
+
+`npm run build` uses TypeScript's incremental compilation. Its cache lives in
+`src/bridge/dist`, so removing that generated directory also resets the cache.
+Changed source and imported dependencies are still checked while unaffected
+work is reused. Release packaging removes `dist` before building.
+
+During implementation, build the Bridge once and select the relevant test file
+or test name:
+
+```sh
+npm run build
+node --test src/bridge/dist/test/snapshot.test.js
+node --test --test-name-pattern='invalid timing' src/bridge/dist/test/snapshot.test.js
+```
+
+The regular Node suite runs at most four test files concurrently, each in its
+own process. `npm run test:node:built` runs the Bridge and regular script tests
+together; the existing focused commands remain available. Live Capture Session
+helper tests, Rust tests, and the IPC smoke check follow in `test:built`.
+The design suite remains opt-in. No test coverage is omitted from these suites.
+
+Rust integration tests share one executable to avoid recompiling and linking
+each test file after a Renderer change. Select a module or test by name:
+
+```sh
+cargo test --package roonscape-renderer --test integration snapshot_contract::
+```
+
+Tests live in `src/renderer/tests/integration`; add new modules to its `main.rs`.
+Font-registration tests retain a separate executable so they exercise the
+process's first registration. Compiler profiles and debug information are
+unchanged. Use `npm run verify` (and `--design` when required) for final
+headless verification with retained evidence.
+
 ## Run from source
 
 Build and launch RoonScape in Live Mode:

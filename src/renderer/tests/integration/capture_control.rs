@@ -6,7 +6,7 @@ use roonscape_renderer::{
     CaptureControl, CaptureControlEvent, FixtureSelectionIdentity, PaintedFixtureSelection,
 };
 
-mod support;
+use crate::support;
 
 #[test]
 fn receives_exact_fixture_scenario_revisions_and_acknowledges_only_the_painted_selection() {
