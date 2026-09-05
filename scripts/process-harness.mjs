@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { access } from "node:fs/promises";
 
 const diagnosticTailBytes = 64 * 1024;
 const truncationMarker = "[... earlier output truncated ...]\n";
@@ -13,6 +12,11 @@ export function startMonitoredProcess(
     cwd,
     env: environment,
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
+  });
+  child.ownsProcessGroup = true;
+  child.completed = new Promise((resolve) => {
+    child.once("close", (...outcome) => resolve(outcome));
   });
   child.capturedError = undefined;
   child.capturedStandardOutput = "";
@@ -27,6 +31,9 @@ export function startMonitoredProcess(
     child.once("spawn", resolve);
     child.once("error", reject);
   });
+  // Callers may cancel before awaiting startup; retain the error without an
+  // unhandled rejection while their finally block terminates owned children.
+  void child.spawned.catch(() => {});
   child.on("error", (error) => {
     child.capturedError = error;
   });
@@ -56,17 +63,22 @@ export async function waitFor(
   action,
   child,
   description,
-  { retryMilliseconds = 50, timeoutMilliseconds = 5_000 } = {},
+  { retryMilliseconds = 50, timeoutMilliseconds = 5_000, signal } = {},
 ) {
   const deadline = Date.now() + timeoutMilliseconds;
   let lastError;
   while (true) {
+    signal?.throwIfAborted();
     const remainingMilliseconds = deadline - Date.now();
     if (remainingMilliseconds <= 0) {
       break;
     }
     assertProcessRunning(child, description);
-    const attempt = await actionBefore(action, remainingMilliseconds);
+    const attempt = await settleBefore(
+      Promise.resolve().then(action),
+      remainingMilliseconds,
+      signal,
+    );
     if (attempt.kind === "completed") {
       return attempt.value;
     }
@@ -85,9 +97,13 @@ export async function waitFor(
   }
 
   assertProcessRunning(child, description);
-  throw new Error(`timed out waiting for ${description}`, {
-    cause: lastError,
-  });
+  const details = processDetails(child);
+  throw new Error(
+    `timed out waiting for ${description}${details ? `\n${details}` : ""}`,
+    {
+      cause: lastError,
+    },
+  );
 }
 
 export async function runMonitoredProcess(
@@ -98,35 +114,53 @@ export async function runMonitoredProcess(
     environment = process.env,
     description = command,
     timeoutMilliseconds = 5_000,
+    signal,
   } = {},
 ) {
   const child = startMonitoredProcess(command, arguments_, {
     cwd,
     environment,
   });
-  const completed = new Promise((resolve) => {
-    child.once("close", (...outcome) => resolve(outcome));
-  });
-  await child.spawned;
-  const outcome = await completionBefore(completed, timeoutMilliseconds);
-  if (outcome.kind === "timed-out") {
-    await failAfterStopping(
-      new Error(`timed out waiting for ${description}`),
-      child,
-      { description },
-    );
+  let outcome;
+  try {
+    await child.spawned;
+    outcome = await settleBefore(child.completed, timeoutMilliseconds, signal);
+    if (outcome.kind === "timed-out") {
+      throw new Error(`timed out waiting for ${description}`);
+    }
+  } catch (error) {
+    await failAfterStopping(error, child, { description, signal });
   }
 
-  const [exitCode, signal] = outcome.value;
+  await stopProcess(child);
+  const [exitCode, exitSignal] = outcome.value;
   if (exitCode !== 0) {
-    throw processFailure(description, child, exitCode, signal);
+    throw processFailure(description, child, exitCode, exitSignal);
   }
   return child.capturedStandardOutput;
 }
 
-export async function stopProcess(
+export async function stopProcess(child, options = {}) {
+  try {
+    await stopOwnedProcess(child, options);
+  } finally {
+    // A wrapper can exit before its children or leave inherited pipes open.
+    // Signal only the process group created for this monitored command.
+    if (child?.ownsProcessGroup && child.pid !== undefined)
+      signalProcess(child, "SIGKILL");
+  }
+}
+
+async function stopOwnedProcess(
   child,
-  { description, graceMilliseconds = 2_000, killMilliseconds = 2_000 } = {},
+  {
+    description,
+    signal,
+    // Leave time for the owning CLI to finish cleanup before its monitor's
+    // ordinary two-second grace period expires.
+    graceMilliseconds = signal?.aborted ? 250 : 2_000,
+    killMilliseconds = signal?.aborted ? 250 : 2_000,
+  } = {},
 ) {
   if (
     child === undefined ||
@@ -185,25 +219,6 @@ export async function stopProcesses(
   );
 }
 
-export async function availableXDisplayNumber({
-  first = 90,
-  exclusiveLimit = 200,
-  pathExists = exists,
-} = {}) {
-  for (
-    let displayNumber = first;
-    displayNumber < exclusiveLimit;
-    displayNumber += 1
-  ) {
-    const socket = `/tmp/.X11-unix/X${displayNumber}`;
-    const lock = `/tmp/.X${displayNumber}-lock`;
-    if (!(await pathExists(socket)) && !(await pathExists(lock))) {
-      return displayNumber;
-    }
-  }
-  throw new Error("no free X11 display number is available");
-}
-
 export async function startXvfbDisplay({
   width,
   height,
@@ -213,17 +228,21 @@ export async function startXvfbDisplay({
   description = "Xvfb display",
   retryMilliseconds = 25,
   timeoutMilliseconds = 5_000,
+  signal,
 } = {}) {
-  const displayNumber = await availableXDisplayNumber();
-  const display = `:${displayNumber}`;
-  const displaySocket = `/tmp/.X11-unix/X${displayNumber}`;
+  // Xvfb allocates and locks its display atomically, then reports it only
+  // after initialization. Never infer ownership from a neighboring socket.
   const xvfb = startMonitoredProcess(
     "Xvfb",
     [
-      display,
+      "-displayfd",
+      "1",
       "-screen",
       "0",
       `${width}x${height}x${depth}`,
+      // Readiness probes can disconnect before GTK opens its connection.
+      // Keep that empty-client interval from resetting the owned server.
+      "-noreset",
       "-nolisten",
       "tcp",
     ],
@@ -232,31 +251,26 @@ export async function startXvfbDisplay({
 
   try {
     await xvfb.spawned;
-    await waitFor(() => access(displaySocket), xvfb, description, {
-      retryMilliseconds,
-      timeoutMilliseconds,
-    });
+    const display = await waitFor(
+      () => {
+        const match = xvfb.capturedStandardOutput.match(/^(\d+)\n/);
+        if (match === null)
+          throw new Error("Xvfb has not reported its allocated display");
+        return `:${match[1]}`;
+      },
+      xvfb,
+      description,
+      { retryMilliseconds, timeoutMilliseconds, signal },
+    );
     return { display, xvfb };
   } catch (error) {
-    await failAfterStopping(error, xvfb, { description });
-  }
-}
-
-async function exists(filePath) {
-  try {
-    await access(filePath);
-    return true;
-  } catch (error) {
-    if (error?.code === "ENOENT") {
-      return false;
-    }
-    throw error;
+    await failAfterStopping(error, xvfb, { description, signal });
   }
 }
 
 function processDetails(child) {
-  const output = child.capturedStandardOutput.trim();
-  const error = child.capturedStandardError.trim();
+  const output = (child.capturedStandardOutput ?? "").trim();
+  const error = (child.capturedStandardError ?? "").trim();
   return [
     output.length === 0 ? undefined : `standard output:\n${output}`,
     error.length === 0 ? undefined : `standard error:\n${error}`,
@@ -282,37 +296,80 @@ function stopWithSignal(child, signal, milliseconds) {
       resolve(true);
       return;
     }
-    child.kill(signal);
+    signalProcess(child, signal);
   });
+}
+
+function signalProcess(child, signal) {
+  if (!child.ownsProcessGroup) {
+    child.kill(signal);
+    return;
+  }
+  try {
+    process.kill(-child.pid, signal);
+  } catch (error) {
+    if (error.code !== "ESRCH") throw error;
+  }
 }
 
 function processHasExited(child) {
   return child.exitCode !== null || child.signalCode !== null;
 }
 
-function actionBefore(action, milliseconds) {
-  return settleBefore(Promise.resolve().then(action), milliseconds);
+export async function waitForProcessExit(
+  child,
+  { signal, timeoutMilliseconds } = {},
+) {
+  const outcome = await settleBefore(
+    child.completed,
+    timeoutMilliseconds,
+    signal,
+  );
+  if (outcome.kind === "timed-out") {
+    throw new Error(`timed out waiting for ${child.spawnfile} to exit`);
+  }
+  return outcome.value;
 }
 
-function completionBefore(completed, milliseconds) {
-  return settleBefore(completed, milliseconds);
+export function processCancellation() {
+  const controller = new AbortController();
+  const cancel = (signal) =>
+    controller.abort(new Error(`cancelled by ${signal}`));
+  const interrupt = () => cancel("SIGINT");
+  const terminate = () => cancel("SIGTERM");
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", terminate);
+  return {
+    signal: controller.signal,
+    dispose() {
+      process.off("SIGINT", interrupt);
+      process.off("SIGTERM", terminate);
+    },
+  };
 }
 
-function settleBefore(promise, milliseconds) {
-  return new Promise((resolve) => {
-    const timeout = setTimeout(
-      () => resolve({ kind: "timed-out" }),
-      milliseconds,
-    );
+function settleBefore(promise, milliseconds, signal) {
+  return new Promise((resolve, reject) => {
+    let timeout;
+    const finish = (outcome) => {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", abort);
+      resolve(outcome);
+    };
+    const abort = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+      reject(signal.reason);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) {
+      abort();
+    } else if (milliseconds !== undefined) {
+      timeout = setTimeout(() => finish({ kind: "timed-out" }), milliseconds);
+    }
     promise.then(
-      (value) => {
-        clearTimeout(timeout);
-        resolve({ kind: "completed", value });
-      },
-      (error) => {
-        clearTimeout(timeout);
-        resolve({ kind: "failed", error });
-      },
+      (value) => finish({ kind: "completed", value }),
+      (error) => finish({ kind: "failed", error }),
     );
   });
 }

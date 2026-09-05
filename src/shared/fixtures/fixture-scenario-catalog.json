@@ -14,6 +14,48 @@
       "palette": "dark"
     },
     {
+      "scenario": "lyrics-one-line",
+      "label": "Lyrics — one line",
+      "fixture": "src/shared/fixtures/lyrics-one-line.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "lyrics-two-line",
+      "label": "Lyrics — two lines",
+      "fixture": "src/shared/fixtures/lyrics-two-line.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "lyrics-three-line",
+      "label": "Lyrics — three lines",
+      "fixture": "src/shared/fixtures/lyrics-three-line.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "lyrics-four-lines",
+      "label": "Lyrics — four or more lines",
+      "fixture": "src/shared/fixtures/lyrics-four-lines.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "lyrics-blank-cue",
+      "label": "Lyrics — blank cue",
+      "fixture": "src/shared/fixtures/lyrics-blank-cue.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "lyrics-long-masthead",
+      "label": "Lyrics — long masthead",
+      "fixture": "src/shared/fixtures/lyrics-long-masthead.json",
+      "palette": "dark"
+    },
+    {
+      "scenario": "lyrics-missing-artwork",
+      "label": "Lyrics — missing artwork",
+      "fixture": "src/shared/fixtures/lyrics-missing-artwork.json",
+      "palette": "fixed-no-art"
+    },
+    {
       "scenario": "loading-with-content",
       "label": "Starting with content",
       "fixture": "src/shared/fixtures/loading.json",

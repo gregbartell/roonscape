@@ -6,6 +6,7 @@ import { createConnection } from "node:net";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import test from "node:test";
+import { setTimeout as wait } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { loadSnapshot, type PresentationSnapshot } from "../src/snapshot.js";
@@ -18,7 +19,7 @@ const catalogFixture = new URL(
   "../../../../src/shared/fixtures/fixture-scenario-catalog.json",
   import.meta.url,
 );
-const catalogPreflightTimeoutMilliseconds = 1_500;
+const subprocessWatchdogMilliseconds = 30_000;
 
 interface CatalogFile {
   formatVersion: number;
@@ -42,14 +43,17 @@ test("ordinary Fixture Mode starts predictably at Playing", async () => {
       assert.deepEqual(published, {
         ...expected,
         revision: 1,
-        progress: {
-          ...expected.progress,
-          sampledAt: published.progress?.sampledAt,
+        timing: {
+          ...expected.timing,
+          position: {
+            ...expected.timing?.position,
+            sampledAt: published.timing?.position?.sampledAt,
+          },
         },
       });
       assert.notEqual(
-        published.progress?.sampledAt,
-        expected.progress?.sampledAt,
+        published.timing?.position?.sampledAt,
+        expected.timing?.position?.sampledAt,
       );
       assert.equal((await stat(controlSocketPath)).mode & 0o777, 0o600);
     } finally {
@@ -59,6 +63,56 @@ test("ordinary Fixture Mode starts predictably at Playing", async () => {
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  for (const mode of ["catalog", "explicit"] as const) {
+    test(
+      `${signal} cleans up ${mode} Fixture Mode during startup`,
+      { timeout: subprocessWatchdogMilliseconds },
+      async (context) => {
+        await withTaskDirectory(async (taskDirectory) => {
+          const socketPath = path.join(taskDirectory, "roonscape.sock");
+          const controlSocketPath = path.join(taskDirectory, "control.sock");
+          const fixture = startFixture(
+            {
+              ROONSCAPE_SOCKET: socketPath,
+              ROONSCAPE_FIXTURE_CONTROL: controlSocketPath,
+              ROONSCAPE_FIXTURE:
+                mode === "explicit"
+                  ? "src/shared/fixtures/playing.json"
+                  : undefined,
+              ROONSCAPE_FIXTURE_CATALOG: undefined,
+              ROONSCAPE_TEST_STARTUP_SIGNAL: signal,
+              ROONSCAPE_TEST_STARTUP_SOCKET:
+                mode === "catalog" ? controlSocketPath : socketPath,
+            },
+            [
+              "--import",
+              fileURLToPath(
+                new URL("./fixture-startup-signal.js", import.meta.url),
+              ),
+            ],
+          );
+          const killOnTimeout = () => fixture.child.kill("SIGKILL");
+          context.signal.addEventListener("abort", killOnTimeout, {
+            once: true,
+          });
+
+          try {
+            assert.deepEqual(await fixture.closed, {
+              exitCode: 0,
+              signal: null,
+            });
+            assert.match(fixture.standardOutput(), /Fixture startup paused/);
+            await assert.rejects(access(socketPath), { code: "ENOENT" });
+            await assert.rejects(access(controlSocketPath), { code: "ENOENT" });
+          } finally {
+            context.signal.removeEventListener("abort", killOnTimeout);
+            await stop(fixture.child);
+          }
+        });
+      },
+    );
+  }
+
   test(`${signal} cleanly closes a Fixture Mode subprocess`, async () => {
     await withTaskDirectory(async (taskDirectory) => {
       const { socketPath, controlSocketPath, fixture } =
@@ -169,17 +223,21 @@ test("navigation publishes all Fixture Scenarios in order with wraparound revisi
       const expectedPlaying = await loadSnapshot(
         "src/shared/fixtures/playing.json",
       );
-      assertSelectedSnapshot(wrappedPlaying, expectedPlaying, 20);
+      assertSelectedSnapshot(
+        wrappedPlaying,
+        expectedPlaying,
+        catalog.scenarios.length + 1,
+      );
       assert.notEqual(
-        wrappedPlaying.progress?.sampledAt,
-        observed[0]?.progress?.sampledAt,
+        wrappedPlaying.timing?.position?.sampledAt,
+        observed[0]?.timing?.position?.sampledAt,
       );
 
       await sendNavigationIntent(fixture.child, controlSocketPath, "Previous");
       assertSelectedSnapshot(
         await snapshots.read(),
         await loadSnapshot("src/shared/fixtures/light-artwork.json"),
-        21,
+        catalog.scenarios.length + 2,
       );
       snapshots.close();
     } finally {
@@ -209,7 +267,7 @@ test("rapid distinct navigation publishes the latest deliberate selection", asyn
       }
       assertSelectedSnapshot(
         latest,
-        await loadSnapshot("src/shared/fixtures/loading.json"),
+        await loadSnapshot("src/shared/fixtures/lyrics-one-line.json"),
         5,
       );
       snapshots.close();
@@ -259,94 +317,106 @@ test("explicit single-fixture startup does not require the ordinary catalog", as
   });
 });
 
-test("ordinary Fixture Mode validates the complete catalog before becoming available", async () => {
-  await withTaskDirectory(async (taskDirectory) => {
-    const socketPath = path.join(taskDirectory, "roonscape.sock");
-    const catalogPath = path.join(
-      taskDirectory,
-      "fixture-scenario-catalog.json",
-    );
-    const catalog = JSON.parse(
-      await readFile(catalogFixture, "utf8"),
-    ) as CatalogFile;
-    const finalScenario = catalog.scenarios.at(-1);
-    assert.ok(finalScenario);
-    finalScenario.fixture = "src/shared/fixtures/invalid.json";
-    await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+test(
+  "ordinary Fixture Mode validates the complete catalog before becoming available",
+  { timeout: subprocessWatchdogMilliseconds },
+  async (context) => {
+    await withTaskDirectory(async (taskDirectory) => {
+      const socketPath = path.join(taskDirectory, "roonscape.sock");
+      const catalogPath = path.join(
+        taskDirectory,
+        "fixture-scenario-catalog.json",
+      );
+      const catalog = JSON.parse(
+        await readFile(catalogFixture, "utf8"),
+      ) as CatalogFile;
+      const finalScenario = catalog.scenarios.at(-1);
+      assert.ok(finalScenario);
+      finalScenario.fixture = "src/shared/fixtures/invalid.json";
+      await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
 
-    const { fixture } = startOrdinaryFixture(taskDirectory, catalogPath);
+      const { fixture } = startOrdinaryFixture(taskDirectory, catalogPath);
 
-    try {
-      const result = await closeWithin(
-        fixture.child,
-        catalogPreflightTimeoutMilliseconds,
+      try {
+        assert.deepEqual(
+          await observeExitBeforeSocketAvailability(
+            fixture,
+            socketPath,
+            context.signal,
+          ),
+          { outcome: "exit", exitCode: 1, signal: null },
+        );
+        assert.match(
+          fixture.standardError(),
+          /Light artwork.*Invalid presentation snapshot/s,
+        );
+        await assert.rejects(access(socketPath), { code: "ENOENT" });
+      } finally {
+        await stop(fixture.child);
+      }
+    });
+  },
+);
+
+test(
+  "ordinary Fixture Mode preflights every catalog snapshot against the publisher limit",
+  { timeout: subprocessWatchdogMilliseconds },
+  async (context) => {
+    await withTaskDirectory(async (taskDirectory) => {
+      const socketPath = path.join(taskDirectory, "roonscape.sock");
+      const oversizedFixturePath = path.join(
+        taskDirectory,
+        "oversized-fixture.json",
+      );
+      const oversized = await loadSnapshot("src/shared/fixtures/playing.json");
+      assert.ok(oversized.artwork);
+      oversized.artwork.path = "x".repeat(64 * 1024);
+      await writeFile(
+        oversizedFixturePath,
+        `${JSON.stringify(oversized, null, 2)}\n`,
       );
 
-      assert.deepEqual(result, { exitCode: 1, signal: null });
-      assert.match(
-        fixture.standardError(),
-        /Light artwork.*Invalid presentation snapshot/s,
+      const catalogPath = path.join(
+        taskDirectory,
+        "fixture-scenario-catalog.json",
       );
-      await assert.rejects(access(socketPath), { code: "ENOENT" });
-    } finally {
-      await stop(fixture.child);
-    }
-  });
-});
+      const catalog = JSON.parse(
+        await readFile(catalogFixture, "utf8"),
+      ) as CatalogFile;
+      const finalScenario = catalog.scenarios.at(-1);
+      assert.ok(finalScenario);
+      finalScenario.fixture = oversizedFixturePath;
+      await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
 
-test("ordinary Fixture Mode preflights every catalog snapshot against the publisher limit", async () => {
-  await withTaskDirectory(async (taskDirectory) => {
-    const socketPath = path.join(taskDirectory, "roonscape.sock");
-    const oversizedFixturePath = path.join(
-      taskDirectory,
-      "oversized-fixture.json",
-    );
-    const oversized = await loadSnapshot("src/shared/fixtures/playing.json");
-    assert.ok(oversized.artwork);
-    oversized.artwork.path = "x".repeat(64 * 1024);
-    await writeFile(
-      oversizedFixturePath,
-      `${JSON.stringify(oversized, null, 2)}\n`,
-    );
-
-    const catalogPath = path.join(
-      taskDirectory,
-      "fixture-scenario-catalog.json",
-    );
-    const catalog = JSON.parse(
-      await readFile(catalogFixture, "utf8"),
-    ) as CatalogFile;
-    const finalScenario = catalog.scenarios.at(-1);
-    assert.ok(finalScenario);
-    finalScenario.fixture = oversizedFixturePath;
-    await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
-
-    const { fixture, controlSocketPath } = startOrdinaryFixture(
-      taskDirectory,
-      catalogPath,
-    );
-    try {
-      assert.deepEqual(
-        await closeWithin(fixture.child, catalogPreflightTimeoutMilliseconds),
-        {
-          exitCode: 1,
-          signal: null,
-        },
+      const { fixture, controlSocketPath } = startOrdinaryFixture(
+        taskDirectory,
+        catalogPath,
       );
-      assert.match(
-        fixture.standardError(),
-        /Light artwork.*Snapshot exceeds 64 KiB/s,
-      );
-      await assert.rejects(access(socketPath), { code: "ENOENT" });
-      await assert.rejects(access(controlSocketPath), { code: "ENOENT" });
-    } finally {
-      await stop(fixture.child);
-    }
-  });
-});
+      try {
+        assert.deepEqual(
+          await observeExitBeforeSocketAvailability(
+            fixture,
+            socketPath,
+            context.signal,
+          ),
+          { outcome: "exit", exitCode: 1, signal: null },
+        );
+        assert.match(
+          fixture.standardError(),
+          /Light artwork.*Snapshot exceeds 64 KiB/s,
+        );
+        await assert.rejects(access(socketPath), { code: "ENOENT" });
+        await assert.rejects(access(controlSocketPath), { code: "ENOENT" });
+      } finally {
+        await stop(fixture.child);
+      }
+    });
+  },
+);
 
 function startFixture(
   environmentOverrides: Record<string, string | undefined>,
+  nodeArguments: string[] = [],
 ) {
   let standardOutput = "";
   let standardError = "";
@@ -356,10 +426,14 @@ function startFixture(
       delete environment[name];
     }
   }
-  const child = spawn(process.execPath, [fixtureEntry], {
+  const child = spawn(process.execPath, [...nodeArguments, fixtureEntry], {
     env: environment,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const closed = once(child, "close").then(([exitCode, signal]) => ({
+    exitCode: exitCode as number | null,
+    signal: signal as NodeJS.Signals | null,
+  }));
   child.stdout?.setEncoding("utf8");
   child.stdout?.on("data", (chunk: string) => {
     standardOutput += chunk;
@@ -371,6 +445,7 @@ function startFixture(
 
   return {
     child,
+    closed,
     standardOutput: () => standardOutput,
     standardError: () => standardError,
   };
@@ -454,13 +529,22 @@ function assertSelectedSnapshot(
   assert.deepEqual(actual, {
     ...expected,
     revision,
-    progress:
-      expected.playback === "playing" && expected.progress !== null
-        ? { ...expected.progress, sampledAt: actual.progress?.sampledAt }
-        : expected.progress,
+    timing:
+      expected.playback === "playing" && expected.timing?.position != null
+        ? {
+            ...expected.timing,
+            position: {
+              ...expected.timing.position,
+              sampledAt: actual.timing?.position?.sampledAt,
+            },
+          }
+        : expected.timing,
   });
-  if (expected.playback === "playing" && expected.progress !== null) {
-    assert.notEqual(actual.progress?.sampledAt, expected.progress.sampledAt);
+  if (expected.playback === "playing" && expected.timing?.position != null) {
+    assert.notEqual(
+      actual.timing?.position?.sampledAt,
+      expected.timing.position.sampledAt,
+    );
   }
 }
 
@@ -472,7 +556,7 @@ async function waitForOutput(
     if (output().includes(expected)) {
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await wait(5);
   }
   throw new Error(`Timed out waiting for output: ${expected}`);
 }
@@ -491,38 +575,62 @@ async function waitForSocket(
       await access(socketPath);
       return;
     } catch (error) {
-      if (!(
-        error instanceof Error &&
-        "code" in error &&
-        error.code === "ENOENT"
-      )) {
+      if (!isMissingPathError(error)) {
         throw error;
       }
     }
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await wait(25);
   }
 
   throw new Error("Timed out waiting for the Fixture Mode publisher");
 }
 
-function closeWithin(
-  child: ChildProcess,
-  milliseconds: number,
-): Promise<{ exitCode: number | null; signal: NodeJS.Signals | null } | null> {
-  return new Promise((resolve) => {
-    const onClose = (
-      exitCode: number | null,
-      signal: NodeJS.Signals | null,
-    ): void => {
-      clearTimeout(timer);
-      resolve({ exitCode, signal });
-    };
-    const timer = setTimeout(() => {
-      child.off("close", onClose);
-      resolve(null);
-    }, milliseconds);
-    child.once("close", onClose);
-  });
+async function observeExitBeforeSocketAvailability(
+  fixture: ReturnType<typeof startFixture>,
+  socketPath: string,
+  testSignal: AbortSignal,
+) {
+  const stopAvailabilityObservation = new AbortController();
+  const availabilitySignal = AbortSignal.any([
+    testSignal,
+    stopAvailabilityObservation.signal,
+  ]);
+  try {
+    return await Promise.race([
+      fixture.closed.then(({ exitCode, signal }) => ({
+        outcome: "exit" as const,
+        exitCode,
+        signal,
+      })),
+      waitForPath(socketPath, availabilitySignal).then(() => ({
+        outcome: "available" as const,
+      })),
+    ]);
+  } finally {
+    stopAvailabilityObservation.abort();
+  }
+}
+
+async function waitForPath(
+  filePath: string,
+  signal: AbortSignal,
+): Promise<void> {
+  for (;;) {
+    signal.throwIfAborted();
+    try {
+      await access(filePath);
+      return;
+    } catch (error) {
+      if (!isMissingPathError(error)) {
+        throw error;
+      }
+    }
+    await wait(25, undefined, { signal });
+  }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 async function stop(child: ChildProcess): Promise<void> {

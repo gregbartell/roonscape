@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 4,
   "revision": 14,
   "availability": "available",
   "playback": "playing",
@@ -7,13 +7,17 @@
     "name": "Speaker System"
   },
   "trackedZone": {
+    "id": "zone-living-room",
     "name": "Living Room"
   },
   "nowPlaying": null,
-  "progress": {
-    "positionSeconds": 10,
-    "durationSeconds": 0,
-    "sampledAt": "2026-08-15T19:20:00Z"
-  },
-  "artwork": null
+  "artwork": null,
+  "lyrics": null,
+  "timing": {
+    "position": {
+      "seconds": 10,
+      "sampledAt": "2026-08-15T19:20:00Z"
+    },
+    "durationSeconds": 0
+  }
 }

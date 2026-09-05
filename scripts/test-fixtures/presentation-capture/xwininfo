@@ -2,5 +2,5 @@
 
 width="${ROONSCAPE_CAPTURE_VIEWPORT%x*}"
 height="${ROONSCAPE_CAPTURE_VIEWPORT#*x}"
-printf 'xwininfo: Window id: 4242 "RoonScape"\n  Width: %s\n  Height: %s\n' \
+printf 'xwininfo: Window id: 4242 "RoonScape"\n  Map State: IsViewable\n  Width: %s\n  Height: %s\n' \
   "$width" "$height"

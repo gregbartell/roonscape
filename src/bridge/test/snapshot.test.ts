@@ -2,31 +2,216 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadSnapshot, validateSnapshot } from "../src/snapshot.js";
+import {
+  MAX_LYRIC_CUE_CODE_POINTS,
+  MAX_LYRIC_CUES,
+  MAX_LYRIC_TOTAL_CODE_POINTS,
+} from "../src/synchronized-lyrics.js";
+
+test("accepts every version 4 timing shape and rejects retired or invalid timing", async () => {
+  const base = {
+    schemaVersion: 4,
+    revision: 1,
+    availability: "available",
+    playback: "playing",
+    trackedOutput: { name: "Speaker System" },
+    trackedZone: { id: "zone-living-room", name: "Living Room" },
+    nowPlaying: { title: "A Moment Apart", artist: "ODESZA", album: null },
+    artwork: null,
+    lyrics: null,
+  } as const;
+
+  for (const timing of [
+    null,
+    {
+      position: {
+        seconds: 42,
+        sampledAt: "2026-09-02T20:15:00Z",
+      },
+      durationSeconds: 180,
+    },
+    {
+      position: {
+        seconds: 42,
+        sampledAt: "2026-09-02T20:15:00Z",
+      },
+      durationSeconds: null,
+    },
+    { position: null, durationSeconds: 180 },
+  ]) {
+    await assert.doesNotReject(validateSnapshot({ ...base, timing }));
+  }
+
+  for (const candidate of [
+    { ...base, schemaVersion: 3, timing: null },
+    { ...base, timing: { position: null, durationSeconds: null } },
+    {
+      ...base,
+      timing: {
+        position: { seconds: -1, sampledAt: "2026-09-02T20:15:00Z" },
+        durationSeconds: 180,
+      },
+    },
+    {
+      ...base,
+      timing: {
+        position: { seconds: 1, sampledAt: "not-a-date" },
+        durationSeconds: 180,
+      },
+    },
+    { ...base, timing: { position: null, durationSeconds: 0 } },
+  ]) {
+    await assert.rejects(
+      validateSnapshot(candidate),
+      /Invalid presentation snapshot/,
+    );
+  }
+});
+
+test("accepts a bounded normalized synchronized lyric timeline", async () => {
+  const snapshot = await validateSnapshot({
+    schemaVersion: 4,
+    revision: 1,
+    availability: "available",
+    playback: "playing",
+    trackedOutput: { name: "Speaker System" },
+    trackedZone: { id: "zone-living-room", name: "Living Room" },
+    nowPlaying: { title: "A Moment Apart", artist: "ODESZA", album: null },
+    timing: {
+      position: {
+        seconds: 1,
+        sampledAt: "2026-08-15T19:20:00Z",
+      },
+      durationSeconds: 120,
+    },
+    artwork: null,
+    lyrics: { cues: [{ atSeconds: 1.2, text: "月へ 🌙" }] },
+  });
+
+  assert.equal(snapshot.lyrics?.cues[0]?.text, "月へ 🌙");
+});
+
+test("rejects synchronized lyric timelines beyond defensive bounds", async () => {
+  const base = {
+    schemaVersion: 4,
+    revision: 1,
+    availability: "available",
+    playback: "playing",
+    trackedOutput: { name: "Speaker System" },
+    trackedZone: { id: "zone-living-room", name: "Living Room" },
+    nowPlaying: { title: "A Moment Apart", artist: null, album: null },
+    timing: {
+      position: {
+        seconds: 1,
+        sampledAt: "2026-08-15T19:20:00Z",
+      },
+      durationSeconds: 120,
+    },
+    artwork: null,
+  } as const;
+
+  await assert.rejects(
+    validateSnapshot({
+      ...base,
+      lyrics: {
+        cues: Array.from({ length: MAX_LYRIC_CUES + 1 }, (_, index) => ({
+          atSeconds: index,
+          text: "cue",
+        })),
+      },
+    }),
+    /Invalid presentation snapshot/,
+  );
+  await assert.rejects(
+    validateSnapshot({
+      ...base,
+      lyrics: {
+        cues: [
+          { atSeconds: 1, text: "x".repeat(MAX_LYRIC_CUE_CODE_POINTS + 1) },
+        ],
+      },
+    }),
+    /Invalid presentation snapshot/,
+  );
+  await assert.rejects(
+    validateSnapshot({
+      ...base,
+      lyrics: {
+        cues: Array.from({ length: MAX_LYRIC_CUES }, (_, index) => ({
+          atSeconds: index,
+          text: "x".repeat(
+            Math.ceil(MAX_LYRIC_TOTAL_CODE_POINTS / MAX_LYRIC_CUES) + 1,
+          ),
+        })),
+      },
+    }),
+    /total text exceeds/,
+  );
+});
+
+test("rejects unordered or duplicate normalized lyric cue timestamps", async () => {
+  const base = {
+    schemaVersion: 4,
+    revision: 1,
+    availability: "available",
+    playback: "playing",
+    trackedOutput: { name: "Speaker System" },
+    trackedZone: { id: "zone-living-room", name: "Living Room" },
+    nowPlaying: { title: "A Moment Apart", artist: null, album: null },
+    timing: {
+      position: {
+        seconds: 1,
+        sampledAt: "2026-08-15T19:20:00Z",
+      },
+      durationSeconds: 120,
+    },
+    artwork: null,
+  } as const;
+
+  for (const cues of [
+    [
+      { atSeconds: 2, text: "Second" },
+      { atSeconds: 1, text: "First" },
+    ],
+    [
+      { atSeconds: 1, text: "First" },
+      { atSeconds: 1, text: "Replacement" },
+    ],
+  ]) {
+    await assert.rejects(
+      validateSnapshot({ ...base, lyrics: { cues } }),
+      /strictly increasing/,
+    );
+  }
+});
 
 test("loads the shared Playing fixture as a complete snapshot", async () => {
   const snapshot = await loadSnapshot("src/shared/fixtures/playing.json");
 
   assert.deepEqual(snapshot, {
-    schemaVersion: 2,
+    schemaVersion: 4,
     revision: 7,
     availability: "available",
     playback: "playing",
     trackedOutput: { name: "Speaker System" },
-    trackedZone: { name: "Living Room" },
+    trackedZone: { id: "zone-living-room", name: "Living Room" },
     nowPlaying: {
       title: "Last Light on Phobos",
       artist: "Evelyn Lark & The Orbital Choir",
       album: "Signals from the Quiet Sea",
     },
-    progress: {
-      positionSeconds: 171,
+    timing: {
+      position: {
+        seconds: 171,
+        sampledAt: "2026-08-15T19:20:00Z",
+      },
       durationSeconds: 266,
-      sampledAt: "2026-08-15T19:20:00Z",
     },
     artwork: {
       revision: 3,
-      path: "src/shared/fixtures/artwork/playing.svg",
+      path: "src/shared/fixtures/artwork/playing.jpg",
     },
+    lyrics: null,
   });
 });
 
@@ -36,7 +221,7 @@ test("keeps the selected fictional release coherent across related fixtures", as
     artist: "Evelyn Lark & The Orbital Choir",
     album: "Signals from the Quiet Sea",
     trackedOutput: { name: "Speaker System" },
-    trackedZone: { name: "Living Room" },
+    trackedZone: { id: "zone-living-room", name: "Living Room" },
   };
   const relatedFixtures = [
     "playing.json",
@@ -86,7 +271,7 @@ test("keeps the selected fictional release coherent across related fixtures", as
   });
 });
 
-test("uses the reference progress sample unless timing is the named edge", async () => {
+test("uses the reference timing sample unless timing is the named edge", async () => {
   for (const fixtureName of [
     "playing.json",
     "paused.json",
@@ -102,11 +287,11 @@ test("uses the reference progress sample unless timing is the named edge", async
     const snapshot = await loadSnapshot(`src/shared/fixtures/${fixtureName}`);
 
     assert.deepEqual(
-      snapshot.progress === null
+      snapshot.timing === null
         ? null
         : {
-            positionSeconds: snapshot.progress.positionSeconds,
-            durationSeconds: snapshot.progress.durationSeconds,
+            positionSeconds: snapshot.timing.position?.seconds,
+            durationSeconds: snapshot.timing.durationSeconds,
           },
       { positionSeconds: 171, durationSeconds: 266 },
     );
@@ -124,7 +309,7 @@ test("loads missing artwork and artwork revision fixtures", async () => {
   assert.equal(missingArtwork.artwork, null);
   assert.deepEqual(revisedArtwork.artwork, {
     revision: 9,
-    path: "src/shared/fixtures/artwork/revised.svg",
+    path: "src/shared/fixtures/artwork/revised.jpg",
   });
   assert.equal(revisedArtwork.revision, 9);
 });
@@ -134,7 +319,7 @@ test("loads the light-artwork visual acceptance fixture", async () => {
 
   assert.deepEqual(snapshot.artwork, {
     revision: 20,
-    path: "src/shared/fixtures/artwork/light.svg",
+    path: "src/shared/fixtures/artwork/light.jpg",
   });
   assert.deepEqual(snapshot.nowPlaying, {
     title: "Last Light on Phobos",
@@ -151,7 +336,7 @@ test("loads the typography glyph-fallback visual acceptance fixture", async () =
   assert.equal(snapshot.nowPlaying?.album, "Signals from the Quiet Sea — 月");
   assert.deepEqual(snapshot.artwork, {
     revision: 3,
-    path: "src/shared/fixtures/artwork/playing.svg",
+    path: "src/shared/fixtures/artwork/playing.jpg",
   });
 });
 
@@ -191,7 +376,7 @@ test("loads missing, long, and extreme metadata fixtures without inventing value
 test("metadata-only edge fixtures retain the reference artwork", async () => {
   const referenceArtwork = {
     revision: 3,
-    path: "src/shared/fixtures/artwork/playing.svg",
+    path: "src/shared/fixtures/artwork/playing.jpg",
   };
 
   for (const fixtureName of ["long-metadata.json", "extreme-metadata.json"]) {
@@ -214,7 +399,7 @@ test("loads non-square artwork and long identity edge-case fixtures", async () =
 
   assert.deepEqual(nonSquareArtwork.artwork, {
     revision: 19,
-    path: "src/shared/fixtures/artwork/non-square.svg",
+    path: "src/shared/fixtures/artwork/non-square.jpg",
   });
   assert.deepEqual(nonSquareArtwork.nowPlaying, {
     title: "Last Light on Phobos",
@@ -229,10 +414,12 @@ test("loads non-square artwork and long identity edge-case fixtures", async () =
     longIdentities,
     blankOptionalMetadata,
   ]) {
-    assert.deepEqual(snapshot.progress, {
-      positionSeconds: 171,
+    assert.deepEqual(snapshot.timing, {
+      position: {
+        seconds: 171,
+        sampledAt: "2026-08-15T19:20:00Z",
+      },
       durationSeconds: 266,
-      sampledAt: "2026-08-15T19:20:00Z",
     });
   }
   assert.deepEqual(blankOptionalMetadata.nowPlaying, {
@@ -259,18 +446,68 @@ test("loads every shared unavailable fixture without stale Now Playing", async (
         trackedOutput: snapshot.trackedOutput,
         trackedZone: snapshot.trackedZone,
         nowPlaying: snapshot.nowPlaying,
-        progress: snapshot.progress,
+        timing: snapshot.timing,
         artwork: snapshot.artwork,
       },
       {
         availability,
         playback: null,
-        trackedOutput: null,
+        trackedOutput:
+          availability === "outputUnavailable"
+            ? { name: "Speaker System" }
+            : null,
         trackedZone: null,
         nowPlaying: null,
-        progress: null,
+        timing: null,
         artwork: null,
       },
+    );
+  }
+});
+
+test("accepts legacy Output unavailable without a persisted Tracked Output name", async () => {
+  await validateSnapshot({
+    schemaVersion: 4,
+    revision: 1,
+    availability: "outputUnavailable",
+    playback: null,
+    trackedOutput: null,
+    trackedZone: null,
+    nowPlaying: null,
+    timing: null,
+    artwork: null,
+    lyrics: null,
+  });
+});
+
+test("rejects identities that are not authoritative for unavailable states", async () => {
+  const unavailable = {
+    schemaVersion: 4 as const,
+    revision: 1,
+    playback: null,
+    nowPlaying: null,
+    timing: null,
+    artwork: null,
+  };
+
+  await assert.rejects(
+    validateSnapshot({
+      ...unavailable,
+      availability: "outputUnavailable",
+      trackedOutput: { name: "Speaker System" },
+      trackedZone: { id: "zone-living-room", name: "Living Room" },
+    }),
+    /Invalid presentation snapshot/,
+  );
+  for (const availability of ["pairingRequired", "disconnected"] as const) {
+    await assert.rejects(
+      validateSnapshot({
+        ...unavailable,
+        availability,
+        trackedOutput: { name: "Speaker System" },
+        trackedZone: null,
+      }),
+      /Invalid presentation snapshot/,
     );
   }
 });
@@ -291,7 +528,7 @@ test("loads every shared playback state with truthful Now Playing", async () => 
     assert.equal(snapshot.availability, "available");
     assert.equal(snapshot.playback, playback);
     assert.equal(snapshot.nowPlaying !== null, hasNowPlaying);
-    assert.equal(snapshot.progress !== null, hasProgress);
+    assert.equal(snapshot.timing !== null, hasProgress);
     if (playback === "stopped") {
       assert.equal(snapshot.artwork, null);
     }
@@ -306,11 +543,13 @@ test("loads indeterminate progress as absent and permits clamping samples", asyn
     "src/shared/fixtures/playing-past-duration.json",
   );
 
-  assert.equal(indeterminate.progress, null);
-  assert.deepEqual(pastDuration.progress, {
-    positionSeconds: 300,
+  assert.equal(indeterminate.timing, null);
+  assert.deepEqual(pastDuration.timing, {
+    position: {
+      seconds: 300,
+      sampledAt: "2026-08-15T19:20:00Z",
+    },
     durationSeconds: 266,
-    sampledAt: "2026-08-15T19:20:00Z",
   });
 });
 
@@ -324,15 +563,15 @@ test("rejects the shared invalid fixture", async () => {
 test("rejects the removed displayZone snapshot field", async () => {
   await assert.rejects(
     validateSnapshot({
-      schemaVersion: 2,
+      schemaVersion: 4,
       revision: 1,
       availability: "available",
       playback: "playing",
       trackedOutput: { name: "Speaker System" },
-      trackedZone: { name: "Living Room" },
+      trackedZone: { id: "zone-living-room", name: "Living Room" },
       displayZone: { name: "Living Room" },
       nowPlaying: null,
-      progress: null,
+      timing: null,
       artwork: null,
     }),
     /Invalid presentation snapshot/,
@@ -379,7 +618,9 @@ test("bounds Roon-supplied display strings by Unicode code points", async () => 
     [
       "Tracked Zone",
       256,
-      (value: string) => ({ trackedZone: { name: value } }),
+      (value: string) => ({
+        trackedZone: { id: "zone-living-room", name: value },
+      }),
     ],
     [
       "Title",

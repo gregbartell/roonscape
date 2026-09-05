@@ -3,6 +3,7 @@
     "declaration": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
+    "incremental": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "noUncheckedIndexedAccess": true,
@@ -10,6 +11,7 @@
     "rootDir": ".",
     "strict": true,
     "target": "ES2024",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
     "types": ["node"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]

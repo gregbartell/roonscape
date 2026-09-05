@@ -5,6 +5,7 @@ use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError, sync_channel};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -30,6 +31,7 @@ pub enum SnapshotEvent {
 pub struct SnapshotSubscription {
     events: Receiver<SnapshotEvent>,
     wakeup: UnixStream,
+    writer: Arc<Mutex<Option<UnixStream>>>,
 }
 
 #[derive(Debug)]
@@ -82,6 +84,10 @@ impl SnapshotReader {
     pub fn read_snapshot(&mut self) -> Result<PresentationSnapshot, SnapshotSocketError> {
         read_snapshot(&mut self.reader)
     }
+
+    fn try_clone_connection(&self) -> io::Result<UnixStream> {
+        self.reader.get_ref().try_clone()
+    }
 }
 
 impl SnapshotSubscription {
@@ -95,6 +101,8 @@ impl SnapshotSubscription {
         notifier
             .set_nonblocking(true)
             .expect("the renderer should configure nonblocking wakeup writes");
+        let writer = Arc::new(Mutex::new(None));
+        let worker_writer = Arc::clone(&writer);
         thread::spawn(move || {
             if !notify(
                 &sender,
@@ -109,6 +117,15 @@ impl SnapshotSubscription {
                     thread::sleep(retry_delay);
                     continue;
                 };
+                let Ok(connection_writer) = reader.try_clone_connection() else {
+                    thread::sleep(retry_delay);
+                    continue;
+                };
+                let Ok(mut active_writer) = worker_writer.lock() else {
+                    return;
+                };
+                *active_writer = Some(connection_writer);
+                drop(active_writer);
                 if !notify(
                     &sender,
                     &mut notifier,
@@ -152,11 +169,17 @@ impl SnapshotSubscription {
                             }
                         }
                         Err(error) => {
-                            eprintln!("RoonScape renderer: {error}");
+                            eprintln!("RoonScape Renderer: {error}");
                             break;
                         }
                     }
                 }
+
+                let Ok(mut active_writer) = worker_writer.lock() else {
+                    return;
+                };
+                *active_writer = None;
+                drop(active_writer);
 
                 if !notify(
                     &sender,
@@ -169,7 +192,11 @@ impl SnapshotSubscription {
             }
         });
 
-        Self { events, wakeup }
+        Self {
+            events,
+            wakeup,
+            writer,
+        }
     }
 
     pub fn try_recv(&self) -> Result<SnapshotEvent, TryRecvError> {
@@ -197,6 +224,22 @@ impl SnapshotSubscription {
                 Err(error) => return Err(error),
             }
         }
+    }
+
+    pub fn report_lyrics_visible(&self, revision: u64) -> io::Result<bool> {
+        let mut writer = self
+            .writer
+            .lock()
+            .map_err(|_| io::Error::other("snapshot connection writer lock was poisoned"))?;
+        let Some(connection) = writer.as_mut() else {
+            return Ok(false);
+        };
+        let report = format!("{{\"type\":\"lyricsVisible\",\"revision\":{revision}}}\n");
+        if let Err(error) = connection.write_all(report.as_bytes()) {
+            *writer = None;
+            return Err(error);
+        }
+        Ok(true)
     }
 }
 

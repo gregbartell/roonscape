@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 4,
   "revision": 21,
   "availability": "available",
   "playback": "playing",
@@ -7,6 +7,7 @@
     "name": "Speaker System"
   },
   "trackedZone": {
+    "id": "zone-living-room",
     "name": "Living Room"
   },
   "nowPlaying": {
@@ -14,13 +15,16 @@
     "artist": "   ",
     "album": "\t"
   },
-  "progress": {
-    "positionSeconds": 171,
-    "durationSeconds": 266,
-    "sampledAt": "2026-08-15T19:20:00Z"
-  },
   "artwork": {
     "revision": 3,
-    "path": "src/shared/fixtures/artwork/playing.svg"
+    "path": "src/shared/fixtures/artwork/playing.jpg"
+  },
+  "lyrics": null,
+  "timing": {
+    "position": {
+      "seconds": 171,
+      "sampledAt": "2026-08-15T19:20:00Z"
+    },
+    "durationSeconds": 266
   }
 }

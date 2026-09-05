@@ -59,10 +59,11 @@ process.exitCode = await runRoonScapeCommand(process.argv.slice(2), {
     new FileDisplayConfigurationStore(configurationFile).load(),
   configurationFileExists: existsSync,
   terminalIsInteractive,
-  discoverTrackedOutputs: (authorizationFile, signal) =>
+  discoverTrackedOutputs: (authorizationFile, signal, roonServerHost) =>
     discoverTrackedOutputs({
       authorizationStore: new FileAuthorizationStore(authorizationFile),
       createRoonServices: createSupportedRoonServices,
+      roonServerHost,
       timeoutMilliseconds: null,
       signal,
     }),
@@ -76,18 +77,28 @@ process.exitCode = await runRoonScapeCommand(process.argv.slice(2), {
       processId: process.pid,
       userId: getUserId(),
     }),
-  launchBridge: ({ authorizationFile, configurationFile, socketPath }) =>
-    launchChildProcess(
+  launchBridge: ({
+    authorizationFile,
+    configurationFile,
+    roonServerHost,
+    socketPath,
+  }) => {
+    const arguments_ = [
+      bridgeEntry,
+      "--config",
+      configurationFile,
+      "--authorization",
+      authorizationFile,
+    ];
+    if (roonServerHost !== undefined) {
+      arguments_.push("--roon-server", roonServerHost);
+    }
+    return launchChildProcess(
       process.execPath,
-      [
-        bridgeEntry,
-        "--config",
-        configurationFile,
-        "--authorization",
-        authorizationFile,
-      ],
+      arguments_,
       liveChildEnvironment(socketPath),
-    ),
+    );
+  },
   launchRenderer: ({ configurationFile, socketPath }) =>
     launchChildProcess(
       rendererExecutable,

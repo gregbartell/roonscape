@@ -27,6 +27,25 @@ window {
   font-weight: 400;
 }
 
+.lyric-masthead-title {
+  font-weight: 700;
+}
+
+.lyric-masthead-artist {
+  font-weight: 600;
+}
+
+.lyric-current {
+  font-weight: 600;
+  line-height: 1.04;
+}
+
+.lyric-previous,
+.lyric-next {
+  font-weight: 400;
+  line-height: 1.04;
+}
+
 .activity-heading {
   font-weight: 600;
 }

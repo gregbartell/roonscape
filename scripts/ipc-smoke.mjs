@@ -1,5 +1,9 @@
-import { spawn } from "node:child_process";
-import { once } from "node:events";
+import {
+  processCancellation,
+  startMonitoredProcess,
+  stopProcess,
+  stopProcesses,
+} from "./process-harness.mjs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
@@ -13,6 +17,7 @@ const runtimeDirectory = await mkdtemp(
 const socketPath = path.join(runtimeDirectory, "roonscape.sock");
 const environment = { ...process.env, ROONSCAPE_SOCKET: socketPath };
 const children = new Set();
+const cancellation = processCancellation();
 
 try {
   const rendererFirst = startProbe("renderer-first");
@@ -98,8 +103,12 @@ try {
     "IPC smoke check passed: both startup orders, both process restarts, reconnect, replay, and stale-content clearing.\n",
   );
 } finally {
-  await Promise.all([...children].map((child) => stop(child, "SIGKILL")));
-  await rm(runtimeDirectory, { recursive: true });
+  try {
+    await stopProcesses([...children], { signal: cancellation.signal });
+    await rm(runtimeDirectory, { recursive: true });
+  } finally {
+    cancellation.dispose();
+  }
 }
 
 function startProbe(label) {
@@ -123,10 +132,10 @@ function startBridge(fixture, label) {
 }
 
 function startChild(label, command, arguments_, env) {
-  const child = spawn(command, arguments_, {
+  cancellation.signal.throwIfAborted();
+  const child = startMonitoredProcess(command, arguments_, {
     cwd: repositoryRoot,
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
+    environment: env,
   });
   children.add(child);
   child.once("close", () => children.delete(child));
@@ -148,6 +157,8 @@ function monitoredOutput(child, label, parse) {
   const values = [];
   const waiters = [];
   const lines = createInterface({ input: child.stdout });
+  const cancel = () => rejectWaiters(cancellation.signal.reason);
+  cancellation.signal.addEventListener("abort", cancel, { once: true });
   lines.on("line", (line) => {
     let value;
     try {
@@ -161,6 +172,7 @@ function monitoredOutput(child, label, parse) {
   });
   child.once("error", rejectWaiters);
   child.once("close", (code, signal) => {
+    cancellation.signal.removeEventListener("abort", cancel);
     if (waiters.length > 0) {
       rejectWaiters(
         new Error(`${label} exited before expected output (${code ?? signal})`),
@@ -170,6 +182,7 @@ function monitoredOutput(child, label, parse) {
 
   return {
     next(predicate, description) {
+      cancellation.signal.throwIfAborted();
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           const index = waiters.indexOf(waiter);
@@ -208,10 +221,11 @@ function monitoredOutput(child, label, parse) {
 }
 
 async function stop(child, signal) {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return;
-  }
-  const closed = once(child, "close");
-  child.kill(signal);
-  await closed;
+  if (
+    signal === "SIGKILL" &&
+    child.exitCode === null &&
+    child.signalCode === null
+  )
+    child.kill(signal);
+  await stopProcess(child);
 }

@@ -15,6 +15,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         currentSnapshot: () => {
           throw new Error("unused");
         },
+        lyricsVisible: () => undefined,
         stop: async () => {
           events.push("bridge stopped");
         },
@@ -49,6 +50,7 @@ test("bridge shutdown attempts every cleanup and preserves every failure", async
         currentSnapshot: () => {
           throw new Error("unused");
         },
+        lyricsVisible: () => undefined,
         stop: async () => {
           events.push("bridge stopped");
           throw new Error("Roon services remained open");
@@ -87,6 +89,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         currentSnapshot: () => {
           throw new Error("unused");
         },
+        lyricsVisible: () => undefined,
         stop: async () => {
           throw new AggregateError(
             [
@@ -94,7 +97,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
               new Error("Roon services remained open"),
               new Error("artwork files remained present"),
             ],
-            "Could not stop Roon bridge",
+            "Could not stop RoonScape Bridge",
           );
         },
       },
@@ -122,10 +125,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
     assert.equal(exitCode, 1);
     assert.deepEqual(diagnostics, [
-      "Could not stop RoonScape bridge: Roon discovery remained active",
-      "Could not stop RoonScape bridge: Roon services remained open",
-      "Could not stop RoonScape bridge: artwork files remained present",
-      "Could not stop RoonScape bridge: snapshot socket remained open",
+      "Could not stop RoonScape Bridge: Roon discovery remained active",
+      "Could not stop RoonScape Bridge: Roon services remained open",
+      "Could not stop RoonScape Bridge: artwork files remained present",
+      "Could not stop RoonScape Bridge: snapshot socket remained open",
     ]);
     assert.deepEqual(lifecycleEvents, [
       "diagnostic written",

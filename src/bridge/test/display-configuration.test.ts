@@ -17,7 +17,10 @@ test("persists Display Configuration in a private dedicated file", async () => {
     const configDirectory = path.join(taskDirectory, "config");
     const configurationFile = path.join(configDirectory, "display.json");
     const store = new FileDisplayConfigurationStore(configurationFile);
-    const configuration = { trackedOutputId: "output-speaker-system" };
+    const configuration = {
+      trackedOutputId: "output-speaker-system",
+      trackedOutputName: "Speaker System",
+    };
 
     assert.equal(store.load(), null);
     store.save(configuration);
@@ -90,6 +93,7 @@ test("loads shared inactivity Display Configuration", () => {
 
   assert.deepEqual(store.load(), {
     trackedOutputId: "output-speaker-system",
+    trackedOutputName: "Speaker System",
     inactivity: {
       gracePeriodSeconds: 240,
       dimmedOpacity: 0.3,

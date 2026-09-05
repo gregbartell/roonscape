@@ -13,15 +13,18 @@ Use this checklist after the release version has been approved.
 
    ```sh
    npm run check
+   npm run test:design
    npm run package
    ```
 
-   The repository check uses controlled packaging inputs and does not build or
-   download release-package components. `npm run package` is the explicit
-   end-to-end release check: it builds the Roon bridge and renderer, installs
-   production dependencies, downloads and verifies the pinned Node runtime,
-   assembles the archive once, and fully validates that same archive and its
-   checksum. It leaves the validated artifacts under `release/`.
+   The design suite verifies Presentation Capture planning, execution, native
+   rendering, and publication before release. The repository check uses
+   controlled packaging inputs and does not build or download release-package
+   components. `npm run package` is the explicit end-to-end release check: it
+   builds the RoonScape Bridge and RoonScape Renderer, installs production
+   dependencies, downloads and verifies the pinned Node runtime, assembles the
+   archive once, and fully validates that same archive and its checksum. It
+   leaves the validated artifacts under `release/`.
 
 3. Review the changes and the two files under `release/`, then commit the
    release. The expected files are `roonscape-linux-x64.tar.gz` and

@@ -17,6 +17,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { installDesktop } from "./install-desktop.mjs";
+
 import {
   archiveName,
   assembleReleasePackage,
@@ -63,14 +65,18 @@ test("controlled inputs produce a complete relocatable release", (context) => {
     "roonscape",
     "runtime/node/LICENSE",
     "runtime/node/bin/node",
+    "scripts/install-desktop.mjs",
     "src/bridge/dist/src/index.js",
     "src/bridge/dist/src/roonscape.js",
     "src/bridge/node_modules/ajv/package.json",
+    "src/desktop/icons/hicolor/index.theme",
+    "src/desktop/icons/hicolor/scalable/apps/io.roonscape.Renderer.svg",
+    "src/desktop/io.roonscape.Renderer.desktop.in",
     "src/renderer/assets/fonts/IBM-Plex-Sans-OFL.txt",
     "src/renderer/assets/fonts/IBMPlexSans-Variable.ttf",
     "src/renderer/assets/fonts/Libre-Baskerville-OFL.txt",
     "src/renderer/assets/fonts/LibreBaskerville-Variable.ttf",
-    "src/shared/fixtures/artwork/playing.svg",
+    "src/shared/fixtures/artwork/playing.jpg",
     "src/shared/fixtures/fixture-scenario-catalog.json",
     "src/shared/fixtures/playing.json",
     "src/shared/schema/display-configuration.schema.json",
@@ -108,6 +114,21 @@ test("controlled inputs produce a complete relocatable release", (context) => {
     readFileSync(invocationFile, "utf8"),
     `${path.join(relocatedRoot, "src/bridge/dist/src/roonscape.js")}\n--help\n`,
   );
+  const desktopOptions = {
+    root: relocatedRoot,
+    environment: { XDG_DATA_HOME: path.join(fixture.root, "desktop-data") },
+    nodeExecutable: path.join(relocatedRoot, "runtime/node/bin/node"),
+  };
+  const installed = installDesktop(desktopOptions);
+  const desktopLaunch = run("/bin/sh", [installed[2], "--help"], {
+    env: { ...process.env, ROONSCAPE_TEST_INVOCATION: invocationFile },
+  });
+  assert.equal(desktopLaunch.status, 0, commandOutput(desktopLaunch));
+  assert.equal(
+    readFileSync(invocationFile, "utf8"),
+    `${path.join(relocatedRoot, "src/bridge/dist/src/roonscape.js")}\n--help\n`,
+  );
+  installDesktop({ ...desktopOptions, uninstall: true });
 });
 
 test("the assembled release passes full validation after relocation", (context) => {
@@ -130,7 +151,7 @@ test("assembly rejects missing or malformed prepared inputs", (context) => {
 
   assert.throws(
     () => assembleFixture(missingFixture),
-    /prepared Roon bridge entry point is unavailable/,
+    /prepared RoonScape Bridge entry point is unavailable/,
   );
 
   const malformedFixture = createPackagingFixture(context);
@@ -231,6 +252,8 @@ function createPackagingFixture(context) {
     bridgeBuild: path.join(inputRoot, "bridge-build"),
     bridgeSource: path.join(inputRoot, "bridge-source"),
     bridgeNodeModules: path.join(inputRoot, "bridge-node-modules"),
+    desktop: path.join(inputRoot, "desktop"),
+    desktopInstaller: path.join(inputRoot, "install-desktop.mjs"),
     fonts: path.join(inputRoot, "fonts"),
     launcher: path.join(inputRoot, "roonscape"),
     nodeDistribution: path.join(inputRoot, "node"),
@@ -240,6 +263,17 @@ function createPackagingFixture(context) {
   };
 
   write(paths.launcher, readFileSync("src/launcher/roonscape"));
+  write(paths.desktopInstaller, readFileSync("scripts/install-desktop.mjs"));
+  for (const relativePath of [
+    "icons/hicolor/index.theme",
+    "icons/hicolor/scalable/apps/io.roonscape.Renderer.svg",
+    "io.roonscape.Renderer.desktop.in",
+  ]) {
+    write(
+      path.join(paths.desktop, relativePath),
+      readFileSync(path.join("src/desktop", relativePath)),
+    );
+  }
   write(paths.renderer, "controlled renderer\n");
   write(path.join(paths.bridgeSource, "index.ts"), "export {};\n");
   write(path.join(paths.bridgeSource, "roonscape.ts"), "export {};\n");
@@ -249,7 +283,7 @@ function createPackagingFixture(context) {
   write(path.join(paths.rootNodeModules, "ajv-formats/package.json"), "{}\n");
   write(path.join(paths.rootNodeModules, "node-roon-api/package.json"), "{}\n");
   write(path.join(paths.bridgeNodeModules, "ajv/package.json"), "{}\n");
-  write(path.join(paths.shared, "fixtures/artwork/playing.svg"), "<svg/>\n");
+  write(path.join(paths.shared, "fixtures/artwork/playing.jpg"), "jpeg\n");
   write(
     path.join(paths.shared, "fixtures/fixture-scenario-catalog.json"),
     "{}\n",

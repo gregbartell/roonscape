@@ -4,6 +4,8 @@ import type {
   RoonCore,
   RoonServices,
 } from "./roon-bridge.js";
+import { discoverRoonServer } from "./roon-server-discovery.js";
+import type { RoonServerHost } from "./roon-server-host.js";
 
 export const roonScapeExtensionIdentity = {
   extension_id: "io.roonscape.bridge",
@@ -40,4 +42,52 @@ export function initializeRoonExtension({
     provided_services: [services.status],
   });
   return services;
+}
+
+export function connectRoonExtension(
+  extension: RoonServices["extension"],
+  roonServerHost?: RoonServerHost,
+): { stop(): void } {
+  if (roonServerHost === undefined) {
+    extension.start_discovery();
+    return onceStopped(() => {
+      extension.stop_discovery();
+      extension.disconnect_all();
+    });
+  }
+
+  if (extension.ws_connect === undefined) {
+    throw new Error("This Roon API does not support direct connections");
+  }
+  const connect = extension.ws_connect.bind(extension);
+  const cancellation = new AbortController();
+  let connection: ReturnType<typeof connect> | undefined;
+  void discoverRoonServer(roonServerHost, cancellation.signal)
+    .then((endpoint) => {
+      if (cancellation.signal.aborted) {
+        return;
+      }
+      connection = connect({
+        ...endpoint,
+        onclose: () => undefined,
+      });
+    })
+    .catch(() => undefined);
+  return onceStopped(() => {
+    cancellation.abort();
+    connection?.transport.close();
+  });
+}
+
+function onceStopped(stop: () => void): { stop(): void } {
+  let stopped = false;
+  return {
+    stop: () => {
+      if (stopped) {
+        return;
+      }
+      stopped = true;
+      stop();
+    },
+  };
 }

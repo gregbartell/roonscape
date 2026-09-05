@@ -39,7 +39,7 @@ test("lists discoverable Tracked Outputs with the IDs needed for host selection"
   ]);
 });
 
-test("saves the selected Tracked Output without changing Roon", async () => {
+test("saves the selected Tracked Output name without changing Roon", async () => {
   let saved: DisplayConfiguration | undefined;
   const lines: string[] = [];
   const configurationStore: DisplayConfigurationStore = {
@@ -53,15 +53,22 @@ test("saves the selected Tracked Output without changing Roon", async () => {
     ["select", "output-speaker-system"],
     {
       configurationStore,
-      discoverTrackedOutputs: async () => {
-        throw new Error("select must not contact or control Roon");
-      },
+      discoverTrackedOutputs: async () => [
+        {
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+          trackedZoneName: "Living Room",
+        },
+      ],
       writeLine: (line) => lines.push(line),
     },
   );
 
   assert.equal(exitCode, 0);
-  assert.deepEqual(saved, { trackedOutputId: "output-speaker-system" });
+  assert.deepEqual(saved, {
+    trackedOutputId: "output-speaker-system",
+    trackedOutputName: "Speaker System",
+  });
   assert.deepEqual(lines, ["Selected Tracked Output: output-speaker-system"]);
 });
 
@@ -82,7 +89,13 @@ test("preserves inactivity calibration when changing the Tracked Output", async 
           saved = configuration;
         },
       },
-      discoverTrackedOutputs: async () => [],
+      discoverTrackedOutputs: async () => [
+        {
+          trackedOutputId: "output-library",
+          trackedOutputName: "Library Speaker",
+          trackedZoneName: "Library",
+        },
+      ],
       writeLine: () => {},
     },
   );
@@ -90,8 +103,35 @@ test("preserves inactivity calibration when changing the Tracked Output", async 
   assert.equal(exitCode, 0);
   assert.deepEqual(saved, {
     trackedOutputId: "output-library",
+    trackedOutputName: "Library Speaker",
     inactivity,
   });
+});
+
+test("rejects an unresolved Tracked Output without replacing Display Configuration", async () => {
+  let saved = false;
+  const lines: string[] = [];
+
+  const exitCode = await runDisplayConfigurationCommand(
+    ["select", "output-unavailable"],
+    {
+      configurationStore: {
+        load: () => ({
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+        }),
+        save: () => {
+          saved = true;
+        },
+      },
+      discoverTrackedOutputs: async () => [],
+      writeLine: (line) => lines.push(line),
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.equal(saved, false);
+  assert.deepEqual(lines, ["Tracked Output not found: output-unavailable"]);
 });
 
 test("configures OLED inactivity without changing the Tracked Output", async () => {

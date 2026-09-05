@@ -14,6 +14,7 @@ import { createConnection } from "node:net";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import test from "node:test";
+import { setTimeout as wait } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { launchChildProcess } from "../src/child-process.js";
@@ -30,6 +31,7 @@ import type { PresentationSnapshot } from "../src/snapshot.js";
 import { withTaskDirectory } from "./support.js";
 
 const bridgeEntry = fileURLToPath(new URL("../src/index.js", import.meta.url));
+const maximumAbsoluteHostname = `${"a".repeat(63)}.${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(61)}.`;
 
 test("help describes the owner-facing command", async () => {
   const output: string[] = [];
@@ -49,6 +51,10 @@ test("help describes the owner-facing command", async () => {
     /Show what Roon's playing\.\n {2}Display only, no controls\./,
   );
   assert.match(output.join("\n"), /--setup/);
+  assert.match(
+    output.join("\n"),
+    /--roon-server HOST\n {17}Discover this Roon Server Host directly/,
+  );
   assert.match(output.join("\n"), /--help/);
   assert.match(output.join("\n"), /--version/);
 });
@@ -115,6 +121,104 @@ test("configured start launches bridge then renderer as one session", async () =
   ]);
 });
 
+for (const [description, roonServerHost] of [
+  ["a hostname", "roll.local"],
+  ["an IPv4 address", "100.100.110.72"],
+  ["a maximum-length absolute hostname", maximumAbsoluteHostname],
+] as const) {
+  test(`--roon-server propagates ${description} to Live Mode`, async () => {
+    let bridgeOptions:
+      Parameters<RoonScapeCommandDependencies["launchBridge"]>[0] | undefined;
+    const bridge = pendingChild(() => undefined);
+    const result = await runRoonScapeCommand(
+      ["--roon-server", roonServerHost],
+      commandDependencies({
+        loadConfiguration: () => ({ trackedOutputId: "output-studio" }),
+        openRuntime: async () => ({
+          socketPath: "/runtime/roonscape/roonscape.sock",
+          cleanup: async () => undefined,
+        }),
+        launchBridge: (options) => {
+          bridgeOptions = options;
+          return bridge;
+        },
+        launchRenderer: () => completedChild({ exitCode: 0, signal: null }),
+      }),
+    );
+
+    assert.equal(result, 0);
+    assert.equal(bridgeOptions?.roonServerHost, roonServerHost);
+  });
+}
+
+for (const invalidArguments of [
+  ["--roon-server"],
+  ["--roon-server", ""],
+  ["--roon-server", "roll:9330"],
+  ["--roon-server", "https://roll.local"],
+  ["--roon-server", "999.100.110.72"],
+  ["--roon-server", "roll..local"],
+  ["--roon-server", "roll.local", "--roon-server", "other.local"],
+]) {
+  test(`rejects malformed Roon Server arguments: ${JSON.stringify(invalidArguments)}`, async () => {
+    const errors: string[] = [];
+    const result = await runRoonScapeCommand(
+      invalidArguments,
+      commandDependencies({ writeError: (line) => errors.push(line) }),
+    );
+
+    assert.equal(result, 2);
+    assert.match(errors.join("\n"), /Usage: roonscape/);
+  });
+}
+
+test("Roon Server Host remains absent from Display Configuration", async () => {
+  let bridgeOptions:
+    Parameters<RoonScapeCommandDependencies["launchBridge"]>[0] | undefined;
+  let savedConfiguration:
+    | Parameters<RoonScapeCommandDependencies["saveConfiguration"]>[1]
+    | undefined;
+  const bridge = pendingChild(() => undefined);
+  const result = await runRoonScapeCommand(
+    ["--roon-server", "roll.local"],
+    commandDependencies({
+      terminalIsInteractive: () => true,
+      discoverTrackedOutputs: async () => [
+        {
+          trackedOutputId: "output-studio",
+          trackedOutputName: "Studio DAC",
+          trackedZoneName: "Studio",
+        },
+      ],
+      readSetupKey: async () => "enter",
+      saveConfiguration: (_file, configuration) => {
+        savedConfiguration = configuration;
+      },
+      openRuntime: async () => ({
+        socketPath: "/runtime/roonscape/roonscape.sock",
+        cleanup: async () => undefined,
+      }),
+      launchBridge: (options) => {
+        bridgeOptions = options;
+        return bridge;
+      },
+      launchRenderer: () => completedChild({ exitCode: 0, signal: null }),
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.equal(bridgeOptions?.roonServerHost, "roll.local");
+  assert.deepEqual(savedConfiguration, {
+    trackedOutputId: "output-studio",
+    trackedOutputName: "Studio DAC",
+    inactivity: {
+      gracePeriodSeconds: 300,
+      dimmedOpacity: 0.35,
+      repositionCadenceSeconds: 60,
+    },
+  });
+});
+
 test("rejects the removed Display Configuration environment override", async () => {
   const errors: string[] = [];
   const dependencies = commandDependencies({
@@ -161,67 +265,79 @@ test("--config takes precedence over the standard XDG path", async () => {
   assert.deepEqual(loadedFiles, ["/working/settings/display.json"]);
 });
 
-test("valid --config without Roon Authorization presents pairing required", async () => {
-  await withTaskDirectory(async (taskDirectory) => {
-    const configurationFile = path.join(taskDirectory, "display.json");
-    const authorizationFile = path.join(taskDirectory, "authorization.json");
-    const socketPath = path.join(taskDirectory, "roonscape.sock");
-    await writeFile(
-      configurationFile,
-      '{"trackedOutputId":"output-speaker-system"}\n',
-    );
-    let finishRenderer: ((result: ChildResult) => void) | undefined;
-    const renderer: RunningChild = {
-      result: new Promise((resolve) => {
-        finishRenderer = resolve;
-      }),
-      sendSignal: () => undefined,
-    };
-    const commandResult = runRoonScapeCommand(
-      ["--config", configurationFile],
-      commandDependencies({
-        currentDirectory: taskDirectory,
-        authorizationFile: () => authorizationFile,
-        loadConfiguration: (file) =>
-          new FileDisplayConfigurationStore(file).load(),
-        openRuntime: async () => ({
-          socketPath,
-          cleanup: async () => undefined,
+test(
+  "valid --config without Roon Authorization presents pairing required",
+  { timeout: 30_000 },
+  async (context) => {
+    await withTaskDirectory(async (taskDirectory) => {
+      const configurationFile = path.join(taskDirectory, "display.json");
+      const authorizationFile = path.join(taskDirectory, "authorization.json");
+      const socketPath = path.join(taskDirectory, "roonscape.sock");
+      await writeFile(
+        configurationFile,
+        '{"trackedOutputId":"output-speaker-system"}\n',
+      );
+      let finishRenderer: ((result: ChildResult) => void) | undefined;
+      const renderer: RunningChild = {
+        result: new Promise((resolve) => {
+          finishRenderer = resolve;
         }),
-        launchBridge: (options) =>
-          launchChildProcess(
-            process.execPath,
-            [
-              bridgeEntry,
-              "--config",
-              options.configurationFile,
-              "--authorization",
-              options.authorizationFile,
-            ],
-            { ...process.env, ROONSCAPE_SOCKET: options.socketPath },
-          ),
-        launchRenderer: () => renderer,
-        delay: (milliseconds) =>
-          new Promise((resolve) => {
-            const timer = setTimeout(resolve, milliseconds);
-            timer.unref();
+        sendSignal: () => undefined,
+      };
+      const bridgeStarted = Promise.withResolvers<RunningChild>();
+      const commandResult = runRoonScapeCommand(
+        ["--config", configurationFile],
+        commandDependencies({
+          currentDirectory: taskDirectory,
+          authorizationFile: () => authorizationFile,
+          loadConfiguration: (file) =>
+            new FileDisplayConfigurationStore(file).load(),
+          openRuntime: async () => ({
+            socketPath,
+            cleanup: async () => undefined,
           }),
-      }),
-    );
+          launchBridge: (options) => {
+            const bridge = launchChildProcess(
+              process.execPath,
+              [
+                bridgeEntry,
+                "--config",
+                options.configurationFile,
+                "--authorization",
+                options.authorizationFile,
+              ],
+              { ...process.env, ROONSCAPE_SOCKET: options.socketPath },
+            );
+            bridgeStarted.resolve(bridge);
+            return bridge;
+          },
+          launchRenderer: () => renderer,
+          delay: (milliseconds) =>
+            new Promise((resolve) => {
+              const timer = setTimeout(resolve, milliseconds);
+              timer.unref();
+            }),
+        }),
+      );
 
-    let commandExit: number;
-    let snapshot: PresentationSnapshot;
-    try {
-      snapshot = await readFirstSnapshot(socketPath);
-    } finally {
-      finishRenderer?.({ exitCode: 0, signal: null });
-      commandExit = await commandResult;
-    }
+      let commandExit: number;
+      let snapshot: PresentationSnapshot;
+      try {
+        snapshot = await readFirstSnapshot(
+          socketPath,
+          bridgeStarted.promise.then((bridge) => bridge.result),
+          context.signal,
+        );
+      } finally {
+        finishRenderer?.({ exitCode: 0, signal: null });
+        commandExit = await commandResult;
+      }
 
-    assert.equal(commandExit, 0);
-    assert.equal(snapshot.availability, "pairingRequired");
-  });
-});
+      assert.equal(commandExit, 0);
+      assert.equal(snapshot.availability, "pairingRequired");
+    });
+  },
+);
 
 test("missing Display Configuration fails promptly without an interactive terminal", async () => {
   const errors: string[] = [];
@@ -290,6 +406,7 @@ test("first-time setup saves OLED defaults and continues into the presentation",
   assert.doesNotMatch(output.join("\n"), /Retry|Quit|Press Q/);
   assert.deepEqual(savedConfiguration, {
     trackedOutputId: "output-speaker-system",
+    trackedOutputName: "Speaker System",
     inactivity: {
       gracePeriodSeconds: 300,
       dimmedOpacity: 0.35,
@@ -309,6 +426,7 @@ test("--setup preserves the saved choices and exits without launching", async ()
   const output: string[] = [];
   const savedConfiguration = {
     trackedOutputId: "output-study",
+    trackedOutputName: "USB DAC",
     inactivity: {
       gracePeriodSeconds: 240,
       dimmedOpacity: 0.3,
@@ -352,6 +470,35 @@ test("--setup preserves the saved choices and exits without launching", async ()
   assert.match(output.join("\n"), /45 seconds/);
   assert.deepEqual(saved, savedConfiguration);
 });
+
+for (const roonServerHost of ["roll.local", "100.100.110.72"]) {
+  test(`--setup --roon-server uses ${roonServerHost}`, async () => {
+    let discoveredWith: string | undefined;
+    const result = await runRoonScapeCommand(
+      ["--setup", "--roon-server", roonServerHost],
+      commandDependencies({
+        terminalIsInteractive: () => true,
+        loadConfiguration: () => ({ trackedOutputId: "output-studio" }),
+        configurationFileExists: () => true,
+        discoverTrackedOutputs: async (_authorizationFile, _signal, host) => {
+          discoveredWith = host;
+          return [
+            {
+              trackedOutputId: "output-studio",
+              trackedOutputName: "Studio DAC",
+              trackedZoneName: "Studio",
+            },
+          ];
+        },
+        readSetupKey: scriptedSetupKeys("enter", "enter"),
+        saveConfiguration: () => undefined,
+      }),
+    );
+
+    assert.equal(result, 0);
+    assert.equal(discoveredWith, roonServerHost);
+  });
+}
 
 test("--setup refuses to wait for input without an interactive terminal", async () => {
   const errors: string[] = [];
@@ -430,6 +577,7 @@ test("--setup prefills OLED values and corrects invalid custom entries", async (
   assert.match(errors.join("\n"), /positive whole number of seconds/);
   assert.deepEqual(savedConfiguration, {
     trackedOutputId: "output-study",
+    trackedOutputName: "USB DAC",
     inactivity: {
       gracePeriodSeconds: 390,
       dimmedOpacity: 0.25,
@@ -527,6 +675,7 @@ test("--setup --config changes only the Tracked Output with a private atomic rep
     assert.equal(result, 0);
     assert.deepEqual(configurationStore.load(), {
       trackedOutputId: "output-study",
+      trackedOutputName: "USB DAC",
       inactivity: {
         gracePeriodSeconds: 240,
         dimmedOpacity: 0.3,
@@ -1439,31 +1588,55 @@ function commandDependencies(
 
 async function readFirstSnapshot(
   socketPath: string,
+  bridgeResult: Promise<ChildResult>,
+  testSignal: AbortSignal,
 ): Promise<PresentationSnapshot> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  const stopSnapshotObservation = new AbortController();
+  const snapshotSignal = AbortSignal.any([
+    testSignal,
+    stopSnapshotObservation.signal,
+  ]);
+  try {
+    return await Promise.race([
+      readSnapshotWhenAvailable(socketPath, snapshotSignal),
+      bridgeResult.then((result) => {
+        throw new Error(
+          `RoonScape Bridge exited before publishing a snapshot (${result.exitCode ?? result.signal})`,
+        );
+      }),
+    ]);
+  } finally {
+    stopSnapshotObservation.abort();
+  }
+}
+
+async function readSnapshotWhenAvailable(
+  socketPath: string,
+  signal: AbortSignal,
+): Promise<PresentationSnapshot> {
+  for (;;) {
+    signal.throwIfAborted();
     try {
       await access(socketPath);
       const client = createConnection(socketPath);
       const lines = createInterface({ input: client });
       try {
-        const [line] = (await once(lines, "line")) as [string];
+        const [line] = (await once(lines, "line", { signal })) as [string];
         return JSON.parse(line) as PresentationSnapshot;
       } finally {
         client.destroy();
       }
     } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        !("code" in error) ||
-        (error as NodeJS.ErrnoException).code !== "ENOENT" ||
-        attempt === 99
-      ) {
+      if (!isMissingPathError(error)) {
         throw error;
       }
-      await new Promise((resolve) => setTimeout(resolve, 10));
     }
+    await wait(10, undefined, { signal });
   }
-  throw new Error(`Timed out waiting for RoonScape bridge at ${socketPath}`);
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 function completedChild(result: ChildResult): RunningChild {

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>RoonScape</title>
+  <path fill="currentColor" fill-rule="evenodd" d="M12 56V8h21c14 0 22 7 22 18 0 8-4 14-12 17l13 13H42L22 36v20H12Zm10-40v20h11c9 0 14-4 14-10s-5-10-14-10H22Z"/>
+  <path d="M28 21h5c5 0 8 2 8 5s-3 5-8 5h-5" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+</svg>

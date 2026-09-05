@@ -47,6 +47,8 @@ pub enum DisplayConfigurationError {
 struct DisplayConfigurationFile {
     #[serde(rename = "trackedOutputId")]
     _tracked_output_id: String,
+    #[serde(rename = "trackedOutputName")]
+    _tracked_output_name: Option<String>,
     inactivity: Option<InactivityConfigurationFile>,
 }
 

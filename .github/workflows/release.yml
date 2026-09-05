@@ -40,7 +40,9 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
       - name: Run repository checks
-        run: npm run check
+        run: xvfb-run -a npm run check
+      - name: Run design tests
+        run: npm run test:design
       - name: Build release artifacts
         run: npm run package
       - name: Store release artifacts

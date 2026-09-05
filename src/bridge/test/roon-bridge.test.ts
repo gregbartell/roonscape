@@ -19,12 +19,21 @@ import {
   type RoonZoneSubscriptionResponse,
   type RoonStatusService,
 } from "../src/roon-bridge.js";
-import type { DisplayConfigurationStore } from "../src/display-configuration.js";
+import type {
+  LyricFeedConnectionFactory,
+  PrivateLyricEvent,
+} from "../src/lyric-feed.js";
+import { trackedNowPlaying } from "../src/lyric-feed.js";
+import type {
+  DisplayConfiguration,
+  DisplayConfigurationStore,
+} from "../src/display-configuration.js";
 import { assertSnapshotPublishable } from "../src/fixture-publisher.js";
 import {
   type PresentationSnapshot,
   validateSnapshot,
 } from "../src/snapshot.js";
+import { parseSynchronizedLyrics } from "../src/synchronized-lyrics.js";
 
 interface RoonBoundary {
   authorizationStore: AuthorizationStore;
@@ -49,14 +58,17 @@ interface RoonBoundary {
   snapshots: PresentationSnapshot[];
   statusUpdates: Array<{ message: string; isError: boolean }>;
   publicationDiagnostics: string[];
+  savedConfigurations: DisplayConfiguration[];
   currentSnapshot(): PresentationSnapshot;
+  lyricsVisible(revision: number): void;
   stop(): Promise<void>;
 }
 
 function createRoonBoundary(
-  trackedOutputId?: string,
+  configuredOutput?: string | DisplayConfiguration,
   artworkFiles: ArtworkFiles = unusedArtworkFiles(),
   now: () => Date = () => new Date("2026-08-15T19:20:00Z"),
+  createLyricFeedConnection?: LyricFeedConnectionFactory,
 ): RoonBoundary {
   let persistedState: unknown = {};
   let capturedOptions: RoonExtensionOptions | undefined;
@@ -66,6 +78,7 @@ function createRoonBoundary(
   const snapshots: PresentationSnapshot[] = [];
   const statusUpdates: Array<{ message: string; isError: boolean }> = [];
   const publicationDiagnostics: string[] = [];
+  const savedConfigurations: DisplayConfiguration[] = [];
   const imageRequests: RoonBoundary["imageRequests"] = [];
   const imageCallbacks: Array<
     (error: string | false, contentType?: string, image?: Buffer) => void
@@ -78,9 +91,16 @@ function createRoonBoundary(
       persistedState = state;
     },
   };
+  let displayConfiguration =
+    typeof configuredOutput === "string"
+      ? { trackedOutputId: configuredOutput }
+      : (configuredOutput ?? null);
   const displayConfigurationStore: DisplayConfigurationStore = {
-    load: () => (trackedOutputId === undefined ? null : { trackedOutputId }),
-    save: () => undefined,
+    load: () => displayConfiguration,
+    save: (configuration) => {
+      displayConfiguration = configuration;
+      savedConfigurations.push(configuration);
+    },
   };
   const status: RoonStatusService = {
     services: [{ name: "com.roonlabs.status:1" }],
@@ -94,8 +114,14 @@ function createRoonBoundary(
     stop_discovery: () => undefined,
     disconnect_all: () => undefined,
   };
-  const core: RoonCore = {
+  const core: RoonCore & {
+    moo?: { transport: { host: string; port: number } };
+  } = {
     core_id: "core-1",
+    moo:
+      createLyricFeedConnection === undefined
+        ? undefined
+        : { transport: { host: "roon.local", port: 9330 } },
     services: {
       RoonApiImage: {
         get_image: (imageKey, options, callback) => {
@@ -137,6 +163,7 @@ function createRoonBoundary(
       };
     },
     now,
+    createLyricFeedConnection,
   });
 
   return {
@@ -178,7 +205,9 @@ function createRoonBoundary(
     snapshots,
     statusUpdates,
     publicationDiagnostics,
+    savedConfigurations,
     currentSnapshot: () => bridge.currentSnapshot(),
+    lyricsVisible: (revision) => bridge.lyricsVisible(revision),
     stop: () => bridge.stop(),
   };
 }
@@ -406,6 +435,7 @@ async function prepareArtworkTestContext({
   image = "stable artwork",
   imageKey = "same-track-artwork",
   now,
+  createLyricFeedConnection,
   output = {
     output_id: "output-speaker-system",
     display_name: "Speaker System",
@@ -414,6 +444,7 @@ async function prepareArtworkTestContext({
   image?: string;
   imageKey?: string;
   now?: () => Date;
+  createLyricFeedConnection?: LyricFeedConnectionFactory;
   output?: RoonZone["outputs"][number];
 } = {}): Promise<ArtworkTestContext> {
   const taskDirectory = await mkdtemp(
@@ -425,6 +456,7 @@ async function prepareArtworkTestContext({
     "output-speaker-system",
     artworkFiles,
     now,
+    createLyricFeedConnection,
   );
   const zone: RoonZone = {
     zone_id: "zone-living-room",
@@ -482,19 +514,105 @@ test("publishes truthful availability across authorization and connection events
       "disconnected",
       "outputUnavailable",
     ].map((availability, revision) => ({
-      schemaVersion: 2,
+      schemaVersion: 4,
       revision,
       availability,
       playback: null,
       trackedOutput: null,
       trackedZone: null,
       nowPlaying: null,
-      progress: null,
+      timing: null,
       artwork: null,
+      lyrics: null,
     })),
   );
 
   await Promise.all(boundary.snapshots.map(validateSnapshot));
+});
+
+test("publishes the saved Tracked Output identity only when that output is unavailable", async () => {
+  const boundary = createRoonBoundary({
+    trackedOutputId: "output-speaker-system",
+    trackedOutputName: "Speaker System",
+  });
+  const extensionOptions = boundary.extensionOptions();
+  const core = boundary.core();
+
+  extensionOptions.core_paired(core);
+  assert.deepEqual(boundary.snapshots.at(-1), {
+    schemaVersion: 4,
+    revision: 1,
+    availability: "outputUnavailable",
+    playback: null,
+    trackedOutput: { name: "Speaker System" },
+    trackedZone: null,
+    nowPlaying: null,
+    timing: null,
+    artwork: null,
+    lyrics: null,
+  });
+
+  extensionOptions.core_unpaired(core);
+  assert.equal(boundary.snapshots.at(-1)?.availability, "disconnected");
+  assert.equal(boundary.snapshots.at(-1)?.trackedOutput, null);
+  await Promise.all(boundary.snapshots.map(validateSnapshot));
+});
+
+test("backfills and refreshes the persisted Tracked Output name", () => {
+  const inactivity = {
+    gracePeriodSeconds: 240,
+    dimmedOpacity: 0.3,
+    repositionCadenceSeconds: 45,
+  };
+  const boundary = createRoonBoundary({
+    trackedOutputId: "output-speaker-system",
+    inactivity,
+  });
+
+  boundary.extensionOptions().core_paired(boundary.core());
+  boundary.emitZones("Subscribed", {
+    zones: [
+      {
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
+        state: "stopped",
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Speaker System",
+          },
+        ],
+      },
+    ],
+  });
+  boundary.emitZones("Changed", {
+    zones_changed: [
+      {
+        zone_id: "zone-living-room",
+        display_name: "Living Room",
+        state: "stopped",
+        outputs: [
+          {
+            output_id: "output-speaker-system",
+            display_name: "Main Speakers",
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.deepEqual(boundary.savedConfigurations, [
+    {
+      trackedOutputId: "output-speaker-system",
+      trackedOutputName: "Speaker System",
+      inactivity,
+    },
+    {
+      trackedOutputId: "output-speaker-system",
+      trackedOutputName: "Main Speakers",
+      inactivity,
+    },
+  ]);
 });
 
 test("resolves the configured Tracked Output from the initial full zone state", async () => {
@@ -535,19 +653,20 @@ test("resolves the configured Tracked Output from the initial full zone state", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 2,
+    schemaVersion: 4,
     revision: 2,
     availability: "available",
     playback: "paused",
     trackedOutput: { name: "Speaker System" },
-    trackedZone: { name: "Living Room" },
+    trackedZone: { id: "zone-living-room", name: "Living Room" },
     nowPlaying: {
       title: "A Moment Apart",
       artist: "ODESZA",
       album: "A Moment Apart",
     },
-    progress: null,
+    timing: null,
     artwork: null,
+    lyrics: null,
   });
   await validateSnapshot(boundary.snapshots.at(-1));
 });
@@ -621,29 +740,32 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
                 : { revision: snapshot.artwork.revision },
           },
       {
-        schemaVersion: 2,
-        revision: 4,
+        schemaVersion: 4,
+        revision: 2,
         availability: "available",
         playback: "playing",
         trackedOutput: { name: "Speaker System" },
-        trackedZone: { name: "Living Room" },
+        trackedZone: { id: "zone-living-room", name: "Living Room" },
         nowPlaying: {
           title: "A Moment Apart",
           artist: "ODESZA",
           album: "A Moment Apart",
         },
-        progress: {
-          positionSeconds: 30,
+        timing: {
+          position: {
+            seconds: 30,
+            sampledAt: "2026-08-15T19:20:00.000Z",
+          },
           durationSeconds: 234,
-          sampledAt: "2026-08-15T19:20:00.000Z",
         },
-        artwork: { revision: 4 },
+        artwork: { revision: 2 },
+        lyrics: null,
       },
     );
     assert.equal(path.dirname(snapshot?.artwork?.path ?? ""), artworkDirectory);
     assert.match(
       path.basename(snapshot?.artwork?.path ?? ""),
-      /^artwork-4-.+\.jpg$/,
+      /^artwork-2-.+\.jpg$/,
     );
     await validateSnapshot(snapshot);
     assert.equal(
@@ -677,13 +799,19 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
       ],
     });
 
-    assert.deepEqual(boundary.snapshots.at(-1), {
-      ...snapshot,
-      revision: 5,
-      playback: "loading",
-    });
+    assert.deepEqual(boundary.snapshots.at(-1), snapshot);
     boundary.resolveImage("image/jpeg", Buffer.from("loading artwork"));
-    await waitFor(() => boundary.snapshots.at(-1)?.artwork?.revision === 6);
+    await waitFor(() => boundary.snapshots.at(-1)?.artwork?.revision === 3);
+    const loadingSnapshot = boundary.snapshots.at(-1);
+    assert.deepEqual(loadingSnapshot, {
+      ...snapshot,
+      revision: 3,
+      playback: "loading",
+      artwork: {
+        revision: 3,
+        path: loadingSnapshot?.artwork?.path ?? "",
+      },
+    });
 
     boundary.emitZones("Changed", {
       zones_changed: [
@@ -710,16 +838,17 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
         },
       ],
     });
+    assert.deepEqual(boundary.snapshots.at(-1), loadingSnapshot);
     boundary.resolveImage("image/jpeg", Buffer.from("revised artwork"));
     await waitFor(async () => {
       const files = await readdir(artworkDirectory);
-      return files.length === 1 && /^artwork-8-.+\.jpg$/.test(files[0] ?? "");
+      return files.length === 1 && /^artwork-4-.+\.jpg$/.test(files[0] ?? "");
     });
 
-    assert.equal(boundary.snapshots.at(-1)?.artwork?.revision, 8);
+    assert.equal(boundary.snapshots.at(-1)?.artwork?.revision, 4);
     assert.match(
       path.basename(boundary.snapshots.at(-1)?.artwork?.path ?? ""),
-      /^artwork-8-.+\.jpg$/,
+      /^artwork-4-.+\.jpg$/,
     );
     assert.equal(
       await readFile(boundary.snapshots.at(-1)?.artwork?.path ?? "", "utf8"),
@@ -749,15 +878,16 @@ test("publishes prepared display lines with compressed artwork from Roon Image",
     });
 
     assert.deepEqual(boundary.snapshots.at(-1), {
-      schemaVersion: 2,
-      revision: 9,
+      schemaVersion: 4,
+      revision: 5,
       availability: "available",
       playback: "stopped",
       trackedOutput: { name: "Speaker System" },
-      trackedZone: { name: "Living Room" },
+      trackedZone: { id: "zone-living-room", name: "Living Room" },
       nowPlaying: null,
-      progress: null,
+      timing: null,
       artwork: null,
+      lyrics: null,
     });
     assert.equal(boundary.imageRequests.length, 3);
     await waitFor(async () => (await readdir(artworkDirectory)).length === 0);
@@ -798,15 +928,17 @@ test("retains artwork through a full same-track timing update", async () => {
     assert.deepEqual(
       timingSnapshots.map((snapshot) => ({
         artwork: snapshot.artwork,
-        progress: snapshot.progress,
+        timing: snapshot.timing,
       })),
       [
         {
           artwork,
-          progress: {
-            positionSeconds: 90,
+          timing: {
+            position: {
+              seconds: 90,
+              sampledAt: "2026-08-15T19:20:05.000Z",
+            },
             durationSeconds: 234,
-            sampledAt: "2026-08-15T19:20:05.000Z",
           },
         },
       ],
@@ -852,23 +984,27 @@ test("retains artwork while pause and resume update playback truthfully", async 
     assert.deepEqual(
       playbackSnapshots.map((snapshot) => ({
         playback: snapshot.playback,
-        progress: snapshot.progress,
+        timing: snapshot.timing,
       })),
       [
         {
           playback: "paused",
-          progress: {
-            positionSeconds: 90,
+          timing: {
+            position: {
+              seconds: 90,
+              sampledAt: "2026-08-15T19:20:05.000Z",
+            },
             durationSeconds: 234,
-            sampledAt: "2026-08-15T19:20:05.000Z",
           },
         },
         {
           playback: "playing",
-          progress: {
-            positionSeconds: 91,
+          timing: {
+            position: {
+              seconds: 91,
+              sampledAt: "2026-08-15T19:20:10.000Z",
+            },
             durationSeconds: 234,
-            sampledAt: "2026-08-15T19:20:10.000Z",
           },
         },
       ],
@@ -919,7 +1055,7 @@ test("ignores a volume-only Tracked Zone update", async () => {
   }
 });
 
-test("transitions once and cleans up when artwork identity changes", async () => {
+test("publishes changed Now Playing and artwork as one Presentation Snapshot", async () => {
   const context = await prepareArtworkTestContext({
     image: "first artwork",
     imageKey: "first-artwork-key",
@@ -946,25 +1082,313 @@ test("transitions once and cleans up when artwork identity changes", async () =>
       ],
     });
 
-    assert.equal(boundary.snapshots.at(-1)?.artwork, null);
+    assert.equal(boundary.snapshots.length, snapshotCount);
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "A Moment Apart",
+    );
+    assert.deepEqual(boundary.currentSnapshot().artwork, firstArtwork);
     assert.deepEqual(
       boundary.imageRequests.map(({ imageKey }) => imageKey),
       ["first-artwork-key", "second-artwork-key"],
     );
 
     boundary.resolveImage("image/jpeg", Buffer.from("second artwork"));
-    await waitFor(() => boundary.snapshots.at(-1)?.artwork !== null);
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
     await waitFor(async () => (await readdir(artworkDirectory)).length === 1);
 
     const transitionSnapshots = boundary.snapshots.slice(snapshotCount);
     const secondArtwork = transitionSnapshots.at(-1)?.artwork;
-    assert.equal(transitionSnapshots.length, 2);
-    assert.equal(transitionSnapshots[0]?.artwork, null);
+    assert.equal(transitionSnapshots.length, 1);
+    assert.equal(transitionSnapshots[0]?.nowPlaying?.title, "Across the Room");
     assert.notDeepEqual(secondArtwork, firstArtwork);
     assert.equal(secondArtwork?.revision, transitionSnapshots.at(-1)?.revision);
     assert.equal(
       await readFile(secondArtwork?.path ?? "", "utf8"),
       "second artwork",
+    );
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("supersedes pending artwork when grouping selects a retained Tracked Zone", async () => {
+  await withArtworkTestBoundary(async (boundary) => {
+    const outgoingZone = artworkZone("outgoing-artwork-key", "Outgoing Track");
+    const incomingZone: RoonZone = {
+      ...artworkZone("incoming-artwork-key", "Incoming Track"),
+      zone_id: "zone-whole-home",
+      display_name: "Whole Home",
+    };
+
+    boundary.extensionOptions().core_paired(boundary.core());
+    boundary.emitZones("Subscribed", {
+      zones: [outgoingZone, incomingZone],
+    });
+    const snapshotCount = boundary.snapshots.length;
+
+    boundary.emitZones("Changed", {
+      zones_removed: [outgoingZone.zone_id],
+    });
+
+    assert.deepEqual(
+      boundary.imageRequests.map(({ imageKey }) => imageKey),
+      ["outgoing-artwork-key", "incoming-artwork-key"],
+    );
+
+    boundary.resolveImageRequest(
+      0,
+      "image/jpeg",
+      Buffer.from("superseded artwork"),
+    );
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.resolveImageRequest(
+      1,
+      "image/jpeg",
+      Buffer.from("incoming artwork"),
+    );
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
+    assert.equal(boundary.currentSnapshot().trackedZone?.name, "Whole Home");
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.equal(
+      await readFile(boundary.currentSnapshot().artwork?.path ?? "", "utf8"),
+      "incoming artwork",
+    );
+  });
+});
+
+test("clears artwork when grouping selects a retained zone without an image", async () => {
+  await withArtworkTestBoundary(async (boundary) => {
+    const outgoingZone = artworkZone("outgoing-artwork-key", "Outgoing Track");
+    const incomingZone: RoonZone = {
+      ...artworkZone("unused-artwork-key", "Incoming Track"),
+      zone_id: "zone-whole-home",
+      display_name: "Whole Home",
+      now_playing: {
+        three_line: { line1: "Incoming Track", line2: "Incoming Artist" },
+      },
+    };
+
+    boundary.extensionOptions().core_paired(boundary.core());
+    boundary.emitZones("Subscribed", {
+      zones: [outgoingZone, incomingZone],
+    });
+    boundary.resolveImage("image/jpeg", Buffer.from("outgoing artwork"));
+    await waitFor(() => boundary.currentSnapshot().artwork !== null);
+    const snapshotCount = boundary.snapshots.length;
+
+    boundary.emitZones("Changed", {
+      zones_removed: [outgoingZone.zone_id],
+    });
+
+    assert.equal(boundary.snapshots.length, snapshotCount + 1);
+    assert.equal(boundary.currentSnapshot().trackedZone?.name, "Whole Home");
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.equal(boundary.currentSnapshot().artwork, null);
+    assert.deepEqual(
+      boundary.imageRequests.map(({ imageKey }) => imageKey),
+      ["outgoing-artwork-key"],
+    );
+  });
+});
+
+test("publishes only the latest playback state when incoming artwork arrives", async () => {
+  const context = await prepareArtworkTestContext();
+  const { boundary, zone } = context;
+
+  try {
+    const incomingNowPlaying = {
+      image_key: "incoming-artwork-key",
+      three_line: { line1: "Incoming Track", line2: "Incoming Artist" },
+    };
+    const snapshotCount = boundary.snapshots.length;
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        { ...zone, state: "loading", now_playing: incomingNowPlaying },
+      ],
+    });
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        { ...zone, state: "playing", now_playing: incomingNowPlaying },
+      ],
+    });
+
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.resolveImage("image/jpeg", Buffer.from("incoming artwork"));
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
+    assert.equal(boundary.currentSnapshot().playback, "playing");
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.ok(boundary.currentSnapshot().artwork);
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("coalesces metadata that precedes its changed artwork identity", async () => {
+  const context = await prepareArtworkTestContext();
+  const { boundary, zone } = context;
+
+  try {
+    const metadataChanged: RoonZone = {
+      ...zone,
+      now_playing: {
+        ...zone.now_playing,
+        three_line: { line1: "Incoming Track", line2: "Incoming Artist" },
+      },
+    };
+    const snapshotCount = boundary.snapshots.length;
+    boundary.emitZones("Changed", { zones_changed: [metadataChanged] });
+
+    assert.equal(boundary.snapshots.length, snapshotCount);
+    assert.deepEqual(
+      boundary.imageRequests.map(({ imageKey }) => imageKey),
+      ["same-track-artwork", "same-track-artwork"],
+    );
+
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          ...metadataChanged,
+          now_playing: {
+            ...metadataChanged.now_playing,
+            image_key: "incoming-artwork-key",
+          },
+        },
+      ],
+    });
+    boundary.resolveImageRequest(
+      1,
+      "image/jpeg",
+      Buffer.from("superseded artwork"),
+    );
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.resolveImageRequest(
+      2,
+      "image/jpeg",
+      Buffer.from("incoming artwork"),
+    );
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.equal(
+      await readFile(boundary.currentSnapshot().artwork?.path ?? "", "utf8"),
+      "incoming artwork",
+    );
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("coalesces an artwork identity that precedes its changed metadata", async () => {
+  const context = await prepareArtworkTestContext();
+  const { boundary, zone } = context;
+
+  try {
+    const artworkIdentityChanged: RoonZone = {
+      ...zone,
+      now_playing: {
+        ...zone.now_playing,
+        image_key: "incoming-artwork-key",
+      },
+    };
+    const snapshotCount = boundary.snapshots.length;
+    boundary.emitZones("Changed", {
+      zones_changed: [artworkIdentityChanged],
+    });
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.emitZones("Changed", {
+      zones_changed: [
+        {
+          ...artworkIdentityChanged,
+          now_playing: {
+            ...artworkIdentityChanged.now_playing,
+            three_line: {
+              line1: "Incoming Track",
+              line2: "Incoming Artist",
+            },
+          },
+        },
+      ],
+    });
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.resolveImage("image/jpeg", Buffer.from("incoming artwork"));
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.equal(
+      await readFile(boundary.currentSnapshot().artwork?.path ?? "", "utf8"),
+      "incoming artwork",
+    );
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("holds incoming lyrics with the pending Now Playing composition", async () => {
+  let emitLyrics:
+    | ((
+        event: PrivateLyricEvent,
+        observedNowPlayingIdentity?: string | null,
+      ) => void)
+    | undefined;
+  const context = await prepareArtworkTestContext({
+    createLyricFeedConnection: (options) => {
+      emitLyrics = options.onEvent;
+      return { reportViewed: () => undefined, stop: () => undefined };
+    },
+  });
+  const { boundary, zone } = context;
+
+  try {
+    const incomingZone: RoonZone = {
+      ...zone,
+      now_playing: {
+        image_key: "incoming-artwork-key",
+        seek_position: 0,
+        length: 180,
+        three_line: { line1: "Incoming Track", line2: "Incoming Artist" },
+      },
+    };
+    const snapshotCount = boundary.snapshots.length;
+    boundary.emitZones("Changed", { zones_changed: [incomingZone] });
+    emitLyrics?.(
+      {
+        zone_id: incomingZone.zone_id,
+        key: "incoming-lyrics-key",
+        lrc: "[00:01.00]Incoming lyric",
+      },
+      trackedNowPlaying(incomingZone)?.nowPlayingIdentity,
+    );
+
+    assert.equal(boundary.snapshots.length, snapshotCount);
+
+    boundary.resolveImage("image/jpeg", Buffer.from("incoming artwork"));
+    await waitFor(() => boundary.snapshots.length === snapshotCount + 1);
+    assert.equal(
+      boundary.currentSnapshot().nowPlaying?.title,
+      "Incoming Track",
+    );
+    assert.equal(
+      boundary.currentSnapshot().lyrics?.cues[0]?.text,
+      "Incoming lyric",
     );
   } finally {
     await context.cleanup();
@@ -1063,7 +1487,7 @@ async function waitFor(
   assert.fail("Timed out waiting for asynchronous bridge work");
 }
 
-test("publishes meaningful progress from the Tracked Zone timing sample", async () => {
+test("publishes meaningful timing from the Tracked Zone sample", async () => {
   const boundary = createRoonBoundary("output-speaker-system");
 
   boundary.extensionOptions().core_paired(boundary.core());
@@ -1087,15 +1511,17 @@ test("publishes meaningful progress from the Tracked Zone timing sample", async 
     ],
   });
 
-  assert.deepEqual(boundary.snapshots.at(-1)?.progress, {
-    positionSeconds: 82,
+  assert.deepEqual(boundary.snapshots.at(-1)?.timing, {
+    position: {
+      seconds: 82,
+      sampledAt: "2026-08-15T19:20:00.000Z",
+    },
     durationSeconds: 234,
-    sampledAt: "2026-08-15T19:20:00.000Z",
   });
   await validateSnapshot(boundary.snapshots.at(-1));
 });
 
-test("clamps source progress at duration", () => {
+test("clamps source position at duration", () => {
   const boundary = createRoonBoundary("output-speaker-system");
 
   boundary.extensionOptions().core_paired(boundary.core());
@@ -1116,22 +1542,56 @@ test("clamps source progress at duration", () => {
     ],
   });
 
-  assert.equal(boundary.snapshots.at(-1)?.progress?.positionSeconds, 234);
+  assert.equal(boundary.snapshots.at(-1)?.timing?.position?.seconds, 234);
 });
 
-test("omits progress when Roon timing is not meaningful", () => {
-  const invalidTiming = [
-    { seek_position: Number.NaN, length: 234 },
-    { seek_position: Number.POSITIVE_INFINITY, length: 234 },
-    { seek_position: -1, length: 234 },
-    { seek_position: 82, length: 0 },
-    { seek_position: 82, length: -1 },
-    { seek_position: 82, length: Number.POSITIVE_INFINITY },
-    { seek_position: 82 },
-    { length: 234 },
+test("retains each independently meaningful Roon timing field", () => {
+  const timingCases = [
+    [
+      { seek_position: Number.NaN, length: 234 },
+      { position: null, durationSeconds: 234 },
+    ],
+    [
+      { seek_position: Number.POSITIVE_INFINITY, length: 234 },
+      { position: null, durationSeconds: 234 },
+    ],
+    [
+      { seek_position: -1, length: 234 },
+      { position: null, durationSeconds: 234 },
+    ],
+    [
+      { seek_position: 82, length: 0 },
+      {
+        position: { seconds: 82, sampledAt: "2026-08-15T19:20:00.000Z" },
+        durationSeconds: null,
+      },
+    ],
+    [
+      { seek_position: 82, length: -1 },
+      {
+        position: { seconds: 82, sampledAt: "2026-08-15T19:20:00.000Z" },
+        durationSeconds: null,
+      },
+    ],
+    [
+      { seek_position: 82, length: Number.POSITIVE_INFINITY },
+      {
+        position: { seconds: 82, sampledAt: "2026-08-15T19:20:00.000Z" },
+        durationSeconds: null,
+      },
+    ],
+    [
+      { seek_position: 82 },
+      {
+        position: { seconds: 82, sampledAt: "2026-08-15T19:20:00.000Z" },
+        durationSeconds: null,
+      },
+    ],
+    [{ length: 234 }, { position: null, durationSeconds: 234 }],
+    [{ seek_position: Number.NaN, length: 0 }, null],
   ];
 
-  for (const nowPlaying of invalidTiming) {
+  for (const [nowPlaying, expected] of timingCases) {
     const boundary = createRoonBoundary("output-speaker-system");
     boundary.extensionOptions().core_paired(boundary.core());
     boundary.emitZones("Subscribed", {
@@ -1146,12 +1606,12 @@ test("omits progress when Roon timing is not meaningful", () => {
               display_name: "Speaker System",
             },
           ],
-          now_playing: nowPlaying,
+          now_playing: nowPlaying as RoonZone["now_playing"],
         },
       ],
     });
 
-    assert.equal(boundary.snapshots.at(-1)?.progress, null);
+    assert.deepEqual(boundary.snapshots.at(-1)?.timing, expected);
   }
 });
 
@@ -1188,7 +1648,7 @@ test("publishes each playback state and clears timing when stopped", () => {
     boundary.snapshots.slice(-4).map((snapshot) => ({
       playback: snapshot.playback,
       title: snapshot.nowPlaying?.title ?? null,
-      progress: snapshot.progress?.positionSeconds ?? null,
+      progress: snapshot.timing?.position?.seconds ?? null,
     })),
     [
       { playback: "playing", title: "A Moment Apart", progress: 82 },
@@ -1240,25 +1700,287 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 2,
+    schemaVersion: 4,
     revision: 3,
     availability: "available",
     playback: "playing",
     trackedOutput: { name: "Speaker System" },
-    trackedZone: { name: "Living Room" },
+    trackedZone: { id: "zone-living-room", name: "Living Room" },
     nowPlaying: {
       title: "A Moment Apart",
       artist: "ODESZA",
       album: "A Moment Apart",
     },
-    progress: {
-      positionSeconds: 30,
+    timing: {
+      position: {
+        seconds: 30,
+        sampledAt: "2026-08-15T19:20:05.000Z",
+      },
       durationSeconds: 234,
-      sampledAt: "2026-08-15T19:20:05.000Z",
     },
     artwork: null,
+    lyrics: null,
   });
   await validateSnapshot(boundary.snapshots.at(-1));
+});
+
+test("correlates the optional Lyric Feed with current Tracked Zone Now Playing", () => {
+  let emitLyrics:
+    | ((
+        event: PrivateLyricEvent,
+        observedNowPlayingIdentity?: string | null,
+      ) => void)
+    | undefined;
+  const reports: string[] = [];
+  const connectionEndpoints: unknown[] = [];
+  const createLyricFeedConnection: LyricFeedConnectionFactory = (options) => {
+    connectionEndpoints.push({
+      endpoint: options.endpoint,
+      coreId: options.expectedCoreId,
+    });
+    emitLyrics = options.onEvent;
+    return {
+      reportViewed: (key) => reports.push(key),
+      stop: () => undefined,
+    };
+  };
+  const boundary = createRoonBoundary(
+    "output-speaker-system",
+    unusedArtworkFiles(),
+    () => new Date("2026-08-15T19:20:00Z"),
+    createLyricFeedConnection,
+  );
+  boundary.extensionOptions().core_paired(boundary.core());
+  const trackAZone: RoonZone = {
+    ...artworkZone("track-a-artwork", "Track A"),
+    now_playing: {
+      seek_position: 1,
+      length: 120,
+      three_line: { line1: "Track A", line2: "Artist" },
+    },
+  };
+  boundary.emitZones("Subscribed", {
+    zones: [trackAZone],
+  });
+
+  emitLyrics?.({
+    zone_id: "zone-office",
+    key: "wrong-zone-key",
+    lrc: "[00:01.00]Wrong zone",
+  });
+  emitLyrics?.(
+    {
+      zone_id: "zone-living-room",
+      key: "track-a-key",
+      lrc: "[00:01.00]First\n[00:04.00]Second",
+    },
+    trackedNowPlaying(trackAZone)?.nowPlayingIdentity,
+  );
+
+  assert.deepEqual(connectionEndpoints, [
+    { endpoint: { host: "roon.local", port: 9330 }, coreId: "core-1" },
+  ]);
+  assert.deepEqual(boundary.currentSnapshot().lyrics, {
+    cues: [
+      { atSeconds: 1, text: "First" },
+      { atSeconds: 4, text: "Second" },
+    ],
+  });
+  assert.deepEqual(reports, []);
+  boundary.lyricsVisible(boundary.currentSnapshot().revision);
+  boundary.lyricsVisible(boundary.currentSnapshot().revision);
+  assert.deepEqual(reports, ["track-a-key"]);
+
+  const trackTransitionSnapshotStart = boundary.snapshots.length;
+  const trackBZone: RoonZone = {
+    ...artworkZone("track-b-artwork", "Track B"),
+    now_playing: {
+      seek_position: 0,
+      length: 140,
+      three_line: { line1: "Track B", line2: "Artist" },
+    },
+  };
+  emitLyrics?.(
+    {
+      zone_id: "zone-living-room",
+      key: "track-b-key",
+      lrc: "[00:01.00]Track B cue",
+    },
+    trackedNowPlaying(trackBZone)?.nowPlayingIdentity,
+  );
+  assert.equal(boundary.currentSnapshot().nowPlaying?.title, "Track A");
+  assert.equal(boundary.currentSnapshot().lyrics?.cues[0]?.text, "First");
+
+  boundary.emitZones("Changed", {
+    zones_changed: [trackBZone],
+  });
+  assert.equal(boundary.currentSnapshot().nowPlaying?.title, "Track B");
+  assert.equal(boundary.currentSnapshot().lyrics?.cues[0]?.text, "Track B cue");
+  assert.ok(
+    boundary.snapshots
+      .slice(trackTransitionSnapshotStart)
+      .every(
+        (snapshot) =>
+          snapshot.nowPlaying?.title !== "Track A" ||
+          snapshot.lyrics?.cues[0]?.text !== "Track B cue",
+      ),
+  );
+
+  emitLyrics?.(
+    {
+      zone_id: "zone-living-room",
+      key: "track-b-key",
+      lrc: "[00:02.00]Track B updated cue",
+    },
+    trackedNowPlaying(trackBZone)?.nowPlayingIdentity,
+  );
+  assert.equal(
+    boundary.currentSnapshot().lyrics?.cues[0]?.text,
+    "Track B updated cue",
+  );
+  emitLyrics?.(
+    {
+      zone_id: "zone-living-room",
+      key: "track-a-key",
+      lrc: "[00:02.00]Late stale text",
+    },
+    trackedNowPlaying(trackBZone)?.nowPlayingIdentity,
+  );
+
+  assert.equal(boundary.currentSnapshot().nowPlaying?.title, "Track B");
+  assert.equal(
+    boundary.currentSnapshot().lyrics?.cues[0]?.text,
+    "Track B updated cue",
+  );
+});
+
+test("publishes an accepted lyric timeline independently of timing completeness", () => {
+  let emitLyrics:
+    | ((
+        event: PrivateLyricEvent,
+        observedNowPlayingIdentity?: string | null,
+      ) => void)
+    | undefined;
+  const boundary = createRoonBoundary(
+    "output-speaker-system",
+    unusedArtworkFiles(),
+    () => new Date("2026-08-15T19:20:00Z"),
+    (options) => {
+      emitLyrics = options.onEvent;
+      return { reportViewed: () => undefined, stop: () => undefined };
+    },
+  );
+  boundary.extensionOptions().core_paired(boundary.core());
+  boundary.emitZones("Subscribed", {
+    zones: [
+      {
+        ...artworkZone("track-a-artwork", "Track A"),
+        now_playing: {
+          length: 120,
+          three_line: { line1: "Track A", line2: "Artist" },
+        },
+      },
+    ],
+  });
+  const zone = {
+    ...artworkZone("track-a-artwork", "Track A"),
+    now_playing: {
+      length: 120,
+      three_line: { line1: "Track A", line2: "Artist" },
+    },
+  };
+  emitLyrics?.(
+    {
+      zone_id: "zone-living-room",
+      key: "track-a-key",
+      lrc: "[00:01.00]First\n[00:04.00]Second",
+    },
+    trackedNowPlaying(zone)?.nowPlayingIdentity,
+  );
+  assert.deepEqual(boundary.currentSnapshot().lyrics, {
+    cues: [
+      { atSeconds: 1, text: "First" },
+      { atSeconds: 4, text: "Second" },
+    ],
+  });
+
+  boundary.emitZones("Changed", {
+    zones_seek_changed: [{ zone_id: "zone-living-room", seek_position: 2 }],
+  });
+
+  assert.deepEqual(boundary.currentSnapshot().lyrics, {
+    cues: [
+      { atSeconds: 1, text: "First" },
+      { atSeconds: 4, text: "Second" },
+    ],
+  });
+});
+
+test("drops an unpublishable lyric timeline without blocking ordinary snapshots", () => {
+  let emitLyrics: ((event: PrivateLyricEvent) => void) | undefined;
+  const boundary = createRoonBoundary(
+    "output-speaker-system",
+    unusedArtworkFiles(),
+    () => new Date("2026-08-15T19:20:00Z"),
+    (options) => {
+      emitLyrics = options.onEvent;
+      return { reportViewed: () => undefined, stop: () => undefined };
+    },
+  );
+  boundary.extensionOptions().core_paired(boundary.core());
+  const initialZone: RoonZone = {
+    ...artworkZone("track-a-artwork", "Track A"),
+    now_playing: {
+      seek_position: 1,
+      length: 300,
+      three_line: { line1: "Track A", line2: "Artist" },
+    },
+  };
+  boundary.emitZones("Subscribed", { zones: [initialZone] });
+
+  const largeLrc = Array.from({ length: 256 }, (_, index) => {
+    const minutes = String(Math.floor(index / 60)).padStart(2, "0");
+    const seconds = String(index % 60).padStart(2, "0");
+    return `[${minutes}:${seconds}.00]${"🎵".repeat(60)}`;
+  }).join("\n");
+  assert.ok(Buffer.byteLength(largeLrc, "utf8") <= 64 * 1024);
+  const largeTimeline = parseSynchronizedLyrics(largeLrc);
+  assert.ok(largeTimeline);
+  assert.throws(
+    () =>
+      assertSnapshotPublishable({
+        ...boundary.currentSnapshot(),
+        revision: boundary.currentSnapshot().revision + 1,
+        lyrics: largeTimeline,
+      }),
+    /Snapshot exceeds 64 KiB/u,
+  );
+  emitLyrics?.({
+    zone_id: "zone-living-room",
+    key: "large-track-a-key",
+    lrc: largeLrc,
+  });
+
+  assert.equal(boundary.currentSnapshot().lyrics, null);
+  assert.deepEqual(boundary.publicationDiagnostics, []);
+
+  boundary.emitZones("Changed", {
+    zones_changed: [
+      {
+        ...initialZone,
+        now_playing: {
+          ...initialZone.now_playing,
+          three_line: { line1: "Track A (Remastered)", line2: "Artist" },
+        },
+      },
+    ],
+  });
+
+  assert.equal(
+    boundary.currentSnapshot().nowPlaying?.title,
+    "Track A (Remastered)",
+  );
+  assert.equal(boundary.currentSnapshot().lyrics, null);
 });
 
 test("follows the configured Tracked Output through grouping and ungrouping", () => {
@@ -1308,6 +2030,7 @@ test("follows the configured Tracked Output through grouping and ungrouping", ()
     ],
   });
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedZone, {
+    id: "zone-whole-home",
     name: "Whole Home",
   });
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedOutput, {
@@ -1351,13 +2074,13 @@ test("follows the configured Tracked Output through grouping and ungrouping", ()
         revision: 3,
         playback: "playing",
         trackedOutput: { name: "Speaker System" },
-        trackedZone: { name: "Whole Home" },
+        trackedZone: { id: "zone-whole-home", name: "Whole Home" },
       },
       {
         revision: 4,
         playback: "paused",
         trackedOutput: { name: "Speaker System" },
-        trackedZone: { name: "Living Room" },
+        trackedZone: { id: "zone-living-room-new", name: "Living Room" },
       },
     ],
   );
@@ -1415,6 +2138,7 @@ test("publishes Tracked Output and Zone renames but ignores unrelated zones", ()
 
   assert.equal(boundary.snapshots.length, snapshotCount);
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedZone, {
+    id: "zone-living-room",
     name: "Living Room",
   });
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedOutput, {
@@ -1436,6 +2160,7 @@ test("publishes Tracked Output and Zone renames but ignores unrelated zones", ()
 
   assert.equal(boundary.snapshots.length, snapshotCount + 1);
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedZone, {
+    id: "zone-living-room",
     name: "Listening Room",
   });
   assert.deepEqual(boundary.snapshots.at(-1)?.trackedOutput, {
@@ -1476,15 +2201,16 @@ test("clears presentation state when the configured Tracked Output is removed", 
   });
 
   assert.deepEqual(boundary.snapshots.at(-1), {
-    schemaVersion: 2,
+    schemaVersion: 4,
     revision: 3,
     availability: "outputUnavailable",
     playback: null,
-    trackedOutput: null,
+    trackedOutput: { name: "Speaker System" },
     trackedZone: null,
     nowPlaying: null,
-    progress: null,
+    timing: null,
     artwork: null,
+    lyrics: null,
   });
   await validateSnapshot(boundary.snapshots.at(-1));
 });

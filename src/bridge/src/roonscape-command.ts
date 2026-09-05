@@ -5,6 +5,10 @@ import {
   rejectRemovedDisplayConfigurationOverride,
 } from "./display-configuration.js";
 import { runSetup, type SetupDependencies } from "./first-time-setup.js";
+import {
+  parseRoonServerHost,
+  type RoonServerHost,
+} from "./roon-server-host.js";
 
 export type TerminationSignal = "SIGINT" | "SIGTERM";
 
@@ -26,6 +30,7 @@ export interface OwnedRuntime {
 export interface BridgeLaunchOptions {
   authorizationFile: string;
   configurationFile: string;
+  roonServerHost?: RoonServerHost;
   socketPath: string;
 }
 
@@ -49,7 +54,7 @@ export interface RoonScapeCommandDependencies extends SetupDependencies {
   ): () => void;
 }
 
-const usage = `Usage: roonscape [--setup] [--config PATH]
+const usage = `Usage: roonscape [--setup] [--config PATH] [--roon-server HOST]
 
   Show what Roon's playing.
   Display only, no controls.
@@ -57,6 +62,8 @@ const usage = `Usage: roonscape [--setup] [--config PATH]
 Options:
   --setup        Reconfigure and exit without launching
   --config PATH  Use this Display Configuration
+  --roon-server HOST
+                 Discover this Roon Server Host directly
   --help         Show this help
   --version      Show the RoonScape version`;
 
@@ -122,6 +129,7 @@ export async function runRoonScapeCommand(
         dependencies,
         configuration,
         setupAbort.signal,
+        options.roonServerHost,
       );
       if (options.setupRequested) {
         return 0;
@@ -140,7 +148,11 @@ export async function runRoonScapeCommand(
   }
 
   try {
-    return await runConfiguredSession(configurationFile, dependencies);
+    return await runConfiguredSession(
+      configurationFile,
+      dependencies,
+      options.roonServerHost,
+    );
   } catch (error) {
     dependencies.writeError(
       `Could not launch RoonScape: ${error instanceof Error ? error.message : String(error)}`,
@@ -154,8 +166,9 @@ function isAbortError(error: unknown): boolean {
 }
 
 interface LaunchOptions {
-  setupRequested: boolean;
   configurationPath?: string;
+  roonServerHost?: RoonServerHost;
+  setupRequested: boolean;
 }
 
 function parseLaunchOptions(arguments_: string[]): LaunchOptions | null {
@@ -173,6 +186,15 @@ function parseLaunchOptions(arguments_: string[]): LaunchOptions | null {
         return null;
       }
       options.configurationPath = configurationPath;
+      index += 1;
+      continue;
+    }
+    if (argument === "--roon-server" && options.roonServerHost === undefined) {
+      const roonServerHost = parseRoonServerHost(arguments_[index + 1] ?? "");
+      if (roonServerHost === null) {
+        return null;
+      }
+      options.roonServerHost = roonServerHost;
       index += 1;
       continue;
     }
@@ -200,6 +222,7 @@ type SessionEnding =
 async function runConfiguredSession(
   configurationFile: string,
   dependencies: RoonScapeCommandDependencies,
+  roonServerHost?: RoonServerHost,
 ): Promise<number> {
   const runtime = await dependencies.openRuntime();
   let bridge: MonitoredChild | undefined;
@@ -220,6 +243,7 @@ async function runConfiguredSession(
       dependencies.launchBridge({
         authorizationFile: dependencies.authorizationFile(),
         configurationFile,
+        roonServerHost,
         socketPath: runtime.socketPath,
       }),
     );

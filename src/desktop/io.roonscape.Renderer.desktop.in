@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=RoonScape
+Comment=A lightweight Now Playing display for Roon.
+Exec=@EXEC@
+Icon=io.roonscape.Renderer
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=Roon;Music;Now Playing;
+StartupWMClass=io.roonscape.Renderer
+X-RoonScape-Root=@ROOT@

@@ -2,14 +2,16 @@ mod activity_waveform;
 mod artwork_cache;
 mod bounded_lru_cache;
 mod gradient_cache;
+mod lyric_motion;
 mod status_symbol;
 mod view;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::env;
 use std::error::Error;
-use std::io;
+use std::io::{self, Read, Write};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::rc::Rc;
@@ -23,8 +25,8 @@ use roonscape_renderer::{
     FixtureNavigation, FixtureSelection, FixtureSelectionIdentity, InactivityConfiguration,
     NowPlayingTitleFace, PaintedFixtureSelection, Presentation, PresentationBehavior,
     PresentationState, PresentationTime, PresentationUpdate, RendererAction, RendererKey,
-    RendererKeyboard, SnapshotEvent, SnapshotSubscription, Viewport, current_process_memory_bytes,
-    display_configuration_file_path, load_inactivity_configuration,
+    RendererKeyboard, SnapshotEvent, SnapshotSubscription, Viewport, classify_presentation_update,
+    current_process_memory_bytes, display_configuration_file_path, load_inactivity_configuration,
     register_packaged_fallback_fonts, reject_removed_display_configuration_override,
     select_capture_typography, select_typography,
 };
@@ -38,6 +40,7 @@ const SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(250);
 struct CaptureConfiguration {
     viewport: Option<Viewport>,
     typography: Option<NowPlayingTitleFace>,
+    reduced_animation: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -61,8 +64,17 @@ struct RendererConnections {
     capture_control: Option<Rc<CaptureControl>>,
 }
 
+#[derive(Clone, Copy)]
+enum FirstRevealedPaintPhase {
+    WaitingForReveal,
+    WaitingForRepaint,
+    Complete,
+}
+
 struct PresentationRuntime {
     presentation: Rc<RefCell<PresentationState>>,
+    rendered_presentation: RefCell<Presentation>,
+    reported_lyric_visibility: Cell<Option<u64>>,
     presentation_view: Rc<RefCell<PresentationView>>,
     updates: Option<Rc<SnapshotSubscription>>,
     capture_control: Option<Rc<CaptureControl>>,
@@ -81,7 +93,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("RoonScape renderer: {error}");
+            eprintln!("RoonScape Renderer: {error}");
             ExitCode::FAILURE
         }
     }
@@ -148,6 +160,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let repository_root = resource_root()?;
     register_packaged_fallback_fonts(&repository_root.join("src/renderer"))?;
 
+    // Keep X11 WM_CLASS aligned with the desktop entry and Wayland application ID.
+    glib::set_prgname(Some(APPLICATION_ID));
     let application = gtk::Application::builder()
         .application_id(APPLICATION_ID)
         .build();
@@ -210,23 +224,44 @@ fn build_window(
 ) -> Result<(), Box<dyn Error>> {
     let renderer_configuration = startup.configuration;
     let progress_clock = startup.progress_clock;
-    if renderer_configuration.behavior == PresentationBehavior::StaticFixture
+    if (renderer_configuration.behavior == PresentationBehavior::StaticFixture
+        || renderer_configuration.capture.reduced_animation)
         && let Some(settings) = gtk::Settings::default()
     {
         settings.set_gtk_enable_animations(false);
     }
-    let viewport = renderer_configuration
+    let configured_viewport = renderer_configuration
         .capture
         .viewport
         .unwrap_or(Viewport::WINDOWED_FIXTURE);
+    let fullscreen = renderer_configuration.capture.viewport.is_none()
+        && env::var_os("ROONSCAPE_WINDOWED").is_none();
+    let first_revealed_paint_control = env::var_os("ROONSCAPE_TEST_FIRST_REVEALED_PAINT_CONTROL")
+        .map(PathBuf::from)
+        .map(|control_socket_path| UnixStream::connect(&control_socket_path))
+        .transpose()?;
+    if first_revealed_paint_control.is_some() && !fullscreen {
+        return Err(
+            "ROONSCAPE_TEST_FIRST_REVEALED_PAINT_CONTROL requires fullscreen operation".into(),
+        );
+    }
     let window = gtk::ApplicationWindow::builder()
         .application(application)
         .decorated(false)
-        .default_width(viewport.width_px as i32)
-        .default_height(viewport.height_px as i32)
+        .default_width(configured_viewport.width_px as i32)
+        .default_height(configured_viewport.height_px as i32)
         .show_menubar(false)
         .title("RoonScape")
+        .icon_name(APPLICATION_ID)
         .build();
+    gtk::IconTheme::for_display(&WidgetExt::display(&window))
+        .add_search_path(repository_root.join("src/desktop/icons"));
+    let fullscreen_viewport = if fullscreen {
+        present_fullscreen(&window)
+    } else {
+        None
+    };
+    let initial_viewport = fullscreen_viewport.unwrap_or(configured_viewport);
     let available_families = window
         .pango_context()
         .font_map()
@@ -254,22 +289,27 @@ fn build_window(
     });
     let rendering = if connections.capture_control.is_some() {
         RenderingConfiguration::capture(typography, renderer_configuration.behavior)
+    } else if connections.fixture_navigation.is_some() {
+        RenderingConfiguration::fixture(typography, renderer_configuration.behavior)
     } else {
-        RenderingConfiguration::runtime(typography, renderer_configuration.behavior)
+        RenderingConfiguration::live(typography, renderer_configuration.behavior)
     };
     let presentation_view = Rc::new(RefCell::new(PresentationView::new(
         presentation.borrow().revision(),
         &initial_frame.presentation,
+        initial_viewport,
         repository_root,
         palette_provider,
         initial_diagnostics.as_deref(),
         rendering,
     )));
-    presentation_view.borrow_mut().apply_viewport(viewport);
     presentation_view
         .borrow_mut()
         .apply_inactivity(initial_frame.inactivity);
     let display = gtk::Overlay::new();
+    if fullscreen {
+        display.set_opacity(0.0);
+    }
     display.set_child(Some(&presentation_view.borrow().root()));
     window.set_child(Some(&display));
 
@@ -292,7 +332,7 @@ fn build_window(
                 if let Some(navigation) = navigation.as_ref()
                     && let Err(error) = navigation.borrow_mut().send(intent)
                 {
-                    eprintln!("RoonScape renderer: could not navigate Fixture Mode: {error}");
+                    eprintln!("RoonScape Renderer: could not navigate Fixture Mode: {error}");
                 }
                 glib::Propagation::Stop
             }
@@ -310,6 +350,8 @@ fn build_window(
 
     let runtime = Rc::new(PresentationRuntime {
         presentation,
+        rendered_presentation: RefCell::new(initial_frame.presentation.clone()),
+        reported_lyric_visibility: Cell::new(None),
         presentation_view: presentation_view.clone(),
         updates: connections.snapshots,
         capture_control: connections.capture_control,
@@ -358,10 +400,19 @@ fn build_window(
 
     install_diagnostics_updates(&window, diagnostics, presentation_view);
 
-    if renderer_configuration.capture.viewport.is_none()
-        && env::var_os("ROONSCAPE_WINDOWED").is_none()
-    {
-        present_fullscreen(&window);
+    if fullscreen {
+        let mapped_runtime = Rc::clone(&runtime);
+        window.connect_map(move |_| {
+            mapped_runtime.prepare_first_visible_frame();
+        });
+        let first_frame_runtime = Rc::clone(&runtime);
+        window.add_tick_callback(move |_, _| {
+            if first_frame_runtime.prepare_first_visible_frame() {
+                glib::ControlFlow::Break
+            } else {
+                glib::ControlFlow::Continue
+            }
+        });
     }
 
     if let Some(milliseconds) = env::var("ROONSCAPE_FIXTURE_AUTO_CLOSE_MS")
@@ -374,6 +425,63 @@ fn build_window(
         });
     }
 
+    if let Some(first_revealed_paint_control) = first_revealed_paint_control {
+        let first_revealed_paint_runtime = Rc::clone(&runtime);
+        let first_revealed_paint_control = Rc::new(RefCell::new(first_revealed_paint_control));
+        let first_revealed_paint_phase =
+            Rc::new(Cell::new(FirstRevealedPaintPhase::WaitingForReveal));
+        let first_revealed_paint_display = display.clone();
+        window.connect_map(move |window| {
+            let Some(frame_clock) = window.frame_clock() else {
+                first_revealed_paint_runtime
+                    .fail("fullscreen renderer window has no frame clock after mapping".into());
+                return;
+            };
+            let first_revealed_paint_runtime = Rc::clone(&first_revealed_paint_runtime);
+            let first_revealed_paint_control = Rc::clone(&first_revealed_paint_control);
+            let first_revealed_paint_phase = Rc::clone(&first_revealed_paint_phase);
+            let first_revealed_paint_display = first_revealed_paint_display.clone();
+            let observed_frame_clock = frame_clock.clone();
+            frame_clock.begin_updating();
+            frame_clock.connect_after_paint(move |_| match first_revealed_paint_phase.get() {
+                FirstRevealedPaintPhase::WaitingForReveal => {
+                    if first_revealed_paint_display.opacity() == 0.0 {
+                        return;
+                    }
+                    first_revealed_paint_phase.set(FirstRevealedPaintPhase::WaitingForRepaint);
+                    let result = {
+                        let mut control = first_revealed_paint_control.borrow_mut();
+                        let mut release = [0];
+                        control
+                            .write_all(b"painted\n")
+                            .and_then(|()| control.read_exact(&mut release))
+                    };
+                    if let Err(error) = result {
+                        first_revealed_paint_phase.set(FirstRevealedPaintPhase::Complete);
+                        observed_frame_clock.end_updating();
+                        first_revealed_paint_runtime.fail(format!(
+                            "could not synchronize the first painted frame: {error}"
+                        ));
+                        return;
+                    }
+                    first_revealed_paint_display.queue_draw();
+                }
+                FirstRevealedPaintPhase::WaitingForRepaint => {
+                    first_revealed_paint_phase.set(FirstRevealedPaintPhase::Complete);
+                    if let Err(error) = first_revealed_paint_control
+                        .borrow_mut()
+                        .write_all(b"repainted\n")
+                    {
+                        first_revealed_paint_runtime.fail(format!(
+                            "could not report the post-release painted frame: {error}"
+                        ));
+                    }
+                    observed_frame_clock.end_updating();
+                }
+                FirstRevealedPaintPhase::Complete => {}
+            });
+        });
+    }
     window.present();
     if runtime.capture_control.is_some() {
         let ready_runtime = Rc::clone(&runtime);
@@ -381,16 +489,16 @@ fn build_window(
             ready_runtime.prepare_capture_acknowledgement();
             glib::ControlFlow::Continue
         });
-        let painted_runtime = Rc::clone(&runtime);
-        window
-            .frame_clock()
-            .ok_or("capture-controlled renderer window has no frame clock after presentation")?
-            .connect_after_paint(move |_| painted_runtime.after_paint());
     }
+    let painted_runtime = Rc::clone(&runtime);
+    window
+        .frame_clock()
+        .ok_or("renderer window has no frame clock after presentation")?
+        .connect_after_paint(move |_| painted_runtime.after_paint());
     Ok(())
 }
 
-fn present_fullscreen(window: &gtk::ApplicationWindow) {
+fn present_fullscreen(window: &gtk::ApplicationWindow) -> Option<Viewport> {
     let monitors = gtk::prelude::WidgetExt::display(window).monitors();
     if monitors.n_items() == 1
         && let Some(monitor) = monitors.item(0).and_downcast::<gtk::gdk::Monitor>()
@@ -398,8 +506,13 @@ fn present_fullscreen(window: &gtk::ApplicationWindow) {
         let geometry = monitor.geometry();
         window.set_default_size(geometry.width(), geometry.height());
         window.fullscreen_on_monitor(&monitor);
+        Some(Viewport::new(
+            geometry.width() as u32,
+            geometry.height() as u32,
+        ))
     } else {
         window.fullscreen();
+        None
     }
 }
 
@@ -431,10 +544,17 @@ fn capture_configuration_from_environment() -> Result<CaptureConfiguration, Box<
     if typography.is_some() && viewport.is_none() {
         return Err("ROONSCAPE_CAPTURE_TYPOGRAPHY requires ROONSCAPE_CAPTURE_VIEWPORT".into());
     }
+    let reduced_animation = env::var("ROONSCAPE_CAPTURE_REDUCED_ANIMATION").as_deref() == Ok("1");
+    if reduced_animation && viewport.is_none() {
+        return Err(
+            "ROONSCAPE_CAPTURE_REDUCED_ANIMATION requires ROONSCAPE_CAPTURE_VIEWPORT".into(),
+        );
+    }
 
     Ok(CaptureConfiguration {
         viewport,
         typography,
+        reduced_animation,
     })
 }
 
@@ -470,35 +590,45 @@ impl PresentationRuntime {
     fn tick(&self) {
         self.apply_viewport();
         let now = self.progress_clock.elapsed();
-        let presentation_update = self.apply_snapshot_events(now);
-        self.render(now, presentation_update);
+        self.apply_snapshot_events(now);
+        self.render(now);
         self.presentation_view.borrow_mut().finish_transition();
     }
 
     fn apply_pending_updates(&self) {
         self.apply_viewport();
         let now = self.progress_clock.elapsed();
-        let presentation_update = self.apply_snapshot_events(now);
-        self.render(now, presentation_update);
+        self.apply_snapshot_events(now);
+        self.render(now);
     }
 
-    fn apply_viewport(&self) {
+    fn apply_viewport(&self) -> bool {
         let width = self.display.width();
         let height = self.display.height();
         if width <= 0 || height <= 0 {
-            return;
+            return false;
         }
 
         self.presentation_view
             .borrow_mut()
             .apply_viewport(Viewport::new(width as u32, height as u32));
+        true
     }
 
-    fn apply_snapshot_events(&self, now: Duration) -> Option<PresentationUpdate> {
-        let updates = self.updates.as_ref()?;
-        let mut presentation_update = None;
+    fn prepare_first_visible_frame(&self) -> bool {
+        if !self.apply_viewport() || !self.presentation_view.borrow().layout_ready() {
+            return false;
+        }
+        self.display.set_opacity(1.0);
+        true
+    }
+
+    fn apply_snapshot_events(&self, now: Duration) {
+        let Some(updates) = self.updates.as_ref() else {
+            return;
+        };
         loop {
-            let update = match updates.try_recv() {
+            match updates.try_recv() {
                 Ok(SnapshotEvent::Snapshot(snapshot)) => {
                     if let Some(diagnostics) = self.diagnostics.as_ref() {
                         diagnostics
@@ -515,38 +645,26 @@ impl PresentationRuntime {
                             .borrow_mut()
                             .update(*snapshot, anchored_at)
                     };
-                    match update {
-                        Ok(update) => Some(update),
-                        Err(error) => {
-                            eprintln!("RoonScape renderer: {error}");
-                            None
-                        }
+                    if let Err(error) = update {
+                        eprintln!("RoonScape Renderer: {error}");
                     }
                 }
                 Ok(SnapshotEvent::ConnectionChanged(connection)) => {
                     if let Some(diagnostics) = self.diagnostics.as_ref() {
                         diagnostics.borrow_mut().observe_connection(connection);
                     }
-                    match connection {
-                        ConnectionState::Disconnected => {
-                            Some(self.presentation.borrow_mut().disconnect(now))
-                        }
-                        ConnectionState::Connected => None,
+                    if connection == ConnectionState::Disconnected {
+                        self.presentation.borrow_mut().disconnect(now);
                     }
                 }
                 Ok(SnapshotEvent::RevisionRejected { incoming, accepted }) => {
                     eprintln!(
-                        "RoonScape renderer: ignored presentation revision {incoming}; current revision is {accepted}"
+                        "RoonScape Renderer: ignored presentation revision {incoming}; current revision is {accepted}"
                     );
-                    None
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
-            };
-            if let Some(update) = update {
-                presentation_update = combine_presentation_update(presentation_update, update);
             }
         }
-        presentation_update
     }
 
     fn apply_capture_commands(&self) -> bool {
@@ -554,7 +672,6 @@ impl PresentationRuntime {
             return true;
         };
         let now = self.progress_clock.elapsed();
-        let mut presentation_update = None;
         loop {
             match control.try_recv() {
                 Ok(CaptureControlEvent::Selection(selection)) => {
@@ -565,10 +682,8 @@ impl PresentationRuntime {
                         .borrow_mut()
                         .update_for_fixture_selection((*selection).into_snapshot(), anchored_at)
                     {
-                        Ok(update) => {
+                        Ok(_) => {
                             self.painted_capture.borrow_mut().select(identity);
-                            presentation_update =
-                                combine_presentation_update(presentation_update, update);
                         }
                         Err(error) => {
                             self.fail(format!("could not select Fixture Scenario: {error}"));
@@ -592,7 +707,7 @@ impl PresentationRuntime {
             }
         }
         self.apply_viewport();
-        self.render(now, presentation_update);
+        self.render(now);
         self.display.queue_draw();
         true
     }
@@ -619,6 +734,7 @@ impl PresentationRuntime {
     }
 
     fn after_paint(&self) {
+        self.report_visible_lyrics();
         let Some(selection) = self.painted_capture.borrow_mut().after_paint() else {
             return;
         };
@@ -632,6 +748,31 @@ impl PresentationRuntime {
         }
     }
 
+    fn report_visible_lyrics(&self) {
+        let revision = self.presentation.borrow().revision();
+        let has_visible_lyrics = matches!(
+            &*self.rendered_presentation.borrow(),
+            Presentation::NowPlaying(now_playing) if now_playing.lyrics.is_some()
+        );
+        if !has_visible_lyrics {
+            self.reported_lyric_visibility.set(None);
+            return;
+        }
+        if self.reported_lyric_visibility.get() == Some(revision) {
+            return;
+        }
+        let Some(updates) = self.updates.as_ref() else {
+            return;
+        };
+        match updates.report_lyrics_visible(revision) {
+            Ok(true) => self.reported_lyric_visibility.set(Some(revision)),
+            Ok(false) => {}
+            Err(error) => {
+                eprintln!("RoonScape Renderer: could not report visible lyrics: {error}");
+            }
+        }
+    }
+
     fn fail(&self, error: String) {
         if self.runtime_error.borrow().is_none() {
             *self.runtime_error.borrow_mut() = Some(error);
@@ -639,52 +780,40 @@ impl PresentationRuntime {
         self.application.quit();
     }
 
-    fn render(&self, now: Duration, presentation_update: Option<PresentationUpdate>) {
+    fn render(&self, now: Duration) {
         let current_frame = match self.presentation.borrow().frame_at(now) {
             Ok(current_frame) => current_frame,
             Err(error) => {
-                eprintln!("RoonScape renderer: {error}");
+                eprintln!("RoonScape Renderer: {error}");
                 return;
             }
         };
 
+        let presentation_update = classify_presentation_update(
+            &self.rendered_presentation.borrow(),
+            &current_frame.presentation,
+        );
         match presentation_update {
-            Some(PresentationUpdate::TransitionRequired) => {
+            PresentationUpdate::TransitionRequired => {
                 self.presentation_view.borrow_mut().replace(
                     self.presentation.borrow().revision(),
                     &current_frame.presentation,
                     &self.repository_root,
                 );
             }
-            Some(PresentationUpdate::InPlace) => {
+            PresentationUpdate::InPlace => {
                 self.presentation_view.borrow_mut().update_in_place(
                     self.presentation.borrow().revision(),
                     &current_frame.presentation,
                 );
             }
-            None => {
-                if let Presentation::NowPlaying(current_presentation) = &current_frame.presentation
-                    && let Some(progress) = current_presentation.progress.as_ref()
-                {
-                    self.presentation_view.borrow().update_progress(progress);
-                }
-            }
         }
+        self.rendered_presentation
+            .replace(current_frame.presentation.clone());
         self.presentation_view
             .borrow_mut()
             .apply_inactivity(current_frame.inactivity);
     }
-}
-
-fn combine_presentation_update(
-    current: Option<PresentationUpdate>,
-    next: PresentationUpdate,
-) -> Option<PresentationUpdate> {
-    Some(match (current, next) {
-        (Some(PresentationUpdate::TransitionRequired), _)
-        | (_, PresentationUpdate::TransitionRequired) => PresentationUpdate::TransitionRequired,
-        _ => PresentationUpdate::InPlace,
-    })
 }
 
 fn install_diagnostics_updates(
@@ -726,7 +855,7 @@ fn configuration_file_from_arguments() -> Result<PathBuf, Box<dyn Error>> {
         }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "RoonScape renderer accepts only a launcher-provided --config PATH",
+            "RoonScape Renderer accepts only a launcher-provided --config PATH",
         )
         .into()),
     }
@@ -737,24 +866,8 @@ fn host_inactivity_configuration(configuration_file: &Path) -> InactivityConfigu
     match configuration {
         Ok(configuration) => configuration,
         Err(error) => {
-            eprintln!("RoonScape renderer: {error}; using default OLED inactivity calibration");
+            eprintln!("RoonScape Renderer: {error}; using default OLED inactivity calibration");
             InactivityConfiguration::default()
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{PresentationUpdate, combine_presentation_update};
-
-    #[test]
-    fn batch_preserves_a_composition_change_before_a_final_in_place_update() {
-        assert_eq!(
-            combine_presentation_update(
-                Some(PresentationUpdate::TransitionRequired),
-                PresentationUpdate::InPlace,
-            ),
-            Some(PresentationUpdate::TransitionRequired)
-        );
     }
 }

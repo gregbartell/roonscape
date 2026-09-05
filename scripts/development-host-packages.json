@@ -1,0 +1,40 @@
+{
+  "ubuntu": [
+    "build-essential",
+    "git",
+    "dbus",
+    "ca-certificates",
+    "pkg-config",
+    "libgtk-4-dev",
+    "libfontconfig1-dev",
+    "fontconfig",
+    "scrot",
+    "xvfb",
+    "x11-utils",
+    "xauth",
+    "fonts-noto-cjk",
+    "python3",
+    "ffmpeg",
+    "desktop-file-utils",
+    "libglib2.0-bin"
+  ],
+  "arch": [
+    "base-devel",
+    "git",
+    "dbus",
+    "ca-certificates",
+    "pkgconf",
+    "gtk4",
+    "fontconfig",
+    "scrot",
+    "xorg-server-xvfb",
+    "xorg-xwininfo",
+    "xorg-xauth",
+    "noto-fonts-cjk",
+    "python",
+    "ffmpeg",
+    "desktop-file-utils",
+    "glib2",
+    "xorg-xprop"
+  ]
+}

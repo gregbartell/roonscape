@@ -1,5 +1,6 @@
 {
   "trackedOutputId": "output-speaker-system",
+  "trackedOutputName": "Speaker System",
   "inactivity": {
     "gracePeriodSeconds": 240,
     "dimmedOpacity": 0.3,

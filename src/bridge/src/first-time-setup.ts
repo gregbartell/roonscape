@@ -3,6 +3,7 @@ import type {
   DisplayConfiguration,
   InactivityConfiguration,
 } from "./display-configuration.js";
+import type { RoonServerHost } from "./roon-server-host.js";
 
 export type SetupKey = "up" | "down" | "enter" | "customize";
 
@@ -12,6 +13,7 @@ export interface SetupDependencies {
   discoverTrackedOutputs(
     authorizationFile: string,
     signal: AbortSignal,
+    roonServerHost?: RoonServerHost,
   ): Promise<DiscoverableTrackedOutput[]>;
   readSetupKey(signal: AbortSignal): Promise<SetupKey>;
   readSetupValue(
@@ -40,6 +42,7 @@ export async function runSetup(
   dependencies: SetupDependencies,
   existingConfiguration: DisplayConfiguration | null,
   signal: AbortSignal,
+  roonServerHost?: RoonServerHost,
 ): Promise<void> {
   if (
     existingConfiguration === null &&
@@ -65,7 +68,11 @@ export async function runSetup(
   );
   dependencies.writeOutput("Waiting for Roon Authorization.");
 
-  const outputs = await waitForTrackedOutputs(dependencies, signal);
+  const outputs = await waitForTrackedOutputs(
+    dependencies,
+    signal,
+    roonServerHost,
+  );
 
   const selected = await chooseTrackedOutput(
     outputs,
@@ -106,6 +113,7 @@ export async function runSetup(
 
   dependencies.saveConfiguration(configurationFile, {
     trackedOutputId: selected.trackedOutputId,
+    trackedOutputName: selected.trackedOutputName,
     inactivity: completedInactivity,
   });
   dependencies.writeOutput(`Display Configuration saved: ${configurationFile}`);
@@ -114,9 +122,14 @@ export async function runSetup(
 async function waitForTrackedOutputs(
   dependencies: SetupDependencies,
   signal: AbortSignal,
+  roonServerHost?: RoonServerHost,
 ): Promise<DiscoverableTrackedOutput[]> {
   const discovery = dependencies
-    .discoverTrackedOutputs(dependencies.authorizationFile(), signal)
+    .discoverTrackedOutputs(
+      dependencies.authorizationFile(),
+      signal,
+      roonServerHost,
+    )
     .catch((error: unknown) => {
       if (isAbortError(error)) {
         throw error;
