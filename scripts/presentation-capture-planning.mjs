@@ -45,10 +45,14 @@ export async function planPresentationCaptures(
   { workingDirectory = process.cwd(), environment = process.env } = {},
 ) {
   if (request.profile !== undefined) {
-    const captures = await preflightVisualAcceptanceProfile(request, {
-      workingDirectory,
-      environment,
-    });
+    const captures = await preflightPresentationCapturePlan(
+      buildPresentationCapturePlan(),
+      request,
+      {
+        workingDirectory,
+        environment,
+      },
+    );
     return {
       captures,
       sessions: groupCompatibleCaptures(captures),
@@ -78,12 +82,12 @@ export async function planPresentationCaptures(
   };
 }
 
-async function preflightVisualAcceptanceProfile(
-  { output, overwrite },
-  context,
+export async function preflightPresentationCapturePlan(
+  plan,
+  { output, overwrite = false },
+  context = { workingDirectory: process.cwd(), environment: process.env },
 ) {
   const outputDirectory = path.resolve(context.workingDirectory, output);
-  const plan = buildPresentationCapturePlan();
   const failures = [];
   const snapshots = new Map();
   const runtimeInputPaths = new Set(captureFontPaths);
@@ -401,7 +405,7 @@ async function executableOnPath(executableName, environment) {
   return false;
 }
 
-function groupCompatibleCaptures(captures) {
+export function groupCompatibleCaptures(captures) {
   const sessionGroups = [];
   for (const capture of captures) {
     const compatibleGroup = sessionGroups.find(([firstCapture]) =>

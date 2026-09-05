@@ -242,9 +242,11 @@ keeps completed Presentation Captures, lists their paths, and explicitly marks
 the planned set incomplete. An overwrite failure may therefore leave a mixture
 of refreshed and earlier captures.
 
-The comprehensive design-review plan is available only through the explicit
-visual-acceptance profile described in the [presentation visual-acceptance
-guide](visual-acceptance/presentation.md).
+For indexed review evidence and recorded visual verdicts, extend the retained
+verification directory with `npm run review:presentations`. Follow the
+[presentation visual-acceptance guide](visual-acceptance/presentation.md) for
+focused selection across all maintained viewports, the complete profile required
+for shared typography/layout/palette changes, and the CI fallback scope.
 
 Run the self-contained design test suite before accepting changes to the
 Renderer, presentation design, capture planning or execution, Fixture

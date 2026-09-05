@@ -38,7 +38,7 @@
     "test:fixture-launcher:built": "node --test scripts/run-fixture.test.mjs",
     "test:native-test-environment": "node --test scripts/check-native-test-environment.test.mjs",
     "test:orchestration": "node --test scripts/test-orchestration.test.mjs",
-    "test:design": "npm run build && cargo build --locked --package roonscape-renderer && node --test --test-concurrency=1 scripts/presentation-capture-options.test.mjs scripts/presentation-capture-planning.test.mjs scripts/presentation-capture-execution.test.mjs scripts/presentation-capture-publication.test.mjs scripts/presentation-capture-renderer.test.mjs scripts/presentation-captures.test.mjs scripts/capture-control-renderer.test.mjs",
+    "test:design": "npm run build && cargo build --locked --package roonscape-renderer && node --test --test-concurrency=1 scripts/presentation-capture-options.test.mjs scripts/presentation-capture-planning.test.mjs scripts/presentation-capture-execution.test.mjs scripts/presentation-capture-publication.test.mjs scripts/presentation-capture-renderer.test.mjs scripts/presentation-captures.test.mjs scripts/capture-control-renderer.test.mjs scripts/presentation-review.test.mjs",
     "test:native-session": "node --test scripts/native-session.test.mjs",
     "test:process-harness": "node --test scripts/process-harness.test.mjs",
     "test:package": "node --test scripts/package-release.test.mjs",
@@ -52,7 +52,9 @@
     "test:development-environment": "node --test scripts/development-environment.test.mjs",
     "verify": "node scripts/verify.mjs",
     "test:verification": "node --test scripts/verify.test.mjs",
-    "test:live-capture-helpers": "node scripts/test-live-capture-helpers.mjs"
+    "test:live-capture-helpers": "node scripts/test-live-capture-helpers.mjs",
+    "review:presentations": "npm run build && cargo build --locked --package roonscape-renderer && npm run review:presentations:built --",
+    "review:presentations:built": "node scripts/presentation-review.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

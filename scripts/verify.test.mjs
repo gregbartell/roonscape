@@ -336,3 +336,48 @@ if (process.argv[3] === 'check') {
     code: "ENOENT",
   });
 });
+
+test("CI presentation verification runs design and retains failed capture diagnostics", async (context) => {
+  const fixture = await worktree(context);
+  await writeFile(
+    path.join(fixture.directory, "bin/npm"),
+    `#!${process.execPath}
+console.log('command output: ' + process.argv.slice(2).join(' '));
+if (process.argv[3] === 'review:presentations:built') {
+  console.error('native capture generation failed after partial publication');
+  process.exitCode = 9;
+}
+`,
+  );
+  let failure;
+  try {
+    await execute(
+      process.execPath,
+      [path.join(fixture.directory, "scripts/verify.mjs"), "--presentation-ci"],
+      { env: fixture.environment },
+    );
+  } catch (error) {
+    failure = error;
+  }
+  const review = failure?.stdout.match(/Review directory: (.+)/)?.[1];
+  assert.ok(review, failure?.stderr);
+  context.after(() => rm(review, { recursive: true, force: true }));
+  const report = JSON.parse(
+    await readFile(path.join(review, "verification.json"), "utf8"),
+  );
+  assert.equal(report.outcome, "failed");
+  assert.equal(report.automatedOutcome, "complete");
+  assert.equal(report.captureCompletion, "failed");
+  assert.match(
+    failure.stdout,
+    /Workflow: failed; automated checks: complete; captures: failed/,
+  );
+  assert.equal(report.visualAcceptance, "not assessed");
+  assert.deepEqual(report.commands[2].arguments, ["run", "test:design"]);
+  assert.ok(report.commands[3].arguments.includes("ci-fallback"));
+  assert.equal(report.commands[3].exitCode, 9);
+  assert.match(
+    await readFile(path.join(review, report.commands[3].stderr), "utf8"),
+    /partial publication/,
+  );
+});

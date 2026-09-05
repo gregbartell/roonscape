@@ -1,5 +1,12 @@
 import { closeSync, openSync, writeSync } from "node:fs";
-import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,11 +26,15 @@ async function main() {
   const options = process.argv.slice(2);
   if (options.includes("--help")) {
     console.log(
-      "Usage: npm run verify -- [--design]\nAlways runs repository checks; --design also runs the design suite.",
+      "Usage: npm run verify -- [--design | --presentation-ci]\nAlways runs repository checks; --design also runs the design suite; --presentation-ci also captures the maintained CI fallback scope.",
     );
     return;
   }
-  if (options.some((option) => option !== "--design"))
+  if (
+    options.some(
+      (option) => !["--design", "--presentation-ci"].includes(option),
+    )
+  )
     throw new Error("Unknown verification option; use --help");
   await mkdir(scratchRoot, { recursive: true });
   const review = await mkdtemp(path.join(scratchRoot, "review."));
@@ -40,7 +51,10 @@ async function main() {
       node: process.version,
     },
     commands: [],
-    designRequested: options.includes("--design"),
+    designRequested:
+      options.includes("--design") || options.includes("--presentation-ci"),
+    presentationCiRequested: options.includes("--presentation-ci"),
+    automatedOutcome: "incomplete",
     captureCompletion: "not assessed",
     visualAcceptance: "not assessed",
   };
@@ -108,9 +122,33 @@ async function main() {
     await command(["run", "check"], session.environment);
     if (report.designRequested)
       await command(["run", "test:design"], session.environment);
+    report.automatedOutcome = "complete";
     report.outcome = "complete";
+    if (report.presentationCiRequested) {
+      report.captureCompletion = "incomplete";
+      await save();
+      await command(
+        [
+          "run",
+          "review:presentations:built",
+          "--",
+          "--review",
+          review,
+          "--scope",
+          "ci-fallback",
+          "--rationale",
+          "CI representative Now Playing, Full-field, long metadata, and light palette coverage using packaged fallback fonts.",
+        ],
+        environment,
+      );
+      report.captureCompletion = "complete";
+    }
   } catch (error) {
     report.outcome = cancellation.signal.aborted ? "cancelled" : "failed";
+    if (report.automatedOutcome !== "complete")
+      report.automatedOutcome = report.outcome;
+    if (report.captureCompletion === "incomplete")
+      report.captureCompletion = report.outcome;
     report.error = error.message;
     process.exitCode = cancellation.signal.aborted ? 130 : 1;
   } finally {
@@ -131,7 +169,7 @@ async function main() {
     cancellation.dispose();
   }
   console.log(
-    `Automated verification: ${report.outcome}. See ${path.join(review, "README.md")}`,
+    `Workflow: ${report.outcome}; automated checks: ${report.automatedOutcome}; captures: ${report.captureCompletion}; visual acceptance: ${report.visualAcceptance}. See ${path.join(review, "README.md")}`,
   );
 
   async function command(arguments_, commandEnvironment) {
@@ -214,7 +252,15 @@ async function main() {
   }
 
   async function save() {
-    const index = `# Verification review\n\nAutomated outcome: **${report.outcome}**\n\nSource: ${report.source.root}\nRevision: ${report.source.revision ?? "not recorded"}\nStarted: ${report.startedAt}\nFinished: ${report.finishedAt ?? "pending"}\n\nWorking-tree state (porcelain):\n\n\`\`\`\n${report.source.workingTree || "clean or not yet recorded\n"}\`\`\`\n\nEnvironment: ${JSON.stringify(report.environment)}\n\n${report.commands.map((entry) => `- \`npm ${entry.arguments.join(" ")}\`: ${entry.outcome}; exit ${entry.exitCode ?? "not available"}, signal ${entry.signal ?? "none"}; [stdout](${entry.stdout}), [stderr](${entry.stderr})`).join("\n")}\n\n${report.error ?? ""}\n${report.cleanupError ?? ""}\n\nAutomated completion does not establish capture completion or visual acceptance.\nLive Capture Session helper tests use deterministic logic and synthetic media; they do not verify an actual Live Capture Session.\nSee [structured outcomes](verification.json).\n`;
+    const presentations = (
+      await readdir(review, { withFileTypes: true })
+    ).filter(
+      (entry) => entry.isDirectory() && entry.name.startsWith("presentation."),
+    );
+    const presentationLinks = presentations
+      .map(({ name }) => `- [Presentation review: ${name}](${name}/index.html)`)
+      .join("\n");
+    const index = `# Verification review\n\nWorkflow outcome: **${report.outcome}**\n\nAutomated outcome: **${report.automatedOutcome}**\nCapture completion: **${report.captureCompletion}**\nVisual acceptance: **${report.visualAcceptance}**\n\nSource: ${report.source.root}\nRevision: ${report.source.revision ?? "not recorded"}\nStarted: ${report.startedAt}\nFinished: ${report.finishedAt ?? "pending"}\n\nWorking-tree state (porcelain):\n\n\`\`\`\n${report.source.workingTree || "clean or not yet recorded\n"}\`\`\`\n\nEnvironment: ${JSON.stringify(report.environment)}\n\n${report.commands.map((entry) => `- \`npm ${entry.arguments.join(" ")}\`: ${entry.outcome}; exit ${entry.exitCode ?? "not available"}, signal ${entry.signal ?? "none"}; [stdout](${entry.stdout}), [stderr](${entry.stderr})`).join("\n")}\n\n${report.error ?? ""}\n${report.cleanupError ?? ""}\n\nAutomated completion does not establish capture completion or visual acceptance.\nLive Capture Session helper tests use deterministic logic and synthetic media; they do not verify an actual Live Capture Session.\n${presentationLinks}\n\nSee [structured outcomes](verification.json).\n`;
     for (const [name, contents] of [
       ["verification.json", `${JSON.stringify(report, null, 2)}\n`],
       ["README.md", index],
