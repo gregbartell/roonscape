@@ -652,6 +652,7 @@ impl PresentationState {
         presentation_from_snapshot_with_timing(
             &self.snapshot,
             self.timing.resolved_at(&self.snapshot, now, self.behavior),
+            self.timing.grace.is_active_at(now),
         )
     }
 
@@ -901,12 +902,13 @@ pub fn presentation_from_snapshot(
         duration_seconds: authoritative_duration(snapshot),
     }
     .clamped();
-    presentation_from_snapshot_with_timing(snapshot, timing)
+    presentation_from_snapshot_with_timing(snapshot, timing, false)
 }
 
 fn presentation_from_snapshot_with_timing(
     snapshot: &PresentationSnapshot,
     timing: ResolvedTiming,
+    timing_grace_active: bool,
 ) -> Result<Presentation, PresentationError> {
     if snapshot.availability != Availability::Available {
         return Ok(Presentation::FullField(unavailable_presentation(
@@ -959,6 +961,7 @@ fn presentation_from_snapshot_with_timing(
             },
         ),
         activity: (playback == Playback::Playing
+            && !timing_grace_active
             && (timing.position_seconds.is_none() || timing.duration_seconds.is_none()))
         .then(|| Box::new(indeterminate_activity())),
         artwork_revision: snapshot.artwork.as_ref().map(|artwork| artwork.revision),

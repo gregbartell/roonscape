@@ -207,9 +207,13 @@ track is approximately 6 px high, and the gap between progress or activity and
 identities is approximately 40 px; these values scale responsively across peer
 viewports.
 
-Playing without meaningful duration uses the same footer role for a compact
-activity treatment instead of fabricating a timeline. Seven rounded vertical
-bars use symmetrical reference heights of 30%, 70%, 100%, 48%, 100%, 70%, and
+During the existing five-second timing grace, show supported Provisional Timing
+when it supplies determinate progress; otherwise leave the timing area quiet.
+Starting and Playing share this grace, so entering Playing does not restart it.
+After grace expires, Playing without determinate timing uses the same footer
+role for a compact activity treatment instead of fabricating a timeline.
+Seven rounded vertical bars use symmetrical reference heights of
+30%, 70%, 100%, 48%, 100%, 70%, and
 30%, followed by `Audio active` and `Timing unavailable` on separate lines.
 The waveform uses the current accent and the timing explanation uses muted
 text. This treatment is independent of artwork availability: supplied artwork

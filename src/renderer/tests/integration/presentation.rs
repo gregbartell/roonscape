@@ -1376,6 +1376,87 @@ fn clears_now_playing_while_the_bridge_is_disconnected_and_recovers_after_reconn
 }
 
 #[test]
+fn idle_starting_and_playing_share_the_incomplete_timing_grace() {
+    for (position, duration) in [(None, Some(100.0)), (Some(10.0), None), (None, None)] {
+        for playing_at in [2, 7] {
+            let idle = snapshot_with_timing("stopped.json", 1, None, None);
+            let mut state = PresentationState::new(idle, presentation_time(0, PLAYING_SAMPLED_AT))
+                .expect("Idle should anchor the state");
+            state
+                .update(
+                    snapshot_with_timing("loading.json", 2, position, duration),
+                    presentation_time(1, PLAYING_SAMPLED_AT + 1),
+                )
+                .expect("Starting should begin timing grace");
+            assert_eq!(now_playing(&state, 1).progress, None);
+            assert_eq!(now_playing(&state, 1).activity, None);
+            if playing_at == 7 {
+                assert_eq!(now_playing(&state, 6).activity, None);
+            }
+            state
+                .update(
+                    snapshot_with_timing("playing.json", 3, position, duration),
+                    presentation_time(playing_at, PLAYING_SAMPLED_AT + playing_at),
+                )
+                .expect("Playing should preserve Starting's grace");
+            if playing_at == 2 {
+                state
+                    .update(
+                        snapshot_with_timing("playing.json", 4, position, duration),
+                        presentation_time(4, PLAYING_SAMPLED_AT + 4),
+                    )
+                    .expect("compatible updates should preserve grace");
+                let Presentation::NowPlaying(before) =
+                    state.presentation_at(Duration::from_millis(5999)).unwrap()
+                else {
+                    panic!("Now Playing should remain visible");
+                };
+                assert_eq!(before.progress, None);
+                assert_eq!(before.activity, None);
+            }
+            let expired = now_playing(&state, playing_at.max(6));
+            assert_eq!(expired.progress, None);
+            assert!(expired.activity.is_some());
+        }
+    }
+}
+
+#[test]
+fn authoritative_timing_arrival_replaces_quiet_grace_or_expired_activity() {
+    for (position, duration) in [(None, Some(100.0)), (Some(10.0), None), (None, None)] {
+        for arrives_at in [3, 7] {
+            let idle = snapshot_with_timing("stopped.json", 1, None, None);
+            let mut state =
+                PresentationState::new(idle, presentation_time(0, PLAYING_SAMPLED_AT)).unwrap();
+            state
+                .update(
+                    snapshot_with_timing("loading.json", 2, position, duration),
+                    presentation_time(1, PLAYING_SAMPLED_AT + 1),
+                )
+                .unwrap();
+            state
+                .update(
+                    snapshot_with_timing("playing.json", 3, position, duration),
+                    presentation_time(2, PLAYING_SAMPLED_AT + 2),
+                )
+                .unwrap();
+            let before = now_playing(&state, arrives_at);
+            assert_eq!(before.progress, None);
+            assert_eq!(before.activity.is_some(), arrives_at >= 6);
+            state
+                .update(
+                    snapshot_with_timing("playing.json", 4, Some(20.0), Some(100.0)),
+                    presentation_time(arrives_at, PLAYING_SAMPLED_AT),
+                )
+                .unwrap();
+            let arrived = now_playing(&state, arrives_at);
+            assert_eq!(arrived.progress.unwrap().elapsed, "0:20");
+            assert_eq!(arrived.activity, None);
+        }
+    }
+}
+
+#[test]
 fn continues_from_each_retained_authoritative_timing_dimension_and_reconciles_in_place() {
     let initial = snapshot_with_timing("playing.json", 1, Some(10.0), Some(100.0));
     let mut state = PresentationState::new(initial, presentation_time(0, PLAYING_SAMPLED_AT))
