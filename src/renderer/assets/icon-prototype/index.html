@@ -1,10 +1,11 @@
 <!doctype html>
-<!-- Throwaway: four SVG icon concepts, switchable via ?variant=A–D. -->
+<!-- Throwaway: three Groove R refinements on the existing icon prototype page,
+     switchable via ?variant=original|open|simple. Which groove reads best small? -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>RoonScape / Icon studies</title>
+    <title>RoonScape / Groove R refinements</title>
     <style>
       @font-face {
         font-family: Plex;
@@ -87,7 +88,7 @@
       }
       .concepts {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 16px;
         margin: 28px 0;
       }
@@ -112,7 +113,7 @@
         display: grid;
         place-items: center;
       }
-      .concept svg {
+      .concept .mark svg {
         width: 72px;
         height: 72px;
       }
@@ -127,6 +128,34 @@
         margin-top: 5px;
         color: var(--muted);
         font-size: 13px;
+      }
+      .miniatures {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 16px;
+        padding: 12px;
+        border-radius: 5px;
+        background: white;
+        color: #203443;
+      }
+      .miniatures.reversed {
+        margin-top: 8px;
+        background: #182c3c;
+        color: #e9f0f5;
+      }
+      .miniature {
+        display: flex;
+        align-items: center;
+        flex-direction: column;
+        gap: 8px;
+        font-size: 11px;
+      }
+      .comparison-note {
+        color: var(--muted);
+        font-size: 13px;
+        margin: -12px 0 24px;
       }
       .study {
         display: grid;
@@ -321,7 +350,7 @@
           padding: 20px 0;
         }
         .concepts {
-          grid-template-columns: repeat(2, 1fr);
+          grid-template-columns: 1fr;
           gap: 12px;
         }
         .concept .mark {
@@ -355,15 +384,21 @@
   <body>
     <header>
       <div class="brand">RoonScape</div>
-      <span class="badge">Icon prototype / four directions</span>
+      <span class="badge">Groove R / refinement round</span>
     </header>
     <main>
-      <h1>A small mark for a room full of music.</h1>
+      <h1>One R. Three ways to cut the groove.</h1>
       <p class="intro">
-        Four ways to picture an unattended music display. Compare the
-        silhouettes, then inspect each at the sizes where an icon has to work.
+        Groove R is the chosen direction. These three variations keep its outer
+        silhouette and refine the detail inside. Start with the small marks:
+        does the groove stay clear, and does it still feel like the R you liked?
       </p>
-      <div class="concepts" aria-label="Icon directions"></div>
+      <div class="concepts" aria-label="Groove R variations"></div>
+      <p class="comparison-note">
+        Each row shows 16, 24, 32 and 48 CSS pixels at your browser’s current
+        zoom. Light and dark rows use fixed ink colors for a consistent
+        comparison.
+      </p>
       <section class="study" aria-labelledby="concept-title">
         <div class="hero" id="hero"></div>
         <div class="details">
@@ -404,44 +439,34 @@
     <script type="module">
       const concepts = [
         {
-          key: "A",
-          name: "Record horizon",
-          file: "horizon.svg",
-          cue: "Music becomes a landscape",
-          description:
-            "Record grooves rise over a quiet horizon. The music reference and the “scape” in RoonScape share one simple silhouette.",
-          tradeoff:
-            "My starting pick: calm and distinctive. The smallest size starts to read as a sunrise; the larger sizes reveal the record.",
-        },
-        {
-          key: "B",
-          name: "Listening window",
-          file: "sleeve.svg",
-          cue: "The display, in miniature",
-          description:
-            "Album artwork and a few lines of Now Playing sit inside a display frame. A miniature of the thing RoonScape actually does.",
-          tradeoff:
-            "The most literal direction. Easy to connect to the product, though less distinctive from other media display apps.",
-        },
-        {
-          key: "C",
-          name: "Groove R",
+          key: "original",
+          name: "Original groove",
           file: "groove.svg",
-          cue: "An initial with a musical trace",
+          cue: "The exact design you liked",
           description:
-            "A bold R carries a small inset groove. The letter does the recognition work; the groove adds a quieter reference to listening.",
+            "The original R, unchanged. A fine returning line sits inside the letter, giving it the nested rhythm of a record groove.",
           tradeoff:
-            "The strongest letterform at small sizes. More of an independent app identity; it says less about the display itself.",
+            "The most delicate detail. Its 3-unit stroke and 3-unit inner gap each become 0.75 CSS px at 16 px. Compare whether that softness matters in practice.",
         },
         {
-          key: "D",
-          name: "Soundscape",
-          file: "soundscape.svg",
-          cue: "A waveform with a horizon",
+          key: "open",
+          name: "Open groove",
+          file: "groove-open.svg",
+          cue: "More air around the returning line",
           description:
-            "Five rising bars form a hill, with a curved horizon underneath. A soundwave and a landscape in the same compact mark.",
+            "A larger opening inside the R makes room for a thicker, taller returning groove. The outer silhouette stays identical to the original.",
           tradeoff:
-            "The most energetic option. The silhouette survives shrinking, but a waveform can suggest audio tools or playback controls.",
+            "My refinement candidate: a 1 CSS px stroke with a 1.5 CSS px inner gap at 16 px. It keeps the loop, but the larger opening makes the top of the R feel lighter.",
+        },
+        {
+          key: "simple",
+          name: "Simple groove",
+          file: "groove-simple.svg",
+          cue: "One short stroke; no inner loop",
+          description:
+            "The original opening holds a single rounded stroke. Removing the return removes the tiny inner gap that can close up when the icon shrinks.",
+          tradeoff:
+            "The simplest small-size option, with a 1 CSS px stroke at 16 px. It sacrifices some of the record-groove character; compare whether it feels too plain.",
         },
       ];
       const sources = await Promise.all(
@@ -460,7 +485,7 @@
       document.querySelector(".concepts").innerHTML = concepts
         .map(
           (c, i) =>
-            `<button class="concept" data-index="${i}" aria-pressed="false"><span class="mark">${svg(i)}</span><strong>${c.key} / ${c.name}</strong><small>${c.cue}</small></button>`,
+            `<button class="concept" data-index="${i}" aria-label="${c.name}" aria-pressed="false"><span class="mark">${svg(i)}</span><strong>${c.name}</strong><small>${c.cue}</small>${["", "reversed"].map((surface) => `<span class="miniatures ${surface}" aria-hidden="true">${[16, 24, 32, 48].map((size) => `<span class="miniature">${svg(i).replace("<svg ", `<svg width="${size}" height="${size}" `)}<span>${size} px</span></span>`).join("")}</span>`).join("")}</button>`,
         )
         .join("");
       function render() {
@@ -490,11 +515,11 @@
         el("light").innerHTML = `${svg(selected)}<span>RoonScape</span>`;
         el("dark").innerHTML = `${svg(selected)}<span>RoonScape</span>`;
         el("tile").innerHTML = svg(selected);
-        el("variant-label").textContent = `${c.key} / ${c.name}`;
+        el("variant-label").textContent = `${selected + 1} / 3 — ${c.name}`;
         el("color").textContent = monochrome ? "Use blue ink" : "Use black ink";
         el("color").setAttribute("aria-pressed", String(monochrome));
         el("state").textContent =
-          `Exploration only. No winner selected. Variant ${c.key}: ${c.name}. Ink ${ink}. 64 × 64 viewBox; transparent background. Use ← / → to compare. Light and dark examples use fixed contrast colors.`;
+          `Direction selected: Groove R. Refinement still open. Variant: ${c.key}. Ink ${ink}. Outer R silhouette unchanged; 64 × 64 viewBox; transparent background. Use ← / → to compare. Light and dark examples use fixed contrast colors.`;
         if (downloadUrl) URL.revokeObjectURL(downloadUrl);
         downloadUrl = URL.createObjectURL(
           new Blob([sources[selected].replaceAll("currentColor", ink)], {
