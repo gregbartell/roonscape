@@ -139,12 +139,19 @@ function selectedSnapshot(
   return {
     ...snapshot,
     revision,
-    progress:
+    timing:
       behavior === "ordinary" &&
       snapshot.playback === "playing" &&
-      snapshot.progress !== null
-        ? { ...snapshot.progress, sampledAt: selectedAt.toISOString() }
-        : snapshot.progress,
+      snapshot.timing?.position !== null &&
+      snapshot.timing?.position !== undefined
+        ? {
+            ...snapshot.timing,
+            position: {
+              ...snapshot.timing.position,
+              sampledAt: selectedAt.toISOString(),
+            },
+          }
+        : snapshot.timing,
   };
 }
 

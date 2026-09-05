@@ -6,17 +6,18 @@ import { createServer } from "node:net";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import {
   runMonitoredProcess,
-  startXvfbDisplay,
+  waitForProcessExit,
   startMonitoredProcess,
   stopProcess,
   waitFor,
 } from "./process-harness.mjs";
+
+import { createNativeSession } from "./native-session.mjs";
 
 const executeFile = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -43,8 +44,9 @@ test("determinate progress renders without invalid GTK measurements", async () =
     path.join(tmpdir(), "roonscape-bare-x-test."),
   );
   const socketPath = path.join(taskDirectory, "roonscape.sock");
+  const nativeSession = await createNativeSession({ width: 1600, height: 900 });
   const environment = {
-    ...process.env,
+    ...nativeSession.environment,
     GDK_BACKEND: "x11",
     NO_AT_BRIDGE: "1",
     ROONSCAPE_CAPTURE_VIEWPORT: "1600x900",
@@ -52,12 +54,6 @@ test("determinate progress renders without invalid GTK measurements", async () =
     ROONSCAPE_FIXTURE_AUTO_CLOSE_MS: "2000",
     ROONSCAPE_SOCKET: socketPath,
   };
-  const { display, xvfb } = await startXvfbDisplay({
-    width: 1600,
-    height: 900,
-    cwd: repositoryRoot,
-  });
-  environment.DISPLAY = display;
   let publisher;
   let renderer;
 
@@ -79,9 +75,10 @@ test("determinate progress renders without invalid GTK measurements", async () =
       ["--config", path.join(taskDirectory, "display.json")],
       environment,
     );
-    const closed = once(renderer, "close");
     await renderer.spawned;
-    const [exitCode, signal] = await closed;
+    const [exitCode, signal] = await waitForProcessExit(renderer, {
+      timeoutMilliseconds: 5_000,
+    });
 
     assert.equal(signal, null);
     assert.equal(exitCode, 0);
@@ -92,7 +89,7 @@ test("determinate progress renders without invalid GTK measurements", async () =
   } finally {
     await stopProcess(renderer);
     await stopProcess(publisher);
-    await stopProcess(xvfb);
+    await nativeSession.close();
     await rm(taskDirectory, { recursive: true });
   }
 });
@@ -156,7 +153,18 @@ test("fullscreen startup reveals Disconnected only after its layout settles", as
         "the first revealed frame did not use the fullscreen Disconnected layout",
       );
       firstRevealedPaintControl.write("release\n");
-      await delay(300);
+      await waitFor(
+        () => {
+          if (firstRevealedPaintError !== undefined) {
+            throw firstRevealedPaintError;
+          }
+          if (!firstRevealedPaintNotification.includes("repainted\n")) {
+            throw new Error("the post-release frame has not been reported");
+          }
+        },
+        renderer,
+        "the renderer post-release painted frame",
+      );
       const settledFrame = await captureFullscreenFrame(
         path.join(taskDirectory, "settled.ppm"),
         environment,
@@ -183,46 +191,31 @@ test("explicit windowed operation retains the windowed viewport", async () => {
   );
 });
 
-test("Presentation Capture retains its requested viewport", async () => {
-  await assertRendererGeometry(
-    { ROONSCAPE_CAPTURE_VIEWPORT: "1280x720" },
-    {
-      x: 0,
-      y: 0,
-      width: 1280,
-      height: 720,
-    },
-  );
-});
-
 async function assertRendererGeometry(environment, expected) {
-  await withBareXRenderer(
-    { environment },
-    async ({ display, renderer, xvfb }) => {
-      const root = await waitFor(
-        () => xGeometry(display, ["-root"]),
-        xvfb,
-        "X root window",
-      );
-      const window = await waitFor(
-        async () => {
-          const geometry = await xGeometry(display, ["-name", "RoonScape"]);
-          if (geometry.width < 1280 || geometry.height < 720) {
-            throw new Error("RoonScape window has not reached a usable size");
-          }
-          return geometry;
-        },
-        renderer,
-        "RoonScape window",
-      );
+  await withBareXRenderer({ environment }, async ({ display, renderer }) => {
+    const root = await waitFor(
+      () => xGeometry(display, ["-root"]),
+      renderer,
+      "X root window",
+    );
+    const window = await waitFor(
+      async () => {
+        const geometry = await xGeometry(display, ["-name", "RoonScape"]);
+        if (geometry.width < 1280 || geometry.height < 720) {
+          throw new Error("RoonScape window has not reached a usable size");
+        }
+        return geometry;
+      },
+      renderer,
+      "RoonScape window",
+    );
 
-      const expectedGeometry =
-        expected === "display"
-          ? { x: 0, y: 0, width: root.width, height: root.height }
-          : expected;
-      assert.deepEqual(window, expectedGeometry);
-    },
-  );
+    const expectedGeometry =
+      expected === "display"
+        ? { x: 0, y: 0, width: root.width, height: root.height }
+        : expected;
+    assert.deepEqual(window, expectedGeometry);
+  });
 }
 
 async function withBareXRenderer(
@@ -233,18 +226,18 @@ async function withBareXRenderer(
   const taskDirectory = await mkdtemp(
     path.join(tmpdir(), "roonscape-bare-x-test."),
   );
-  const { display, xvfb } = await startXvfbDisplay({
+  const nativeSession = await createNativeSession({
     width: 3840,
     height: 2160,
-    cwd: repositoryRoot,
   });
+  const display = nativeSession.environment.DISPLAY;
   let session;
   let renderer;
 
   try {
     session = await setup?.({ taskDirectory });
     const environment = {
-      ...process.env,
+      ...nativeSession.environment,
       DISPLAY: display,
       GDK_BACKEND: "x11",
       NO_AT_BRIDGE: "1",
@@ -264,14 +257,13 @@ async function withBareXRenderer(
       environment,
       renderer,
       taskDirectory,
-      xvfb,
       ...session?.context,
     });
   } finally {
     await session?.beforeRendererStop?.();
     await stopProcess(renderer);
     await session?.afterRendererStop?.();
-    await stopProcess(xvfb);
+    await nativeSession.close();
     await rm(taskDirectory, { recursive: true });
   }
 }

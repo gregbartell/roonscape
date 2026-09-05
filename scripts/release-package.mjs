@@ -69,6 +69,11 @@ export function assembleReleasePackage({
     path.join(stageRoot, "src/bridge/node_modules"),
   );
   copyTree(inputs.shared, path.join(stageRoot, "src/shared"));
+  copyTree(inputs.desktop, path.join(stageRoot, "src/desktop"));
+  copyFile(
+    inputs.desktopInstaller,
+    path.join(stageRoot, "scripts/install-desktop.mjs"),
+  );
   copyTree(inputs.fonts, path.join(stageRoot, "src/renderer/assets/fonts"));
   copyFile(
     inputs.renderer,
@@ -199,9 +204,13 @@ export function validateReleasePackage({
     "roonscape",
     "runtime/node/LICENSE",
     "runtime/node/bin/node",
+    "scripts/install-desktop.mjs",
     "src/bridge/dist/src/index.js",
     "src/bridge/dist/src/roonscape.js",
     "src/bridge/node_modules/ajv/package.json",
+    "src/desktop/icons/hicolor/index.theme",
+    "src/desktop/icons/hicolor/scalable/apps/io.roonscape.Renderer.svg",
+    "src/desktop/io.roonscape.Renderer.desktop.in",
     "src/renderer/assets/fonts/IBM-Plex-Sans-OFL.txt",
     "src/renderer/assets/fonts/IBMPlexSans-Variable.ttf",
     "src/renderer/assets/fonts/Libre-Baskerville-OFL.txt",
@@ -302,13 +311,14 @@ function assertPreparedInputs(inputs) {
   if (inputs === null || typeof inputs !== "object") {
     throw new Error("RoonScape prepared package inputs are unavailable");
   }
-  for (const name of ["launcher", "renderer"]) {
+  for (const name of ["launcher", "renderer", "desktopInstaller"]) {
     assertFile(inputs[name], `prepared ${name}`);
   }
   for (const name of [
     "bridgeBuild",
     "bridgeSource",
     "bridgeNodeModules",
+    "desktop",
     "fonts",
     "nodeDistribution",
     "rootNodeModules",
@@ -320,6 +330,16 @@ function assertPreparedInputs(inputs) {
     path.join(inputs.bridgeBuild, "roonscape.js"),
     "prepared RoonScape Bridge entry point",
   );
+  for (const relativePath of [
+    "icons/hicolor/index.theme",
+    "icons/hicolor/scalable/apps/io.roonscape.Renderer.svg",
+    "io.roonscape.Renderer.desktop.in",
+  ]) {
+    assertFile(
+      path.join(inputs.desktop, relativePath),
+      `prepared desktop ${relativePath}`,
+    );
+  }
   assertFile(
     path.join(inputs.nodeDistribution, "bin/node"),
     "prepared Node executable",

@@ -1,0 +1,11 @@
+[Icon Theme]
+Name=RoonScape
+Comment=RoonScape application icon
+Directories=scalable/apps
+
+[scalable/apps]
+Size=64
+Type=Scalable
+MinSize=16
+MaxSize=1024
+Context=Applications

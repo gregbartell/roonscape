@@ -13,64 +13,78 @@ Install the source prerequisites described in the [Development
 guide](../development.md). The capture host also needs `Xvfb`, `xwininfo`, and
 `scrot`. No browser engine is involved.
 
-From the repository root, run:
+Start with required automation, then extend the printed retained review directory:
 
 ```sh
-npm run capture:presentations -- --profile visual-acceptance --output /path/to/presentation-review
+npm run verify -- --design
+npm run review:presentations -- --review /var/tmp/codex/roonscape/review.EXAMPLE --scope focused --scenario paused --scenario playing --rationale "Playback status changes affect Playing and Paused compositions."
 ```
 
-The explicit profile requires its destination and owns the complete maintained
-Fixture Scenario matrix, representative viewports, typography paths, palette
-evidence, and diagnostics variants. It starts the production native renderer
-in static Fixture Mode, waits for each requested revision to finish layout and
-paint, captures the native X11 window with `scrot`, and validates each PNG's
-dimensions before publication. Playing progress, Starting rotation,
-indeterminate activity, inactivity treatment, and crossfades remain at their
-deterministic static endpoints.
+Focused presentation changes select relevant maintained Fixture Scenarios and
+capture each at **every maintained representative viewport**. Explain why the
+selected scenarios cover the change, including affected neighboring conditions.
+Shared typography, layout, or palette changes **require the complete profile**:
 
-Validated Presentation Captures appear progressively under stable descriptive
-filenames, and each final path is printed to standard output. Progress and
-diagnostics use standard error. A failure exits nonzero, preserves and lists
-completed captures, and explicitly marks the profile incomplete; no manifest
-or pixel-golden comparison is produced. Existing destinations require an
-intentional `--overwrite`, which can leave a partially refreshed set if a later
-capture fails.
+```sh
+npm run review:presentations -- --review /var/tmp/codex/roonscape/review.EXAMPLE --scope complete --rationale "Shared layout affects every composition and typography path."
+```
 
-Use `--list-scenarios`, `--scenario`, or `--all` for smaller Presentation
-Capture work as described in the [Development guide](../development.md).
+The complete profile includes the maintained matrix, typography, palette,
+identity, and diagnostics representatives. It fails clearly if required licensed
+host fonts or glyph fallback are unavailable. Do not provision or redistribute
+proprietary fonts in CI. Scenario and viewport lists come from the fixture
+catalog and native capture plan; inspect the current scopes with:
 
-## Complete Fixture Scenario matrix
+```sh
+npm run review:presentations -- --list
+```
 
-The full matrix captures every maintained Fixture Scenario at each of these
-peer representative viewports: 1280×720, 1600×900, 1600×1200, 1920×1200,
-2560×1080, 3840×2160, and 3840×2400.
+Each invocation creates a unique `presentation.*` directory inside the retained
+review directory. Open its `index.html` for linked images and coverage, and
+`captures.json` for requested/completed accounting and source identity. Progress
+and failures remain in `capture.log`. Captures use the existing native renderer,
+exact-revision layout/paint readiness, real window checks, PNG dimension
+validation, and progressive publication. Failure or cancellation retains completed
+images and diagnostics, marks the set incomplete, and removes owned runtime
+resources. Concurrent invocations cannot overwrite each other's evidence.
 
-| Scenario                 | Shared fixture                | Review focus                                   |
-| ------------------------ | ----------------------------- | ---------------------------------------------- |
-| Playing                  | `playing.json`                | Frozen determinate progress; dark artwork      |
-| Paused                   | `paused.json`                 | Frozen progress and inactivity-ready layout    |
-| Starting with content    | `loading.json`                | Now Playing composition and zero-phase ring    |
-| Starting without content | `loading-empty.json`          | `Preparing playback` on one complete line      |
-| Idle                     | `stopped.json`                | One-line, unclipped `Nothing is playing`        |
-| Awaiting Roon Authorization | `pairing-required.json`       | One-line heading and authorization instruction |
-| Disconnected             | `disconnected.json`           | One-line heading and recovery explanation      |
-| Output unavailable       | `output-unavailable.json`     | Corrective copy and output-only identity        |
-| Playing without content  | `playing-empty.json`          | Details-unavailable full field                 |
-| Paused without content   | `paused-empty.json`           | Details-unavailable full field                 |
-| Missing metadata         | `missing-metadata.json`       | Title-only hierarchy                           |
-| Missing Artist           | `missing-artist.json`         | Absent optional Artist spacing                 |
-| Missing Album            | `missing-album.json`          | Absent optional Album spacing                  |
-| Missing artwork          | `missing-artwork.json`        | Fixed no-art palette and square field          |
-| Long metadata            | `long-metadata.json`          | Responsive wrapping and reduction              |
-| Extreme metadata         | `extreme-metadata.json`       | Final line bounds and ellipsis                 |
-| Indeterminate progress   | `indeterminate-progress.json` | Artwork, reference waveform, and timing copy   |
-| Non-square artwork       | `non-square-artwork.json`     | Image-shaped frame in a reserved square        |
-| Light artwork            | `light-artwork.json`          | Readable light artwork-derived palette         |
+Inspect every requested image before recording a verdict. Write a JSON file
+containing `verdict` (`accepted`, `needs-work`, or `unreviewed`), `reasons` (text),
+`inspected` (an array of image filenames), and `unresolved` (an array of judgments).
+Then attach it to that capture set:
 
-Treat all seven viewports as peers. Together they exercise the minimum
-supported landscape size, the 1600×900 windowed Fixture Mode presentation,
-4:3, 16:10, ultrawide, 4K, and 3840×2400 fullscreen presentations without
-making one size the visual authority.
+```sh
+npm run review:presentations -- --record /var/tmp/codex/roonscape/review.EXAMPLE/presentation.EXAMPLE --verdict-file /path/to/verdict.json
+```
+
+Verdict records are immutable, retained separately, and linked from the image
+index. Generate a new capture review to revise a recorded verdict. An
+accepted verdict requires a complete capture set, every image inspected, and no
+unresolved judgments. Focused acceptance applies only to the selected scope;
+only a complete profile can claim complete-profile visual acceptance. Automated
+success, capture completion, and visual acceptance are independent outcomes.
+CI never supplies an aesthetic verdict.
+
+CI runs `npm run verify -- --presentation-ci`, which runs repository checks,
+the design suite, and the maintained small `ci-fallback` capture scope through
+this same review workflow. It forces packaged fonts for both Now Playing and
+Full-field Presentations. Its artifacts include the review index, coverage,
+images, and logs even on failure. This scope is representative fallback-font
+evidence, not complete typography evidence or local visual acceptance. The
+complete workstation profile remains required for shared presentation changes.
+
+The lower-level `capture:presentations` command remains available for standalone
+captures, including `--profile visual-acceptance`; those standalone outputs do
+not include the review accounting or verdict workflow.
+
+## Maintained Fixture Scenario matrix
+
+The canonical sources are
+[`fixture-scenario-catalog.json`](../../src/shared/fixtures/fixture-scenario-catalog.json)
+and [`presentation-captures.mjs`](../../scripts/presentation-captures.mjs).
+The review workflow derives its scenarios, seven peer viewports, and complete
+profile from those sources rather than maintaining another documentation list.
+Treat all seven viewports as peers; no single size is the visual authority.
 
 ## Typography, palette, identity, and diagnostics representatives
 
@@ -266,3 +280,18 @@ CI.
 Automated checks belong at the shared fixture, layout, typography,
 palette-contrast, transition, and preserved-behavior seams; the PNGs remain
 temporary evidence for human visual judgment.
+
+## Agent and human inspection responsibilities
+
+Agents must open the generated images, compare relevant scenarios across all
+requested viewports, and record concrete reasons against the checklist above.
+Do not infer visual acceptance from passing tests or successful PNG publication.
+Record uncertain clipping, hierarchy, palette, or typography judgments as
+unresolved and use `needs-work` or `unreviewed` until resolved. A focused selection
+must explain omissions; use the complete profile when effects are shared.
+
+Settled screenshots cannot establish motion quality, distance readability,
+physical display brightness/color, OLED behavior over time, or personal aesthetic
+preference. Request human review for those judgments and retain them explicitly
+as unresolved when they are necessary for acceptance. Actual Live Capture
+Sessions remain a separate workflow requiring Roon and human-caused events.

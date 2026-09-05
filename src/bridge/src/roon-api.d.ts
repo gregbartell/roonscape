@@ -9,6 +9,9 @@ declare module "node-roon-api" {
     start_discovery(): void;
     stop_discovery(): void;
     disconnect_all(): void;
+    ws_connect(options: import("./roon-bridge.js").RoonConnectionOptions): {
+      transport: { close(): void };
+    };
   }
 
   export default RoonApi;

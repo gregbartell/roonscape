@@ -81,6 +81,49 @@ The peer acceptance set is exactly 1280×720, 1600×900, 1600×1200, 1920×1200,
 2560×1080, 3840×2160, and 3840×2400; all seven viewports carry equal design
 authority.
 
+## Synchronized lyric composition
+
+When the Lyric Feed supplies a relevant timed cue, the Now Playing composition
+temporarily gives the current lyric the central role. The artwork remains the
+same persistent object but yields space: its square becomes the lesser of 68%
+of viewport height and 42% of viewport width. Presentation Status and the
+unified footer retain their vertical anchors and travel with the information rail. A compact Title/Artist
+masthead replaces the ordinary Title/Artist/Album group; Album is omitted in
+this composition.
+
+The current cue is the room-scale focal point on the information rail. The
+nearest nonblank previous cue uses muted text as memory, while the nearest
+nonblank next cue uses secondary text as anticipation. A settled Intentional
+Blank keeps these contextual neighbors around an empty focal position, even
+after a tall cue. Leading blanks are ignored and all-blank timelines retain
+ordinary Now Playing. Short blanks preserve advance promotion without a forced
+empty dwell. When the current cue occupies three rendered lines, the previous cue is
+omitted; at four or more lines both neighbors are omitted. The current tier is
+never reduced merely to retain neighbors, and defensive overflow is limited to
+four lines with an end ellipsis.
+
+Same-identity lyric entry and exit animate persistent artwork and information
+rail geometry in place. Ordinary metadata relinquishes ownership to the compact
+masthead and reel without duplicating artwork, Presentation Status, or footer.
+Preparation starts before the first nonblank cue's advance promotion; its
+arrival may overlap the geometry movement. Internal gaps and blanks retain one
+continuous composition interval, ending after the hold following the final
+timeline entry, including trailing blanks.
+
+Natural Cue Handoffs use Reel Lift: compact cues promote from Next Cue to focus
+while the outgoing focal cue becomes Previous Cue. If either cue occupies three
+or four Pango-rendered lines, the outgoing cue departs upward at focal size under
+the reel's clip, and the incoming cue takes a shorter path. Available memory
+returns as the incoming cue settles. Position, scale, semantic color, and weight
+transfer together without a missing-focus interval. External seeks and timeline
+revisions install destination-relative cue state directly, while boundary
+crossings still animate composition geometry. Interrupted composition movement
+retargets from its current geometry; interrupted handoffs prioritize the newest
+cue and never queue skipped lyrics. The
+platform's reduced-animation preference and deterministic Presentation
+Capture behavior suppress this motion while preserving the complete lyric
+hierarchy.
+
 ## Artwork and palette
 
 Artwork composition always reserves the same imaginary square field. Supplied
@@ -230,15 +273,15 @@ Presentation Status, then a heading with the viewer's takeaway or action, then
 an explanation only when essential. Each heading and each present explanation
 occupies one complete line across the supported landscape range.
 
-| Condition | Presentation Status | Heading | Explanation |
-| --- | --- | --- | --- |
-| Idle | `IDLE` | `Nothing is playing` | none |
-| Starting without content | `STARTING` | `Preparing playback` | none |
-| Awaiting Roon Authorization | `PAIRING REQUIRED` | `Enable RoonScape` | `In a Roon client, open Settings → Extensions and enable RoonScape.` |
-| Disconnected | `DISCONNECTED` | `Waiting for Roon` | `Check Roon Server and the network.` |
-| Output unavailable | `OUTPUT UNAVAILABLE` | `Check the selected output` | `Open RoonScape setup to choose another Tracked Output, or make the selected output available in Roon.` |
-| Playing without content | `PLAYING` | `Now Playing details unavailable` | none |
-| Paused without content | `PAUSED` | `Now Playing details unavailable` | none |
+| Condition                   | Presentation Status  | Heading                           | Explanation                                                                                             |
+| --------------------------- | -------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Idle                        | `IDLE`               | `Nothing is playing`              | none                                                                                                    |
+| Starting without content    | `STARTING`           | `Preparing playback`              | none                                                                                                    |
+| Awaiting Roon Authorization | `PAIRING REQUIRED`   | `Enable RoonScape`                | `In a Roon client, open Settings → Extensions and enable RoonScape.`                                    |
+| Disconnected                | `DISCONNECTED`       | `Waiting for Roon`                | `Check Roon Server and the network.`                                                                    |
+| Output unavailable          | `OUTPUT UNAVAILABLE` | `Check the selected output`       | `Open RoonScape setup to choose another Tracked Output, or make the selected output available in Roon.` |
+| Playing without content     | `PLAYING`            | `Now Playing details unavailable` | none                                                                                                    |
+| Paused without content      | `PAUSED`             | `Now Playing details unavailable` | none                                                                                                    |
 
 Available states show the Tracked Output and current Tracked Zone at one
 stable bottom-right position, under the viewer-facing labels **Output** and

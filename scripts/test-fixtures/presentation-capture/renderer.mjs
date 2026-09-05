@@ -10,15 +10,22 @@ import { createInterface } from "node:readline";
 const log = process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG;
 const style = process.env.ROONSCAPE_CAPTURE_TEST_LOG_STYLE ?? "general";
 const connection = createConnection(process.env.ROONSCAPE_CAPTURE_CONTROL);
+const connected = once(connection, "connect");
+let stoppedLogged = false;
+
+if (style === "profile") {
+  await appendFile(
+    log,
+    `renderer|${process.env.ROONSCAPE_CAPTURE_VIEWPORT}|${process.env.ROONSCAPE_CAPTURE_TYPOGRAPHY ?? "automatic"}|${process.env.ROONSCAPE_DIAGNOSTICS}\n`,
+  );
+}
 
 process.once("SIGTERM", async () => {
-  if (style === "focused") {
-    await appendFile(log, "renderer-stopped\n");
-  }
+  await logStopped();
   process.exit(0);
 });
 
-await once(connection, "connect");
+await connected;
 for await (const line of createInterface({ input: connection })) {
   const selection = JSON.parse(line);
   if (
@@ -38,7 +45,7 @@ for await (const line of createInterface({ input: connection })) {
             .slice(0, 12);
     await appendFile(
       log,
-      `selection|${JSON.stringify({ ...selection, observedArtworkHash })}\npainted|${Date.now()}\n`,
+      `selection|${JSON.stringify({ ...selection, observedArtworkHash })}\npainted|ready\n`,
     );
   } else {
     const artwork = selection.snapshot.artwork?.path ?? "none";
@@ -70,6 +77,12 @@ for await (const line of createInterface({ input: connection })) {
   );
 }
 
-if (style === "focused") {
+await logStopped();
+
+async function logStopped() {
+  if (stoppedLogged) {
+    return;
+  }
+  stoppedLogged = true;
   await appendFile(log, "renderer-stopped\n");
 }

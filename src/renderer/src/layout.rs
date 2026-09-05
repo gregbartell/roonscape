@@ -306,6 +306,35 @@ pub struct NowPlayingTypography {
     pub activity_heading_px: u32,
     pub activity_detail_px: u32,
     pub identity_px: u32,
+    pub lyric_masthead_title_px: u32,
+    pub lyric_masthead_artist_px: u32,
+    pub lyric_current_px: u32,
+    pub lyric_neighbor_px: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LyricNeighborVisibility {
+    pub previous: bool,
+    pub next: bool,
+}
+
+impl LyricNeighborVisibility {
+    pub fn for_rendered_lines(rendered_lines: i32) -> Self {
+        match rendered_lines {
+            ..=2 => Self {
+                previous: true,
+                next: true,
+            },
+            3 => Self {
+                previous: false,
+                next: true,
+            },
+            _ => Self {
+                previous: false,
+                next: false,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -679,7 +708,48 @@ pub struct NowPlayingLayout {
 
 impl NowPlayingLayout {
     pub fn for_presentation(presentation: &NowPlayingPresentation, viewport: Viewport) -> Self {
+        Self::for_composition_progress(
+            presentation,
+            viewport,
+            f64::from(presentation.lyrics.is_some()),
+        )
+    }
+
+    pub fn for_composition_progress(
+        presentation: &NowPlayingPresentation,
+        viewport: Viewport,
+        composition_progress: f64,
+    ) -> Self {
         let mut layout = Self::for_viewport(viewport);
+        let progress = composition_progress.clamp(0.0, 1.0);
+        let content_width_px = viewport
+            .width_px
+            .saturating_sub(layout.outer_gutter_px.saturating_mul(2))
+            .saturating_sub(layout.column_gap_px);
+        let lyric_artwork_size_px = rounded_fraction(viewport.height_px, 68, 100)
+            .min(rounded_fraction(viewport.width_px, 42, 100));
+        let artwork_size_px = interpolate_px(
+            layout.artwork_field_width_px,
+            lyric_artwork_size_px,
+            progress,
+        );
+        let lyric_utility_width_px = content_width_px.saturating_sub(lyric_artwork_size_px);
+        layout.artwork_column_width_px = artwork_size_px;
+        layout.artwork_field_width_px = artwork_size_px;
+        layout.artwork_field_height_px = artwork_size_px;
+        layout.information.left_viewport_x_px =
+            layout.outer_gutter_px + artwork_size_px + layout.column_gap_px;
+        layout.information.utility_width_px = interpolate_px(
+            layout.information.utility_width_px,
+            lyric_utility_width_px,
+            progress,
+        );
+        layout.information.musical_metadata_width_px = interpolate_px(
+            layout.information.musical_metadata_width_px,
+            lyric_utility_width_px,
+            progress,
+        );
+        layout.refresh_identity_row();
         layout.metadata_roles = metadata_roles(presentation);
         layout.footer_content = if presentation.progress.is_some() {
             NowPlayingFooterContent::DeterminateProgress
@@ -768,6 +838,10 @@ impl NowPlayingLayout {
                 22,
                 52,
             )),
+            lyric_masthead_title_px: scaled(viewport.height_px, 0.025, 20, 48),
+            lyric_masthead_artist_px: scaled(viewport.height_px, 0.018, 16, 36),
+            lyric_current_px: scaled(viewport.height_px, 0.064, 42, 118),
+            lyric_neighbor_px: scaled(viewport.height_px, 0.024, 19, 48),
         };
         let identity_phrase_gap_px = ((typography.identity_px as f64) * 1.1).round() as u32;
         let identity_label_px = ((typography.identity_px as f64) * 0.885).round() as u32;
@@ -883,6 +957,18 @@ impl NowPlayingLayout {
             + rounded_fraction(self.typography.activity_detail_px, 5, 4)
     }
 
+    fn refresh_identity_row(&mut self) {
+        let phrase_gap_px = self.identity_row.phrase_gap_px;
+        let fixed_width_px = phrase_gap_px * 2 + self.identity_row.separator_size_px;
+        let phrase_width_px = self
+            .information
+            .utility_width_px
+            .saturating_sub(fixed_width_px);
+        self.identity_row.output_phrase_max_width_px = rounded_fraction(phrase_width_px, 57, 100);
+        self.identity_row.zone_phrase_max_width_px =
+            phrase_width_px.saturating_sub(self.identity_row.output_phrase_max_width_px);
+    }
+
     pub fn metadata_group_offset_px(&self, group_height_px: u32) -> u32 {
         (self
             .metadata_region_bottom_viewport_y_px
@@ -891,6 +977,10 @@ impl NowPlayingLayout {
             / 2)
         .saturating_sub(self.metadata_optical_correction_px)
     }
+}
+
+fn interpolate_px(from: u32, to: u32, progress: f64) -> u32 {
+    (f64::from(from) + (f64::from(to) - f64::from(from)) * progress).round() as u32
 }
 
 fn metadata_roles(presentation: &NowPlayingPresentation) -> Vec<NowPlayingRole> {

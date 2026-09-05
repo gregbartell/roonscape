@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 4,
   "revision": 1,
   "availability": "outputUnavailable",
   "playback": null,
@@ -8,6 +8,7 @@
   },
   "trackedZone": null,
   "nowPlaying": null,
-  "progress": null,
-  "artwork": null
+  "artwork": null,
+  "lyrics": null,
+  "timing": null
 }

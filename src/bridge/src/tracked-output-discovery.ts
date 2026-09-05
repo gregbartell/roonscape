@@ -4,11 +4,16 @@ import {
   type CreateRoonServices,
   type RoonServices,
 } from "./roon-bridge.js";
-import { initializeRoonExtension } from "./roon-extension.js";
+import {
+  connectRoonExtension,
+  initializeRoonExtension,
+} from "./roon-extension.js";
+import type { RoonServerHost } from "./roon-server-host.js";
 
 interface TrackedOutputDiscoveryOptions {
   authorizationStore: AuthorizationStore;
   createRoonServices: CreateRoonServices;
+  roonServerHost?: RoonServerHost;
   timeoutMilliseconds?: number | null;
   signal?: AbortSignal;
 }
@@ -20,11 +25,13 @@ const roonDiscoveryStartupMilliseconds = 200;
 export function discoverTrackedOutputs({
   authorizationStore,
   createRoonServices,
+  roonServerHost,
   timeoutMilliseconds = 60_000,
   signal,
 }: TrackedOutputDiscoveryOptions): Promise<DiscoverableTrackedOutput[]> {
   return new Promise((resolve, reject) => {
     let settled = false;
+    let stopConnection = (): void => undefined;
     let timeout: NodeJS.Timeout | undefined;
     const settleAfterCleanup = (settlePromise: () => void): void => {
       if (settled) {
@@ -35,12 +42,14 @@ export function discoverTrackedOutputs({
         clearTimeout(timeout);
       }
       signal?.removeEventListener("abort", handleAbort);
-      stopRoonServices(services);
-      const deferredStop = setTimeout(
-        () => stopRoonServices(services),
-        roonDiscoveryStartupMilliseconds + 1,
-      );
-      deferredStop.unref();
+      stopConnection();
+      if (roonServerHost === undefined) {
+        const deferredStop = setTimeout(
+          () => stopRoonServices(services),
+          roonDiscoveryStartupMilliseconds + 1,
+        );
+        deferredStop.unref();
+      }
       settlePromise();
     };
     const handleAbort = (): void => {
@@ -93,7 +102,10 @@ export function discoverTrackedOutputs({
         );
       }, timeoutMilliseconds);
     }
-    services.extension.start_discovery();
+    stopConnection = connectRoonExtension(
+      services.extension,
+      roonServerHost,
+    ).stop;
   });
 }
 

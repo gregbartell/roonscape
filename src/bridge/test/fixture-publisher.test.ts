@@ -39,6 +39,90 @@ test("sends the current complete snapshot when a renderer connects", async () =>
   });
 });
 
+test("accepts lyric visibility only when a renderer reports its revision", async () => {
+  await withTaskDirectory(async (runtimeDirectory) => {
+    const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+    const snapshot = await loadSnapshot(
+      "src/shared/fixtures/lyrics-one-line.json",
+    );
+    const visibleRevisions: number[] = [];
+    let reportVisibility: (() => void) | undefined;
+    const visibilityReported = new Promise<void>((resolve) => {
+      reportVisibility = resolve;
+    });
+    const publisher = await startSnapshotPublisher(snapshot, socketPath, {
+      onLyricsVisible: (revision) => {
+        visibleRevisions.push(revision);
+        reportVisibility?.();
+      },
+    });
+
+    try {
+      assert.deepEqual(visibleRevisions, []);
+      const client = createConnection(socketPath);
+      const lines = createInterface({ input: client });
+      await once(lines, "line");
+      assert.deepEqual(visibleRevisions, []);
+      client.write(
+        `${JSON.stringify({ type: "lyricsVisible", revision: snapshot.revision })}\n`,
+      );
+      await visibilityReported;
+      assert.deepEqual(visibleRevisions, [snapshot.revision]);
+      client.destroy();
+    } finally {
+      await publisher.close();
+    }
+  });
+});
+
+test(
+  "accepts coalesced bounded visibility reports without closing snapshots",
+  { timeout: 30_000 },
+  async (context) => {
+    await withTaskDirectory(async (runtimeDirectory) => {
+      const socketPath = path.join(runtimeDirectory, "roonscape.sock");
+      const snapshot = await loadSnapshot(
+        "src/shared/fixtures/lyrics-one-line.json",
+      );
+      const visibleRevisions: number[] = [];
+      const allReports = Promise.withResolvers<void>();
+      const publisher = await startSnapshotPublisher(snapshot, socketPath, {
+        onLyricsVisible: (revision) => {
+          visibleRevisions.push(revision);
+          if (visibleRevisions.length === 40) {
+            allReports.resolve();
+          }
+        },
+      });
+
+      try {
+        const client = createConnection(socketPath);
+        const lines = createInterface({ input: client });
+        await once(lines, "line", { signal: context.signal });
+        client.write(
+          Array.from(
+            { length: 40 },
+            () =>
+              `${JSON.stringify({ type: "lyricsVisible", revision: snapshot.revision })}\n`,
+          ).join(""),
+        );
+        await abortable(allReports.promise, context.signal);
+
+        const nextSnapshot = { ...snapshot, revision: snapshot.revision + 1 };
+        publisher.publish(nextSnapshot);
+        const [line] = (await once(lines, "line", {
+          signal: context.signal,
+        })) as [string];
+        assert.deepEqual(JSON.parse(line), nextSnapshot);
+        assert.equal(visibleRevisions.length, 40);
+        client.destroy();
+      } finally {
+        await publisher.close();
+      }
+    });
+  },
+);
+
 test("re-anchors Playing at fixture launch before using the shared publisher", async () => {
   await withTaskDirectory(async (runtimeDirectory) => {
     const socketPath = path.join(runtimeDirectory, "roonscape.sock");
@@ -55,12 +139,17 @@ test("re-anchors Playing at fixture launch before using the shared publisher", a
       const [line] = (await once(lines, "line")) as [string];
       const published = JSON.parse(line) as PresentationSnapshot;
 
-      assert.deepEqual(published.progress, {
-        positionSeconds: 171,
+      assert.deepEqual(published.timing, {
+        position: {
+          seconds: 171,
+          sampledAt: "2030-01-02T03:04:05.000Z",
+        },
         durationSeconds: 266,
-        sampledAt: "2030-01-02T03:04:05.000Z",
       });
-      assert.equal(snapshot.progress?.sampledAt, "2026-08-15T19:20:00Z");
+      assert.equal(
+        snapshot.timing?.position?.sampledAt,
+        "2026-08-15T19:20:00Z",
+      );
       client.destroy();
     } finally {
       await publisher.close();
@@ -68,7 +157,7 @@ test("re-anchors Playing at fixture launch before using the shared publisher", a
   });
 });
 
-test("does not re-anchor Paused or Loading fixture progress", async () => {
+test("does not re-anchor Paused or Starting fixture timing", async () => {
   for (const fixtureName of ["paused.json", "loading.json"]) {
     await withTaskDirectory(async (runtimeDirectory) => {
       const socketPath = path.join(runtimeDirectory, "roonscape.sock");
@@ -85,7 +174,7 @@ test("does not re-anchor Paused or Loading fixture progress", async () => {
         const [line] = (await once(lines, "line")) as [string];
         const published = JSON.parse(line) as PresentationSnapshot;
 
-        assert.deepEqual(published.progress, snapshot.progress);
+        assert.deepEqual(published.timing, snapshot.timing);
         client.destroy();
       } finally {
         await publisher.close();
@@ -316,6 +405,21 @@ test("does not replace an active publisher socket", async () => {
     client.destroy();
   });
 });
+
+async function abortable<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  signal.throwIfAborted();
+  const aborted = Promise.withResolvers<never>();
+  const rejectOnAbort = () => aborted.reject(signal.reason);
+  signal.addEventListener("abort", rejectOnAbort, { once: true });
+  try {
+    return await Promise.race([operation, aborted.promise]);
+  } finally {
+    signal.removeEventListener("abort", rejectOnAbort);
+  }
+}
 
 interface PublisherFixture {
   publisher: SnapshotPublisher;

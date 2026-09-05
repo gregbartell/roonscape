@@ -1,19 +1,12 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import {
-  access,
-  chmod,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { installFixtureWorktree } from "./native-session-test-fixtures.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 
@@ -52,13 +45,7 @@ test("the release option runs the optimized renderer profile", async () => {
       "--release",
     ]);
 
-    assert.deepEqual(rendererArguments, [
-      "run",
-      "--quiet",
-      "--release",
-      "--package",
-      "roonscape-renderer",
-    ]);
+    assert.match(rendererArguments[0], /target\/release\/roonscape-renderer$/);
   });
 });
 
@@ -91,27 +78,21 @@ async function launchFixture(
   environmentOverrides = {},
   launcherArguments = [],
 ) {
-  const binDirectory = path.join(taskDirectory, "bin");
   const environmentRecord = path.join(taskDirectory, "renderer-environment");
-  await mkdir(binDirectory);
-
-  const cargoStub = path.join(binDirectory, "cargo");
-  await writeFile(
-    cargoStub,
-    '#!/bin/sh\nprintf "%s\\n%s\\n%s\\n%s\\n" "$ROONSCAPE_SOCKET" "${ROONSCAPE_FIXTURE_CONTROL-unset}" "$*" "${ROONSCAPE_STATIC_FIXTURE-unset}" > "$ROONSCAPE_FIXTURE_TEST_ENVIRONMENT"\n',
+  await installFixtureWorktree(
+    taskDirectory,
+    '#!/bin/sh\nprintf "%s\\n%s\\n%s\\n%s\\n" "$ROONSCAPE_SOCKET" "${ROONSCAPE_FIXTURE_CONTROL-unset}" "$0 $*" "${ROONSCAPE_STATIC_FIXTURE-unset}" > "$ROONSCAPE_FIXTURE_TEST_ENVIRONMENT"\n',
   );
-  await chmod(cargoStub, 0o755);
 
   const launcher = spawn(
     process.execPath,
-    ["scripts/run-fixture.mjs", ...launcherArguments],
+    [path.join(taskDirectory, "scripts/run-fixture.mjs"), ...launcherArguments],
     {
       cwd: repositoryRoot,
       detached: true,
       env: {
         ...process.env,
         ...environmentOverrides,
-        PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
         ROONSCAPE_FIXTURE_TEST_ENVIRONMENT: environmentRecord,
       },
       stdio: ["ignore", "pipe", "pipe"],

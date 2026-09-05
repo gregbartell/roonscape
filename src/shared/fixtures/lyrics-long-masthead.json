@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 4,
+  "revision": 35,
+  "availability": "available",
+  "playback": "playing",
+  "trackedOutput": {
+    "name": "Speaker System"
+  },
+  "trackedZone": {
+    "id": "zone-living-room",
+    "name": "Living Room"
+  },
+  "nowPlaying": {
+    "title": "Last Light on Phobos and the Long Return Across the Quiet Sea",
+    "artist": "Evelyn Lark & The Orbital Choir with the Meridian Chamber Ensemble",
+    "album": "Signals from the Quiet Sea"
+  },
+  "artwork": {
+    "revision": 3,
+    "path": "src/shared/fixtures/artwork/playing.jpg"
+  },
+  "lyrics": {
+    "cues": [
+      {
+        "atSeconds": 170,
+        "text": "We find the signal"
+      }
+    ]
+  },
+  "timing": {
+    "position": {
+      "seconds": 171,
+      "sampledAt": "2026-08-15T19:20:00Z"
+    },
+    "durationSeconds": 266
+  }
+}
