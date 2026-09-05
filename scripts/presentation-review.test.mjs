@@ -333,6 +333,8 @@ test("cancelled review preserves partial images beside a concurrent successful r
     () => readFile(path.join(fixture, "waiting"), "utf8"),
     child,
     "second native capture",
+    // Startup and the first PNG encoding precede the cancellation target.
+    { timeoutMilliseconds: 60_000 },
   );
   child.kill("SIGTERM");
   assert.equal(
