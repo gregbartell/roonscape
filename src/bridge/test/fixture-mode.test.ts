@@ -565,7 +565,9 @@ async function waitForSocket(
   child: ChildProcess,
   socketPath: string,
 ): Promise<void> {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  // Startup includes loading and validating every Fixture Scenario, not just IPC.
+  const deadline = performance.now() + subprocessWatchdogMilliseconds;
+  while (performance.now() < deadline) {
     if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(
         `Fixture publisher exited before opening the socket (${child.exitCode ?? child.signalCode})`,

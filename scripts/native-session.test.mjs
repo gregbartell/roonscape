@@ -200,7 +200,7 @@ test(
             },
             child,
             "headless Fixture Mode readiness",
-            { timeoutMilliseconds: 30_000, signal: context.signal },
+            { timeoutMilliseconds: 45_000, signal: context.signal },
           );
         }),
       );
@@ -369,7 +369,8 @@ setInterval(() => {}, 1000);
         },
         launcher,
         "unresponsive Renderer startup",
-        { signal: context.signal },
+        // Includes native infrastructure and the publisher's catalog preflight.
+        { timeoutMilliseconds: 45_000, signal: context.signal },
       );
       runtime = owned.runtime;
       childPids = (

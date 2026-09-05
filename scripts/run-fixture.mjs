@@ -116,7 +116,8 @@ try {
     () => access(socketPath),
     publisher,
     "Fixture publisher socket",
-    { signal },
+    // Node startup loads and validates the whole catalog before opening sockets.
+    { signal, timeoutMilliseconds: 30_000 },
   );
   if (environment.ROONSCAPE_FIXTURE_CONTROL !== undefined) {
     await waitFor(
