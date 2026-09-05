@@ -36,7 +36,6 @@ export async function createNativeSession({
     "AT_SPI_BUS_ADDRESS",
     "GTK_MODULES",
     "GTK_PATH",
-    "ROONSCAPE_DISPLAY_CONFIG",
     "ROONSCAPE_CAPTURE_CONTROL",
     "ROONSCAPE_CAPTURE_VIEWPORT",
     "ROONSCAPE_CAPTURE_TYPOGRAPHY",
@@ -77,6 +76,7 @@ export async function createNativeSession({
       configurationPath,
       JSON.stringify({
         trackedOutputId: "native-verification",
+        trackedOutputName: "Speaker System",
         inactivity: {
           gracePeriodSeconds: 3600,
           dimmedOpacity: 0.35,

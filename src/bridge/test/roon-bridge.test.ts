@@ -93,7 +93,10 @@ function createRoonBoundary(
   };
   let displayConfiguration =
     typeof configuredOutput === "string"
-      ? { trackedOutputId: configuredOutput }
+      ? {
+          trackedOutputId: configuredOutput,
+          trackedOutputName: "Speaker System",
+        }
       : (configuredOutput ?? null);
   const displayConfigurationStore: DisplayConfigurationStore = {
     load: () => displayConfiguration,
@@ -495,7 +498,7 @@ async function prepareArtworkTestContext({
 }
 
 test("publishes truthful availability across authorization and connection events", async () => {
-  const boundary = createRoonBoundary();
+  const boundary = createRoonBoundary("output-speaker-system");
   const extensionOptions = boundary.extensionOptions();
 
   extensionOptions.set_persisted_state({
@@ -518,7 +521,10 @@ test("publishes truthful availability across authorization and connection events
       revision,
       availability,
       playback: null,
-      trackedOutput: null,
+      trackedOutput:
+        availability === "outputUnavailable"
+          ? { name: "Speaker System" }
+          : null,
       trackedZone: null,
       nowPlaying: null,
       timing: null,
@@ -558,7 +564,7 @@ test("publishes the saved Tracked Output identity only when that output is unava
   await Promise.all(boundary.snapshots.map(validateSnapshot));
 });
 
-test("backfills and refreshes the persisted Tracked Output name", () => {
+test("refreshes the persisted Tracked Output name when renamed", () => {
   const inactivity = {
     gracePeriodSeconds: 240,
     dimmedOpacity: 0.3,
@@ -566,6 +572,7 @@ test("backfills and refreshes the persisted Tracked Output name", () => {
   };
   const boundary = createRoonBoundary({
     trackedOutputId: "output-speaker-system",
+    trackedOutputName: "Speaker System",
     inactivity,
   });
 
@@ -602,11 +609,6 @@ test("backfills and refreshes the persisted Tracked Output name", () => {
   });
 
   assert.deepEqual(boundary.savedConfigurations, [
-    {
-      trackedOutputId: "output-speaker-system",
-      trackedOutputName: "Speaker System",
-      inactivity,
-    },
     {
       trackedOutputId: "output-speaker-system",
       trackedOutputName: "Main Speakers",
@@ -2291,7 +2293,7 @@ test("registers the public extension identity and only observer services", () =>
 });
 
 test("reports each availability condition through Roon extension status", () => {
-  const boundary = createRoonBoundary();
+  const boundary = createRoonBoundary("output-speaker-system");
   const extensionOptions = boundary.extensionOptions();
 
   extensionOptions.core_paired(boundary.core());

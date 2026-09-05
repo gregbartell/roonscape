@@ -288,8 +288,7 @@ stable bottom-right position, under the viewer-facing labels **Output** and
 **Zone**. This is the Full-field anchor; Now Playing places the row in its
 raised unified footer. Output unavailable uses the same Full-field anchor for
 the persisted Tracked Output name alone, without a separator or Zone phrase,
-because no current Tracked Zone is authoritative. A legacy Display
-Configuration without a persisted name omits the row. Awaiting Roon
+because no current Tracked Zone is authoritative. Awaiting Roon
 Authorization and disconnected omit both identities because neither recovery
 action depends on the configured output.
 

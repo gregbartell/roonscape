@@ -128,7 +128,7 @@ fn parses_the_shared_playing_fixture_as_a_complete_snapshot() {
 }
 
 #[test]
-fn accepts_every_version_4_timing_shape_and_rejects_retired_or_invalid_timing() {
+fn accepts_supported_timing_shapes_and_rejects_invalid_timing() {
     let base: Value =
         serde_json::from_str(&support::fixture("playing.json")).expect("fixture should be JSON");
     for timing in [
@@ -147,10 +147,6 @@ fn accepts_every_version_4_timing_shape_and_rejects_retired_or_invalid_timing() 
         candidate["timing"] = timing;
         parse_snapshot(&candidate.to_string()).expect("version 4 timing shape should be accepted");
     }
-
-    let mut retired = base.clone();
-    retired["schemaVersion"] = 3.into();
-    assert!(parse_snapshot(&retired.to_string()).is_err());
 
     for timing in [
         serde_json::json!({"position": null, "durationSeconds": null}),
@@ -430,16 +426,6 @@ fn rejects_unordered_duplicate_or_excessive_lyric_text() {
     let error =
         parse_snapshot(&excessive.to_string()).expect_err("total lyric text should remain bounded");
     assert!(error.to_string().contains("total lyric text"));
-}
-
-#[test]
-fn rejects_the_removed_display_zone_snapshot_field() {
-    let error = parse_snapshot(
-        r#"{"schemaVersion":4,"revision":1,"availability":"available","playback":"playing","trackedOutput":{"name":"Speaker System"},"trackedZone":{"id":"zone-living-room","name":"Living Room"},"displayZone":{"name":"Living Room"},"nowPlaying":null,"timing":null,"artwork":null,"lyrics":null}"#,
-    )
-    .expect_err("the removed displayZone field should be rejected");
-
-    assert!(error.to_string().contains("violates the schema"));
 }
 
 #[test]

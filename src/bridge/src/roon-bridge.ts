@@ -327,13 +327,11 @@ export function startRoonBridge({
     }
   };
 
-  const changeAvailability = (availability: Unavailable): void => {
-    publishState(
-      unavailableState(
-        availability,
-        displayConfigurationStore.load()?.trackedOutputName,
-      ),
-    );
+  const changeAvailability = (
+    availability: Unavailable,
+    trackedOutput: PresentationSnapshot["trackedOutput"] = null,
+  ): void => {
+    publishState(unavailableState(availability, trackedOutput));
     void artworkPresentation.cancelAndClear().catch(reportArtworkError);
   };
 
@@ -344,7 +342,14 @@ export function startRoonBridge({
       activeLyricFeed?.stop();
       activeLyricFeed = undefined;
       activeCore = core;
-      changeAvailability("outputUnavailable");
+      const loadedConfiguration = displayConfigurationStore.load();
+      if (loadedConfiguration === null) {
+        return;
+      }
+      let configuration: DisplayConfiguration = loadedConfiguration;
+      changeAvailability("outputUnavailable", {
+        name: configuration.trackedOutputName,
+      });
       const selectedEndpoint = lyricFeedEndpointForCore(core);
       if (selectedEndpoint !== null) {
         try {
@@ -358,12 +363,6 @@ export function startRoonBridge({
           activeLyricFeed = undefined;
         }
       }
-      const loadedConfiguration = displayConfigurationStore.load();
-      if (loadedConfiguration === null) {
-        return;
-      }
-      let configuration: DisplayConfiguration = loadedConfiguration;
-
       const zones = new Map<string, RetainedZone>();
       core.services.RoonApiTransport.subscribe_zones((response, event) => {
         if (activeCore !== core) {
@@ -425,7 +424,9 @@ export function startRoonBridge({
         );
         if (trackedZone === undefined || trackedOutput === undefined) {
           reconcileLyricFeed(null, []);
-          changeAvailability("outputUnavailable");
+          changeAvailability("outputUnavailable", {
+            name: configuration.trackedOutputName,
+          });
           return;
         }
 
@@ -798,16 +799,13 @@ function unavailableSnapshot(
 
 function unavailableState(
   availability: Unavailable,
-  trackedOutputName?: string,
+  trackedOutput: PresentationSnapshot["trackedOutput"] = null,
 ): SnapshotState {
   return {
     schemaVersion: 4,
     availability,
     playback: null,
-    trackedOutput:
-      availability === "outputUnavailable" && trackedOutputName !== undefined
-        ? { name: trackedOutputName }
-        : null,
+    trackedOutput,
     trackedZone: null,
     nowPlaying: null,
     timing: null,

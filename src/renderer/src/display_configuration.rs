@@ -39,7 +39,6 @@ pub enum DisplayConfigurationError {
     Schema(String),
     Invalid(&'static str),
     MissingHome,
-    RemovedEnvironmentOverride,
 }
 
 #[derive(Deserialize)]
@@ -48,7 +47,7 @@ struct DisplayConfigurationFile {
     #[serde(rename = "trackedOutputId")]
     _tracked_output_id: String,
     #[serde(rename = "trackedOutputName")]
-    _tracked_output_name: Option<String>,
+    _tracked_output_name: String,
     inactivity: Option<InactivityConfigurationFile>,
 }
 
@@ -125,9 +124,6 @@ impl fmt::Display for DisplayConfigurationError {
             Self::MissingHome => {
                 formatter.write_str("HOME must be set when XDG_CONFIG_HOME is absent")
             }
-            Self::RemovedEnvironmentOverride => formatter.write_str(
-                "ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH",
-            ),
         }
     }
 }
@@ -137,10 +133,7 @@ impl Error for DisplayConfigurationError {
         match self {
             Self::Io(error) => Some(error),
             Self::Json(error) => Some(error),
-            Self::Schema(_)
-            | Self::Invalid(_)
-            | Self::MissingHome
-            | Self::RemovedEnvironmentOverride => None,
+            Self::Schema(_) | Self::Invalid(_) | Self::MissingHome => None,
         }
     }
 }
@@ -179,18 +172,10 @@ pub fn load_inactivity_configuration(
 }
 
 pub fn display_configuration_file_path() -> Result<PathBuf, DisplayConfigurationError> {
-    reject_removed_display_configuration_override()?;
     if let Some(config_root) = env::var_os("XDG_CONFIG_HOME") {
         return Ok(PathBuf::from(config_root).join("roonscape/display.json"));
     }
 
     let home = env::var_os("HOME").ok_or(DisplayConfigurationError::MissingHome)?;
     Ok(PathBuf::from(home).join(".config/roonscape/display.json"))
-}
-
-pub fn reject_removed_display_configuration_override() -> Result<(), DisplayConfigurationError> {
-    if env::var_os("ROONSCAPE_DISPLAY_CONFIG").is_some() {
-        return Err(DisplayConfigurationError::RemovedEnvironmentOverride);
-    }
-    Ok(())
 }

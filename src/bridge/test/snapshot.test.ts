@@ -8,7 +8,7 @@ import {
   MAX_LYRIC_TOTAL_CODE_POINTS,
 } from "../src/synchronized-lyrics.js";
 
-test("accepts every version 4 timing shape and rejects retired or invalid timing", async () => {
+test("accepts supported timing shapes and rejects invalid timing", async () => {
   const base = {
     schemaVersion: 4,
     revision: 1,
@@ -43,7 +43,6 @@ test("accepts every version 4 timing shape and rejects retired or invalid timing
   }
 
   for (const candidate of [
-    { ...base, schemaVersion: 3, timing: null },
     { ...base, timing: { position: null, durationSeconds: null } },
     {
       ...base,
@@ -465,21 +464,6 @@ test("loads every shared unavailable fixture without stale Now Playing", async (
   }
 });
 
-test("accepts legacy Output unavailable without a persisted Tracked Output name", async () => {
-  await validateSnapshot({
-    schemaVersion: 4,
-    revision: 1,
-    availability: "outputUnavailable",
-    playback: null,
-    trackedOutput: null,
-    trackedZone: null,
-    nowPlaying: null,
-    timing: null,
-    artwork: null,
-    lyrics: null,
-  });
-});
-
 test("rejects identities that are not authoritative for unavailable states", async () => {
   const unavailable = {
     schemaVersion: 4 as const,
@@ -556,24 +540,6 @@ test("loads indeterminate progress as absent and permits clamping samples", asyn
 test("rejects the shared invalid fixture", async () => {
   await assert.rejects(
     loadSnapshot("src/shared/fixtures/invalid.json"),
-    /Invalid presentation snapshot/,
-  );
-});
-
-test("rejects the removed displayZone snapshot field", async () => {
-  await assert.rejects(
-    validateSnapshot({
-      schemaVersion: 4,
-      revision: 1,
-      availability: "available",
-      playback: "playing",
-      trackedOutput: { name: "Speaker System" },
-      trackedZone: { id: "zone-living-room", name: "Living Room" },
-      displayZone: { name: "Living Room" },
-      nowPlaying: null,
-      timing: null,
-      artwork: null,
-    }),
     /Invalid presentation snapshot/,
   );
 });

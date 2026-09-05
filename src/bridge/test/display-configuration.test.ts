@@ -40,15 +40,18 @@ test("persists Display Configuration in a private dedicated file", async () => {
   });
 });
 
-test("loads existing Display Configuration without inactivity calibration", async () => {
+test("loads Display Configuration with default inactivity", async () => {
   const store = new FileDisplayConfigurationStore(
     path.join(
       repositoryRoot,
-      "src/shared/fixtures/display-configuration-tracked-output-only.json",
+      "src/shared/fixtures/display-configuration-default-inactivity.json",
     ),
   );
 
-  assert.deepEqual(store.load(), { trackedOutputId: "output-speaker-system" });
+  assert.deepEqual(store.load(), {
+    trackedOutputId: "output-speaker-system",
+    trackedOutputName: "Speaker System",
+  });
 });
 
 test("persists inactivity calibration with Tracked Output selection", async () => {
@@ -57,6 +60,7 @@ test("persists inactivity calibration with Tracked Output selection", async () =
     const store = new FileDisplayConfigurationStore(configurationFile);
     const configuration = {
       trackedOutputId: "output-speaker-system",
+      trackedOutputName: "Speaker System",
       inactivity: {
         gracePeriodSeconds: 240,
         dimmedOpacity: 0.3,
@@ -76,7 +80,11 @@ test("rejects invalid Display Configuration before creating a file", async () =>
     const store = new FileDisplayConfigurationStore(configurationFile);
 
     assert.throws(
-      () => store.save({ trackedOutputId: "" }),
+      () =>
+        store.save({
+          trackedOutputId: "",
+          trackedOutputName: "Speaker System",
+        }),
       /Display Configuration is invalid/,
     );
     assert.equal(store.load(), null);
@@ -102,23 +110,6 @@ test("loads shared inactivity Display Configuration", () => {
   });
 });
 
-test("rejects the removed displayOutputId field", async () => {
-  await withTaskDirectory(async (taskDirectory) => {
-    const configurationFile = path.join(taskDirectory, "display.json");
-    const store = new FileDisplayConfigurationStore(configurationFile);
-
-    await writeFile(
-      configurationFile,
-      JSON.stringify({
-        trackedOutputId: "output-speaker-system",
-        displayOutputId: "output-speaker-system",
-      }),
-    );
-
-    assert.equal(store.load(), null);
-  });
-});
-
 test("uses a Display Configuration path separate from Roon authorization", () => {
   assert.equal(
     displayConfigurationFilePath({
@@ -130,17 +121,6 @@ test("uses a Display Configuration path separate from Roon authorization", () =>
   );
 });
 
-test("rejects the removed Display Configuration environment override", () => {
-  assert.throws(
-    () =>
-      displayConfigurationFilePath({
-        ROONSCAPE_DISPLAY_CONFIG: "/legacy/display.json",
-        XDG_CONFIG_HOME: "/var/config",
-      }),
-    /ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH/,
-  );
-});
-
 test("treats malformed or invalid Display Configuration as unavailable", async () => {
   await withTaskDirectory(async (taskDirectory) => {
     const configurationFile = path.join(taskDirectory, "display.json");
@@ -148,10 +128,13 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
 
     for (const contents of [
       "not JSON",
-      JSON.stringify({ trackedOutputId: "" }),
-      JSON.stringify({ trackedOutputId: "output-1", fallback: "output-2" }),
+      JSON.stringify({
+        trackedOutputId: "",
+        trackedOutputName: "Speaker System",
+      }),
       JSON.stringify({
         trackedOutputId: "output-1",
+        trackedOutputName: "Speaker System",
         inactivity: {
           gracePeriodSeconds: 0,
           dimmedOpacity: 0.3,
@@ -160,6 +143,7 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
       }),
       JSON.stringify({
         trackedOutputId: "output-1",
+        trackedOutputName: "Speaker System",
         inactivity: {
           gracePeriodSeconds: 240,
           dimmedOpacity: 1,
@@ -168,6 +152,7 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
       }),
       JSON.stringify({
         trackedOutputId: "output-1",
+        trackedOutputName: "Speaker System",
         inactivity: {
           gracePeriodSeconds: 240,
           dimmedOpacity: 1.1,

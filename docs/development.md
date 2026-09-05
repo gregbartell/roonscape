@@ -162,8 +162,7 @@ cargo test --package roonscape-renderer --test integration snapshot_contract::
 
 Tests live in `src/renderer/tests/integration`; add new modules to its `main.rs`.
 Font-registration tests retain a separate executable so they exercise the
-process's first registration. Compiler profiles and debug information are
-unchanged. Use `npm run verify` (and `--design` when required) for final
+process's first registration. Use `npm run verify` (and `--design` when required) for final
 headless verification with retained evidence.
 
 ## Run from source

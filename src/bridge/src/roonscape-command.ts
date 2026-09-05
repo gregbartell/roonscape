@@ -1,9 +1,6 @@
 import path from "node:path";
 
-import {
-  type DisplayConfiguration,
-  rejectRemovedDisplayConfigurationOverride,
-} from "./display-configuration.js";
+import type { DisplayConfiguration } from "./display-configuration.js";
 import { runSetup, type SetupDependencies } from "./first-time-setup.js";
 import {
   parseRoonServerHost,
@@ -85,15 +82,6 @@ export async function runRoonScapeCommand(
   if (options === null) {
     dependencies.writeError(
       `Unknown option: ${arguments_[0] ?? ""}\n\n${usage}`,
-    );
-    return 2;
-  }
-
-  try {
-    rejectRemovedDisplayConfigurationOverride(dependencies.environment);
-  } catch (error) {
-    dependencies.writeError(
-      error instanceof Error ? error.message : String(error),
     );
     return 2;
   }

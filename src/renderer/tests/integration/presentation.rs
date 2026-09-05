@@ -489,21 +489,6 @@ fn maps_unavailable_snapshots_to_distinct_explanations() {
 }
 
 #[test]
-fn output_unavailable_without_a_saved_name_omits_the_identity() {
-    let snapshot = parse_snapshot(
-        r#"{"schemaVersion":4,"revision":1,"availability":"outputUnavailable","playback":null,"trackedOutput":null,"trackedZone":null,"nowPlaying":null,"timing":null,"artwork":null,"lyrics":null}"#,
-    )
-    .expect("Output unavailable should remain valid without a saved name");
-    let Presentation::FullField(presentation) =
-        presentation_from_snapshot(&snapshot).expect("legacy snapshot should be presentable")
-    else {
-        panic!("Output unavailable should use a Full-field Presentation");
-    };
-
-    assert_eq!(presentation.identity, None);
-}
-
-#[test]
 fn presents_stopped_playback_as_idle_full_field_copy_with_authoritative_identities() {
     let snapshot =
         parse_snapshot(&support::fixture("stopped.json")).expect("Stopped fixture should be valid");

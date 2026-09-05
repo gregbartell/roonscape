@@ -8,7 +8,6 @@ import {
 import {
   FileDisplayConfigurationStore,
   displayConfigurationFilePath,
-  rejectRemovedDisplayConfigurationOverride,
 } from "./display-configuration.js";
 import { installBridgeLifecycle } from "./bridge-lifecycle.js";
 import { startSnapshotPublisher } from "./fixture-publisher.js";
@@ -24,8 +23,6 @@ const socketPath = process.env.ROONSCAPE_SOCKET;
 if (socketPath === undefined || socketPath.length === 0) {
   throw new Error("ROONSCAPE_SOCKET must name the private Unix socket");
 }
-
-rejectRemovedDisplayConfigurationOverride(process.env);
 
 const bridgeOptions = parseBridgeOptions(process.argv.slice(2));
 

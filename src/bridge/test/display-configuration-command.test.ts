@@ -84,7 +84,11 @@ test("preserves inactivity calibration when changing the Tracked Output", async 
     ["select", "output-library"],
     {
       configurationStore: {
-        load: () => ({ trackedOutputId: "output-speaker-system", inactivity }),
+        load: () => ({
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+          inactivity,
+        }),
         save: (configuration) => {
           saved = configuration;
         },
@@ -142,7 +146,10 @@ test("configures OLED inactivity without changing the Tracked Output", async () 
     ["inactivity", "240", "0.3", "45"],
     {
       configurationStore: {
-        load: () => ({ trackedOutputId: "output-speaker-system" }),
+        load: () => ({
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+        }),
         save: (configuration) => {
           saved = configuration;
         },
@@ -155,6 +162,7 @@ test("configures OLED inactivity without changing the Tracked Output", async () 
   assert.equal(exitCode, 0);
   assert.deepEqual(saved, {
     trackedOutputId: "output-speaker-system",
+    trackedOutputName: "Speaker System",
     inactivity: {
       gracePeriodSeconds: 240,
       dimmedOpacity: 0.3,

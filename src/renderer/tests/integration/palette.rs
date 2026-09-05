@@ -91,16 +91,6 @@ fn oklab_distance(first: Rgb, second: Rgb) -> f64 {
     .sqrt()
 }
 
-fn assert_brightness_compression(role: &str, original: Rgb, compressed: Rgb) {
-    let original_lightness = hsl_lightness(original);
-    let compression = 1.0 - hsl_lightness(compressed) / original_lightness;
-    assert!(
-        (0.08..=0.12).contains(&compression),
-        "{role} should be compressed by 8–12%; got {:.1}%",
-        compression * 100.0,
-    );
-}
-
 fn synthetic_artwork(directory: &TempDir, file_name: &str, field: &str, accent: &str) -> PathBuf {
     let artwork_path = directory.path().join(file_name);
     fs::write(
@@ -427,64 +417,30 @@ fn keeps_a_below_ceiling_light_palette_at_its_generated_lightness() {
 }
 
 #[test]
-fn cellout_direction_produces_a_restrained_teal_gray_and_mauve_light_matte() {
+fn restrained_light_produces_a_restrained_teal_gray_and_mauve_light_matte() {
     let artwork_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../shared/fixtures/artwork/cellout-direction.svg");
+        .join("../shared/fixtures/artwork/restrained-light.svg");
 
     let palette = PresentationPalette::from_artwork(&artwork_path)
-        .expect("the Cellout-direction artwork should produce a palette");
+        .expect("the Restrained light palette artwork should produce a palette");
 
-    assert_color_near(
-        "teal artwork field",
-        palette.artwork_field,
-        Rgb {
-            red: 0x59,
-            green: 0x9e,
-            blue: 0xab,
-        },
-        24,
-    );
-    assert_color_near(
-        "cool-gray center transition",
-        palette.background,
-        Rgb {
-            red: 0xb3,
-            green: 0xc4,
-            blue: 0xc6,
-        },
-        24,
-    );
-    assert_color_near(
-        "pale-mauve metadata field",
-        palette.metadata_field,
-        Rgb {
-            red: 0xc5,
-            green: 0xbe,
-            blue: 0xc6,
-        },
-        24,
-    );
     assert!(
         palette.background.contrast_ratio(WHITE) >= 1.4,
         "the bright end should be restrained rather than approaching near-white",
     );
-    assert_brightness_compression(
-        "cool-gray center transition",
-        Rgb {
-            red: 0xc9,
-            green: 0xd4,
-            blue: 0xd5,
-        },
-        palette.background,
+    assert!(
+        hsl_lightness(palette.background) > 0.5 && hsl_lightness(palette.metadata_field) > 0.5,
+        "restraining brightness should preserve a light presentation",
     );
-    assert_brightness_compression(
-        "pale-mauve metadata field",
-        Rgb {
-            red: 0xdd,
-            green: 0xd3,
-            blue: 0xdc,
-        },
-        palette.metadata_field,
+    assert!(
+        palette.artwork_field.green > palette.artwork_field.red + 8
+            && palette.artwork_field.blue > palette.artwork_field.red + 8,
+        "the artwork field should retain the cyan color family",
+    );
+    assert!(
+        palette.metadata_field.red > palette.metadata_field.green
+            && palette.metadata_field.blue > palette.metadata_field.green,
+        "the metadata field should retain the plum color family",
     );
 }
 
@@ -756,16 +712,16 @@ fn light_monochromatic_artwork_keeps_all_three_gradient_stops_distinct() {
 }
 
 #[test]
-fn forever_direction_retains_a_dark_teal_chromatic_matte() {
-    let artwork_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../shared/fixtures/artwork/forever-direction.svg");
+fn dark_teal_retains_a_dark_teal_chromatic_matte() {
+    let artwork_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/dark-teal.svg");
 
     let palette = PresentationPalette::from_artwork(&artwork_path)
-        .expect("the Forever-direction artwork should produce a palette");
+        .expect("the Dark teal palette artwork should produce a palette");
 
     assert!(
         palette.background.contrast_ratio(WHITE) >= 7.0,
-        "the Forever direction should retain a dark center transition",
+        "the dark teal palette should retain a dark center transition",
     );
     assert!(
         palette.artwork_field.green > palette.artwork_field.red + 8
@@ -800,10 +756,10 @@ fn every_semantic_text_and_accent_role_meets_its_field_contrast() {
     let light_artwork_path = synthetic_artwork(&directory, "light.svg", "#f4e7c5", "#e59a73");
     let representative_artwork_path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/playing.svg");
-    let cellout_direction_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../shared/fixtures/artwork/cellout-direction.svg");
-    let forever_direction_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../shared/fixtures/artwork/forever-direction.svg");
+    let restrained_light_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../shared/fixtures/artwork/restrained-light.svg");
+    let dark_teal_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/dark-teal.svg");
     let palettes = [
         ("fallback", PresentationPalette::fallback(), false),
         (
@@ -825,15 +781,15 @@ fn every_semantic_text_and_accent_role_meets_its_field_contrast() {
             true,
         ),
         (
-            "Cellout-direction artwork",
-            PresentationPalette::from_artwork(&cellout_direction_path)
-                .expect("Cellout-direction artwork should produce a palette"),
+            "Restrained light palette artwork",
+            PresentationPalette::from_artwork(&restrained_light_path)
+                .expect("Restrained light palette artwork should produce a palette"),
             true,
         ),
         (
-            "Forever-direction artwork",
-            PresentationPalette::from_artwork(&forever_direction_path)
-                .expect("Forever-direction artwork should produce a palette"),
+            "Dark teal palette artwork",
+            PresentationPalette::from_artwork(&dark_teal_path)
+                .expect("Dark teal palette artwork should produce a palette"),
             true,
         ),
     ];

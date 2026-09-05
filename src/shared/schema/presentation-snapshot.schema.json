@@ -216,6 +216,7 @@
       },
       "then": {
         "properties": {
+          "trackedOutput": { "type": "object" },
           "trackedZone": { "type": "null" }
         }
       }

@@ -73,14 +73,14 @@ const REPRESENTATIVES = [
   ),
   representative(
     "light-matte-restraint",
-    "cellout-direction.json",
+    "restrained-light.json",
     "automatic",
     false,
     "restrained-light",
   ),
   representative(
     "dark-matte-ownership",
-    "forever-direction.json",
+    "dark-teal.json",
     "automatic",
     false,
     "dark-teal",

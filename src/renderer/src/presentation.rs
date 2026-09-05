@@ -912,7 +912,7 @@ fn presentation_from_snapshot_with_timing(
         return Ok(Presentation::FullField(unavailable_presentation(
             snapshot.availability,
             snapshot.tracked_output.as_ref(),
-        )));
+        )?));
     }
 
     let playback = snapshot.playback.ok_or(PresentationError(
@@ -1052,9 +1052,9 @@ pub(crate) fn trackless_full_field(presentation: &NowPlayingPresentation) -> Ful
 fn unavailable_presentation(
     availability: Availability,
     tracked_output: Option<&TrackedOutput>,
-) -> FullFieldPresentation {
+) -> Result<FullFieldPresentation, PresentationError> {
     let status = presentation_status_for_availability(availability);
-    match availability {
+    Ok(match availability {
         Availability::PairingRequired => FullFieldPresentation {
             status,
             heading: "Enable RoonScape",
@@ -1073,12 +1073,17 @@ fn unavailable_presentation(
             explanation: Some(
                 "Open RoonScape setup to choose another Tracked Output, or make the selected output available in Roon.",
             ),
-            identity: tracked_output.map(|tracked_output| PresentationIdentity::OutputOnly {
-                tracked_output: tracked_output.name.clone(),
+            identity: Some(PresentationIdentity::OutputOnly {
+                tracked_output: tracked_output
+                    .ok_or(PresentationError(
+                        "an output-unavailable snapshot requires a Tracked Output",
+                    ))?
+                    .name
+                    .clone(),
             }),
         },
         Availability::Available => unreachable!("available snapshots use Now Playing"),
-    }
+    })
 }
 
 fn presentation_status_for_playback(playback: Playback) -> PresentationStatus {

@@ -31,7 +31,6 @@ pub use diagnostics::{
 pub use display_configuration::{
     DisplayConfigurationError, InactivityConfiguration, display_configuration_file_path,
     inactivity_configuration_from_display_configuration, load_inactivity_configuration,
-    reject_removed_display_configuration_override,
 };
 pub use fixture_navigation::FixtureNavigation;
 pub use gradient::{NowPlayingGradient, NowPlayingGradientCacheKey};

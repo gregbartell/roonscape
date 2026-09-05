@@ -207,7 +207,7 @@ instead of approving a scenario at only one size.
   without moving the separator or resizing the footer. Available Full-field
   Presentations use their bottom-right row. Output unavailable uses that same
   anchor for only the persisted Tracked Output, with no separator or empty Zone
-  phrase; the row is absent for a legacy configuration with no saved name.
+  phrase.
   Awaiting Roon Authorization and disconnected expose neither identity.
 - **Full-field grammar:** Idle, Starting without content, details unavailable,
   Awaiting Roon Authorization, disconnected, and output-unavailable states

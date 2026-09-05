@@ -341,7 +341,10 @@ test("a lost directed Live Mode connection stays Disconnected without rediscover
         clear: async () => undefined,
       },
       displayConfigurationStore: {
-        load: () => ({ trackedOutputId: "output-studio" }),
+        load: () => ({
+          trackedOutputId: "output-studio",
+          trackedOutputName: "Speaker System",
+        }),
         save: () => undefined,
       },
       createRoonServices: (options) => {

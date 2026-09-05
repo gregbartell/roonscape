@@ -29,10 +29,10 @@ test("record options forward an explicit Roon Server Host", () => {
     "--event",
     "lyrics begin",
     "--roon-server",
-    "roll.local",
+    "roon-server.example",
   ]);
 
-  assert.equal(options.roonServerHost, "roll.local");
+  assert.equal(options.roonServerHost, "roon-server.example");
 });
 
 test("resolution validation keeps captures small but supports overrides", () => {

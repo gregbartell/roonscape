@@ -144,7 +144,6 @@ test(
         GDK_SCALE: "2",
         GDK_DPI_SCALE: "2",
         XAUTHORITY: path.join(hostConfig, "missing-authority"),
-        ROONSCAPE_DISPLAY_CONFIG: path.join(hostConfig, "display.json"),
         ROONSCAPE_CAPTURE_CONTROL: path.join(
           hostConfig,
           "missing-control.sock",

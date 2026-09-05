@@ -1,6 +1,6 @@
 {
   "schemaVersion": 4,
-  "revision": 27,
+  "revision": 28,
   "availability": "available",
   "playback": "playing",
   "trackedOutput": {
@@ -11,20 +11,20 @@
     "name": "Living Room"
   },
   "nowPlaying": {
-    "title": "Light Matte Calibration",
+    "title": "Dark Matte Calibration",
     "artist": "Synthetic Fixture",
-    "album": "Cellout direction"
+    "album": "Dark teal palette"
   },
   "artwork": {
-    "revision": 27,
-    "path": "src/shared/fixtures/artwork/cellout-direction.jpg"
+    "revision": 28,
+    "path": "src/shared/fixtures/artwork/dark-teal.jpg"
   },
   "lyrics": null,
   "timing": {
     "position": {
-      "seconds": 158,
+      "seconds": 202,
       "sampledAt": "2026-08-15T19:20:00Z"
     },
-    "durationSeconds": 203
+    "durationSeconds": 276
   }
 }

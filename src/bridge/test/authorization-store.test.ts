@@ -46,7 +46,6 @@ test("uses XDG state independently from Display Configuration", () => {
   assert.equal(
     authorizationFilePath({
       HOME: "/home/owner",
-      ROONSCAPE_DISPLAY_CONFIG: "/provided/display.json",
       XDG_CONFIG_HOME: "/var/config",
       XDG_STATE_HOME: "/var/state",
     }),

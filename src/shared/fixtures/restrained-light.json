@@ -1,6 +1,6 @@
 {
   "schemaVersion": 4,
-  "revision": 28,
+  "revision": 27,
   "availability": "available",
   "playback": "playing",
   "trackedOutput": {
@@ -11,20 +11,20 @@
     "name": "Living Room"
   },
   "nowPlaying": {
-    "title": "Dark Matte Calibration",
+    "title": "Light Matte Calibration",
     "artist": "Synthetic Fixture",
-    "album": "Forever and a Day direction"
+    "album": "Restrained light palette"
   },
   "artwork": {
-    "revision": 28,
-    "path": "src/shared/fixtures/artwork/forever-direction.jpg"
+    "revision": 27,
+    "path": "src/shared/fixtures/artwork/restrained-light.jpg"
   },
   "lyrics": null,
   "timing": {
     "position": {
-      "seconds": 202,
+      "seconds": 158,
       "sampledAt": "2026-08-15T19:20:00Z"
     },
-    "durationSeconds": 276
+    "durationSeconds": 203
   }
 }

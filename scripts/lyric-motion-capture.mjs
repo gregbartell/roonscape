@@ -1167,6 +1167,7 @@ async function runNativeLyricMotionCapture(
     configurationPath,
     `${JSON.stringify({
       trackedOutputId: "lyric-motion-capture",
+      trackedOutputName: "Speaker System",
       inactivity: {
         gracePeriodSeconds: 3600,
         dimmedOpacity: 0.35,

@@ -27,8 +27,7 @@ use roonscape_renderer::{
     PresentationState, PresentationTime, PresentationUpdate, RendererAction, RendererKey,
     RendererKeyboard, SnapshotEvent, SnapshotSubscription, Viewport, classify_presentation_update,
     current_process_memory_bytes, display_configuration_file_path, load_inactivity_configuration,
-    register_packaged_fallback_fonts, reject_removed_display_configuration_override,
-    select_capture_typography, select_typography,
+    register_packaged_fallback_fonts, select_capture_typography, select_typography,
 };
 
 use view::{PresentationView, RenderingConfiguration, install_style_providers};
@@ -844,7 +843,6 @@ fn install_diagnostics_updates(
 }
 
 fn configuration_file_from_arguments() -> Result<PathBuf, Box<dyn Error>> {
-    reject_removed_display_configuration_override()?;
     let mut arguments = env::args_os().skip(1);
     match (arguments.next(), arguments.next(), arguments.next()) {
         (None, None, None) => Ok(display_configuration_file_path()?),

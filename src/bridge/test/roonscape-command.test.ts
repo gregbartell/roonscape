@@ -91,7 +91,10 @@ test("configured start launches bridge then renderer as one session", async () =
   const dependencies = commandDependencies({
     loadConfiguration: (configurationFile) => {
       events.push(`configuration:${configurationFile}`);
-      return { trackedOutputId: "output-speaker-system" };
+      return {
+        trackedOutputId: "output-speaker-system",
+        trackedOutputName: "Speaker System",
+      };
     },
     openRuntime: async () => ({
       socketPath: "/runtime/roonscape/roonscape.sock",
@@ -122,8 +125,8 @@ test("configured start launches bridge then renderer as one session", async () =
 });
 
 for (const [description, roonServerHost] of [
-  ["a hostname", "roll.local"],
-  ["an IPv4 address", "100.100.110.72"],
+  ["a hostname", "roon-server.example"],
+  ["an IPv4 address", "192.0.2.72"],
   ["a maximum-length absolute hostname", maximumAbsoluteHostname],
 ] as const) {
   test(`--roon-server propagates ${description} to Live Mode`, async () => {
@@ -133,7 +136,10 @@ for (const [description, roonServerHost] of [
     const result = await runRoonScapeCommand(
       ["--roon-server", roonServerHost],
       commandDependencies({
-        loadConfiguration: () => ({ trackedOutputId: "output-studio" }),
+        loadConfiguration: () => ({
+          trackedOutputId: "output-studio",
+          trackedOutputName: "Speaker System",
+        }),
         openRuntime: async () => ({
           socketPath: "/runtime/roonscape/roonscape.sock",
           cleanup: async () => undefined,
@@ -154,11 +160,11 @@ for (const [description, roonServerHost] of [
 for (const invalidArguments of [
   ["--roon-server"],
   ["--roon-server", ""],
-  ["--roon-server", "roll:9330"],
-  ["--roon-server", "https://roll.local"],
+  ["--roon-server", "roon-server.example:9330"],
+  ["--roon-server", "https://roon-server.example"],
   ["--roon-server", "999.100.110.72"],
-  ["--roon-server", "roll..local"],
-  ["--roon-server", "roll.local", "--roon-server", "other.local"],
+  ["--roon-server", "roon-server..example"],
+  ["--roon-server", "roon-server.example", "--roon-server", "other.local"],
 ]) {
   test(`rejects malformed Roon Server arguments: ${JSON.stringify(invalidArguments)}`, async () => {
     const errors: string[] = [];
@@ -180,7 +186,7 @@ test("Roon Server Host remains absent from Display Configuration", async () => {
     | undefined;
   const bridge = pendingChild(() => undefined);
   const result = await runRoonScapeCommand(
-    ["--roon-server", "roll.local"],
+    ["--roon-server", "roon-server.example"],
     commandDependencies({
       terminalIsInteractive: () => true,
       discoverTrackedOutputs: async () => [
@@ -207,7 +213,7 @@ test("Roon Server Host remains absent from Display Configuration", async () => {
   );
 
   assert.equal(result, 0);
-  assert.equal(bridgeOptions?.roonServerHost, "roll.local");
+  assert.equal(bridgeOptions?.roonServerHost, "roon-server.example");
   assert.deepEqual(savedConfiguration, {
     trackedOutputId: "output-studio",
     trackedOutputName: "Studio DAC",
@@ -219,24 +225,6 @@ test("Roon Server Host remains absent from Display Configuration", async () => {
   });
 });
 
-test("rejects the removed Display Configuration environment override", async () => {
-  const errors: string[] = [];
-  const dependencies = commandDependencies({
-    environment: {
-      ROONSCAPE_DISPLAY_CONFIG: "/legacy/display.json",
-    },
-    writeError: (line) => errors.push(line),
-  });
-
-  const result = await runRoonScapeCommand([], dependencies);
-
-  assert.equal(result, 2);
-  assert.match(
-    errors.join("\n"),
-    /ROONSCAPE_DISPLAY_CONFIG is no longer supported; use roonscape --config PATH/,
-  );
-});
-
 test("--config takes precedence over the standard XDG path", async () => {
   const loadedFiles: string[] = [];
   const bridge = pendingChild(() => undefined);
@@ -246,7 +234,10 @@ test("--config takes precedence over the standard XDG path", async () => {
     },
     loadConfiguration: (configurationFile) => {
       loadedFiles.push(configurationFile);
-      return { trackedOutputId: "output-speaker-system" };
+      return {
+        trackedOutputId: "output-speaker-system",
+        trackedOutputName: "Speaker System",
+      };
     },
     openRuntime: async () => ({
       socketPath: "/runtime/roonscape/roonscape.sock",
@@ -275,7 +266,7 @@ test(
       const socketPath = path.join(taskDirectory, "roonscape.sock");
       await writeFile(
         configurationFile,
-        '{"trackedOutputId":"output-speaker-system"}\n',
+        '{"trackedOutputId":"output-speaker-system","trackedOutputName":"Speaker System"}\n',
       );
       let finishRenderer: ((result: ChildResult) => void) | undefined;
       const renderer: RunningChild = {
@@ -471,14 +462,17 @@ test("--setup preserves the saved choices and exits without launching", async ()
   assert.deepEqual(saved, savedConfiguration);
 });
 
-for (const roonServerHost of ["roll.local", "100.100.110.72"]) {
+for (const roonServerHost of ["roon-server.example", "192.0.2.72"]) {
   test(`--setup --roon-server uses ${roonServerHost}`, async () => {
     let discoveredWith: string | undefined;
     const result = await runRoonScapeCommand(
       ["--setup", "--roon-server", roonServerHost],
       commandDependencies({
         terminalIsInteractive: () => true,
-        loadConfiguration: () => ({ trackedOutputId: "output-studio" }),
+        loadConfiguration: () => ({
+          trackedOutputId: "output-studio",
+          trackedOutputName: "Speaker System",
+        }),
         configurationFileExists: () => true,
         discoverTrackedOutputs: async (_authorizationFile, _signal, host) => {
           discoveredWith = host;
@@ -506,7 +500,10 @@ test("--setup refuses to wait for input without an interactive terminal", async 
   const result = await runRoonScapeCommand(
     ["--setup"],
     commandDependencies({
-      loadConfiguration: () => ({ trackedOutputId: "output-study" }),
+      loadConfiguration: () => ({
+        trackedOutputId: "output-study",
+        trackedOutputName: "Speaker System",
+      }),
       readSetupKey: async () => {
         inputRead = true;
         return "enter";
@@ -533,6 +530,7 @@ test("--setup prefills OLED values and corrects invalid custom entries", async (
       terminalIsInteractive: () => true,
       loadConfiguration: () => ({
         trackedOutputId: "output-study",
+        trackedOutputName: "Speaker System",
         inactivity: {
           gracePeriodSeconds: 240,
           dimmedOpacity: 0.3,
@@ -595,6 +593,7 @@ test("--setup presents saved opacity in familiar percentage units", async () => 
       terminalIsInteractive: () => true,
       loadConfiguration: () => ({
         trackedOutputId: "output-study",
+        trackedOutputName: "Speaker System",
         inactivity: {
           gracePeriodSeconds: 240,
           dimmedOpacity: 0.29,
@@ -632,7 +631,7 @@ test("--setup --config changes only the Tracked Output with a private atomic rep
     await mkdir(path.dirname(configurationFile), { recursive: true });
     await writeFile(
       configurationFile,
-      '{"trackedOutputId":"output-speaker-system","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n',
+      '{"trackedOutputId":"output-speaker-system","trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n',
       { mode: 0o644 },
     );
     const configurationStore = new FileDisplayConfigurationStore(
@@ -695,6 +694,7 @@ test("cancelling reconfiguration leaves the Display Configuration byte-for-byte 
     const configurationFile = path.join(taskDirectory, "display.json");
     const original = `{
   "trackedOutputId": "output-study",
+  "trackedOutputName": "USB DAC",
   "inactivity": {
     "gracePeriodSeconds": 240,
     "dimmedOpacity": 0.3,
@@ -737,7 +737,7 @@ test("failed reconfiguration leaves the Display Configuration byte-for-byte inta
   await withTaskDirectory(async (taskDirectory) => {
     const configurationFile = path.join(taskDirectory, "config/display.json");
     const original =
-      '{"trackedOutputId":"output-study","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n';
+      '{"trackedOutputId":"output-study","trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n';
     await mkdir(path.dirname(configurationFile), { recursive: true });
     await writeFile(configurationFile, original, { mode: 0o600 });
     const configurationStore = new FileDisplayConfigurationStore(
@@ -1114,7 +1114,10 @@ test("configured start owns private XDG runtime state and removes it on exit", a
     const environment = { XDG_RUNTIME_DIR: runtimeRoot };
     const dependencies = commandDependencies({
       environment,
-      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+      loadConfiguration: () => ({
+        trackedOutputId: "output-speaker-system",
+        trackedOutputName: "Speaker System",
+      }),
       openRuntime: async () =>
         openRuntimeSession({
           environment,
@@ -1151,7 +1154,10 @@ test("uses a validated per-user runtime directory when XDG_RUNTIME_DIR is absent
       [],
       commandDependencies({
         environment: {},
-        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+        loadConfiguration: () => ({
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+        }),
         openRuntime: async () =>
           openRuntimeSession({
             environment: {},
@@ -1184,7 +1190,10 @@ test("fails with remediation when no safe runtime directory is available", async
       [],
       commandDependencies({
         environment,
-        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+        loadConfiguration: () => ({
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+        }),
         openRuntime: async () =>
           openRuntimeSession({
             environment,
@@ -1224,6 +1233,7 @@ test("a live RoonScape session excludes a second invocation", async () => {
           environment,
           loadConfiguration: () => ({
             trackedOutputId: "output-speaker-system",
+            trackedOutputName: "Speaker System",
           }),
           openRuntime: async () => openRuntimeSession(runtimeOptions),
           writeError: (line) => errors.push(line),
@@ -1261,7 +1271,10 @@ test("stale runtime artifacts are reclaimed only after their owner is gone", asy
       [],
       commandDependencies({
         environment,
-        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+        loadConfiguration: () => ({
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+        }),
         openRuntime: async () =>
           openRuntimeSession({
             environment,
@@ -1310,7 +1323,10 @@ test("runtime artifacts without verifiable ownership are preserved", async () =>
       [],
       commandDependencies({
         environment,
-        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+        loadConfiguration: () => ({
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+        }),
         openRuntime: async () =>
           openRuntimeSession({
             environment,
@@ -1342,7 +1358,10 @@ test("an ownership directory without a record fails without spinning", async () 
       [],
       commandDependencies({
         environment,
-        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+        loadConfiguration: () => ({
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+        }),
         openRuntime: async () =>
           openRuntimeSession({
             environment,
@@ -1383,7 +1402,10 @@ test("an interrupted runtime recovery is reclaimed after its owner is gone", asy
       [],
       commandDependencies({
         environment,
-        loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+        loadConfiguration: () => ({
+          trackedOutputId: "output-speaker-system",
+          trackedOutputName: "Speaker System",
+        }),
         openRuntime: async () =>
           openRuntimeSession({
             environment,
@@ -1416,7 +1438,10 @@ test("a child failure determines the session result and stops its peer", async (
   const result = await runRoonScapeCommand(
     [],
     commandDependencies({
-      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+      loadConfiguration: () => ({
+        trackedOutputId: "output-speaker-system",
+        trackedOutputName: "Speaker System",
+      }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
         cleanup: async () => {
@@ -1438,7 +1463,10 @@ test("a child signal remains observable as a launcher failure", async () => {
   const result = await runRoonScapeCommand(
     [],
     commandDependencies({
-      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+      loadConfiguration: () => ({
+        trackedOutputId: "output-speaker-system",
+        trackedOutputName: "Speaker System",
+      }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
         cleanup: async () => undefined,
@@ -1461,7 +1489,10 @@ test("launcher termination stops both children and cleans runtime state", async 
   const result = await runRoonScapeCommand(
     [],
     commandDependencies({
-      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+      loadConfiguration: () => ({
+        trackedOutputId: "output-speaker-system",
+        trackedOutputName: "Speaker System",
+      }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
         cleanup: async () => {
@@ -1492,7 +1523,10 @@ test("a child still running after five seconds is forcibly terminated", async ()
   const result = await runRoonScapeCommand(
     [],
     commandDependencies({
-      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+      loadConfiguration: () => ({
+        trackedOutputId: "output-speaker-system",
+        trackedOutputName: "Speaker System",
+      }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
         cleanup: async () => undefined,
@@ -1515,7 +1549,10 @@ test("shutdown remains bounded when a child never reports exit", async () => {
   const result = await runRoonScapeCommand(
     [],
     commandDependencies({
-      loadConfiguration: () => ({ trackedOutputId: "output-speaker-system" }),
+      loadConfiguration: () => ({
+        trackedOutputId: "output-speaker-system",
+        trackedOutputName: "Speaker System",
+      }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
         cleanup: async () => {

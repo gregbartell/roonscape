@@ -64,7 +64,10 @@ test("source launch resolves the relocated bridge and renderer", async () => {
         '{"name":"roonscape","version":"0.1.0-test","private":true,"type":"module"}\n',
       ),
       writeFile(path.join(sourceRoot, "package-lock.json"), "{}\n"),
-      writeFile(configurationFile, '{"trackedOutputId":"output-test"}\n'),
+      writeFile(
+        configurationFile,
+        '{"trackedOutputId":"output-test","trackedOutputName":"Test Output"}\n',
+      ),
       writeFile(
         renderer,
         `#!/bin/sh

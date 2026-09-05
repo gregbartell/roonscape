@@ -237,7 +237,6 @@ test(
         DISPLAY: sentinel.environment.DISPLAY,
         GDK_BACKEND: "wayland",
         WAYLAND_DISPLAY: "conflicting-wayland",
-        ROONSCAPE_DISPLAY_CONFIG: "/missing/config",
         ROONSCAPE_SOCKET: "/missing/socket",
         ROONSCAPE_FIXTURE_AUTO_CLOSE_MS: "1",
         ROONSCAPE_TEST_FIRST_REVEALED_PAINT_CONTROL: "/missing/paint.sock",
