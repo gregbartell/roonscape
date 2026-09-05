@@ -1297,6 +1297,12 @@ fn lyric_view(
         masthead.append(&label);
         label
     });
+    // The compact masthead must fit its column even while ordinary metadata owns it.
+    for label in [&masthead_title, &masthead_artist].into_iter().flatten() {
+        label.set_ellipsize(pango::EllipsizeMode::End);
+        label.set_single_line_mode(true);
+        label.set_max_width_chars(1);
+    }
     root.append(&masthead);
 
     let previous = lyric_label("", "lyric-previous");
@@ -2982,12 +2988,33 @@ mod tests {
         }
     }
 
+    fn lyric_masthead_fits_long_metadata() {
+        let presentation = lyric_presentation("long-metadata.json");
+        let rendered = lyric_view(
+            &presentation,
+            None,
+            PresentationPalette::fallback(),
+            PresentationBehavior::Dynamic,
+        );
+        for viewport in [Viewport::new(3840, 2160), Viewport::new(1280, 720)] {
+            let layout = NowPlayingLayout::for_presentation(&presentation, viewport);
+            rendered.apply_layout(&layout);
+            let width = layout.information.musical_metadata_width_px as i32;
+            let (minimum, _, _, _) = rendered.masthead.measure(gtk::Orientation::Horizontal, -1);
+            assert!(
+                minimum <= width,
+                "masthead needs {minimum}px but has {width}px"
+            );
+        }
+    }
+
     #[test]
     fn allocated_lyric_reel_recomputes_neighbors_and_blank_visibility() {
         roonscape_renderer::register_packaged_fallback_fonts(Path::new(env!("CARGO_MANIFEST_DIR")))
             .unwrap();
         gtk::init().expect("GTK should initialize for native lyric layout coverage");
         super::install_style_providers(roonscape_renderer::select_typography(&HashSet::new()));
+        lyric_masthead_fits_long_metadata();
         composed_lyrics_remain_above_footer();
         ordinary_metadata_remains_stable_on_playback_updates();
         short_blanks_promote_without_a_skipped_cue_cut();
