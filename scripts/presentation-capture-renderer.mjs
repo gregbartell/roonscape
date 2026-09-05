@@ -15,6 +15,7 @@ const defaultRendererExecutable = path.join(
   "target/debug/roonscape-renderer",
 );
 const presentationCaptureEncodingTimeoutMilliseconds = 30_000;
+const presentationCapturePaintTimeoutMilliseconds = 30_000;
 
 export function createControlledRendererSessionAdapter({
   environment = process.env,
@@ -120,7 +121,10 @@ export async function runControlledRendererSession(
         },
         renderer,
         `painted Fixture Scenario revision ${revision}`,
-        { signal },
+        {
+          signal,
+          timeoutMilliseconds: presentationCapturePaintTimeoutMilliseconds,
+        },
       );
       assertExpectedAcknowledgement(acknowledgement, capture, revision);
       if (index === 0)

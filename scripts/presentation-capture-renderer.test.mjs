@@ -97,7 +97,7 @@ test("controlled Renderer sessions reuse compatible captures and wait for painte
   }
 });
 
-test("controlled Renderer session gives custom artwork a private validated copy", async () => {
+test("controlled Renderer session waits for slow artwork readiness with a private validated copy", async () => {
   const directory = await mkdtemp(
     path.join(tmpdir(), "roonscape-custom-artwork-session-test."),
   );
@@ -126,7 +126,11 @@ test("controlled Renderer session gives custom artwork a private validated copy"
       { captures: [capture], sessions: [[capture]] },
       {
         sessionAdapter: createControlledRendererSessionAdapter({
-          environment,
+          environment: {
+            ...environment,
+            // Painting can outlast the generic five-second process wait.
+            ROONSCAPE_CAPTURE_TEST_PAINT_DELAY_MS: "6000",
+          },
           publishCapture: publishPresentationCapture,
           rendererExecutable: renderer,
         }),

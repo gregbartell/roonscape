@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { appendFile, readFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { createInterface } from "node:readline";
+import { setTimeout as delay } from "node:timers/promises";
 
 const log = process.env.ROONSCAPE_CAPTURE_TEST_PROCESS_LOG;
 const style = process.env.ROONSCAPE_CAPTURE_TEST_LOG_STYLE ?? "general";
@@ -33,6 +34,10 @@ for await (const line of createInterface({ input: connection })) {
     selection.revision !== selection.snapshot.revision
   ) {
     process.exit(2);
+  }
+
+  if (process.env.ROONSCAPE_CAPTURE_TEST_PAINT_DELAY_MS) {
+    await delay(Number(process.env.ROONSCAPE_CAPTURE_TEST_PAINT_DELAY_MS));
   }
 
   if (style === "focused") {

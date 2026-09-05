@@ -29,7 +29,10 @@ children. Live Mode's application registration is unchanged.
 Native-session startup and window readiness waits have five-second bounds. Window
 readiness checks require a mapped window at the requested dimensions. The
 [Presentation Capture renderer](../../scripts/presentation-capture-renderer.mjs)
-allows thirty seconds for PNG encoding. Fixture Mode publisher startup also
+allows thirty seconds for each painted-revision acknowledgement and separately
+for PNG encoding. Painted readiness includes presentation work and a matching
+painted frame, which can exceed five seconds under concurrent rendering load.
+Fixture Mode publisher startup also
 allows thirty seconds: it includes Node startup and complete Fixture Scenario
 catalog validation before socket publication. Composite launcher tests allow
 forty-five seconds for that work plus native infrastructure startup; cancellation
