@@ -240,6 +240,9 @@ export async function startXvfbDisplay({
       "-screen",
       "0",
       `${width}x${height}x${depth}`,
+      // Readiness probes can disconnect before GTK opens its connection.
+      // Keep that empty-client interval from resetting the owned server.
+      "-noreset",
       "-nolisten",
       "tcp",
     ],
