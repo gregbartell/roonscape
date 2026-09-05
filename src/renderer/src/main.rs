@@ -158,6 +158,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let repository_root = resource_root()?;
     register_packaged_fallback_fonts(&repository_root.join("src/renderer"))?;
 
+    // Keep X11 WM_CLASS aligned with the desktop entry and Wayland application ID.
+    glib::set_prgname(Some(APPLICATION_ID));
     let application = gtk::Application::builder()
         .application_id(APPLICATION_ID)
         .build();
@@ -247,7 +249,10 @@ fn build_window(
         .default_height(configured_viewport.height_px as i32)
         .show_menubar(false)
         .title("RoonScape")
+        .icon_name(APPLICATION_ID)
         .build();
+    gtk::IconTheme::for_display(&WidgetExt::display(&window))
+        .add_search_path(repository_root.join("src/desktop/icons"));
     let fullscreen_viewport = if fullscreen {
         present_fullscreen(&window)
     } else {

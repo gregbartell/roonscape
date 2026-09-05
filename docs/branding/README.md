@@ -20,7 +20,8 @@ The share card uses the bundled Libre Baskerville and IBM Plex Sans fonts.
 The opaque graphics use pale blue `#e4edf3`, navy `#203443`, and muted text
 `#526878`. The transparent exports are pure black or white.
 
-To regenerate all six PNGs, install `rsvg-convert` (librsvg), then run:
+To regenerate all six PNGs and the derived desktop SVG, install
+`rsvg-convert` (librsvg), then run:
 
 ```sh
 node scripts/export-branding.mjs
@@ -28,3 +29,5 @@ node scripts/export-branding.mjs
 
 The script reads the canonical SVG and bundled fonts directly; it does not
 install fonts, build application binaries, change versions, or publish files.
+The desktop SVG is written to
+`src/desktop/icons/hicolor/scalable/apps/io.roonscape.Renderer.svg`.

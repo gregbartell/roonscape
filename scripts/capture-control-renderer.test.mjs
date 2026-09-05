@@ -89,6 +89,16 @@ test("acknowledges initial and repeated Fixture Scenario revisions only after th
       width: 1280,
       height: 720,
     });
+    const { stdout: windowProperties } = await executeFile(
+      "xprop",
+      ["-name", "RoonScape", "WM_CLASS", "_NET_WM_ICON"],
+      { env: { ...process.env, DISPLAY: display }, maxBuffer: 1024 * 1024 },
+    );
+    assert.match(
+      windowProperties,
+      /WM_CLASS\(STRING\) = "io\.roonscape\.Renderer", "io\.roonscape\.Renderer"/,
+    );
+    assert.match(windowProperties, /_NET_WM_ICON\(CARDINAL\)/);
 
     control.write(
       [

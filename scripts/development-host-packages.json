@@ -14,7 +14,9 @@
     "xauth",
     "fonts-noto-cjk",
     "python3",
-    "ffmpeg"
+    "ffmpeg",
+    "desktop-file-utils",
+    "libglib2.0-bin"
   ],
   "arch": [
     "base-devel",
@@ -30,6 +32,9 @@
     "xorg-xauth",
     "noto-fonts-cjk",
     "python",
-    "ffmpeg"
+    "ffmpeg",
+    "desktop-file-utils",
+    "glib2",
+    "xorg-xprop"
   ]
 }

@@ -91,6 +91,11 @@ try {
         "src/bridge/node_modules",
       ),
       bridgeSource: path.join(repositoryRoot, "src/bridge/src"),
+      desktop: path.join(repositoryRoot, "src/desktop"),
+      desktopInstaller: path.join(
+        repositoryRoot,
+        "scripts/install-desktop.mjs",
+      ),
       fonts: path.join(repositoryRoot, "src/renderer/assets/fonts"),
       launcher: path.join(repositoryRoot, "src/launcher/roonscape"),
       nodeDistribution,

@@ -9,7 +9,7 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Render documentation graphics from the approved SVG; does not build a release.
+// Derive branding and desktop assets from the approved SVG; does not build a release.
 const root = fileURLToPath(new URL("../", import.meta.url));
 const outputDirectory = path.join(root, "docs/branding");
 const source = readFileSync(
@@ -84,6 +84,20 @@ try {
         `<svg x="${x}" y="${y}" width="${size}" height="${size}" `,
       )
       .replaceAll("currentColor", "#203443");
+
+  const desktopIcon = path.join(
+    root,
+    "src/desktop/icons/hicolor/scalable/apps/io.roonscape.Renderer.svg",
+  );
+  mkdirSync(path.dirname(desktopIcon), { recursive: true });
+  writeFileSync(
+    desktopIcon,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <title>RoonScape</title>
+  <rect width="64" height="64" rx="12" fill="#e4edf3"/>
+  ${icon(6.5, 8, 48)}
+</svg>\n`,
+  );
 
   render(
     "roonscape-avatar-512.png",

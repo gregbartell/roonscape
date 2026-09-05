@@ -6,6 +6,9 @@ export function nativeTestFailures(environment = process.env) {
   const requiredExecutables = [
     "Xvfb",
     "xwininfo",
+    "xprop",
+    "gio",
+    "desktop-file-validate",
     "scrot",
     "dbus-daemon",
     "pkg-config",

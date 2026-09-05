@@ -32,7 +32,7 @@
     "test:bridge": "npm run build && npm run test:bridge:built",
     "test:bridge:built": "npm run test:built --workspace @roonscape/bridge",
     "test:build": "npm run build && npm run test:renderer:build",
-    "test:built": "npm run test:bridge:built && npm run test:source-launcher:built && npm run test:fixture-launcher:built && npm run test:process-harness && npm run test:native-session && npm run test:bare-x-fullscreen:built && npm run test:orchestration && npm run test:versions && npm run test:native-test-environment && npm run test:development-environment && npm run test:package && npm run test:verification && npm run test:live-capture-helpers && cargo test --workspace && npm run smoke:ipc:built",
+    "test:built": "npm run test:bridge:built && npm run test:source-launcher:built && npm run test:fixture-launcher:built && npm run test:process-harness && npm run test:native-session && npm run test:bare-x-fullscreen:built && npm run test:orchestration && npm run test:versions && npm run test:native-test-environment && npm run test:development-environment && npm run test:desktop && npm run test:package && npm run test:verification && npm run test:live-capture-helpers && cargo test --workspace && npm run smoke:ipc:built",
     "test:capture-control-renderer": "cargo build --locked --package roonscape-renderer && node --test scripts/capture-control-renderer.test.mjs",
     "test:fixture-launcher": "npm run build && npm run test:fixture-launcher:built",
     "test:fixture-launcher:built": "node --test scripts/run-fixture.test.mjs",
@@ -55,7 +55,10 @@
     "test:live-capture-helpers": "node scripts/test-live-capture-helpers.mjs",
     "review:presentations": "npm run build && cargo build --locked --package roonscape-renderer && npm run review:presentations:built --",
     "review:presentations:built": "node scripts/presentation-review.mjs",
-    "accept:worktrees": "node scripts/accept-worktrees.mjs"
+    "accept:worktrees": "node scripts/accept-worktrees.mjs",
+    "desktop:install": "node scripts/install-desktop.mjs",
+    "desktop:uninstall": "node scripts/install-desktop.mjs --uninstall",
+    "test:desktop": "node --test scripts/install-desktop.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -12,5 +12,10 @@ source geometry and aspect ratio.
 
 The README uses derived PNGs for light and dark themes. See
 [`docs/branding`](../../../docs/branding/README.md) for reusable exports,
-share graphics, and regeneration instructions. The icon is not yet wired
-into the Renderer or included in release packaging.
+share graphics, and regeneration instructions.
+
+The Renderer loads the derived desktop icon from `src/desktop/icons`, using
+the name `io.roonscape.Renderer` to match its application ID and desktop entry.
+This derivative places the approved mark on a pale background so it remains
+visible on light and dark desktop surfaces. The packaging recipe includes
+the desktop assets and per-user installer; it does not install them globally.

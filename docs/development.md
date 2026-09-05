@@ -207,11 +207,47 @@ DISPLAY=:0 ROONSCAPE_WINDOWED=1 npm run fixture -- --static --scenario paused
 Manual operation retains the existing desktop/display defaults. Use headless
 operation for unattended verification alongside an existing Live Mode session.
 
+## Desktop launcher
+
+After installing dependencies, build the application and complete first-time
+setup in a terminal:
+
+```sh
+npm run build
+cargo build --locked --release --package roonscape-renderer
+npm run setup
+npm run desktop:install
+```
+
+RoonScape then appears in your desktop's application menu. Launching it opens
+only the display; setup prompts remain in the terminal workflow. The Rust
+`--release` flag selects an optimized local build, not a published release.
+
+The installer writes the desktop entry, launch helper, and icon below
+`$XDG_DATA_HOME` (default `~/.local/share`). It records the absolute checkout
+and Node paths, so it works even if the desktop does not inherit your shell's
+Node version manager. Keep the checkout in place and rebuild it after source
+changes. Rerun installation if the checkout or Node executable moves.
+
+Remove the desktop integration with:
+
+```sh
+npm run desktop:uninstall
+```
+
+Installation replaces a previously managed RoonScape menu entry. Uninstall
+must run from the checkout that currently owns it. Neither command changes
+Display Configuration, Roon Authorization, or automatic startup.
+
+For menu-launch failures, run `./src/launcher/roonscape` in a terminal to see
+the error. On a bare X session without a desktop shell, there is no application
+menu or switcher to show the icon.
+
 ## Presentation Captures
 
 Presentation Captures use the same deterministic static Fixture Mode through
 the native renderer. The capture host additionally needs `Xvfb`, `xwininfo`,
-`scrot`, and `dbus-daemon` on `PATH`.
+`xprop`, `scrot`, and `dbus-daemon` on `PATH`.
 
 Discover the maintained Fixture Scenario identifiers and labels without
 launching the renderer:
@@ -263,6 +299,9 @@ npm run test:design
 The command builds its Bridge and Renderer prerequisites once, then runs the
 explicitly maintained Presentation Capture test family. These tests are not
 part of the regular repository test process.
+
+The desktop tests also require `gio` and `desktop-file-validate` (provided by
+`libglib2.0-bin` and `desktop-file-utils` on Ubuntu).
 
 Run the complete repository check before submitting a change:
 

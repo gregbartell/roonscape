@@ -36,6 +36,30 @@ Complete the same Tracked Output and OLED protection choices. RoonScape saves
 the updated Display Configuration and exits; start it normally when you are
 ready to return to the presentation.
 
+## Add an application-menu entry
+
+After completing setup, run this from the extracted RoonScape directory:
+
+```sh
+./runtime/node/bin/node scripts/install-desktop.mjs
+```
+
+The entry launches the display without a terminal and supplies the RoonScape
+icon to desktop environments that support it. It does not enable automatic
+startup. If launch fails, run `./roonscape` in a terminal to see the error.
+
+The entry, icon, and launch helper are installed for the current user under
+`$XDG_DATA_HOME` (default `~/.local/share`). Keep the extracted directory in
+place, or rerun the command after moving it. Remove the entry and icon with:
+
+```sh
+./runtime/node/bin/node scripts/install-desktop.mjs --uninstall
+```
+
+These commands require an archive containing the desktop integration files;
+they are not available in older archives. For a source checkout, use the
+[development instructions](development.md#desktop-launcher).
+
 ## Launch RoonScape when X starts
 
 After first-time setup is complete, an X session that reads the owner's

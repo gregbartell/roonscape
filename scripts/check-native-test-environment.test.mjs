@@ -24,6 +24,9 @@ test("the native test preflight reports a missing capture executable", (context)
     "ffmpeg",
     "ffprobe",
     "xwininfo",
+    "xprop",
+    "gio",
+    "desktop-file-validate",
   ]);
 
   const result = runEnvironmentCheck(commandDirectory);
@@ -46,6 +49,9 @@ test("the native test preflight accepts the complete environment", (context) => 
     "ffprobe",
     "scrot",
     "xwininfo",
+    "xprop",
+    "gio",
+    "desktop-file-validate",
   ]);
 
   const result = runEnvironmentCheck(commandDirectory);
