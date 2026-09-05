@@ -8,7 +8,7 @@ use gtk::pango::{self, FontDescription, Layout};
 use gtk::prelude::FontMapExt;
 use roonscape_renderer::{
     MetadataDensity, MetadataFontSizes, MetadataTypography, NowPlayingLayout, Presentation,
-    TextOverflow, Viewport, metadata_layout, parse_snapshot, presentation_from_snapshot,
+    Viewport, metadata_layout, parse_snapshot, presentation_from_snapshot,
     register_packaged_fallback_fonts,
 };
 
@@ -145,9 +145,6 @@ fn uses_the_selected_responsive_metadata_typography() {
             ),
             (5, 3, 3)
         );
-        assert_eq!(title.overflow, TextOverflow::EllipsizeEnd);
-        assert_eq!(artist.overflow, TextOverflow::EllipsizeEnd);
-        assert_eq!(album.overflow, TextOverflow::EllipsizeEnd);
     }
 }
 
@@ -186,9 +183,6 @@ fn extreme_metadata_uses_expanded_bounds_and_ellipsizes_at_readable_minimum_size
             ),
             (5, 3, 3)
         );
-        assert_eq!(title.overflow, TextOverflow::EllipsizeEnd);
-        assert_eq!(artist.overflow, TextOverflow::EllipsizeEnd);
-        assert_eq!(album.overflow, TextOverflow::EllipsizeEnd);
         assert_eq!(
             title.fitting_font_size(|_| false),
             title.font_sizes.minimum_px

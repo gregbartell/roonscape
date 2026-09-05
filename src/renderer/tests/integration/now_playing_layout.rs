@@ -6,12 +6,10 @@ use std::{fs, path::Path};
 use gtk::pango::{self, FontDescription, Layout};
 use gtk::prelude::FontMapExt;
 use roonscape_renderer::{
-    ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
-    ArtworkLayout, ArtworkReference, IdentityLineLayout, IdentityPhraseAlignment,
-    IdentityPlacement, LyricNeighborVisibility, NowPlayingField, NowPlayingFooterContent,
-    NowPlayingLayout, NowPlayingRole, Presentation, PresentationStatusDecoration, TextOverflow,
-    parse_snapshot, presentation_from_snapshot, register_packaged_fallback_fonts,
-    resolve_presentation,
+    ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkLayout, ArtworkReference,
+    LyricNeighborVisibility, NowPlayingFooterContent, NowPlayingLayout, NowPlayingRole,
+    Presentation, PresentationStatusDecoration, parse_snapshot, presentation_from_snapshot,
+    register_packaged_fallback_fonts, resolve_presentation,
 };
 
 #[test]
@@ -133,16 +131,6 @@ fn now_playing(fixture_name: &str) -> roonscape_renderer::NowPlayingPresentation
     presentation
 }
 
-fn now_playing_from_snapshot(contents: &str) -> roonscape_renderer::NowPlayingPresentation {
-    let snapshot = parse_snapshot(contents).expect("snapshot should satisfy the shared contract");
-    let Presentation::NowPlaying(presentation) = presentation_from_snapshot(&snapshot)
-        .expect("available snapshot should produce Now Playing")
-    else {
-        panic!("available snapshot should produce Now Playing");
-    };
-    presentation
-}
-
 fn artwork_dimensions(fixture_name: &str) -> ArtworkDimensions {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../shared/fixtures/artwork")
@@ -195,8 +183,6 @@ fn uses_each_representative_landscape_field_with_a_stable_metadata_hierarchy() {
             viewport.width_px,
             "the composition should use the complete viewport without letterboxing"
         );
-        assert_eq!(layout.field, NowPlayingField::Cohesive);
-        assert_eq!(layout.identity_placement, IdentityPlacement::BottomRight);
         assert_eq!(
             layout.metadata_roles,
             vec![
@@ -474,11 +460,6 @@ fn groups_progress_or_activity_with_compact_bounded_identities_in_one_footer() {
         );
 
         let identity = determinate.identity_row;
-        assert_eq!(
-            identity.phrase_alignment,
-            IdentityPhraseAlignment::Baseline,
-            "each identity label and name should share a baseline at {viewport:?}",
-        );
         assert!(
             identity.output_phrase_max_width_px
                 + identity.zone_phrase_max_width_px
@@ -810,8 +791,6 @@ fn fits_supplied_decoration_to_the_actual_image_bounds() {
         layout,
         ArtworkLayout {
             content: ArtworkContent::Supplied,
-            fit: ArtworkFit::Contain,
-            alignment: ArtworkAlignment::Center,
             decoration: ArtworkDecoration::ContainedImage(intrinsic_dimensions),
         }
     );
@@ -860,8 +839,6 @@ fn preserves_square_decoration_for_square_and_missing_artwork() {
         ArtworkLayout::for_presentation(&missing, None),
         ArtworkLayout {
             content: ArtworkContent::QuietField,
-            fit: ArtworkFit::Contain,
-            alignment: ArtworkAlignment::Center,
             decoration: ArtworkDecoration::QuietSquareField,
         }
     );
@@ -1030,7 +1007,7 @@ fn replaces_the_determinate_timeline_with_activity_for_indeterminate_playing() {
 }
 
 #[test]
-fn defensively_ellipsizes_long_identities_without_moving_the_footer() {
+fn keeps_footer_geometry_stable_for_long_identities() {
     let ordinary = now_playing("playing.json");
     let long_identities = now_playing("long-identities.json");
 
@@ -1038,14 +1015,6 @@ fn defensively_ellipsizes_long_identities_without_moving_the_footer() {
         let ordinary = NowPlayingLayout::for_presentation(&ordinary, viewport);
         let long = NowPlayingLayout::for_presentation(&long_identities, viewport);
 
-        assert_eq!(
-            long.identity_line,
-            IdentityLineLayout {
-                maximum_lines: 1,
-                overflow: TextOverflow::EllipsizeEnd,
-            }
-        );
-        assert_eq!(long.identity_placement, IdentityPlacement::BottomRight);
         assert_eq!(
             (long.information, long.identity_row, long.footer_gap_px),
             (
@@ -1055,53 +1024,5 @@ fn defensively_ellipsizes_long_identities_without_moving_the_footer() {
             ),
             "identity content must not move or resize the footer at {viewport:?}"
         );
-    }
-}
-
-#[test]
-fn applies_one_complete_now_playing_policy_to_fixture_and_roon_snapshots() {
-    let roon_snapshot = r#"{
-      "schemaVersion": 4,
-      "revision": 41,
-      "availability": "available",
-      "playback": "playing",
-      "trackedOutput": { "name": "Speaker System" },
-      "trackedZone": { "id": "zone-living-room", "name": "Living Room" },
-      "nowPlaying": {
-        "title": "A Moment Apart",
-        "artist": "ODESZA",
-        "album": "A Moment Apart"
-      },
-      "timing": {
-        "position": {
-          "seconds": 30,
-          "sampledAt": "2026-08-15T19:20:00.000Z"
-        },
-        "durationSeconds": 234
-      },
-      "artwork": { "revision": 41, "path": "artwork/artwork-41.jpg" },
-      "lyrics": null
-    }"#;
-    let expected_roles = vec![
-        NowPlayingRole::PresentationStatus,
-        NowPlayingRole::Title,
-        NowPlayingRole::Artist,
-        NowPlayingRole::Album,
-        NowPlayingRole::Progress,
-    ];
-    let presentations = [
-        now_playing("playing.json"),
-        now_playing("paused.json"),
-        now_playing("loading.json"),
-        now_playing_from_snapshot(roon_snapshot),
-    ];
-
-    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
-        for presentation in &presentations {
-            let layout = NowPlayingLayout::for_presentation(presentation, viewport);
-            assert_eq!(layout.field, NowPlayingField::Cohesive);
-            assert_eq!(layout.metadata_roles, expected_roles);
-            assert_eq!(layout.identity_placement, IdentityPlacement::BottomRight);
-        }
     }
 }

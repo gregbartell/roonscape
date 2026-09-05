@@ -63,17 +63,20 @@ fn resolve_presentation_with_artwork(
     repository_root: &Path,
 ) -> Result<ResolvedPresentation, ArtworkResolutionError> {
     let Presentation::NowPlaying(now_playing) = presentation else {
-        return Ok(resolved(
-            presentation.clone(),
-            PresentationPalette::fallback(),
-        ));
+        return Ok(ResolvedPresentation {
+            presentation: presentation.clone(),
+            palette: PresentationPalette::fallback(),
+        });
     };
     let Some(artwork_path) = now_playing.artwork_path.as_deref() else {
         return Ok(resolve_without_artwork_palette(presentation));
     };
     let artwork_path = repository_root.join(artwork_path);
     match PresentationPalette::from_artwork(&artwork_path) {
-        Ok(palette) => Ok(resolved(presentation.clone(), palette)),
+        Ok(palette) => Ok(ResolvedPresentation {
+            presentation: presentation.clone(),
+            palette,
+        }),
         Err(source) => Err(ArtworkResolutionError {
             path: artwork_path,
             source,
@@ -83,28 +86,24 @@ fn resolve_presentation_with_artwork(
 
 fn resolve_without_artwork_palette(presentation: &Presentation) -> ResolvedPresentation {
     let Presentation::NowPlaying(now_playing) = presentation else {
-        return resolved(presentation.clone(), PresentationPalette::fallback());
+        return ResolvedPresentation {
+            presentation: presentation.clone(),
+            palette: PresentationPalette::fallback(),
+        };
     };
     if !now_playing.has_usable_metadata() {
-        return resolved(
-            Presentation::FullField(trackless_full_field(now_playing)),
-            PresentationPalette::fallback(),
-        );
+        return ResolvedPresentation {
+            presentation: Presentation::FullField(trackless_full_field(now_playing)),
+            palette: PresentationPalette::fallback(),
+        };
     }
 
     let mut now_playing = now_playing.clone();
     now_playing.artwork_revision = None;
     now_playing.artwork_path = None;
 
-    resolved(
-        Presentation::NowPlaying(now_playing),
-        PresentationPalette::fallback(),
-    )
-}
-
-fn resolved(presentation: Presentation, palette: PresentationPalette) -> ResolvedPresentation {
     ResolvedPresentation {
-        presentation,
-        palette,
+        presentation: Presentation::NowPlaying(now_playing),
+        palette: PresentationPalette::fallback(),
     }
 }

@@ -1,5 +1,5 @@
 use crate::presentation::NowPlayingPresentation;
-use crate::{MetadataFitting, MetadataFontSizes, NowPlayingLayout, TextOverflow, Viewport};
+use crate::{MetadataFitting, MetadataFontSizes, NowPlayingLayout, Viewport};
 
 const TITLE_MAXIMUM_LINES: u32 = 5;
 const ARTIST_MAXIMUM_LINES: u32 = 3;
@@ -18,7 +18,6 @@ pub struct MetadataLineLayout {
     pub typography: MetadataTypography,
     pub font_sizes: MetadataFontSizes,
     pub maximum_lines: u32,
-    pub overflow: TextOverflow,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -599,6 +598,5 @@ fn line_layout(
         typography,
         font_sizes: sizes,
         maximum_lines,
-        overflow: TextOverflow::EllipsizeEnd,
     }
 }

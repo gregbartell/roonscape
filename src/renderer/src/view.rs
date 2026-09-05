@@ -7,17 +7,15 @@ use gtk::gdk;
 use gtk::pango;
 use gtk::prelude::*;
 use roonscape_renderer::{
-    ArtworkAlignment, ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFit,
-    ArtworkLayout, FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, FullFieldPresentation,
-    IdentityLineLayout, IdentityPhraseAlignment, IdentityPlacement, IdentityRowLayout,
-    InactivityLayout, InactivityTransform, LyricPresentation, MetadataGroupPlan, MetadataLayout,
-    MetadataLineLayout, MetadataTypography, NowPlayingField, NowPlayingFooterContent,
-    NowPlayingLayout, NowPlayingPresentation, NowPlayingRole, Presentation, PresentationActivity,
-    PresentationBehavior, PresentationPalette, PresentationProgress, PresentationRevision,
-    PresentationStatus, PresentationStatusEmphasis, PresentationStatusLayout,
-    PresentationStyleLayer, PresentationTransition, PresentationTransitionStyles,
-    ResolvedPresentation, TextOverflow, TypographySelection, TypographyStyles, Viewport,
-    metadata_layout, resolve_capture_presentation, resolve_presentation,
+    ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkLayout, FullFieldFontSize,
+    FullFieldLayout, FullFieldPresentation, IdentityRowLayout, InactivityLayout,
+    InactivityTransform, LyricPresentation, MetadataGroupPlan, MetadataLayout, MetadataLineLayout,
+    MetadataTypography, NowPlayingFooterContent, NowPlayingLayout, NowPlayingPresentation,
+    NowPlayingRole, Presentation, PresentationActivity, PresentationBehavior, PresentationPalette,
+    PresentationProgress, PresentationRevision, PresentationStatus, PresentationStatusEmphasis,
+    PresentationStatusLayout, PresentationStyleLayer, PresentationTransition,
+    PresentationTransitionStyles, ResolvedPresentation, TypographySelection, TypographyStyles,
+    Viewport, metadata_layout, resolve_capture_presentation, resolve_presentation,
 };
 
 use crate::activity_waveform::activity_waveform;
@@ -877,19 +875,9 @@ fn full_field(
             roonscape_renderer::PresentationIdentity::OutputAndZone {
                 tracked_output,
                 tracked_zone,
-            } => tracked_identity(
-                tracked_output,
-                Some(tracked_zone),
-                layout.identity_placement,
-                layout.identity_line,
-            ),
+            } => tracked_identity(tracked_output, Some(tracked_zone)),
             roonscape_renderer::PresentationIdentity::OutputOnly { tracked_output } => {
-                tracked_identity(
-                    tracked_output,
-                    None,
-                    layout.identity_placement,
-                    layout.identity_line,
-                )
+                tracked_identity(tracked_output, None)
             }
         };
         content.add_overlay(&identity.root);
@@ -981,10 +969,7 @@ fn now_playing(
         metadata_slot,
         metadata,
     };
-    let class_name = match layout.field {
-        NowPlayingField::Cohesive => "now-playing",
-    };
-    let (root, diagnostics) = presentation_layer(&surface, class_name, diagnostics_text);
+    let (root, diagnostics) = presentation_layer(&surface, "now-playing", diagnostics_text);
     RenderedPresentation {
         root: root.upcast(),
         progress,
@@ -1059,27 +1044,17 @@ fn artwork(
     };
     picture.add_css_class("artwork");
     picture.set_can_shrink(true);
-    match layout.fit {
-        ArtworkFit::Contain => picture.set_keep_aspect_ratio(true),
-    }
+    picture.set_keep_aspect_ratio(true);
     picture.set_hexpand(true);
     picture.set_vexpand(true);
 
-    let (horizontal_alignment, vertical_alignment) = match layout.alignment {
-        ArtworkAlignment::Center => (0.5, 0.5),
-    };
     let decoration_ratio = match layout.decoration {
         ArtworkDecoration::ContainedImage(dimensions) => {
             dimensions.width_px as f32 / dimensions.height_px as f32
         }
         ArtworkDecoration::QuietSquareField => 1.0,
     };
-    let decoration = gtk::AspectFrame::new(
-        horizontal_alignment,
-        vertical_alignment,
-        decoration_ratio,
-        false,
-    );
+    let decoration = gtk::AspectFrame::new(0.5, 0.5, decoration_ratio, false);
     decoration.set_hexpand(true);
     decoration.set_vexpand(true);
     decoration.set_child(Some(&picture));
@@ -1104,7 +1079,7 @@ fn artwork(
     stage.set_clip_overlay(&decoration, false);
     stage.set_measure_overlay(&decoration, false);
 
-    let reservation = gtk::AspectFrame::new(horizontal_alignment, vertical_alignment, 1.0, false);
+    let reservation = gtk::AspectFrame::new(0.5, 0.5, 1.0, false);
     reservation.add_css_class("artwork-reservation");
     reservation.set_halign(gtk::Align::Start);
     reservation.set_valign(gtk::Align::Center);
@@ -1259,8 +1234,6 @@ fn metadata(
     let identity = tracked_identity(
         &presentation.tracked_output,
         Some(&presentation.tracked_zone),
-        now_playing_layout.identity_placement,
-        now_playing_layout.identity_line,
     );
     identity.root.set_halign(gtk::Align::Fill);
     footer.append(&identity.root);
@@ -1398,7 +1371,7 @@ fn metadata_line(
         MetadataTypography::ArtistSans | MetadataTypography::AlbumSans => "utility-text",
     });
     label.set_lines(layout.maximum_lines as i32);
-    apply_text_overflow(&label, layout.overflow);
+    label.set_ellipsize(pango::EllipsizeMode::End);
     label.set_wrap(true);
     label.set_wrap_mode(pango::WrapMode::Word);
     // Keep a long label's natural width from overriding the explicit group measure.
@@ -1412,24 +1385,13 @@ fn metadata_line(
     }
 }
 
-fn apply_text_overflow(label: &gtk::Label, overflow: TextOverflow) {
-    match overflow {
-        TextOverflow::EllipsizeEnd => label.set_ellipsize(pango::EllipsizeMode::End),
-    }
-}
-
-fn apply_full_field_line_layout(label: &gtk::Label, layout: FullFieldLineLayout) {
-    apply_text_overflow(label, layout.overflow);
-    label.set_lines(layout.maximum_lines as i32);
-    label.set_single_line_mode(layout.maximum_lines == 1);
-    if layout.maximum_lines == 1 {
-        label.set_max_width_chars(1);
-    }
-    label.set_wrap(layout.wrap);
-}
-
 fn full_field_line(text: &str, class_name: &str) -> (gtk::Box, gtk::Label) {
     let label = metadata_label(text, class_name);
+    label.set_ellipsize(pango::EllipsizeMode::End);
+    label.set_lines(1);
+    label.set_single_line_mode(true);
+    label.set_max_width_chars(1);
+    label.set_wrap(false);
     label.set_hexpand(true);
     label.set_valign(gtk::Align::Center);
     let slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -1610,14 +1572,12 @@ impl RenderedFullField {
         self.heading_slot
             .set_height_request(dimension(layout.heading_slot.height_px));
         apply_full_field_font_size(&self.heading, layout.heading_font, fit_generation.clone());
-        apply_full_field_line_layout(&self.heading, layout.heading_line);
         if let (Some(slot), Some(explanation)) =
             (self.explanation_slot.as_ref(), self.explanation.as_ref())
         {
             slot.set_margin_top(dimension(layout.explanation_spacing_px));
             slot.set_height_request(dimension(layout.explanation_slot.height_px));
             apply_full_field_font_size(explanation, layout.explanation_font, fit_generation);
-            apply_full_field_line_layout(explanation, layout.explanation_line);
         }
         if let Some(identity) = self.identity.as_ref() {
             let gutter = dimension(layout.outer_gutter_px);
@@ -2190,16 +2150,12 @@ impl RenderedIdentity {
             layout.separator_size_px,
             layout.label_letter_spacing_px,
         );
-        match layout.phrase_alignment {
-            IdentityPhraseAlignment::Baseline => {
-                for label in [&self.output_label, &self.output_name] {
-                    label.set_valign(gtk::Align::Baseline);
-                }
-                if let Some(zone) = self.zone.as_ref() {
-                    zone.label.set_valign(gtk::Align::Baseline);
-                    zone.name.set_valign(gtk::Align::Baseline);
-                }
-            }
+        for label in [&self.output_label, &self.output_name] {
+            label.set_valign(gtk::Align::Baseline);
+        }
+        if let Some(zone) = self.zone.as_ref() {
+            zone.label.set_valign(gtk::Align::Baseline);
+            zone.name.set_valign(gtk::Align::Baseline);
         }
         self.output.set_hexpand(false);
         self.output.set_size_request(-1, -1);
@@ -2427,28 +2383,19 @@ fn activity_view(
     }
 }
 
-fn tracked_identity(
-    tracked_output: &str,
-    tracked_zone: Option<&str>,
-    placement: IdentityPlacement,
-    line_layout: IdentityLineLayout,
-) -> RenderedIdentity {
+fn tracked_identity(tracked_output: &str, tracked_zone: Option<&str>) -> RenderedIdentity {
     let row = gtk::Grid::new();
     row.add_css_class("tracked-identity");
     row.set_column_homogeneous(false);
     row.set_hexpand(true);
-    match placement {
-        IdentityPlacement::BottomRight => {
-            row.set_halign(gtk::Align::End);
-            row.set_valign(gtk::Align::End);
-        }
-    }
+    row.set_halign(gtk::Align::End);
+    row.set_valign(gtk::Align::End);
 
     let output = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     output.set_hexpand(true);
     output.set_halign(gtk::Align::Fill);
     let output_label = metadata_label("OUTPUT", "identity-label");
-    let output_name = identity_name(tracked_output, line_layout);
+    let output_name = identity_name(tracked_output);
     output_label.set_valign(gtk::Align::Baseline);
     output_name.set_valign(gtk::Align::Baseline);
     output.append(&output_label);
@@ -2460,7 +2407,7 @@ fn tracked_identity(
         zone.set_hexpand(true);
         zone.set_halign(gtk::Align::End);
         let zone_label = metadata_label("ZONE", "identity-label");
-        let zone_name = identity_name(tracked_zone, line_layout);
+        let zone_name = identity_name(tracked_zone);
         zone_label.set_valign(gtk::Align::Baseline);
         zone_name.set_valign(gtk::Align::Baseline);
         zone_name.set_xalign(1.0);
@@ -2494,11 +2441,11 @@ fn tracked_identity(
     }
 }
 
-fn identity_name(text: &str, layout: IdentityLineLayout) -> gtk::Label {
+fn identity_name(text: &str) -> gtk::Label {
     let label = metadata_label(text, "identity-name");
-    apply_text_overflow(&label, layout.overflow);
-    label.set_lines(layout.maximum_lines as i32);
-    label.set_single_line_mode(layout.maximum_lines == 1);
+    label.set_ellipsize(pango::EllipsizeMode::End);
+    label.set_lines(1);
+    label.set_single_line_mode(true);
     label
 }
 

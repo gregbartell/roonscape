@@ -5,9 +5,9 @@ use gtk::pango::prelude::FontFamilyExt;
 use gtk::pango::{self, FontDescription, Layout};
 use gtk::prelude::FontMapExt;
 use roonscape_renderer::{
-    FullFieldFontSize, FullFieldLayout, FullFieldLineLayout, IdentityLineLayout, IdentityPlacement,
-    NowPlayingLayout, Presentation, PresentationStatusDecoration, TextOverflow, Viewport,
-    parse_snapshot, presentation_from_snapshot, register_packaged_fallback_fonts,
+    FullFieldFontSize, FullFieldLayout, NowPlayingLayout, Presentation,
+    PresentationStatusDecoration, Viewport, parse_snapshot, presentation_from_snapshot,
+    register_packaged_fallback_fonts,
 };
 
 const FULL_FIELD_FIXTURES: [(&str, bool, bool); 7] = [
@@ -161,17 +161,6 @@ fn preserves_the_established_full_field_identity_anchor_but_not_the_now_playing_
                 .presentation_status_top_viewport_y_px,
             "Full-field status should be independent of the Now Playing imaginary square at {viewport:?}",
         );
-        assert_eq!(
-            full_field.identity_placement,
-            IdentityPlacement::BottomRight
-        );
-        assert_eq!(
-            full_field.identity_line,
-            IdentityLineLayout {
-                maximum_lines: 1,
-                overflow: TextOverflow::EllipsizeEnd,
-            }
-        );
     }
 }
 
@@ -275,21 +264,6 @@ fn keeps_approved_full_field_copy_complete_at_the_largest_fitting_size() {
 
     for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
         let layout = FullFieldLayout::for_viewport(viewport);
-        assert_eq!(
-            (layout.heading_line, layout.explanation_line),
-            (
-                FullFieldLineLayout {
-                    maximum_lines: 1,
-                    wrap: false,
-                    overflow: TextOverflow::EllipsizeEnd,
-                },
-                FullFieldLineLayout {
-                    maximum_lines: 1,
-                    wrap: false,
-                    overflow: TextOverflow::EllipsizeEnd,
-                },
-            ),
-        );
         let available_width_px = layout.text_width_px();
 
         for heading in headings {

@@ -75,21 +75,6 @@ impl Viewport {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NowPlayingField {
-    Cohesive,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ArtworkFit {
-    Contain,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ArtworkAlignment {
-    Center,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArtworkContent {
     Supplied,
     QuietField,
@@ -154,8 +139,6 @@ pub struct ArtworkPrintPlateGeometry {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArtworkLayout {
     pub content: ArtworkContent,
-    pub fit: ArtworkFit,
-    pub alignment: ArtworkAlignment,
     pub decoration: ArtworkDecoration,
 }
 
@@ -177,8 +160,6 @@ impl ArtworkLayout {
         };
         Self {
             content,
-            fit: ArtworkFit::Contain,
-            alignment: ArtworkAlignment::Center,
             decoration,
         }
     }
@@ -228,14 +209,14 @@ impl ArtworkLayout {
             reservation.height_px > border_extent_px,
             "artwork reservation must contain its border"
         );
-        match (self.fit, self.decoration) {
-            (ArtworkFit::Contain, ArtworkDecoration::ContainedImage(dimensions)) => {
+        match self.decoration {
+            ArtworkDecoration::ContainedImage(dimensions) => {
                 Some(dimensions.contained_within(ArtworkDimensions::new(
                     reservation.width_px - border_extent_px,
                     reservation.height_px - border_extent_px,
                 )))
             }
-            (ArtworkFit::Contain, ArtworkDecoration::QuietSquareField) => None,
+            ArtworkDecoration::QuietSquareField => None,
         }
     }
 }
@@ -243,29 +224,6 @@ impl ArtworkLayout {
 fn rounded_scale(axis_px: u32, numerator: u32, denominator: u32) -> u32 {
     let scaled = u64::from(axis_px) * u64::from(numerator);
     ((scaled + u64::from(denominator) / 2) / u64::from(denominator)) as u32
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum IdentityPlacement {
-    BottomRight,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TextOverflow {
-    EllipsizeEnd,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct IdentityLineLayout {
-    pub maximum_lines: u32,
-    pub overflow: TextOverflow,
-}
-
-impl IdentityLineLayout {
-    const DEFENSIVE: Self = Self {
-        maximum_lines: 1,
-        overflow: TextOverflow::EllipsizeEnd,
-    };
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -361,7 +319,6 @@ pub struct IdentityRowLayout {
     pub label_letter_spacing_px: u32,
     pub label_gap_px: u32,
     pub separator_size_px: u32,
-    pub phrase_alignment: IdentityPhraseAlignment,
 }
 
 impl IdentityRowLayout {
@@ -372,11 +329,6 @@ impl IdentityRowLayout {
     pub fn separator_diameter_px(name_px: u32) -> u32 {
         ((name_px * 5).div_ceil(26)).clamp(4, 10)
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum IdentityPhraseAlignment {
-    Baseline,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -489,21 +441,6 @@ impl PresentationStatusLayout {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FullFieldLineLayout {
-    pub maximum_lines: u32,
-    pub wrap: bool,
-    pub overflow: TextOverflow,
-}
-
-impl FullFieldLineLayout {
-    const COMPLETE: Self = Self {
-        maximum_lines: 1,
-        wrap: false,
-        overflow: TextOverflow::EllipsizeEnd,
-    };
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FullFieldFontSize {
     pub preferred_px: u32,
 }
@@ -542,18 +479,14 @@ pub struct FullFieldLayout {
     pub presentation_status_slot: FullFieldSlot,
     pub heading_slot: FullFieldSlot,
     pub heading_font: FullFieldFontSize,
-    pub heading_line: FullFieldLineLayout,
     pub explanation_spacing_px: u32,
     pub explanation_slot: FullFieldSlot,
     pub explanation_font: FullFieldFontSize,
-    pub explanation_line: FullFieldLineLayout,
     pub identity_anchor: BottomAnchor,
     pub identity_width_px: u32,
     pub identity_right_inset_px: u32,
     pub identity_gap_px: u32,
     pub identity_px: u32,
-    pub identity_placement: IdentityPlacement,
-    pub identity_line: IdentityLineLayout,
 }
 
 impl FullFieldLayout {
@@ -607,14 +540,12 @@ impl FullFieldLayout {
                 height_px: heading_slot_height_px,
             },
             heading_font,
-            heading_line: FullFieldLineLayout::COMPLETE,
             explanation_spacing_px,
             explanation_slot: FullFieldSlot {
                 top_viewport_y_px: explanation_slot_top_viewport_y_px,
                 height_px: explanation_slot_height_px,
             },
             explanation_font,
-            explanation_line: FullFieldLineLayout::COMPLETE,
             identity_anchor: BottomAnchor::for_full_field(
                 viewport,
                 now_playing_layout.artwork_field_anchors,
@@ -623,8 +554,6 @@ impl FullFieldLayout {
             identity_right_inset_px,
             identity_gap_px: scaled(viewport.width_px, 0.018, 19, 64),
             identity_px: scaled(viewport.width_px, 0.0125, 20, 48),
-            identity_placement: IdentityPlacement::BottomRight,
-            identity_line: IdentityLineLayout::DEFENSIVE,
         }
     }
 
@@ -668,15 +597,12 @@ pub struct NowPlayingInformationLayout {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NowPlayingLayout {
-    pub field: NowPlayingField,
     pub outer_gutter_px: u32,
     pub column_gap_px: u32,
     pub artwork_column_width_px: u32,
     pub artwork_field_width_px: u32,
     pub artwork_field_height_px: u32,
     pub artwork_print_plate: ArtworkPrintPlateLayout,
-    pub identity_placement: IdentityPlacement,
-    pub identity_line: IdentityLineLayout,
     pub metadata_roles: Vec<NowPlayingRole>,
     pub information: NowPlayingInformationLayout,
     pub artwork_field_anchors: ArtworkFieldAnchors,
@@ -863,7 +789,6 @@ impl NowPlayingLayout {
             ),
             label_gap_px: ((typography.identity_px as f64) * 0.42).round() as u32,
             separator_size_px: identity_separator_size_px,
-            phrase_alignment: IdentityPhraseAlignment::Baseline,
         };
         let metadata_fitting = MetadataFitting {
             normal_title_to_credit_gap_px: scaled(viewport.height_px, 0.0185, 22, 40),
@@ -873,7 +798,6 @@ impl NowPlayingLayout {
         };
 
         let mut layout = Self {
-            field: NowPlayingField::Cohesive,
             outer_gutter_px,
             column_gap_px,
             artwork_column_width_px,
@@ -883,8 +807,6 @@ impl NowPlayingLayout {
                 offset_x_px: scaled(viewport.height_px, 0.011, 8, 28),
                 offset_y_px: scaled(viewport.height_px, 0.0074, 6, 18),
             },
-            identity_placement: IdentityPlacement::BottomRight,
-            identity_line: IdentityLineLayout::DEFENSIVE,
             metadata_roles: Vec::new(),
             information,
             artwork_field_anchors,
