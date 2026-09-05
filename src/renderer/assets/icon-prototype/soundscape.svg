@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>RoonScape — Soundscape</title>
+  <g stroke="currentColor" stroke-width="6" stroke-linecap="round">
+    <path d="M8 30v8M20 20v18M32 10v28M44 18v20M56 28v10"/>
+    <path d="M8 49c12 9 36 9 48 0"/>
+  </g>
+</svg>
