@@ -37,12 +37,15 @@ jobs:
           fi
       - name: Set up native test environment
         uses: ./.github/actions/setup-native-test-environment
-      - name: Install Node dependencies
-        run: npm ci
-      - name: Run repository checks
-        run: xvfb-run -a npm run check
-      - name: Run design tests
-        run: npm run test:design
+      - name: Select pinned package and Rust toolchains
+        run: |
+          npm install --global "$(node -p 'require("./package.json").packageManager')"
+          rust_pin=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$rust_pin" --profile minimal --component rustfmt --component clippy
+      - name: Prepare worktree
+        run: npm run dev:prepare
+      - name: Run checks and design tests
+        run: npm run verify -- --design
       - name: Build release artifacts
         run: npm run package
       - name: Store release artifacts
@@ -54,6 +57,13 @@ jobs:
             release/roonscape-linux-x64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 1
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /var/tmp/codex/roonscape/review.*
+          if-no-files-found: warn
 
   publish:
     needs: build
