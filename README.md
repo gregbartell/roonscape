@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/branding/roonscape-white-256.png">
+  <img src="docs/branding/roonscape-black-256.png" width="64" height="64" alt="">
+</picture>
+
 # RoonScape
 
 RoonScape is a lightweight set-it-and-forget-it program to display what you're listening to with [Roon](https://roon.app).

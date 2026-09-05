@@ -10,5 +10,7 @@ color when inlined. For standalone colored or reversed exports, replace
 `currentColor` with the desired ink color in a derived copy. Preserve the
 source geometry and aspect ratio.
 
-The icon is saved here for future integration. It is not yet wired into the
-Renderer or included in release packaging.
+The README uses derived PNGs for light and dark themes. See
+[`docs/branding`](../../../docs/branding/README.md) for reusable exports,
+share graphics, and regeneration instructions. The icon is not yet wired
+into the Renderer or included in release packaging.
