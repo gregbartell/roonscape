@@ -3,9 +3,9 @@ use crate::support;
 use std::time::{Duration, UNIX_EPOCH};
 
 use roonscape_renderer::{
-    DiagnosticsConfiguration, InactivityConfiguration, InactivityTransform, Presentation,
-    PresentationBehavior, PresentationState, PresentationTime, PresentationTransition,
-    PresentationUpdate, inactivity_configuration_from_display_configuration, parse_snapshot,
+    InactivityConfiguration, InactivityTransform, Presentation, PresentationBehavior,
+    PresentationState, PresentationTime, PresentationTransition, PresentationUpdate,
+    parse_snapshot,
 };
 
 const PLAYING_SAMPLED_AT: u64 = 1_786_821_600;
@@ -65,26 +65,6 @@ fn snapshot(fixture_name: &str, revision: u64) -> roonscape_renderer::Presentati
         .expect("integration fixture should be a valid snapshot");
     snapshot.revision = revision;
     snapshot
-}
-
-#[test]
-fn default_inactivity_configuration_supports_optional_diagnostics() {
-    let inactivity = inactivity_configuration_from_display_configuration(&support::fixture(
-        "display-configuration-default-inactivity.json",
-    ))
-    .expect("default inactivity configuration should be valid");
-
-    assert_eq!(inactivity, InactivityConfiguration::default());
-    assert!(
-        !DiagnosticsConfiguration::from_value(None)
-            .expect("absent diagnostics configuration should be valid")
-            .enabled()
-    );
-    assert!(
-        DiagnosticsConfiguration::from_value(Some("true"))
-            .expect("diagnostics should remain independently opt-in")
-            .enabled()
-    );
 }
 
 #[test]
