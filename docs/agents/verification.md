@@ -1,6 +1,6 @@
 # Verification policy
 
-Select local verification by what the change affects. CI continues to run
+Select local verification by what the change affects. Ordinary CI continues to run
 repository checks, design tests, and representative fallback captures for all
 changes.
 
@@ -17,6 +17,11 @@ Use the most demanding applicable row, including for mixed changes:
 | Documentation or agent guidance with no executable or presentation changes | Review accuracy, links, referenced commands, and affected skill conventions; run `git diff --check` |
 | Code, dependencies, configuration, or build/test tooling | `npm run verify` |
 | Renderer, presentation design, Fixture Scenarios, artwork, fonts, styles, capture planning/execution, or related build/native orchestration | `npm run verify -- --design`, plus applicable presentation review below |
+
+For executable checks, read [execution guidance](#executable-checks-and-presentation-work)
+and [evidence inspection](#inspect-retained-evidence). For presentation changes,
+also follow [Presentation review](#presentation-review). Documentation-only work
+uses the guidance in this section.
 
 Run applicable final verification when the change is ready. Reuse successful
 results while they cover the final change and relevant environment. Rerun when
@@ -37,16 +42,15 @@ scope reviewed, checks performed and their outcomes, and any limitations.
 
 ## Executable checks and presentation work
 
-Use a prepared worktree as described in [Development](../development.md).
+Use a prepared worktree as described in
+[development preparation](../development.md#prepare-an-existing-worktree).
 No Roon Server or Roon Authorization is required for these checks. General
 network access is allowed; verification does not install host packages or
 prepare dependencies automatically.
 
-1. Before preparing an existing worktree, read [Development](../development.md).
-   Select the pinned toolchains and explicitly provision host prerequisites;
-   then run `npm run dev:diagnose` and `npm run dev:prepare`. Resolve missing
-   capability or execution permissions before claiming verification. These
-   commands do not select branches, create worktrees, or access Roon.
+1. Resolve missing prerequisites or execution permissions using the relevant
+   [host provisioning instructions](../development.md#provision-the-development-host-explicitly)
+   before claiming verification.
 2. Use headless commands for unattended native work. Use an explicit desktop
    only for requested manual inspection, for example
    `DISPLAY=:0 ROONSCAPE_WINDOWED=1 npm run fixture -- --static`.
@@ -59,6 +63,9 @@ prepare dependencies automatically.
    SIGTERM. Keep retained `review.*` evidence; remove only task-owned disposable
    runtime artifacts. Do not stop neighboring sessions or delete resources
    based merely on an observed display number.
+
+When diagnosing or changing isolation, readiness, or cleanup, read the
+[native-runtime reference](native-runtime.md).
 
 For implementation changes to preparation, isolation, verification, or evidence
 orchestration, use the [two-worktree acceptance exercise](worktree-acceptance.md)
@@ -86,28 +93,25 @@ logs while a command runs; the index remains incomplete until completion.
 CI uploads these directories even when verification fails.
 
 Failed checks stop the sequence. SIGINT/SIGTERM mark cancellation and stop owned
-processes before removing the private runtime directory. On Linux, a Python
-standard-library subreaper supervises each command and adopts detached native
-descendants when their test owner exits. Cleanup signals only its children,
-allows 250 ms for termination, then kills and reaps survivors. The outer
-process monitor bounds supervisor termination to its existing two-second grace
-and two-second escalation waits. Per-command exit codes in the index are the
-supervisor's shell-style outcomes (130 for cancellation). Nested temporary
-resources live beneath the run's disposable command runtime directory. Completed logs remain;
-subsequent runs never reuse a review directory. Review directories are intentional
-retained deliverables, separate from disposable runtime resources. Do not remove
-them as ordinary task scratch. SIGKILL/host failure cannot run cleanup; an
-unfinished index must be treated as incomplete.
+processes before removing disposable runtime resources. Let cleanup finish;
+completed logs remain and later runs use new review directories. Keep `review.*`
+directories as retained deliverables, separate from disposable task scratch.
+Treat unfinished indexes as incomplete, including after SIGKILL or host failure.
 
 Automated completion does not establish Presentation Capture completion or
 visual acceptance. `--presentation-ci` additionally generates the maintained
 representative fallback-font capture scope after repository and design checks;
 its command failure fails the workflow while `automatedOutcome` separately
-records successful checks. All CI runs use this conservative scope, including
-presentation-related changes. CI uploads the entire retained directory even
-on failure, including useful partial images and diagnostics.
+records successful checks. Ordinary CI uses this conservative scope, including
+for presentation-related changes. Release builds use `--design` and retain
+check logs without generating this capture scope. Both workflows upload the
+entire retained directory even on failure, including any partial evidence.
 Never add environment dumps, credential files, or authorization material to
 review evidence.
+
+When reporting live observation, distinguish the
+[Live Capture Session helper tests](#live-capture-session-helper-tests) from an
+actual Live Capture Session.
 
 ## Presentation review
 

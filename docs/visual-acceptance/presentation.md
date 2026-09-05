@@ -9,9 +9,10 @@ screenshot-difference failure.
 
 ## Generate captures
 
-Install the source prerequisites described in the [Development
-guide](../development.md). The capture host also needs `Xvfb`, `xwininfo`, and
-`scrot`. No browser engine is involved.
+Prepare the worktree using the
+[development preparation instructions](../development.md#prepare-an-existing-worktree).
+The capture host also needs `Xvfb`, `xwininfo`, and `scrot`. No browser engine is
+involved.
 
 Start with required automation, then extend the printed retained review directory:
 

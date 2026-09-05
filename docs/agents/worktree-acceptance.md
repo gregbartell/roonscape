@@ -6,9 +6,11 @@ not part of `verify`: it invokes that command in each supplied worktree.
 
 ## Prepare and run
 
-Provision a supported Linux host using [Development](../development.md), including
-network access for locked downloads, toolchain/cache execution and writes, native
-processes and sockets, and writable `/tmp` and `/var/tmp/codex/roonscape`.
+Provision a supported Linux host using the
+[host provisioning instructions](../development.md#provision-the-development-host-explicitly),
+including network access for locked downloads, toolchain/cache execution and
+writes, native processes and sockets, and writable `/tmp` and
+`/var/tmp/codex/roonscape`.
 Do not run setup, request Roon Authorization, or provision live access.
 
 Supply two **already-created, clean, distinct worktree roots**, each without

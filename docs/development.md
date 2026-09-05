@@ -8,7 +8,10 @@ copied into documentation.
 
 ## Prepare an existing worktree
 
-After the explicit host provisioning below, run these from your worktree:
+Read this section when preparing a worktree or diagnosing verification
+prerequisites. For missing tools, fonts, or execution permissions, consult the
+relevant parts of [host provisioning](#provision-the-development-host-explicitly).
+On a provisioned host, run these from your worktree:
 
 ```sh
 npm run dev:diagnose
@@ -117,7 +120,7 @@ or start Xvfb, or the success of a future capture. These need the corresponding
 verification command under the intended agent permissions. Neither command
 changes permissions or reads personal application credentials.
 
-Select required checks from the [verification policy](agents/verification.md),
+Select required checks from [Choose checks](agents/verification.md#choose-checks),
 including its documentation-only path. When executable checks are required,
 `npm run verify` runs them headlessly with retained evidence; use `--design`
 when the design suite is required. The policy also covers focused checks,
@@ -213,26 +216,13 @@ and the selected Renderer profile first.
 Headless Fixture Mode and Presentation Captures each own a temporary Display
 Configuration, private home/XDG directories, Xvfb display, D-Bus session bus,
 and process groups. They do not read personal Display Configuration or Roon
-Authorization and do not contact Roon. Xvfb allocates its display atomically
-and reports readiness through `-displayfd`; concurrent runs never claim a
-display based on an observed socket alone. GTK application registration is
-scoped to D-Bus, so a private display alone is insufficient: the native
-regression probe confirms that a second Renderer sharing a bus redirects
-activation to the first, even on another display. Verification uses a private
-bus without service activation; Live Mode's application registration is
-unchanged.
+Authorization and do not contact Roon. Cancel the owning command with SIGINT
+or SIGTERM and allow its bounded cleanup to finish. Stop only owned processes;
+an observed display number does not establish ownership. Keep completed
+captures and treat a failed or cancelled capture set as incomplete.
 
-Startup and native readiness waits have five-second bounds (PNG encoding has
-a thirty-second bound). Cleanup sends SIGTERM to owned process groups, waits
-up to two seconds, then escalates to SIGKILL with a further two-second bound.
-On cancellation, each grace and escalation wait is limited to 250 milliseconds
-so the CLI can finish nested cleanup before its caller escalates termination.
-Application processes stop before their private display and session bus.
-Normal exit, startup failure, and SIGINT/SIGTERM cancellation all use this
-cleanup path; cancellation exits nonzero. Cleanup removes only the run's
-temporary runtime tree and unfinished publication files. Completed captures,
-neighboring sessions, and personal configuration remain intact. SIGKILL of
-the launcher or host failure cannot run application cleanup.
+When diagnosing or changing isolation, readiness, or cleanup, read the
+[native-runtime reference](agents/native-runtime.md).
 
 For manual inspection on a chosen X desktop, explicitly request a window:
 
