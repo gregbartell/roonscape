@@ -2723,14 +2723,18 @@ mod tests {
                         crate::lyric_motion::LyricCueSlot::Next => 2,
                     };
                     let line_count = rendered.label(cue.slot).layout().line_count();
-                    if let Some(expected) = rendered_line_counts[slot_index] {
+                    // The specified discrete weight switch can change Pango
+                    // wrapping. Scaling within either weight must not reflow.
+                    let focal_weight = cue.emphasis >= 0.5;
+                    if let Some((previous_weight, expected)) = rendered_line_counts[slot_index]
+                        && previous_weight == focal_weight
+                    {
                         assert_eq!(
                             line_count, expected,
-                            "a traveling cue must keep its authored Pango wrapping: cue={cue:?}, offset={offset}"
+                            "a traveling cue must keep its Pango wrapping within one weight: cue={cue:?}, offset={offset}"
                         );
-                    } else {
-                        rendered_line_counts[slot_index] = Some(line_count);
                     }
+                    rendered_line_counts[slot_index] = Some((focal_weight, line_count));
                     let bounds = visual_label_bounds(rendered.label(cue.slot), &rendered.reel);
                     if !cue.departing {
                         assert!(
