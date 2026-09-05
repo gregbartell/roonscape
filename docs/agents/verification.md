@@ -115,20 +115,10 @@ actual Live Capture Session.
 
 ## Presentation review
 
-For presentation changes, extend the completed verification directory using
-[`review:presentations`](../visual-acceptance/presentation.md). Follow that guide
-for command syntax and the maintained scope listing. Select affected Fixture
-Scenarios with a written rationale and inspect every image at all seven
-representative viewports. Shared typography, layout, or palette changes require
-the complete profile on a workstation with the required host fonts.
-
-Open the image index, account for every requested/completed capture, and record
-an explicit verdict with reasons, inspected filenames, and unresolved judgments.
-Capture completion alone leaves visual acceptance unreviewed. Focused acceptance
-covers only its selection; partial capture sets and CI fallback evidence cannot
-claim complete-profile acceptance. Record physical-display or subjective judgments
-requiring human review as unresolved. Keep capture evidence alongside automation
-logs rather than committing images or comparing pixel goldens.
+For presentation changes, follow the [presentation visual-acceptance workflow](../visual-acceptance/presentation.md).
+It defines required scope selection, viewport coverage, image inspection, verdict
+recording, and judgments requiring human review. Extend the completed verification
+directory with its capture evidence and verdict.
 
 ## Live Capture Session helper tests
 

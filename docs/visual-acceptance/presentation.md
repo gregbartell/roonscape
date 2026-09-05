@@ -49,7 +49,10 @@ validation, and progressive publication. Failure or cancellation retains complet
 images and diagnostics, marks the set incomplete, and removes owned runtime
 resources. Concurrent invocations cannot overwrite each other's evidence.
 
-Inspect every requested image before recording a verdict. Write a JSON file
+Open every requested image and record reasons against the [review checklist](#review-checklist)
+before recording a verdict. Record uncertain clipping, hierarchy, palette, or
+typography judgments as unresolved and use `needs-work` or `unreviewed` until
+resolved. Write a JSON file
 containing `verdict` (`accepted`, `needs-work`, or `unreviewed`), `reasons` (text),
 `inspected` (an array of image filenames), and `unresolved` (an array of judgments).
 Then attach it to that capture set:
@@ -65,6 +68,12 @@ unresolved judgments. Focused acceptance applies only to the selected scope;
 only a complete profile can claim complete-profile visual acceptance. Automated
 success, capture completion, and visual acceptance are independent outcomes.
 CI never supplies an aesthetic verdict.
+
+Settled screenshots cannot establish motion quality, distance readability,
+physical display brightness/color, OLED behavior over time, or personal aesthetic
+preference. Request human review for those judgments and retain them explicitly
+as unresolved when they are necessary for acceptance. Actual Live Capture
+Sessions require Roon and human-caused events.
 
 CI runs `npm run verify -- --presentation-ci`, which runs repository checks,
 the design suite, and the maintained small `ci-fallback` capture scope through
@@ -89,9 +98,8 @@ Treat all seven viewports as peers; no single size is the visual authority.
 
 ## Typography, palette, identity, and diagnostics representatives
 
-At every representative viewport, the plan adds two typography captures, one
-identity capture, three diagnostics captures, and two focused palette captures
-beyond the Fixture Scenario matrix:
+Beyond the Fixture Scenario matrix, the plan includes these targeted captures
+at every representative viewport:
 
 - **Preferred typography** requests Sitka Display for Now Playing Title. The
   capture fails clearly when the host family is unavailable; supporting roles
@@ -120,179 +128,54 @@ matrix captures must not contain the overlay.
 
 ## Review checklist
 
-Record **pass**, **needs work**, or **not applicable**, plus a short reason for
-each item. Compare the relevant captures across every representative viewport
-instead of approving a scenario at only one size.
+Use the linked design sections as the requirements for each item; this checklist
+identifies useful comparisons. Record **pass**, **needs work**, or **not
+applicable**, plus a short reason for each item across every representative
+viewport. Include all Full-field Fixture Scenarios as regression evidence when
+reviewing Now Playing changes.
 
-- **Composition and negative space:** The asymmetric artwork field and
-  metadata column use the complete landscape field without letterboxing,
-  crowding, or panel-like blocks. Every information role uses one strict left
-  rail without gutter, print-plate, or artwork overhang. On ultrawide displays,
-  only Title, Artist, and Album use the approximately 72%-of-viewport-height
-  musical measure; status, progress or activity, timing, and identities retain
-  the complete utility width.
-- **Hierarchy:** Title is bold and upright with normal tracking and dominates;
-  short single-line Titles use the same calm preferred tier as other fitting
-  Titles. Artist and Album are upright IBM Plex Sans, with Artist stronger than
-  Album, and remain a close credit group beneath the calibrated Title gap.
-  Missing fields close up cleanly. Long and punctuation-heavy Titles balance
-  deterministically at word boundaries without short final-line orphans. Long
-  or extreme values select the first tier that fits the complete metadata
-  group's width and height, use compact-credit density only when necessary,
-  expose up to five Title lines, three Artist lines, and three Album lines, then
-  end-ellipsize cleanly without overlapping status or footer. The complete
-  metadata group stays vertically centered with its small optical correction.
-  Metadata uses no scrolling, marquee motion, or pagination and never shrinks
-  below its readable font floors.
-- **Artwork fit and decoration:** The artwork column reserves the same
-  imaginary square for square, non-square, missing, and unusable artwork. Its
-  side is the lesser of 84% of viewport height and 56% of viewport width, and
-  the result remains vertically centered. Square supplied artwork fills that
-  reservation with its responsive one-to-two-pixel border and quiet
-  artwork-surface shadow.
-  Non-square supplied artwork is centered and contained; its surrounding
-  reservation is transparent, and its visible surface, border, shadow, and
-  matching accent plate hug the image rectangle. The plate is centered on the
-  same visible bounds before its responsive right/down offset is applied; at
-  3840×2160 that offset is approximately 24/16 px. Missing or unusable artwork
-  preserves a quiet decorated square field with a square plate and no invented
-  icon. The fully opaque plate stays flat, crisp, square-cornered, and free of
-  shadow, blur, texture, rotation, grain, or registration marks, while the
-  shadow remains on the artwork surface rather than the combined stack.
-- **Palette:** Dark and light artwork recolor the complete presentation. The
-  gradient geometry remains stable, the fixed no-art palette stays deliberate,
-  and text, accent, progress, and diagnostics roles remain readable. The
-  determinate fill is immediately distinct from the track in dark, light, and
-  low-chroma palettes; the complete track remains visible against the metadata
-  field while subordinate to the full artwork-derived accent fill. The
-  light-matte representative demonstrates restrained bright-end luminance
-  without losing blue and plum chroma; the dark-matte representative
-  preserves its dark field and teal ownership. Accent is limited to the print
-  plate, active Presentation Status, determinate progress fill, and
-  indeterminate activity.
-- **Presentation Status:** In Now Playing, every condition has the correct
-  circle-free symbol in one fixed cell and a bold uppercase label beginning at
-  one fixed horizontal position. It has no border, circle, glow, or halo;
-  Playing and Starting use the full artwork accent, Paused uses a muted artwork
-  accent, and no status row contains secondary detail. The row begins at its
-  responsive imaginary-square inset. Full-field Presentations use the
-  circular symbol and stable slot above the centered heading, aligned with the
-  accent's top edge.
-- **Unified footer and utility typography:** In Now Playing, progress or
-  activity occupies the complete rail width and the identity row follows as
-  part of the same low, optically raised footer. Presentation Status, timing,
-  activity copy, and identities remain subordinate to Title but readable at
-  distance. Their preferred sizes follow viewport height and preserve their
-  floors at all peer viewports. Now Playing Presentation Status, timing, and
-  identities are mildly condensed through the IBM Plex width axis where
-  available and remain normal-width otherwise. Full-field status and identity
-  sizes use their dedicated layout. Determinate progress uses a heavier played
-  segment over a centered, lighter remaining track, with square ends and a
-  square transition at the current position. It has no thumb, endpoint marker,
-  or other interactive affordance. Elapsed and remaining timing remain tabular
-  and stable as values change.
-- **Indeterminate activity:** Playing without meaningful timing retains its
-  supplied artwork and replaces the complete determinate timeline with seven
-  rounded activity bars followed by `Audio active` and `Timing unavailable`
-  on separate lines. The waveform uses the current accent, its proportions are
-  visibly symmetrical in a settled frame, and the timing explanation is muted.
-  The dedicated missing-artwork Fixture Scenario continues to show the quiet
-  artwork fallback independently.
-- **Identities:** Output and Zone share one stable row in the Now Playing
-  footer. Each semibold, slightly tracked uppercase label shares one baseline
-  with its more prominent name, each phrase receives at most its bounded share,
-  and a muted dot scaling to approximately 10 px at 3840×2160 stays centered
-  between them without participating in their baseline. Ordinary names fit
-  comfortably; long names remain on one line and end-ellipsize independently
-  without moving the separator or resizing the footer. Available Full-field
-  Presentations use their bottom-right row. Output unavailable uses that same
-  anchor for only the persisted Tracked Output, with no separator or empty Zone
-  phrase.
-  Awaiting Roon Authorization and disconnected expose neither identity.
-- **Full-field grammar:** Idle, Starting without content, details unavailable,
-  Awaiting Roon Authorization, disconnected, and output-unavailable states
-  share the accent-bar language while retaining distinct meanings. Output
-  unavailable keeps its output-only identity independent of this centered
-  composition. At every
-  peer viewport, confirm that the bar-and-copy composition occupies 60% of the
-  layout viewport and is horizontally centered; the bar remains its stable
-  left edge; and Presentation Status, heading, and explanation share the same
-  left-aligned text edge after the responsive inset. The fixed heading slot is
-  vertically centered and all scenarios share its position. Presentation
-  Status and the bar top do not move. Explanations occupy the fixed slot below
-  the heading and extend only the bar bottom. Confirm every approved heading
-  and explanation is complete on one line without ellipsis, shorter copy keeps
-  its preferred size, only over-capacity copy shrinks to its largest fitting
-  size, and `Nothing is playing` is not clipped at its lower edge. Any approved
-  Full-field copy change requires renewed visual fit review rather than relying
-  on a permanent minimum font floor.
-- **Diagnostics:** The three overlay representatives remain legible,
-  non-displacing, and inside the OLED-safe field; ordinary captures remain
-  overlay-free.
-- **Responsive bounds:** Artwork, metadata, full-field copy, identities,
-  diagnostics, shadows, and the reserved OLED movement envelope stay inside
-  every viewport. In Now Playing, status and identity anchors remain tied to
-  the imaginary square for square, non-square, missing, and unusable artwork.
-  Available Full-field Presentations use the same bottom-right identity
-  anchor while using their independent centered status-and-copy geometry.
+| Inspect | Compare against the design |
+| --- | --- |
+| Composition and responsive bounds | Compare ordinary and ultrawide captures for rail alignment, negative space, and clipping of artwork, metadata, shadows, and diagnostics. Check [composition and hierarchy](../design/presentation.md#composition-and-hierarchy) and the [inactivity movement envelope](../design/presentation.md#motion-and-inactivity). |
+| Metadata hierarchy and fitting | Compare short, long, extreme, punctuation-heavy, and missing-field metadata using [composition and hierarchy](../design/presentation.md#composition-and-hierarchy) and [typography](../design/presentation.md#typography). Look for orphan lines, crowding, incorrect font tiers, and ellipsis. |
+| Synchronized lyrics | Compare cue lengths, Intentional Blanks, missing artwork, and long mastheads against the [Synchronized Lyric Composition](../design/presentation.md#synchronized-lyric-composition). |
+| Artwork fit and decoration | Compare square, non-square, missing, and unusable artwork against [artwork and palette](../design/presentation.md#artwork-and-palette). Inspect visible image bounds, border, shadow, plate alignment, and transparent reservation space without movement of the information rail. |
+| Palette and determinate progress | Compare dark, light, fixed-no-art, matte, and progress representatives against [artwork and palette](../design/presentation.md#artwork-and-palette). Check text readability, fill/track separation, bright-field restraint, and retained artwork hue. |
+| Presentation Status | Compare Playing, Paused, Starting, and Full-field symbols, emphasis, and anchors against [Presentation Status](../design/presentation.md#presentation-status). |
+| Footer and indeterminate activity | Compare determinate progress with indeterminate activity against [composition and hierarchy](../design/presentation.md#composition-and-hierarchy) and [typography](../design/presentation.md#typography). Check rail width, timing stability, waveform symmetry, and legibility. |
+| Identities | Compare ordinary, long-name, output-only, and absent identities against [composition and hierarchy](../design/presentation.md#composition-and-hierarchy) and [Full-field states](../design/presentation.md#full-field-states). Inspect baselines, separator position, independent ellipsis, and stable footer geometry. |
+| Full-field grammar | Compare every condition with the copy and geometry in [Full-field states](../design/presentation.md#full-field-states). Check complete lines, stable slots, and independent identities; inspect the lower edge of `Nothing is playing` for clipping. Renew visual fit review whenever approved copy changes. |
+| Diagnostics | Compare the three overlay representatives for legibility, containment, and non-displacement. Ordinary matrix captures must remain overlay-free. |
 
-Static captures establish settled endpoints. To review motion, launch Fixture
-Mode:
+## Motion inspection
+
+Static captures establish settled endpoints. Launch dynamic Fixture Mode:
 
 ```sh
 npm run fixture
 ```
 
-Keep the renderer window focused and use Left and Right to move between Fixture
-Scenarios. Confirm that artwork, metadata, palette, identities, and diagnostics
-crossfade as one layer when the composition changes; playback-only changes to
-the same composition update Presentation Status and progress immediately in
-place; simultaneous playback and Now Playing changes take the composition
-crossfade; a Playing Track A to Paused Track B update never exposes Track A's
-artwork with Track B's metadata; availability loss and disconnection use the
-same crossfade; rapid revisions settle on the newest presentation; Fixture
-navigation visits the maintained catalog in order; and no transition exposes
-clipped or stale boundary states. Toggle diagnostics while navigating and
-confirm that the overlay remains non-displacing.
+Keep the renderer focused and use Left and Right to visit the maintained catalog
+in order. Compare behavior with [motion and inactivity](../design/presentation.md#motion-and-inactivity):
 
-Confirm that only the complete Starting ring rotates, with a steady linear
-revolution of about 1.8 seconds. With the platform animation preference
-disabled, confirm that Starting retains a clear static ring-and-center frame.
-For Indeterminate progress, confirm that the activity bars alternate through
-staggered ease-in-out phases over about 1.1 seconds and scale toward 28% without
-collapsing. With animation disabled, confirm that the reference-height waveform
-remains meaningful and both activity lines remain present.
+- Exercise playback-only updates, simultaneous playback/content changes,
+  availability loss, disconnection, and rapid revisions. Look for stale content,
+  mismatched artwork and metadata, or clipped transition boundaries. Toggle
+  diagnostics to check that it follows the presentation without displacing it.
+- Observe Starting and indeterminate activity with platform animations enabled
+  and disabled. Check their movement and static reference states against the
+  design's timing and geometry.
+- Shorten the configured inactivity grace period and reposition cadence for
+  inspection. Check every movement position for Paused, Idle, and unavailable
+  presentations, including shadow and diagnostics containment. Confirm that
+  Playing and Starting retain their normal appearance. Keep production defaults
+  unchanged.
 
-Exercise inactivity with the configured grace period and reposition cadence
-shortened for review. Confirm that eligible Paused, Idle, and unavailable
-presentations dim and follow the bounded movement sequence without changing
-the established production timing defaults, while Playing and Starting remain
-at full opacity and their normal position. At every movement position, every
-Now Playing and Full-field element, including shadow and diagnostics, must
-remain inside the reserved safe field.
+For lyric entry, Natural Cue Handoffs, Intentional Blanks, seeks, and interrupted
+motion, use the [lyric motion captures](../development.md#lyric-motion-captures)
+against the [Synchronized Lyric Composition](../design/presentation.md#synchronized-lyric-composition).
 
-Review every Full-field Fixture Scenario at all seven peer viewports as
-regression evidence. Its approved copy, circular status treatment,
-typography, accent-bar geometry, and identity-presence rules must not change
-with the Now Playing composition.
-
-Do not commit generated captures as goldens or add screenshot comparisons to
-CI.
-Automated checks belong at the shared fixture, layout, typography,
-palette-contrast, transition, and preserved-behavior seams; the PNGs remain
-temporary evidence for human visual judgment.
-
-## Agent and human inspection responsibilities
-
-Agents must open the generated images, compare relevant scenarios across all
-requested viewports, and record concrete reasons against the checklist above.
-Do not infer visual acceptance from passing tests or successful PNG publication.
-Record uncertain clipping, hierarchy, palette, or typography judgments as
-unresolved and use `needs-work` or `unreviewed` until resolved. A focused selection
-must explain omissions; use the complete profile when effects are shared.
-
-Settled screenshots cannot establish motion quality, distance readability,
-physical display brightness/color, OLED behavior over time, or personal aesthetic
-preference. Request human review for those judgments and retain them explicitly
-as unresolved when they are necessary for acceptance. Actual Live Capture
-Sessions remain a separate workflow requiring Roon and human-caused events.
+Keep generated captures as temporary human-review evidence. Automated checks
+belong at the shared fixture, layout, typography, palette-contrast, transition,
+and preserved-behavior seams; do not commit PNG goldens or add screenshot
+comparisons to CI.
