@@ -117,11 +117,12 @@ or start Xvfb, or the success of a future capture. These need the corresponding
 verification command under the intended agent permissions. Neither command
 changes permissions or reads personal application credentials.
 
-Run `npm run verify` for headless required checks with retained evidence; use
-`npm run verify -- --design` when the design suite is required. Follow the
-[verification policy](agents/verification.md) for change-to-command mapping,
-focused checks, evidence inspection, and the Live Capture Session helper-test
-distinction. No Roon Server or Roon Authorization is required for either suite.
+Select required checks from the [verification policy](agents/verification.md),
+including its documentation-only path. When executable checks are required,
+`npm run verify` runs them headlessly with retained evidence; use `--design`
+when the design suite is required. The policy also covers focused checks,
+evidence inspection, and the Live Capture Session helper-test distinction.
+No Roon Server or Roon Authorization is required for either suite.
 
 For end-to-end development-tooling acceptance, follow the
 [two-worktree exercise](agents/worktree-acceptance.md). It accepts existing fresh
@@ -385,7 +386,7 @@ part of the regular repository test process.
 The desktop tests also require `gio` and `desktop-file-validate` (provided by
 `libglib2.0-bin` and `desktop-file-utils` on Ubuntu).
 
-Run the complete repository check before submitting a change:
+For the presentation changes described above, run the required final checks:
 
 ```sh
 npm run verify -- --design

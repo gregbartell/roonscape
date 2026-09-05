@@ -1,8 +1,8 @@
 # Two-worktree acceptance
 
-Use this opt-in exercise after changes to development preparation, native
-isolation, verification, or presentation evidence orchestration. It is not part
-of `verify`: it invokes that command in each supplied worktree.
+Use this opt-in exercise after implementation changes to development preparation,
+native isolation, verification, or presentation evidence orchestration. It is
+not part of `verify`: it invokes that command in each supplied worktree.
 
 ## Prepare and run
 

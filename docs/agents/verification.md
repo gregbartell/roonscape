@@ -1,52 +1,73 @@
 # Verification policy
 
-Use a prepared worktree as described in [Development](../development.md).
-No Roon Server or Roon Authorization is required for the commands below.
-General network access is allowed; verification does not install host packages
-or prepare dependencies automatically.
+Select local verification by what the change affects. CI continues to run
+repository checks, design tests, and representative fallback captures for all
+changes.
 
-## Agent workflow
+## Choose checks
+
+During implementation, choose focused typechecking and tests for the affected
+area. Existing focused commands and reusable `:built` stages are listed in
+`package.json`; build prerequisites before invoking a built stage directly.
+
+Use the most demanding applicable row, including for mixed changes:
+
+| Change | Required local verification |
+| --- | --- |
+| Documentation or agent guidance with no executable or presentation changes | Review accuracy, links, referenced commands, and affected skill conventions; run `git diff --check` |
+| Code, dependencies, configuration, or build/test tooling | `npm run verify` |
+| Renderer, presentation design, Fixture Scenarios, artwork, fonts, styles, capture planning/execution, or related build/native orchestration | `npm run verify -- --design`, plus applicable presentation review below |
+
+Run applicable final verification when the change is ready. Reuse successful
+results while they cover the final change and relevant environment. Rerun when
+subsequent changes, failures, or new evidence invalidate that coverage; preparing
+a commit alone does not require another run.
+
+### Documentation-only changes
+
+Select this path by content, not file extension. Review changed commands against
+their implementations and changed skill instructions against their consumers;
+run focused checks where needed to establish correctness. Changes to
+presentation requirements follow the presentation row even when only Markdown
+files change.
+
+This path requires no native toolchain preparation, dependency installation,
+or retained `review.*` directory solely for documentation review. Report the
+scope reviewed, checks performed and their outcomes, and any limitations.
+
+## Executable checks and presentation work
+
+Use a prepared worktree as described in [Development](../development.md).
+No Roon Server or Roon Authorization is required for these checks. General
+network access is allowed; verification does not install host packages or
+prepare dependencies automatically.
 
 1. Before preparing an existing worktree, read [Development](../development.md).
    Select the pinned toolchains and explicitly provision host prerequisites;
    then run `npm run dev:diagnose` and `npm run dev:prepare`. Resolve missing
    capability or execution permissions before claiming verification. These
    commands do not select branches, create worktrees, or access Roon.
-2. During implementation, run typechecking and focused checks for the changed
-   seam. Choose the mandatory final command from the table below.
-3. Use headless commands for unattended native work. Use an explicit desktop
+2. Use headless commands for unattended native work. Use an explicit desktop
    only for requested manual inspection, for example
    `DISPLAY=:0 ROONSCAPE_WINDOWED=1 npm run fixture -- --static`.
-4. Inspect retained command logs and evidence indexes; for presentation work,
+3. Inspect retained command logs and evidence indexes; for presentation work,
    open the required captures and record a separate visual verdict. Report the
    revision, working-tree state, commands/outcomes, evidence links, inspected
    scope and rationale, and unresolved visual, physical-display, or live claims.
-5. Native commands own their configuration, private home/XDG directories, Xvfb,
+4. Native commands own their configuration, private home/XDG directories, Xvfb,
    D-Bus, and child processes. Let their bounded cleanup finish after SIGINT or
    SIGTERM. Keep retained `review.*` evidence; remove only task-owned disposable
    runtime artifacts. Do not stop neighboring sessions or delete resources
    based merely on an observed display number.
 
-For changes to preparation, isolation, verification, or evidence orchestration,
-use the [two-worktree acceptance exercise](worktree-acceptance.md) to reproduce
-concurrent success, cancellation, evidence retention, and sentinel checks.
-
-## Choose checks
-
-During implementation, run `npm run typecheck` and focused tests for the changed
-area. Existing focused commands and reusable `:built` stages remain available
-in `package.json`; build prerequisites before invoking a built stage directly.
-
-Before submitting, apply this policy:
-
-| Change | Required final command |
-| --- | --- |
-| Any repository change | `npm run verify` |
-| Renderer, presentation design, Fixture Scenarios, artwork, fonts, styles, capture planning/execution, or related build/native orchestration | `npm run verify -- --design` |
+For implementation changes to preparation, isolation, verification, or evidence
+orchestration, use the [two-worktree acceptance exercise](worktree-acceptance.md)
+to reproduce concurrent success, cancellation, evidence retention, and sentinel
+checks.
 
 `verify` runs the preparation diagnostic, creates a private Xvfb/D-Bus native
 session, then runs `npm run check`. `--design` additionally runs the existing
-`npm run test:design` suite. Repository checks are always mandatory. The
+`npm run test:design` suite. Every `verify` invocation runs repository checks. The
 underlying focused entry points remain usable independently. Select `--design`
 from the change scope; the command does not infer it from Git history.
 
