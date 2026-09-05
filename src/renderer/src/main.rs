@@ -368,7 +368,7 @@ fn build_window(
     if let Some(updates) = runtime.updates.as_ref() {
         let wakeup_runtime = Rc::clone(&runtime);
         let updates = Rc::clone(updates);
-        glib::source::unix_fd_add_local(updates.wakeup_fd(), glib::IOCondition::IN, move |_, _| {
+        glib_unix::unix_fd_add_local(updates.wakeup_fd(), glib::IOCondition::IN, move |_, _| {
             if let Err(error) = updates.clear_wakeup() {
                 wakeup_runtime.fail(format!("could not clear snapshot wakeup: {error}"));
                 return glib::ControlFlow::Break;
@@ -380,7 +380,7 @@ fn build_window(
     if let Some(control) = runtime.capture_control.as_ref() {
         let wakeup_runtime = Rc::clone(&runtime);
         let control = Rc::clone(control);
-        glib::source::unix_fd_add_local(control.wakeup_fd(), glib::IOCondition::IN, move |_, _| {
+        glib_unix::unix_fd_add_local(control.wakeup_fd(), glib::IOCondition::IN, move |_, _| {
             if let Err(error) = control.clear_wakeup() {
                 wakeup_runtime.fail(format!("could not clear capture control wakeup: {error}"));
                 return glib::ControlFlow::Break;
