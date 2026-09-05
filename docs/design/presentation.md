@@ -57,8 +57,12 @@ and Album floors. Content ellipsizes at the end when it still exceeds bounds of
 five Title lines, three Artist lines, and three Album lines. Metadata uses no
 scrolling, marquee motion, pagination, or content-specific exceptions.
 
-Progress or activity uses the complete rail width at the top of the unified
-footer. The identity row follows at a responsive gap and contains two compact
+Progress or activity uses the complete rail width within a reserved timing
+slot at the top of the unified footer. The slot fits the taller timing variant
+and retains its height when timing is absent. Status and timing availability
+changes leave unchanged artwork and metadata bounds and wrapping stable,
+including during crossfades and within the Synchronized Lyric Composition.
+The identity row follows at a responsive gap and contains two compact
 inline phrases separated by a small muted dot: `OUTPUT <Tracked Output>` and
 `ZONE <Tracked Zone>`. Each semibold uppercase label uses slight positive
 tracking and shares one baseline with its name. The two phrases receive bounded

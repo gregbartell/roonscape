@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 4,
+  "revision": 7,
+  "availability": "available",
+  "playback": "playing",
+  "trackedOutput": {
+    "name": "Speaker System"
+  },
+  "trackedZone": {
+    "id": "zone-living-room",
+    "name": "Living Room"
+  },
+  "nowPlaying": {
+    "title": "Hanging On The Telephone",
+    "artist": "Evelyn Lark & The Orbital Choir",
+    "album": "Signals from the Quiet Sea"
+  },
+  "artwork": {
+    "revision": 3,
+    "path": "src/shared/fixtures/artwork/playing.jpg"
+  },
+  "lyrics": {
+    "cues": [
+      {
+        "atSeconds": 1.5,
+        "text": "We find the signal"
+      },
+      {
+        "atSeconds": 4,
+        "text": "Beyond the cobalt tide"
+      },
+      {
+        "atSeconds": 6,
+        "text": ""
+      },
+      {
+        "atSeconds": 8,
+        "text": "We find the signal"
+      },
+      {
+        "atSeconds": 12,
+        "text": "A quiet orbit fades"
+      },
+      {
+        "atSeconds": 20,
+        "text": ""
+      }
+    ]
+  },
+  "timing": {
+    "position": {
+      "seconds": 0,
+      "sampledAt": "2026-08-15T19:20:00Z"
+    },
+    "durationSeconds": 266
+  }
+}

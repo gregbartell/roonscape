@@ -343,6 +343,7 @@ npm run capture:lyrics -- --example availability-reversal
 npm run capture:lyrics -- --example timeline-revision
 npm run capture:lyrics -- --example short-blanks
 npm run capture:lyrics -- --example blank-lifecycle
+npm run capture:lyrics -- --example timing-stability
 ```
 
 The peer viewport review matrix is 1280x720, 1600x900, 1600x1200, 1920x1200,

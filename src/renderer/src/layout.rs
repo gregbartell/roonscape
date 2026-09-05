@@ -841,23 +841,8 @@ impl NowPlayingLayout {
 
     fn refresh_metadata_height_budget(&mut self) {
         let identity_height_px = rounded_fraction(self.typography.identity_px, 5, 4);
-        let footer_content_height_px = match self.footer_content {
-            NowPlayingFooterContent::DeterminateProgress => {
-                self.progress_fill_height_px
-                    + self.time_spacing_px
-                    + rounded_fraction(self.typography.time_px, 5, 4)
-            }
-            NowPlayingFooterContent::IndeterminateActivity => self
-                .activity_waveform_height_px
-                .max(self.activity_copy_height_px()),
-            NowPlayingFooterContent::IdentityOnly => 0,
-        };
-        let footer_gap_px = if self.footer_content == NowPlayingFooterContent::IdentityOnly {
-            0
-        } else {
-            self.footer_gap_px
-        };
-        self.footer_height_px = footer_content_height_px + footer_gap_px + identity_height_px;
+        // Timing availability must not change metadata fitting or centering.
+        self.footer_height_px = self.timing_height_px() + self.footer_gap_px + identity_height_px;
         let status_bottom_viewport_y_px = self
             .artwork_field_anchors
             .presentation_status_top_viewport_y_px
@@ -872,6 +857,15 @@ impl NowPlayingLayout {
             .saturating_sub(status_bottom_viewport_y_px)
             .saturating_sub(self.presentation_status.font_px.saturating_mul(2))
             .saturating_sub(self.metadata_optical_correction_px.saturating_mul(2));
+    }
+
+    pub fn timing_height_px(&self) -> u32 {
+        let progress_height_px = self.progress_fill_height_px
+            + self.time_spacing_px
+            + rounded_fraction(self.typography.time_px, 5, 4);
+        progress_height_px
+            .max(self.activity_waveform_height_px)
+            .max(self.activity_copy_height_px())
     }
 
     fn activity_copy_height_px(&self) -> u32 {

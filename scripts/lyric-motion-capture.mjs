@@ -51,6 +51,142 @@ const defaultRendererExecutable = path.join(
 );
 
 const examples = {
+  "timing-stability": {
+    durationSeconds: 21,
+    initialFixture: "src/shared/fixtures/playing.json",
+    publications: [
+      {
+        atSeconds: 0.5,
+        fixture: "src/shared/fixtures/timing-stability.json",
+        positionSeconds: 0,
+      },
+      {
+        atSeconds: 1.5,
+        fixture: "src/shared/fixtures/timing-stability.json",
+        positionSeconds: 0,
+        playback: "playing",
+      },
+      {
+        atSeconds: 7,
+        fixture: "src/shared/fixtures/timing-stability.json",
+        positionSeconds: 4.5,
+        playback: "playing",
+        durationSeconds: 266,
+      },
+      {
+        atSeconds: 8,
+        fixture: "src/shared/fixtures/timing-stability.json",
+        positionSeconds: 5.5,
+        playback: "paused",
+        durationSeconds: 266,
+      },
+      {
+        atSeconds: 9,
+        fixture: "src/shared/fixtures/lyrics-timing-stability.json",
+        positionSeconds: 0,
+      },
+      {
+        atSeconds: 12,
+        fixture: "src/shared/fixtures/lyrics-timing-stability.json",
+        positionSeconds: 3,
+        durationSeconds: null,
+      },
+      {
+        atSeconds: 18,
+        fixture: "src/shared/fixtures/lyrics-timing-stability.json",
+        positionSeconds: 9,
+      },
+      {
+        atSeconds: 19,
+        fixture: "src/shared/fixtures/lyrics-timing-stability.json",
+        positionSeconds: 10,
+        playback: "paused",
+      },
+      {
+        atSeconds: 20,
+        fixture: "src/shared/fixtures/lyrics-timing-stability.json",
+        positionSeconds: 10,
+      },
+    ],
+    reviewFrames: [
+      reviewFrame(
+        1.2,
+        "starting-quiet",
+        "Three-line Title with quiet timing space.",
+      ),
+      reviewFrame(
+        1.8,
+        "playing-quiet",
+        "Playing retains the Starting geometry.",
+      ),
+      reviewFrame(
+        5.75,
+        "unavailable-midpoint",
+        "Unchanged metadata stays aligned during timing expiry.",
+      ),
+      reviewFrame(
+        6.2,
+        "unavailable-settled",
+        "Genuine unavailable timing after grace.",
+      ),
+      reviewFrame(
+        7.2,
+        "numeric-midpoint",
+        "Numeric recovery does not displace metadata.",
+      ),
+      reviewFrame(
+        7.6,
+        "numeric-settled",
+        "Numeric progress within the same reserved space.",
+      ),
+      reviewFrame(8.25, "paused", "Paused retains the same three-line Title."),
+      reviewFrame(
+        9.65,
+        "lyric-entry",
+        "Artwork yields space as compact metadata takes ownership.",
+      ),
+      reviewFrame(
+        10.35,
+        "first-cue-rising",
+        "The first cue rises from below the focal position.",
+      ),
+      reviewFrame(
+        15.5,
+        "blank-context",
+        "Intentional Blank retains available neighbors.",
+      ),
+      reviewFrame(
+        17.25,
+        "lyric-unavailable-midpoint",
+        "Timing expiry leaves the compact masthead in place.",
+      ),
+      reviewFrame(
+        17.7,
+        "repeated-refrain",
+        "Repeated refrain retains Reel Lift and settled context.",
+      ),
+      reviewFrame(
+        18.2,
+        "lyric-recovery-midpoint",
+        "Numeric recovery retains compact geometry.",
+      ),
+      reviewFrame(
+        18.6,
+        "lyric-recovery-settled",
+        "Recovered timing and stable lyric composition.",
+      ),
+      reviewFrame(
+        19.25,
+        "lyric-paused",
+        "Paused preserves the lyric masthead and artwork.",
+      ),
+      reviewFrame(
+        20.25,
+        "lyric-playing",
+        "Playing resumes in the same composition.",
+      ),
+    ],
+  },
   "short-blanks": {
     durationSeconds: 22,
     initialFixture: "src/shared/fixtures/playing.json",
@@ -771,13 +907,21 @@ export function createNativeLyricMotionCaptureSessionAdapter(options = {}) {
 
 export function reanchorLyricMotionSnapshot(
   fixture,
-  { positionSeconds, revision, sampledAt },
+  {
+    positionSeconds,
+    revision,
+    sampledAt,
+    playback = fixture.playback,
+    durationSeconds = fixture.timing?.durationSeconds,
+  },
 ) {
   return {
     ...structuredClone(fixture),
     revision,
+    playback,
     timing: {
       ...fixture.timing,
+      durationSeconds,
       position: {
         seconds: positionSeconds,
         sampledAt,
@@ -1301,8 +1445,13 @@ async function runNativeLyricMotionCapture(
         ) / 100;
       const revision = index + 3;
       const fixture = fixtures.get(publication.fixture);
+      const snapshot = reanchorLyricMotionSnapshot(fixture, {
+        ...publication,
+        revision,
+        sampledAt: new Date().toISOString(),
+      });
       const expectedPaintAtSeconds = expectedLyricPaintAtSeconds(
-        fixture,
+        snapshot,
         publication,
       );
       let visible;
@@ -1311,13 +1460,7 @@ async function runNativeLyricMotionCapture(
           visibleRevisionWaiters.set(revision, resolve);
         });
       }
-      publisher.publish(
-        reanchorLyricMotionSnapshot(fixture, {
-          positionSeconds: publication.positionSeconds,
-          revision,
-          sampledAt: new Date().toISOString(),
-        }),
-      );
+      publisher.publish(snapshot);
       if (visible !== undefined) {
         await waitForPromise(
           visible,

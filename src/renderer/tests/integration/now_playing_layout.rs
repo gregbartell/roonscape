@@ -13,6 +13,50 @@ use roonscape_renderer::{
 };
 
 #[test]
+fn timing_and_status_variants_reserve_identical_composition_geometry() {
+    let progress = now_playing("playing.json");
+    let activity = now_playing("indeterminate-progress.json");
+    let statuses = [
+        now_playing("loading.json").status,
+        progress.status,
+        now_playing("paused.json").status,
+    ];
+    for viewport in representative_viewports::REPRESENTATIVE_VIEWPORTS {
+        for composition_progress in [0.0, 0.25, 0.5, 1.0] {
+            let baseline = NowPlayingLayout::for_composition_progress(
+                &progress,
+                viewport,
+                composition_progress,
+            );
+            for status in statuses {
+                for (timing, activity) in [
+                    (None, None),
+                    (progress.progress.clone(), None),
+                    (None, activity.activity.clone()),
+                ] {
+                    let mut variant = progress.clone();
+                    variant.status = status;
+                    variant.progress = timing;
+                    variant.activity = activity;
+                    let mut actual = NowPlayingLayout::for_composition_progress(
+                        &variant,
+                        viewport,
+                        composition_progress,
+                    );
+                    // Content roles differ; every geometric field must remain identical.
+                    actual.metadata_roles.clone_from(&baseline.metadata_roles);
+                    actual.footer_content = baseline.footer_content;
+                    assert_eq!(
+                        actual, baseline,
+                        "{viewport:?}, composition={composition_progress}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn omits_lyric_neighbors_as_the_current_cue_grows() {
     assert_eq!(
         LyricNeighborVisibility::for_rendered_lines(2),

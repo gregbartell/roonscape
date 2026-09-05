@@ -167,6 +167,7 @@ struct RenderedMetadata {
     lyrics: Rc<RenderedLyrics>,
     progress: Option<RenderedProgress>,
     activity: Option<RenderedActivity>,
+    timing_slot: gtk::Overlay,
     footer: gtk::Box,
     identity: RenderedIdentity,
 }
@@ -1223,14 +1224,17 @@ fn metadata(
     musical_metadata.set_clip_overlay(&lyrics.root, true);
     musical_metadata.set_measure_overlay(&lyrics.root, false);
 
+    let timing_slot = gtk::Overlay::new();
+    timing_slot.set_hexpand(true);
+    footer.append(&timing_slot);
     match now_playing_layout.footer_content {
-        NowPlayingFooterContent::DeterminateProgress => footer.append(
+        NowPlayingFooterContent::DeterminateProgress => timing_slot.add_overlay(
             &progress
                 .as_ref()
                 .expect("determinate footer requires a timeline")
                 .root,
         ),
-        NowPlayingFooterContent::IndeterminateActivity => footer.append(
+        NowPlayingFooterContent::IndeterminateActivity => timing_slot.add_overlay(
             &activity
                 .as_ref()
                 .expect("indeterminate footer requires activity")
@@ -1267,6 +1271,7 @@ fn metadata(
         lyrics,
         progress,
         activity,
+        timing_slot,
         footer,
         identity,
     };
@@ -1736,6 +1741,7 @@ impl RenderedMetadata {
                 .saturating_sub(layout.metadata_region_top_viewport_y_px),
         ));
         if let Some(progress) = self.progress.as_ref() {
+            progress.root.set_valign(gtk::Align::Center);
             progress.root.set_margin_top(0);
             progress
                 .rail
@@ -1765,6 +1771,8 @@ impl RenderedMetadata {
             set_label_font_size(&activity.detail, layout.typography.activity_detail_px);
         }
 
+        self.timing_slot
+            .set_height_request(dimension(layout.timing_height_px()));
         self.footer.set_spacing(dimension(layout.footer_gap_px));
         self.footer
             .set_margin_bottom(dimension(layout.footer_anchor.margin_bottom_px(0)));
@@ -2799,6 +2807,156 @@ mod tests {
         }
     }
 
+    fn timing_variants_keep_allocated_content_stable() {
+        use roonscape_renderer::{Playback, PresentationUpdate, classify_presentation_update};
+        use std::time::Duration;
+
+        fn settle(milliseconds: u64) {
+            let until = std::time::Instant::now() + Duration::from_millis(milliseconds);
+            while std::time::Instant::now() < until {
+                while gtk::glib::MainContext::default().iteration(false) {}
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+
+        fn geometry(rendered: &super::RenderedPresentation) -> Vec<(gtk::graphene::Rect, i32)> {
+            let content = rendered.now_playing.as_ref().unwrap();
+            let metadata = &content.metadata;
+            let mut bounds = vec![
+                (
+                    content
+                        .artwork
+                        .reservation
+                        .compute_bounds(&rendered.root)
+                        .unwrap(),
+                    0,
+                ),
+                (metadata.footer.compute_bounds(&rendered.root).unwrap(), 0),
+                (
+                    metadata
+                        .identity
+                        .root
+                        .compute_bounds(&rendered.root)
+                        .unwrap(),
+                    0,
+                ),
+            ];
+            let labels = if metadata.lyrics.masthead.opacity() > 0.0 {
+                [
+                    &metadata.lyrics.masthead_title,
+                    &metadata.lyrics.masthead_artist,
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+            } else {
+                [&metadata.title, &metadata.artist, &metadata.album]
+                    .into_iter()
+                    .flatten()
+                    .map(|line| &line.label)
+                    .collect()
+            };
+            for label in labels {
+                bounds.push((
+                    label.compute_bounds(&rendered.root).unwrap(),
+                    label.layout().line_count(),
+                ));
+            }
+            bounds
+        }
+
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        for fixture in [
+            "playing.json",
+            "long-metadata.json",
+            "missing-artist.json",
+            "lyrics-one-line.json",
+        ] {
+            for viewport in [Viewport::new(1280, 720), Viewport::new(1600, 1200)] {
+                let mut snapshot = parse_snapshot(
+                    &std::fs::read_to_string(repository.join("src/shared/fixtures").join(fixture))
+                        .unwrap(),
+                )
+                .unwrap();
+                if fixture == "playing.json" {
+                    snapshot.now_playing.as_mut().unwrap().title =
+                        Some("Hanging On The Telephone".to_owned());
+                }
+                let timing = snapshot.timing.clone();
+                let mut previous = presentation_from_snapshot(&snapshot).unwrap();
+                let window = gtk::Window::new();
+                window.set_default_size(viewport.width_px as i32, viewport.height_px as i32);
+                let mut view = super::PresentationView::new(
+                    0,
+                    &previous,
+                    viewport,
+                    &repository,
+                    super::install_style_providers(typography),
+                    None,
+                    RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
+                );
+                window.set_child(Some(&view.root()));
+                window.present();
+                settle(100);
+                let baseline = geometry(view.transition.current().value());
+                for (index, (playback, has_timing)) in [
+                    (Playback::Loading, false),
+                    (Playback::Playing, false),
+                    (Playback::Playing, true),
+                    (Playback::Paused, true),
+                    (Playback::Paused, false),
+                    (Playback::Playing, true),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    snapshot.playback = Some(playback);
+                    snapshot.timing = timing.clone();
+                    if !has_timing {
+                        // Retain lyric selection while exercising absent numeric timing.
+                        snapshot.timing.as_mut().unwrap().duration_seconds = None;
+                    }
+                    let mut next = presentation_from_snapshot(&snapshot).unwrap();
+                    if index == 0 {
+                        let Presentation::NowPlaying(presentation) = &mut next else {
+                            unreachable!()
+                        };
+                        presentation.progress = None;
+                        presentation.activity = None;
+                    }
+                    match classify_presentation_update(&previous, &next) {
+                        PresentationUpdate::InPlace => {
+                            view.update_in_place(index as u64 + 1, &next)
+                        }
+                        PresentationUpdate::TransitionRequired => {
+                            view.replace(index as u64 + 1, &next, &repository)
+                        }
+                    }
+                    // Inspect early, middle, and settled frames of the real GTK crossfade.
+                    for delay in [50, 175, 250] {
+                        settle(delay);
+                        assert_eq!(
+                            geometry(view.transition.current().value()),
+                            baseline,
+                            "current geometry: {fixture}, {viewport:?}, {playback:?}, timing={has_timing}"
+                        );
+                        if let Some(outgoing) = view.transition.outgoing() {
+                            assert_eq!(
+                                geometry(outgoing.value()),
+                                baseline,
+                                "outgoing metadata must not form a displaced duplicate"
+                            );
+                        }
+                    }
+                    view.finish_transition();
+                    previous = next;
+                }
+                window.destroy();
+            }
+        }
+    }
+
     fn ordinary_metadata_remains_stable_on_playback_updates() {
         let window = gtk::Window::new();
         window.set_default_size(1_280, 720);
@@ -3017,6 +3175,7 @@ mod tests {
         lyric_masthead_fits_long_metadata();
         composed_lyrics_remain_above_footer();
         ordinary_metadata_remains_stable_on_playback_updates();
+        timing_variants_keep_allocated_content_stable();
         short_blanks_promote_without_a_skipped_cue_cut();
         a_seek_within_the_incoming_cue_settles_its_handoff();
         tall_departure_keeps_focal_size_and_reveals_separate_memory();

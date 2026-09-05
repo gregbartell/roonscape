@@ -301,6 +301,27 @@ test("reanchors scheduled publications without mutating their fixture", () => {
   assert.equal(fixture.timing.position.seconds, 171);
 });
 
+test("timing review publications override status and duration without changing content", () => {
+  const fixture = {
+    playback: "playing",
+    nowPlaying: { title: "Hanging On The Telephone" },
+    timing: { position: { seconds: 0 }, durationSeconds: 266 },
+  };
+  const snapshot = reanchorLyricMotionSnapshot(fixture, {
+    positionSeconds: 12,
+    playback: "paused",
+    durationSeconds: null,
+    revision: 3,
+    sampledAt: "2026-09-05T00:00:00Z",
+  });
+  assert.equal(snapshot.playback, "paused");
+  assert.equal(snapshot.timing.durationSeconds, null);
+  assert.equal(snapshot.timing.position.seconds, 12);
+  assert.deepEqual(snapshot.nowPlaying, fixture.nowPlaying);
+  assert.equal(fixture.playback, "playing");
+  assert.equal(fixture.timing.durationSeconds, 266);
+});
+
 test("schedules publications from the recorder start clock, not delayed progress observations", () => {
   const recordingStartedAtMilliseconds = 10_000;
   assert.equal(
