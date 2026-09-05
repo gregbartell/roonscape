@@ -29,6 +29,15 @@ directories printed by verification. Keep all three together when sharing eviden
 Build products remain in their respective worktrees. Shared dependency download
 caches are allowed; build output sharing is not.
 
+The exercise shares a thirty-minute work budget across preparation, builds,
+verification, and captures. Each phase uses the smaller of its own deadline and
+the remaining work budget; starting another phase does not reset that budget.
+Expiry fails the exercise and enters bounded cleanup, which is outside the work
+budget. CI allows thirty-five minutes for the exercise step within its existing
+forty-five-minute job limit, leaving room for cleanup and evidence upload along
+with host setup. These are hang watchdogs, not performance acceptance targets.
+The separate five-second cancellation assertion below remains behavioral.
+
 The exercise performs these observable steps:
 
 1. Run `dev:diagnose` and `dev:prepare` in each fresh worktree. Start a static

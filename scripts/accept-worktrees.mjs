@@ -11,6 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { createAcceptanceBudget } from "./acceptance-budget.mjs";
 import {
   assertProcessRunning,
   processCancellation,
@@ -73,12 +74,14 @@ async function main() {
   // Short runtime path for Unix sockets; retained evidence never lives here.
   const runtime = await mkdtemp("/tmp/rs-a.");
   const cancellation = processCancellation();
+  const budget = createAcceptanceBudget({ signal: cancellation.signal });
   const children = [];
   const streams = [];
   const report = {
     outcome: "incomplete",
     startedAt: new Date().toISOString(),
     roots,
+    workBudgetMilliseconds: budget.timeoutMilliseconds,
     commands: [],
     observations: [],
     visualAcceptance: "unreviewed",
@@ -145,7 +148,7 @@ async function main() {
       },
       sentinel.child,
       "sentinel startup including fresh build",
-      { timeoutMilliseconds: 20 * 60_000, signal: cancellation.signal },
+      budget.waitOptions(20 * 60_000),
     );
     sentinelEnvironment = {
       ...process.env,
@@ -175,7 +178,7 @@ async function main() {
           },
           run.child,
           "verification evidence directory",
-          { timeoutMilliseconds: 30_000, signal: cancellation.signal },
+          budget.waitOptions(30_000),
         ),
       ),
     );
@@ -200,7 +203,7 @@ async function main() {
       },
       verification[0].child,
       "overlapping native verification sessions",
-      { timeoutMilliseconds: 60_000, signal: cancellation.signal },
+      budget.waitOptions(60_000),
     );
     assert.notEqual(
       nativeReports[0].runtimeDirectory,
@@ -234,6 +237,7 @@ async function main() {
         (
           await runMonitoredProcess("git", ["rev-parse", "HEAD"], {
             cwd: roots[index],
+            ...budget.waitOptions(5_000),
           })
         ).trim(),
       );
@@ -305,8 +309,7 @@ async function main() {
       "published capture and overlapping native review work",
       {
         retryMilliseconds: 10,
-        timeoutMilliseconds: 60_000,
-        signal: cancellation.signal,
+        ...budget.waitOptions(60_000),
       },
     );
     const started = Date.now();
@@ -346,12 +349,14 @@ async function main() {
       cancelled: victimDirectory,
     };
     await probeSentinel("after surviving capture completion");
+    budget.waitOptions();
     report.outcome = "complete";
   } catch (error) {
     report.outcome = cancellation.signal.aborted ? "cancelled" : "failed";
     report.error = error.stack;
     process.exitCode = 1;
   } finally {
+    budget.dispose();
     try {
       try {
         if (report.sentinel) {
@@ -414,6 +419,7 @@ async function main() {
   );
 
   function start(cwd, environment, label, command, arguments_) {
+    budget.waitOptions();
     const child = startMonitoredProcess(command, arguments_, {
       cwd,
       environment,
@@ -445,15 +451,11 @@ async function main() {
     return { child, entry };
   }
 
-  async function complete(
-    run,
-    expected = 0,
-    timeoutMilliseconds = 40 * 60_000,
-  ) {
-    const [code, signal] = await waitForProcessExit(run.child, {
-      signal: cancellation.signal,
-      timeoutMilliseconds,
-    });
+  async function complete(run, expected = 0, timeoutMilliseconds) {
+    const [code, signal] = await waitForProcessExit(
+      run.child,
+      budget.waitOptions(timeoutMilliseconds),
+    );
     Object.assign(run.entry, {
       exitCode: code,
       signal,
@@ -473,7 +475,7 @@ async function main() {
     const window = await runMonitoredProcess(
       "xwininfo",
       ["-name", "RoonScape", "-int"],
-      { environment: sentinelEnvironment, signal: cancellation.signal },
+      { environment: sentinelEnvironment, ...budget.waitOptions(5_000) },
     );
     assert.match(window, /Map State: IsViewable/);
     assert.match(window, /Width: 1280\b/);
@@ -550,7 +552,7 @@ async function main() {
       },
       run.child,
       "presentation review directory",
-      { timeoutMilliseconds: 60_000, signal: cancellation.signal },
+      budget.waitOptions(60_000),
     );
   }
 }

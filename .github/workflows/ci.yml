@@ -48,6 +48,8 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/acceptance-a" HEAD
           git worktree add --detach "$RUNNER_TEMP/acceptance-b" HEAD
       - name: Exercise existing worktrees
+        # The runner reserves five minutes after its work budget for cleanup.
+        timeout-minutes: 35
         if: ${{ inputs.two_worktrees }}
         run: npm run accept:worktrees -- "$RUNNER_TEMP/acceptance-a" "$RUNNER_TEMP/acceptance-b"
       - name: Upload verification evidence

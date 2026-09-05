@@ -174,8 +174,9 @@ async function installRendererSessionFixture(directory, logStyle) {
 
 test(
   "concurrent native captures preserve neighboring painted revisions and evidence after cancellation",
-  { timeout: 30_000 },
-  async () => {
+  // Covers native setup, three PNG encodes, synchronization, and cleanup.
+  { timeout: 180_000 },
+  async (context) => {
     const { createNativeSession, waitForNativeWindow } =
       await import("./native-session.mjs");
     const { installFixtureWorktree } =
@@ -185,7 +186,11 @@ test(
     const { assertProcessRunning } = await import("./process-harness.mjs");
     await mkdir("/var/tmp/codex/roonscape", { recursive: true });
     const directory = await mkdtemp("/var/tmp/codex/roonscape/task.");
-    const sentinel = await createNativeSession({ width: 1280, height: 720 });
+    const sentinel = await createNativeSession({
+      width: 1280,
+      height: 720,
+      signal: context.signal,
+    });
     try {
       const sentinelRenderer = sentinel.startProcess(
         path.resolve("target/debug/roonscape-renderer"),
@@ -244,7 +249,7 @@ test(
       const first = runControlledRendererSession(captures[0], {
         rendererExecutable: executables[0],
         environment: conflictingEnvironment,
-        signal: controller.signal,
+        signal: AbortSignal.any([controller.signal, context.signal]),
         publishCapture: async (request) => {
           await publishPresentationCapture(request);
           firstReady.resolve();
@@ -262,6 +267,7 @@ test(
         });
       const second = runControlledRendererSession(captures[1], {
         rendererExecutable: executables[1],
+        signal: context.signal,
         environment: conflictingEnvironment,
         publishCapture: async (request) => {
           await firstReady.promise;

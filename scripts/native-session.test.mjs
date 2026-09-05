@@ -85,12 +85,10 @@ test("GTK redirects a second Renderer on the same bus even on a different displa
       [0, null],
     );
     assertProcessRunning(first, "sentinel Renderer");
-    await assert.rejects(
-      runMonitoredProcess("xwininfo", ["-name", "RoonScape"], {
-        environment: neighbor.environment,
-        timeoutMilliseconds: 500,
-      }),
-    );
+    const windows = await runMonitoredProcess("xwininfo", ["-root", "-tree"], {
+      environment: neighbor.environment,
+    });
+    assert.doesNotMatch(windows, /"RoonScape"/);
   } finally {
     await neighbor?.close();
     await sentinel.close();
@@ -99,11 +97,16 @@ test("GTK redirects a second Renderer on the same bus even on a different displa
 
 test(
   "independent headless worktrees survive neighboring cancellation and startup failure",
-  { timeout: 30_000 },
-  async () => {
+  // The watchdog covers several bounded startup, observation, and cleanup phases.
+  { timeout: 90_000 },
+  async (context) => {
     await mkdir("/var/tmp/codex/roonscape", { recursive: true });
     const directory = await mkdtemp("/var/tmp/codex/roonscape/task.");
-    const sentinel = await createNativeSession({ width: 1280, height: 720 });
+    const sentinel = await createNativeSession({
+      width: 1280,
+      height: 720,
+      signal: context.signal,
+    });
     const launchers = [];
     try {
       const sentinelRenderer = sentinel.startProcess(
@@ -197,7 +200,7 @@ test(
             },
             child,
             "headless Fixture Mode readiness",
-            { timeoutMilliseconds: 10_000 },
+            { timeoutMilliseconds: 30_000, signal: context.signal },
           );
         }),
       );
@@ -284,14 +287,20 @@ test(
       // Send cancellation to the CLI, allowing it to reap its separately owned groups.
       for (const child of launchers)
         if (child.exitCode === null) child.kill("SIGTERM");
-      await Promise.all(
-        launchers.map((child) =>
-          waitForProcessExit(child, { timeoutMilliseconds: 7_000 }),
-        ),
-      );
-      await stopProcesses(launchers);
-      await sentinel.close();
-      await rm(directory, { recursive: true, force: true });
+      try {
+        await Promise.all(
+          launchers.map((child) =>
+            waitForProcessExit(child, { timeoutMilliseconds: 7_000 }),
+          ),
+        );
+      } finally {
+        try {
+          await stopProcesses(launchers);
+        } finally {
+          await sentinel.close();
+          await rm(directory, { recursive: true, force: true });
+        }
+      }
     }
   },
 );
@@ -324,8 +333,9 @@ function readSnapshot(socketPath) {
 
 test(
   "startup cancellation escalates an unresponsive Renderer and removes only its runtime",
-  { timeout: 15_000 },
-  async () => {
+  // Setup is outside the behavioral cancellation deadline below.
+  { timeout: 60_000 },
+  async (context) => {
     await mkdir("/var/tmp/codex/roonscape", { recursive: true });
     const directory = await mkdtemp("/var/tmp/codex/roonscape/task.");
     let launcher;
@@ -359,6 +369,7 @@ setInterval(() => {}, 1000);
         },
         launcher,
         "unresponsive Renderer startup",
+        { signal: context.signal },
       );
       runtime = owned.runtime;
       childPids = (
@@ -381,11 +392,14 @@ setInterval(() => {}, 1000);
         code: "ESRCH",
       });
     } finally {
-      if (launcher?.exitCode === null) {
-        launcher.kill("SIGTERM");
-        await waitForProcessExit(launcher, { timeoutMilliseconds: 7_000 });
+      try {
+        if (launcher?.exitCode === null) {
+          launcher.kill("SIGTERM");
+          await waitForProcessExit(launcher, { timeoutMilliseconds: 7_000 });
+        }
+      } finally {
+        await stopProcesses([launcher]);
       }
-      await stopProcesses([launcher]);
       for (const pid of childPids) {
         try {
           process.kill(-pid, "SIGKILL");

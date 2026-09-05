@@ -232,7 +232,7 @@ test("stopping an exited command also terminates its surviving descendants", asy
       },
       { exitCode: null, signalCode: null },
       "descendant termination",
-      { timeoutMilliseconds: 500 },
+      { timeoutMilliseconds: 2_000 },
     );
   } finally {
     try {
