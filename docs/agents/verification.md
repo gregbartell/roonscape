@@ -5,6 +5,32 @@ No Roon Server or Roon Authorization is required for the commands below.
 General network access is allowed; verification does not install host packages
 or prepare dependencies automatically.
 
+## Agent workflow
+
+1. Before preparing an existing worktree, read [Development](../development.md).
+   Select the pinned toolchains and explicitly provision host prerequisites;
+   then run `npm run dev:diagnose` and `npm run dev:prepare`. Resolve missing
+   capability or execution permissions before claiming verification. These
+   commands do not select branches, create worktrees, or access Roon.
+2. During implementation, run typechecking and focused checks for the changed
+   seam. Choose the mandatory final command from the table below.
+3. Use headless commands for unattended native work. Use an explicit desktop
+   only for requested manual inspection, for example
+   `DISPLAY=:0 ROONSCAPE_WINDOWED=1 npm run fixture -- --static`.
+4. Inspect retained command logs and evidence indexes; for presentation work,
+   open the required captures and record a separate visual verdict. Report the
+   revision, working-tree state, commands/outcomes, evidence links, inspected
+   scope and rationale, and unresolved visual, physical-display, or live claims.
+5. Native commands own their configuration, private home/XDG directories, Xvfb,
+   D-Bus, and child processes. Let their bounded cleanup finish after SIGINT or
+   SIGTERM. Keep retained `review.*` evidence; remove only task-owned disposable
+   runtime artifacts. Do not stop neighboring sessions or delete resources
+   based merely on an observed display number.
+
+For changes to preparation, isolation, verification, or evidence orchestration,
+use the [two-worktree acceptance exercise](worktree-acceptance.md) to reproduce
+concurrent success, cancellation, evidence retention, and sentinel checks.
+
 ## Choose checks
 
 During implementation, run `npm run typecheck` and focused tests for the changed

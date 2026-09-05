@@ -54,7 +54,8 @@
     "test:verification": "node --test scripts/verify.test.mjs",
     "test:live-capture-helpers": "node scripts/test-live-capture-helpers.mjs",
     "review:presentations": "npm run build && cargo build --locked --package roonscape-renderer && npm run review:presentations:built --",
-    "review:presentations:built": "node scripts/presentation-review.mjs"
+    "review:presentations:built": "node scripts/presentation-review.mjs",
+    "accept:worktrees": "node scripts/accept-worktrees.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

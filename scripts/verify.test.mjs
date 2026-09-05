@@ -169,6 +169,10 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     await writeFile(
       path.join(fixture.directory, "bin/npm"),
       `#!${process.execPath}
+// A successful diagnostic can take longer than a single native readiness wait.
+if (process.argv[3] === 'dev:diagnose' && ${JSON.stringify(signal)} === 'SIGINT') {
+  setTimeout(() => {}, 5500);
+}
 if (process.argv[3] === 'check') {
   import(${JSON.stringify(path.join(fixture.directory, "scripts/native-session.mjs"))}).then(async ({ createNativeSession }) => {
     const nested = await createNativeSession({ width: 640, height: 480 });
@@ -220,6 +224,9 @@ if (process.argv[3] === 'check') {
       },
       child,
       "running check",
+      // This spans diagnostics, sequential tool probes, and two native
+      // sessions. Their individual five-second readiness bounds still apply.
+      { timeoutMilliseconds: 30_000 },
     );
     const nested = JSON.parse(
       (await readFile(path.join(review, "2.stdout.log"), "utf8")).match(

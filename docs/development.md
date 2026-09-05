@@ -123,6 +123,10 @@ Run `npm run verify` for headless required checks with retained evidence; use
 focused checks, evidence inspection, and the Live Capture Session helper-test
 distinction. No Roon Server or Roon Authorization is required for either suite.
 
+For end-to-end development-tooling acceptance, follow the
+[two-worktree exercise](agents/worktree-acceptance.md). It accepts existing fresh
+worktrees and retains concurrent verification and cancellation evidence.
+
 ## Run from source
 
 Build and launch RoonScape in Live Mode:
