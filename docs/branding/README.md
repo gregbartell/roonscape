@@ -1,7 +1,7 @@
 # Branding assets
 
 These graphics derive from the approved
-[RoonScape SVG](../../src/renderer/assets/roonscape.svg). The source geometry
+[RoonScape SVG](../../assets/icon.svg). The source geometry
 is preserved in every export.
 
 | Asset                                                   | Intended use                                                                                |

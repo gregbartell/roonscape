@@ -12,7 +12,7 @@ executable that ran the installer. No shell profile is required at launch.
 Setup must already be complete: the entry uses `Terminal=false`.
 
 The icon is derived from the approved
-[`roonscape.svg`](../renderer/assets/roonscape.svg). Regenerate it with
+[`icon.svg`](../../assets/icon.svg). Regenerate it with
 `node scripts/export-branding.mjs`; do not edit the derived paths manually.
 
 See [development](../../docs/development.md#desktop-launcher) for local

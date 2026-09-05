@@ -1,6 +1,6 @@
 # RoonScape icon
 
-[`roonscape.svg`](roonscape.svg) is the approved **Groove R, open groove**
+[`icon.svg`](../../../assets/icon.svg) is the approved **Groove R, open groove**
 design. Its larger opening preserves the returning groove at small sizes.
 This file is the canonical source for application and documentation icons.
 

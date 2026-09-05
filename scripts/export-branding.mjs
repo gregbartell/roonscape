@@ -12,10 +12,7 @@ import { fileURLToPath } from "node:url";
 // Derive branding and desktop assets from the approved SVG; does not build a release.
 const root = fileURLToPath(new URL("../", import.meta.url));
 const outputDirectory = path.join(root, "docs/branding");
-const source = readFileSync(
-  path.join(root, "src/renderer/assets/roonscape.svg"),
-  "utf8",
-);
+const source = readFileSync(path.join(root, "assets/icon.svg"), "utf8");
 const scratchRoot = "/var/tmp/codex/roonscape";
 mkdirSync(scratchRoot, { recursive: true });
 const scratch = mkdtempSync(path.join(scratchRoot, "task."));
