@@ -150,11 +150,61 @@ progress remains at its recorded source position and presentation motion,
 inactivity treatment, and crossfades are disabled. Ordinary Fixture Mode and
 Live Mode retain their normal behavior.
 
+For unattended Fixture Mode, use a private headless desktop:
+
+```sh
+npm run fixture -- --headless --static --scenario playing --resolution 1280x720
+```
+
+`--headless` defaults to 1600×900. `--scenario` selects a maintained Fixture
+Scenario; omit it to start the normal Fixture Mode catalog. In headless
+operation, inherited fixture selections and Renderer overrides are ignored;
+select the scenario, viewport, and static behavior explicitly with these flags.
+The command reports its display and runtime directory once the native window
+is mapped at the requested dimensions. It runs until cancelled with SIGINT or
+SIGTERM. `npm run fixture:release -- --headless` builds and executes this
+worktree's release Renderer instead. The launcher executes the built binary
+directly; when calling `node scripts/run-fixture.mjs` directly, build the Bridge
+and the selected Renderer profile first.
+
+Headless Fixture Mode and Presentation Captures each own a temporary Display
+Configuration, private home/XDG directories, Xvfb display, D-Bus session bus,
+and process groups. They do not read personal Display Configuration or Roon
+Authorization and do not contact Roon. Xvfb allocates its display atomically
+and reports readiness through `-displayfd`; concurrent runs never claim a
+display based on an observed socket alone. GTK application registration is
+scoped to D-Bus, so a private display alone is insufficient: the native
+regression probe confirms that a second Renderer sharing a bus redirects
+activation to the first, even on another display. Verification uses a private
+bus without service activation; Live Mode's application registration is
+unchanged.
+
+Startup and native readiness waits have five-second bounds (PNG encoding has
+a thirty-second bound). Cleanup sends SIGTERM to owned process groups, waits
+up to two seconds, then escalates to SIGKILL with a further two-second bound.
+On cancellation, each grace and escalation wait is limited to 250 milliseconds
+so the CLI can finish nested cleanup before its caller escalates termination.
+Application processes stop before their private display and session bus.
+Normal exit, startup failure, and SIGINT/SIGTERM cancellation all use this
+cleanup path; cancellation exits nonzero. Cleanup removes only the run's
+temporary runtime tree and unfinished publication files. Completed captures,
+neighboring sessions, and personal configuration remain intact. SIGKILL of
+the launcher or host failure cannot run application cleanup.
+
+For manual inspection on a chosen X desktop, explicitly request a window:
+
+```sh
+DISPLAY=:0 ROONSCAPE_WINDOWED=1 npm run fixture -- --static --scenario paused
+```
+
+Manual operation retains the existing desktop/display defaults. Use headless
+operation for unattended verification alongside an existing Live Mode session.
+
 ## Presentation Captures
 
 Presentation Captures use the same deterministic static Fixture Mode through
 the native renderer. The capture host additionally needs `Xvfb`, `xwininfo`,
-and `scrot` on `PATH`.
+`scrot`, and `dbus-daemon` on `PATH`.
 
 Discover the maintained Fixture Scenario identifiers and labels without
 launching the renderer:

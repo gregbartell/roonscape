@@ -3,7 +3,13 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 export function nativeTestFailures(environment = process.env) {
-  const requiredExecutables = ["Xvfb", "xwininfo", "scrot", "pkg-config"];
+  const requiredExecutables = [
+    "Xvfb",
+    "xwininfo",
+    "scrot",
+    "dbus-daemon",
+    "pkg-config",
+  ];
   const failures = requiredExecutables
     .filter((name) => findExecutable(name, environment) === undefined)
     .map((name) => `required executable is unavailable: ${name}`);

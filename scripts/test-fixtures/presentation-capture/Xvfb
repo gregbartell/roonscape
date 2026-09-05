@@ -1,17 +1,14 @@
 #!/bin/sh
 
 printf "Xvfb|%s\n" "$*" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
-display_number="${1#:}"
-socket="/tmp/.X11-unix/X${display_number}"
-mkdir -p /tmp/.X11-unix
-touch "$socket"
+# Emulate the displayfd readiness report, without touching real X sockets.
+printf "999\n"
 stopped=0
 
 stop() {
   [ "$stopped" -eq 1 ] && return
   stopped=1
   printf "Xvfb-stopped\n" >> "$ROONSCAPE_CAPTURE_TEST_PROCESS_LOG"
-  rm -f "$socket"
 }
 
 trap 'stop; exit 0' TERM INT EXIT

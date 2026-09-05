@@ -98,6 +98,7 @@ function environment(context) {
     "cc",
     "git",
     "Xvfb",
+    "dbus-daemon",
     "xvfb-run",
     "xauth",
     "xwininfo",

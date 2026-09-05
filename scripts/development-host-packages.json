@@ -2,6 +2,7 @@
   "ubuntu": [
     "build-essential",
     "git",
+    "dbus",
     "ca-certificates",
     "pkg-config",
     "libgtk-4-dev",
@@ -17,6 +18,7 @@
   "arch": [
     "base-devel",
     "git",
+    "dbus",
     "ca-certificates",
     "pkgconf",
     "gtk4",

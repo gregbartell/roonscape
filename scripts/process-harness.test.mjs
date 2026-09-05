@@ -1,29 +1,16 @@
 import assert from "node:assert/strict";
 import { EventEmitter, once } from "node:events";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import {
   assertProcessRunning,
-  availableXDisplayNumber,
   runMonitoredProcess,
   startMonitoredProcess,
   stopProcess,
   stopProcesses,
   waitFor,
 } from "./process-harness.mjs";
-
-test("allocates an X display only when its socket and lock are absent", async () => {
-  const occupied = new Set(["/tmp/.X11-unix/X90", "/tmp/.X91-lock"]);
-
-  assert.equal(
-    await availableXDisplayNumber({
-      first: 90,
-      exclusiveLimit: 93,
-      pathExists: async (filePath) => occupied.has(filePath),
-    }),
-    92,
-  );
-});
 
 test("reports process spawn errors", async () => {
   const child = startMonitoredProcess(
@@ -196,3 +183,62 @@ function stubbornChild() {
   });
   return { child, signals };
 }
+
+test("cancelling a stalled readiness probe rejects promptly", async () => {
+  const child = startMonitoredProcess(process.execPath, [
+    "--eval",
+    "setInterval(() => {}, 1000)",
+  ]);
+  await child.spawned;
+  const controller = new AbortController();
+  const waiting = waitFor(
+    () => new Promise(() => {}),
+    child,
+    "cancelled readiness",
+    { signal: controller.signal },
+  );
+  controller.abort(new Error("requested cancellation"));
+  try {
+    await assert.rejects(waiting, /requested cancellation/);
+  } finally {
+    await stopProcess(child);
+  }
+});
+
+test("stopping an exited command also terminates its surviving descendants", async () => {
+  const child = startMonitoredProcess(process.execPath, [
+    "--eval",
+    `
+    const {spawn} = require("node:child_process");
+    const descendant = spawn(process.execPath, ["--eval", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], {stdio: "ignore"});
+    console.log(descendant.pid);
+    descendant.unref();
+  `,
+  ]);
+  await child.spawned;
+  await child.completed;
+  const descendantPid = Number(child.capturedStandardOutput.trim());
+  try {
+    await stopProcess(child);
+    // A killed descendant may briefly remain a zombie until the host reaps it.
+    await waitFor(
+      async () => {
+        try {
+          const stat = await readFile(`/proc/${descendantPid}/stat`, "utf8");
+          assert.match(stat, /\) Z /);
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+      },
+      { exitCode: null, signalCode: null },
+      "descendant termination",
+      { timeoutMilliseconds: 500 },
+    );
+  } finally {
+    try {
+      process.kill(descendantPid, "SIGKILL");
+    } catch (error) {
+      assert.equal(error.code, "ESRCH");
+    }
+  }
+});

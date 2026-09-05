@@ -322,7 +322,7 @@ async function addUnreadableInputFailures(inputPaths, failures) {
 }
 
 async function addMissingExecutableFailures(failures, environment) {
-  for (const executableName of ["Xvfb", "xwininfo", "scrot"]) {
+  for (const executableName of ["Xvfb", "xwininfo", "scrot", "dbus-daemon"]) {
     if (!(await executableOnPath(executableName, environment))) {
       failures.push(`required executable is unavailable: ${executableName}`);
     }

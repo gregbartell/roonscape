@@ -12,9 +12,12 @@ import { promisify } from "node:util";
 
 import {
   startMonitoredProcess,
-  startXvfbDisplay,
+  waitFor,
+  waitForProcessExit,
   stopProcess,
 } from "./process-harness.mjs";
+
+import { createNativeSession } from "./native-session.mjs";
 
 const executeFile = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -42,11 +45,8 @@ test("acknowledges initial and repeated Fixture Scenario revisions only after th
     server.once("error", reject);
     server.listen(controlSocketPath, resolve);
   });
-  const { display, xvfb } = await startXvfbDisplay({
-    width: 1280,
-    height: 720,
-    cwd: repositoryRoot,
-  });
+  const nativeSession = await createNativeSession({ width: 1280, height: 720 });
+  const display = nativeSession.environment.DISPLAY;
   let renderer;
 
   try {
@@ -57,7 +57,7 @@ test("acknowledges initial and repeated Fixture Scenario revisions only after th
       {
         cwd: repositoryRoot,
         environment: {
-          ...process.env,
+          ...nativeSession.environment,
           DISPLAY: display,
           GDK_BACKEND: "x11",
           NO_AT_BRIDGE: "1",
@@ -68,7 +68,11 @@ test("acknowledges initial and repeated Fixture Scenario revisions only after th
       },
     );
     await renderer.spawned;
-    const [control] = await connected;
+    const [control] = await waitFor(
+      () => connected,
+      renderer,
+      "capture control connection",
+    );
     const acknowledgements = createInterface({ input: control })[
       Symbol.asyncIterator
     ]();
@@ -111,7 +115,9 @@ test("acknowledges initial and repeated Fixture Scenario revisions only after th
     control.write(
       `${JSON.stringify(await selection("playing.json", "playing", 75, invalidArtworkPath))}\n`,
     );
-    const closed = once(renderer, "close").then(([exitCode, signal]) => ({
+    const closed = waitForProcessExit(renderer, {
+      timeoutMilliseconds: 5000,
+    }).then(([exitCode, signal]) => ({
       type: "closed",
       exitCode,
       signal,
@@ -141,7 +147,7 @@ test("acknowledges initial and repeated Fixture Scenario revisions only after th
     );
   } finally {
     await stopProcess(renderer);
-    await stopProcess(xvfb);
+    await nativeSession.close();
     await new Promise((resolve) => server.close(resolve));
     await rm(taskDirectory, { recursive: true });
   }
@@ -162,7 +168,11 @@ async function selection(fixtureName, scenario, revision, artworkPath) {
 }
 
 async function nextAcknowledgement(acknowledgements, renderer) {
-  const next = await acknowledgements.next();
+  const next = await waitFor(
+    () => acknowledgements.next(),
+    renderer,
+    "painted revision acknowledgement",
+  );
   assert.equal(next.done, false, renderer.capturedStandardError);
   return JSON.parse(next.value);
 }

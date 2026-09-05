@@ -19,6 +19,7 @@ const environmentCheck = fileURLToPath(
 test("the native test preflight reports a missing capture executable", (context) => {
   const commandDirectory = createCommandDirectory(context, [
     "Xvfb",
+    "dbus-daemon",
     "pkg-config",
     "xwininfo",
   ]);
@@ -37,6 +38,7 @@ test("the native test preflight reports a missing capture executable", (context)
 test("the native test preflight accepts the complete environment", (context) => {
   const commandDirectory = createCommandDirectory(context, [
     "Xvfb",
+    "dbus-daemon",
     "pkg-config",
     "scrot",
     "xwininfo",
