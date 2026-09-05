@@ -30,6 +30,81 @@ test("diagnosis reports complete readiness without changing the worktree or pers
   assert.deepEqual(contents(fixture.root), before);
 });
 
+for (const [failure, changeResult, detail] of [
+  [
+    "execution denial",
+    'result.error = Object.assign(new Error("execution denied"), { code: "EPERM" });',
+    /error EPERM/,
+  ],
+  ["missing stdout", 'result.stdout = "";', /stdout capture mismatch/],
+  ["missing stderr", 'result.stderr = "";', /stderr capture mismatch/],
+  [
+    "termination",
+    'result.status = null; result.signal = "SIGTERM";',
+    /signal SIGTERM/,
+  ],
+  ["nonzero exit", "result.status = 23;", /exit 23/],
+]) {
+  for (const mode of ["diagnose", "prepare"]) {
+    test(`${mode} stops before tool checks on subprocess ${failure}`, (context) => {
+      const fixture = environment(context);
+      const preload = path.join(fixture.root, "blocked-subprocess.mjs");
+      writeFileSync(
+        preload,
+        `import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+const spawnSync = childProcess.spawnSync;
+childProcess.spawnSync = (file, args, options) => {
+  const result = spawnSync(file, args, options);
+  if (file === process.execPath) { ${changeResult} }
+  return result;
+};
+syncBuiltinESMExports();
+`,
+      );
+      fixture.env.NODE_OPTIONS = `--import=${preload}`;
+      fixture.command("npm", 'require("fs").writeFileSync("tool-probed", "");');
+      const before = contents(fixture.root);
+
+      const result = fixture.run(mode);
+
+      assert.equal(result.status, 1);
+      assert.match(
+        result.stderr,
+        /Subprocess execution\/capture is unavailable/,
+      );
+      assert.match(result.stderr, detail);
+      assert.doesNotMatch(result.stdout, /unavailable|incompatible/);
+      assert.deepEqual(contents(fixture.root), before);
+    });
+  }
+}
+
+for (const [failure, body, message] of [
+  ["missing executable", null, /npm executable not found on PATH/],
+  ["failed execution", "process.exit(23);", /npm probe failed \(exit 23\)/],
+  [
+    "incompatible version",
+    'console.log("0.0.1");',
+    /npm 11.17.0 required; incompatible version/,
+  ],
+]) {
+  test(`diagnosis distinguishes ${failure}`, (context) => {
+    const fixture = environment(context);
+    if (body === null) rmSync(path.join(fixture.root, "bin/npm"));
+    else fixture.command("npm", body);
+
+    const result = fixture.run("diagnose");
+
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, message);
+    assert.doesNotMatch(
+      result.stderr,
+      /Subprocess execution\/capture is unavailable/,
+    );
+  });
+}
+
 function environment(context) {
   mkdirSync("/var/tmp/codex/roonscape", { recursive: true });
   const root = mkdtempSync("/var/tmp/codex/roonscape/task.");

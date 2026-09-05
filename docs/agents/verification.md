@@ -9,6 +9,7 @@ changes.
 During implementation, choose focused typechecking and tests for the affected
 area. Existing focused commands and reusable `:built` stages are listed in
 `package.json`; build prerequisites before invoking a built stage directly.
+Before running agent-driven checks, follow [Agent execution permissions](#agent-execution-permissions).
 
 Use the most demanding applicable row, including for mixed changes:
 
@@ -82,6 +83,32 @@ Checks build and execute this worktree's code. Build directories are pinned to
 its `target`; preparation rejects symlinked build/dependency directories.
 The session uses private home/XDG directories and preserves toolchain/cache
 locations. It does not read personal Display Configuration or Roon Authorization.
+
+### Agent execution permissions
+
+Verification requires subprocess IPC, including local sockets used by Node's
+captured input/output, Xvfb, and D-Bus. Some agent sandboxes deny these operations;
+even a successful child exit can carry a pipe error or lose stdout/stderr.
+
+When that restriction is established in the current environment, request
+escalated execution for `npm run verify` (including its applicable options),
+`npm run dev:diagnose`, `npm run dev:prepare`, and focused checks that use the
+affected subprocess or native IPC. Use the normal approval mechanism for each
+specific command; Auto-review can assess eligible requests while ordinary
+agent work remains sandboxed. Authorization still depends on the command and
+its effects. If review denies it, report the denial and remaining verification
+gap rather than treating a sandboxed retry as equivalent evidence.
+
+In an unassessed environment, the development diagnostic first checks that a
+child Node process executes and returns known stdout and stderr. A failure
+means tool prerequisites were not assessed. Request the execution permissions
+needed by that command before interpreting tool or font readiness. Once the
+restriction is known, use the appropriate execution permissions directly on
+subsequent affected checks instead of repeating the failing probe.
+
+Retain the normal verification workflow, private configuration and native
+sessions, bounded cleanup, and evidence logs. The scripts diagnose execution
+capabilities; they never escalate themselves or change sandbox policy.
 
 ## Inspect retained evidence
 

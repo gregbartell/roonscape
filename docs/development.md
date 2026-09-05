@@ -11,6 +11,8 @@ copied into documentation.
 Read this section when preparing a worktree or diagnosing verification
 prerequisites. For missing tools, fonts, or execution permissions, consult the
 relevant parts of [host provisioning](#provision-the-development-host-explicitly).
+For agent-run commands, first follow
+[Agent execution permissions](agents/verification.md#agent-execution-permissions).
 On a provisioned host, run these from your worktree:
 
 ```sh
@@ -23,7 +25,12 @@ exists. If npm is unavailable, run `node scripts/development-environment.mjs
 diagnose` directly. If Node itself is unavailable, select `.node-version`
 first; no JavaScript diagnostic can run without Node.
 
-`dev:diagnose` is read-only. It probes the pinned Node/npm/Rust versions,
+`dev:diagnose` is read-only. Before assessing tools, it checks that a child Node
+process executes and returns known stdout and stderr. Execution errors, signals,
+nonzero exits, or missing/changed output stop diagnosis and preparation with an
+execution/capture failure; tool prerequisites remain unassessed. Failure messages
+retain error codes, signals, and exit status without dumping child output or the
+environment. A successful preflight then probes the pinned Node/npm/Rust versions,
 formatting/lint tools, C compiler, native prerequisites, packaged fonts, host
 font families, and filesystem access. Host font inspection uses Python 3's
 standard library with Fontconfig to query font files in memory, without

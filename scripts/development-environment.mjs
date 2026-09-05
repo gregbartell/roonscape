@@ -4,6 +4,7 @@ import {
   lstatSync,
   readFileSync,
   statSync,
+  writeSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -43,6 +44,7 @@ try {
     CARGO_TARGET_DIR: path.join(root, "target"),
     CARGO_BUILD_BUILD_DIR: path.join(root, "target"),
   };
+  checkSubprocessExecution(environment);
   const required = [];
   if (process.versions.node !== nodeVersion)
     required.push(
@@ -54,16 +56,15 @@ try {
     ["cargo", rustVersion],
   ]) {
     const result = probe(name, ["--version"]);
-    if (!result.ok || !result.output.split(/\s+/).includes(version))
+    if (!result.ok) required.push(result.failure);
+    else if (!result.output.split(/\s+/).includes(version))
       required.push(
-        `${name} ${version} required; unavailable or incompatible. Select the repository-pinned toolchain (docs/development.md).`,
+        `${name} ${version} required; incompatible version. Select the repository-pinned toolchain (docs/development.md).`,
       );
   }
   for (const name of ["rustfmt", "cargo-clippy", "cc", "git", "python3"]) {
-    if (!probe(name, ["--version"]).ok)
-      required.push(
-        `${name} is unavailable. Provision the development host; see docs/development.md.`,
-      );
+    const result = probe(name, ["--version"]);
+    if (!result.ok) required.push(result.failure);
   }
   for (const name of ["xvfb-run", "xauth"]) {
     if (!findExecutable(name, environment))
@@ -77,10 +78,9 @@ try {
         `${failure}. Provision native packages; see docs/development.md.`,
     ),
   );
-  if (!probe("pkg-config", ["--exists", "fontconfig"]).ok)
-    required.push(
-      "Fontconfig development files are unavailable. Provision native packages; see docs/development.md.",
-    );
+  const fontconfig = probe("pkg-config", ["--exists", "fontconfig"]);
+  if (!fontconfig.ok)
+    required.push(`Fontconfig development check failed: ${fontconfig.failure}`);
   const runtime = tmpdir();
   checkDirectory(runtime, required, "Runtime directory", false);
   if (
@@ -132,9 +132,10 @@ try {
     "IBMPlexSans-Italic-Variable.ttf",
   ]) {
     const font = path.join(root, "src/renderer/assets/fonts", name);
-    if (!probe("fc-query", ["--format=%{family}", font]).ok)
+    const result = probe("fc-query", ["--format=%{family}", font]);
+    if (!result.ok)
       packaged.push(
-        `Packaged font ${name} is unreadable or invalid (or fc-query is missing). Restore tracked font assets and install Fontconfig.`,
+        `Packaged font ${name} inspection failed: ${result.failure}`,
       );
   }
   const evidence = path.resolve(args[1] ?? root);
@@ -152,7 +153,7 @@ try {
   );
   if (!hostFonts.ok)
     typography.push(
-      "Read-only host font inspection failed. Install Python 3 and Fontconfig and grant access to configured font directories; see docs/development.md.",
+      `Read-only host font inspection failed: ${hostFonts.failure}`,
     );
   for (const family of ["Sitka Display", "Palatino Linotype", "Segoe UI"]) {
     if (!availableFamilies.has(family.toLowerCase()))
@@ -214,23 +215,58 @@ try {
 
   function probe(name, arguments_) {
     const executable = findExecutable(name, environment);
-    if (!executable) return { ok: false, output: "" };
+    if (!executable)
+      return {
+        ok: false,
+        output: "",
+        failure: `${name} executable not found on PATH. Provision the development host; see docs/development.md.`,
+      };
     const result = spawnSync(executable, arguments_, {
       cwd: root,
       env: environment,
       encoding: "utf8",
       timeout: 15_000,
     });
+    const failures = subprocessFailures(result);
     return {
-      ok: !result.error && result.status === 0,
+      ok: failures.length === 0,
       output: result.stdout ?? "",
+      failure: `${name} probe failed (${failures.join("; ")}). Check execution permissions and tool prerequisites; see docs/development.md.`,
     };
   }
 } catch (error) {
-  process.stderr.write(
-    `Development ${mode ?? "command"} failed: ${error.message}\n`,
-  );
+  // Write directly so an unusable Node stdio stream cannot hide the diagnosis.
+  writeSync(2, `Development ${mode ?? "command"} failed: ${error.message}\n`);
   process.exitCode = 1;
+}
+
+function checkSubprocessExecution(environment) {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "-e",
+      'process.stdout.write("stdout probe\\n"); process.stderr.write("stderr probe\\n");',
+    ],
+    { cwd: root, env: environment, encoding: "utf8", timeout: 15_000 },
+  );
+  const failures = subprocessFailures(result);
+  if (result.stdout !== "stdout probe\n")
+    failures.push("stdout capture mismatch");
+  if (result.stderr !== "stderr probe\n")
+    failures.push("stderr capture mismatch");
+  if (failures.length)
+    throw new Error(
+      `Subprocess execution/capture is unavailable in this environment (${failures.join("; ")}). Tool prerequisites were not assessed. Run this command with subprocess IPC permitted; see docs/agents/verification.md#agent-execution-permissions.`,
+    );
+}
+
+function subprocessFailures(result) {
+  const failures = [];
+  if (result.error) failures.push(`error ${result.error.code}`);
+  if (result.signal) failures.push(`signal ${result.signal}`);
+  if (result.status !== 0)
+    failures.push(`exit ${result.status ?? "unavailable"}`);
+  return failures;
 }
 
 function read(file) {
