@@ -213,7 +213,12 @@ export function lyricFeedEndpointForCore(
   if (!isRecord(core) || !isRecord(core.moo) || !isRecord(core.moo.transport)) {
     return null;
   }
-  const { host, port } = core.moo.transport;
+  const { host, port: transportPort } = core.moo.transport;
+  // The Roon SDK preserves SOOD's decimal string port during discovery.
+  const port =
+    typeof transportPort === "string" && /^[0-9]+$/.test(transportPort)
+      ? Number(transportPort)
+      : transportPort;
   return typeof host === "string" &&
     typeof port === "number" &&
     Number.isInteger(port) &&

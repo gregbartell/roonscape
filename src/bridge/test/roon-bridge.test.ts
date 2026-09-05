@@ -1726,6 +1726,52 @@ test("merges a seek-position-only delta before publishing a complete snapshot", 
   await validateSnapshot(boundary.snapshots.at(-1));
 });
 
+for (const port of [9330, "9330"]) {
+  test(`publishes lyrics from a paired server with ${typeof port} transport port`, async () => {
+    let emitLyrics:
+      Parameters<LyricFeedConnectionFactory>[0]["onEvent"] | undefined;
+    const boundary = createRoonBoundary(
+      "output-speaker-system",
+      unusedArtworkFiles(),
+      () => new Date("2026-08-15T19:20:00Z"),
+      (options) => {
+        assert.deepEqual(options.endpoint, {
+          host: "roon.example",
+          port: 9330,
+        });
+        emitLyrics = options.onEvent;
+        return { reportViewed: () => undefined, stop: () => undefined };
+      },
+    );
+    try {
+      // The SDK retains SOOD's string port; directed discovery supplies a number.
+      boundary.extensionOptions().core_paired({
+        ...boundary.core(),
+        moo: { transport: { host: "roon.example", port } },
+      } as RoonCore);
+      const zone: RoonZone = {
+        ...artworkZone("track-a-artwork", "Track A"),
+        now_playing: {
+          seek_position: 1,
+          length: 120,
+          three_line: { line1: "Track A", line2: "Artist" },
+        },
+      };
+      boundary.emitZones("Subscribed", { zones: [zone] });
+      assert.equal(boundary.currentSnapshot().nowPlaying?.title, "Track A");
+      emitLyrics?.(
+        { zone_id: zone.zone_id, key: "track-a-key", lrc: "[00:01.00]First" },
+        trackedNowPlaying(zone)?.nowPlayingIdentity,
+      );
+      assert.deepEqual(boundary.currentSnapshot().lyrics, {
+        cues: [{ atSeconds: 1, text: "First" }],
+      });
+    } finally {
+      await boundary.stop();
+    }
+  });
+}
+
 test("correlates the optional Lyric Feed with current Tracked Zone Now Playing", () => {
   let emitLyrics:
     | ((
