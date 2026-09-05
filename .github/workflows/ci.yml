@@ -28,4 +28,4 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
       - name: Run repository checks
-        run: npm run check
+        run: xvfb-run -a npm run check
