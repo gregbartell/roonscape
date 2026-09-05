@@ -5,11 +5,122 @@ RoonScape source development requires Node.js and npm, Rust and Cargo,
 `.node-version`, `package.json`, and `rust-toolchain.toml` rather than versions
 copied into documentation.
 
-From a fresh checkout, install the locked JavaScript dependencies:
+## Prepare an existing worktree
+
+After the explicit host provisioning below, run these from your worktree:
 
 ```sh
-npm ci
+npm run dev:diagnose
+npm run dev:prepare
 ```
+
+Both commands use Node's standard library and work before `node_modules`
+exists. If npm is unavailable, run `node scripts/development-environment.mjs
+diagnose` directly. If Node itself is unavailable, select `.node-version`
+first; no JavaScript diagnostic can run without Node.
+
+`dev:diagnose` is read-only. It probes the pinned Node/npm/Rust versions,
+formatting/lint tools, C compiler, native prerequisites, packaged fonts, host
+font families, and filesystem access. Host font inspection uses Python 3's
+standard library with Fontconfig to query font files in memory, without
+creating font caches. No Python packages are required. It never starts RoonScape or accesses
+personal Display Configuration or Roon Authorization. The reported capabilities
+describe host prerequisites, not a completed build or successful verification:
+
+- **Automated checks:** the required toolchain, native tools, packaged fonts,
+  and runtime/build locations.
+- **Packaged-fallback Presentation Captures:** automated prerequisites plus a
+  usable evidence destination.
+- **Complete typography/profile:** capture prerequisites plus Sitka Display,
+  Palatino Linotype, Segoe UI, and a font providing `月` for glyph fallback.
+
+Missing proprietary host fonts limits the last capability; it does not block
+preparation, automated checks, or fallback captures. Exit status is 0 when the
+first two capabilities are ready and 1 otherwise. The complete typography
+status is reported separately, so read it before requesting the full profile.
+The diagnostic can check another evidence destination without creating it:
+
+```sh
+npm run dev:diagnose -- --evidence /var/tmp/codex/roonscape/review
+```
+
+`dev:prepare` runs the same preflight, then `npm ci` with lifecycle scripts
+disabled and development dependencies included, followed by `cargo fetch
+--locked`. Network and dependency-cache access are required. It stops on a
+failure, prints remediation, and leaves any completed downloads available for
+a retry. It does not compile the application. Source lockfiles remain unchanged;
+an inconsistent lockfile must be fixed as a separate source change. It neither
+creates worktrees nor selects branches. Build/dependency directories must be
+local, not symlinks; Cargo output paths are set to this worktree's `target`
+during preparation. Shared npm/Cargo download caches are supported. Before
+later verification, unset `CARGO_TARGET_DIR`, `CARGO_BUILD_TARGET_DIR`, and
+`CARGO_BUILD_BUILD_DIR` overrides and remove external target/build-directory
+settings from Cargo configuration so builds and capture executables stay local.
+
+Application setup remains `npm run setup`. Development preparation does not
+run it, discover Roon Servers, or request Roon Authorization.
+
+## Provision the development host explicitly
+
+Provisioning instructions cover Arch Linux and Ubuntu 22.04, which CI uses.
+Native packages have one maintained source in
+[`scripts/development-host-packages.json`](../scripts/development-host-packages.json),
+also consumed by the shared CI native-environment action. Provision them
+explicitly as an administrator; neither development command runs a package
+manager for system packages. With Node already available, these commands are
+examples for a Bash shell:
+
+```bash
+# Ubuntu 22.04 (the same package list used by CI)
+mapfile -t packages < <(node -p 'require("./scripts/development-host-packages.json").ubuntu.join("\n")')
+sudo apt-get update
+sudo apt-get install --yes "${packages[@]}"
+
+# Arch Linux: update the system, then install its package list
+mapfile -t packages < <(node -p 'require("./scripts/development-host-packages.json").arch.join("\n")')
+sudo pacman -Syu --needed "${packages[@]}"
+```
+
+Select the Node version from `.node-version` with your Node manager;
+CI uses `actions/setup-node` with `node-version-file`. Explicitly
+install/select npm at the version in `package.json`'s `packageManager` field.
+Use the Rust release in `rust-toolchain.toml`, including `rustfmt` and Clippy.
+Arch's distribution Rust packages are supported when they match that pin. For
+a host using rustup (including Ubuntu CI), provision the toolchain explicitly:
+
+```bash
+rust_pin=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+rustup toolchain install "$rust_pin" --profile minimal --component rustfmt --component clippy
+```
+
+Diagnostics and preparation disable automatic rustup installation. They do
+not change the active toolchain or persist a toolchain override.
+
+The open Libre Baskerville and IBM Plex Sans fonts are tracked repository
+assets, privately registered by the Renderer; no global installation is needed.
+Noto CJK is in the system-package list. Provision licensed copies of Sitka
+Display, Palatino Linotype, and Segoe UI separately on hosts used for complete
+typography review, then refresh Fontconfig with `fc-cache`. Those proprietary
+fonts are not distributed by RoonScape or installed in ordinary Ubuntu CI.
+
+Agent permissions must allow reading/executing the selected toolchains and
+native tools, network access for locked downloads, writes within the worktree
+and dependency caches, and execution of child processes. Grant write access to
+the runtime and chosen evidence directories explicitly. `TMPDIR` must be an
+existing writable directory with a short path (native capture control uses
+Unix sockets); an explicitly set `XDG_RUNTIME_DIR` must also be usable. Create
+`/var/tmp/codex/roonscape` and grant agent access for command-test scratch files.
+Diagnostic filesystem checks inspect permissions and existing ancestors without
+creating files. They cannot prove free space, sandbox permission to bind sockets
+or start Xvfb, or the success of a future capture. These need the corresponding
+verification command under the intended agent permissions. Neither command
+changes permissions or reads personal application credentials.
+
+Run `xvfb-run -a npm run check` for required automated checks; use
+`npm run test:design` for the separate design suite. No Roon Server or Roon
+Authorization is required for either suite.
+
+## Run from source
 
 Build and launch RoonScape in Live Mode:
 

@@ -32,7 +32,7 @@
     "test:bridge": "npm run build && npm run test:bridge:built",
     "test:bridge:built": "npm run test:built --workspace @roonscape/bridge",
     "test:build": "npm run build && npm run test:renderer:build",
-    "test:built": "npm run test:bridge:built && npm run test:source-launcher:built && npm run test:fixture-launcher:built && npm run test:process-harness && npm run test:bare-x-fullscreen:built && npm run test:orchestration && npm run test:versions && npm run test:native-test-environment && npm run test:package && cargo test --workspace && npm run smoke:ipc:built",
+    "test:built": "npm run test:bridge:built && npm run test:source-launcher:built && npm run test:fixture-launcher:built && npm run test:process-harness && npm run test:bare-x-fullscreen:built && npm run test:orchestration && npm run test:versions && npm run test:native-test-environment && npm run test:development-environment && npm run test:package && cargo test --workspace && npm run smoke:ipc:built",
     "test:capture-control-renderer": "cargo build --locked --package roonscape-renderer && node --test scripts/capture-control-renderer.test.mjs",
     "test:fixture-launcher": "npm run build && npm run test:fixture-launcher:built",
     "test:fixture-launcher:built": "node --test scripts/run-fixture.test.mjs",
@@ -45,7 +45,10 @@
     "test:source-launcher": "npm run build && npm run test:source-launcher:built",
     "test:source-launcher:built": "node --test scripts/source-launcher.test.mjs",
     "test:versions": "node --test scripts/check-versions.test.mjs",
-    "typecheck": "npm run build && cargo check --workspace --all-targets"
+    "typecheck": "npm run build && cargo check --workspace --all-targets",
+    "dev:diagnose": "node scripts/development-environment.mjs diagnose",
+    "dev:prepare": "node scripts/development-environment.mjs prepare",
+    "test:development-environment": "node --test scripts/development-environment.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

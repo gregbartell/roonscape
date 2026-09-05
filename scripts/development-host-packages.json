@@ -1,0 +1,31 @@
+{
+  "ubuntu": [
+    "build-essential",
+    "git",
+    "ca-certificates",
+    "pkg-config",
+    "libgtk-4-dev",
+    "libfontconfig1-dev",
+    "fontconfig",
+    "scrot",
+    "xvfb",
+    "x11-utils",
+    "xauth",
+    "fonts-noto-cjk",
+    "python3"
+  ],
+  "arch": [
+    "base-devel",
+    "git",
+    "ca-certificates",
+    "pkgconf",
+    "gtk4",
+    "fontconfig",
+    "scrot",
+    "xorg-server-xvfb",
+    "xorg-xwininfo",
+    "xorg-xauth",
+    "noto-fonts-cjk",
+    "python"
+  ]
+}
