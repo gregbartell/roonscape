@@ -353,7 +353,25 @@ async function main() {
     process.exitCode = 1;
   } finally {
     try {
-      await stopProcesses(children, { graceMilliseconds: 5_000 });
+      try {
+        if (report.sentinel) {
+          const owned = await descendants(sentinel.child.pid);
+          const renderer = owned.find((entry) =>
+            entry.name.startsWith("roonscape"),
+          );
+          if (renderer) {
+            assert.ok(owned.some((entry) => entry.pid === renderer.parent));
+            // Let the Fixture CLI remove its runtime before the process monitor
+            // stops npm's group; npm can exit before its children finish.
+            process.kill(renderer.parent, "SIGTERM");
+            await waitForProcessExit(sentinel.child, {
+              timeoutMilliseconds: 5_000,
+            });
+          }
+        }
+      } finally {
+        await stopProcesses(children, { graceMilliseconds: 5_000 });
+      }
       for (const [index, child] of children.entries()) {
         const entry = report.commands[index];
         if (entry.outcome !== "incomplete") continue;
