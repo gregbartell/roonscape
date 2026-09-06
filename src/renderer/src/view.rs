@@ -3378,6 +3378,7 @@ mod tests {
         ordinary_metadata_remains_stable_on_playback_updates();
         timing_variants_keep_allocated_content_stable();
         short_blanks_return_during_their_departure();
+        continuous_snapshot_at_a_cue_boundary_animates();
         a_seek_within_the_incoming_cue_settles_its_handoff();
 
         blank_promotion_preserves_context_and_an_interrupted_departure();
@@ -3586,6 +3587,9 @@ mod tests {
             .timeline
             .push("Timeline revision source".to_owned());
         let mut seek = natural.clone();
+        seek.playback_position_seconds = natural
+            .playback_position_seconds
+            .map(|position| position + 10.0);
         seek.lyrics = Some(Box::new(seek_lyrics.clone()));
         complete.update_in_place(
             42,
@@ -5408,6 +5412,53 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(outgoing(&departing).emphasis, outgoing(&promoting).emphasis);
+    }
+
+    fn continuous_snapshot_at_a_cue_boundary_animates() {
+        for viewport in [Viewport::new(1280, 720), Viewport::new(3840, 2400)] {
+            let mut before = lyric_presentation("lyrics-one-line.json");
+            before.playback_position_seconds = Some(179.95);
+            let mut rendered = rendered_now_playing(&before, PresentationBehavior::Dynamic);
+            rendered.apply_viewport(viewport);
+            rendered.update_in_place(
+                1,
+                &Presentation::NowPlaying(before.clone()),
+                std::time::Duration::ZERO,
+                Some(viewport),
+            );
+            let mut incoming = before;
+            incoming.playback_position_seconds = Some(180.0);
+            incoming.lyrics.as_mut().unwrap().current_index += 1;
+            let boundary = std::time::Duration::from_millis(50);
+            rendered.update_in_place(
+                2,
+                &Presentation::NowPlaying(incoming.clone()),
+                boundary,
+                Some(viewport),
+            );
+            let midpoint =
+                lyric_motion_frame(&rendered, boundary + std::time::Duration::from_millis(150));
+            assert_eq!(midpoint.cause, LyricMotionCause::NaturalCueHandoff);
+            assert!(midpoint.cue_motion_active);
+            assert!(
+                midpoint
+                    .anchors
+                    .iter()
+                    .all(|(_, weight)| *weight > 0.0 && *weight < 1.0)
+            );
+
+            incoming.playback_position_seconds = Some(180.62);
+            rendered.update_in_place(
+                3,
+                &Presentation::NowPlaying(incoming),
+                boundary + std::time::Duration::from_millis(620),
+                Some(viewport),
+            );
+            assert!(
+                !lyric_motion_frame(&rendered, boundary + std::time::Duration::from_millis(620))
+                    .cue_motion_active
+            );
+        }
     }
 
     fn a_seek_within_the_incoming_cue_settles_its_handoff() {

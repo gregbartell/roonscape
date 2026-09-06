@@ -277,8 +277,13 @@ impl LyricMotion {
                 && target
                     .previous_index()
                     .is_none_or(|index| index < source.current_index));
+        let timeline_changed = source.timeline_signature != target.timeline_signature;
+        // Snapshot revisions also advance for ordinary Roon timing updates.
+        // Only a timing relocation should turn an adjacent cue into a seek.
+        let external_seek =
+            revision_changed && (self.timing_discontinuity || self.playback_sample.is_none());
 
-        if !revision_changed && adjacent && source_is_blank && target_is_blank {
+        if !timeline_changed && !external_seek && adjacent && source_is_blank && target_is_blank {
             self.cause = LyricMotionCause::IntentionalBlankContinuation;
             if !animations_enabled || !active_motion_is_interrupted {
                 self.cue_motion = None;
@@ -289,13 +294,10 @@ impl LyricMotion {
             return;
         }
 
-        let (kind, cause) = if revision_changed {
-            let cause = if source.timeline_signature != target.timeline_signature {
-                LyricMotionCause::TimelineRevision
-            } else {
-                LyricMotionCause::ExternalSeek
-            };
-            (None, cause)
+        let (kind, cause) = if timeline_changed {
+            (None, LyricMotionCause::TimelineRevision)
+        } else if external_seek {
+            (None, LyricMotionCause::ExternalSeek)
         } else if active_motion_is_interrupted && !continuing_blank_departure {
             (None, LyricMotionCause::InterruptedHandoffDestination)
         } else if !adjacent {
@@ -536,6 +538,24 @@ mod tests {
             current_index,
             preparing: false,
         }
+    }
+
+    #[test]
+    fn continuous_snapshot_at_cue_boundary_preserves_reel_lift() {
+        let first = lyrics(0, None, "First", Some("Second"));
+        let mut second = first.clone();
+        second.current_index = 1;
+        let mut motion = LyricMotion::new(1, Some(&first));
+        motion.observe_playback(1, Some(8.95), true, Duration::ZERO);
+        motion.update(1, Some(&first), Duration::ZERO, true);
+
+        let boundary = Duration::from_millis(50);
+        motion.observe_playback(2, Some(9.0), true, boundary);
+        motion.update(2, Some(&second), boundary, true);
+        let frame = motion.frame_at(boundary + Duration::from_millis(150));
+        assert_eq!(frame.cause, LyricMotionCause::NaturalCueHandoff);
+        assert!(frame.cue_motion_active);
+        assert!(frame.cues[1].emphasis > 0.0 && frame.cues[1].emphasis < 1.0);
     }
 
     #[test]
