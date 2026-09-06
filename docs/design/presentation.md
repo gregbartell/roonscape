@@ -108,7 +108,9 @@ column into the masthead or footer.
 A settled Intentional Blank packs available earlier and upcoming nonblank
 cues around an empty Primary Position, even after a tall cue, using the same
 bounds, surrounding emphasis, partial-cue clipping, and edge fades as the
-nonblank Lyric Reel. Consecutive blanks retain that arrangement without
+nonblank Lyric Reel. Intentional Blanks retain an empty row as earlier and
+upcoming context, including throughout handoffs. Consecutive blanks share one
+row and retain that arrangement without
 repeated lifts or additional empty rows, including on direct seeks. Leading blanks
 are ignored and all-blank timelines retain ordinary Now Playing. Every Cue,
 including an Intentional Blank, activates at its source timestamp. Short blanks

@@ -360,10 +360,16 @@ impl LyricMotion {
     }
 }
 
-// Indices identify timed entries, even when their text is identical. Preparation
-// uses the position immediately before the first nonblank cue.
+// A blank run shares its first entry's identity, including on direct seeks.
+// Preparation uses the position immediately before the first nonblank cue.
 fn anchor_index(lyrics: &LyricPresentation) -> i64 {
-    lyrics.current_index as i64 - i64::from(lyrics.preparing)
+    if lyrics.preparing {
+        lyrics.current_index as i64 - 1
+    } else if lyrics.current().trim().is_empty() {
+        lyrics.previous_index().map_or(0, |index| index + 1) as i64
+    } else {
+        lyrics.current_index as i64
+    }
 }
 
 fn cue_motion_frame(motion: &CueMotion, now: Duration) -> (Vec<LyricCueFrame>, Vec<(i64, f64)>) {
@@ -393,7 +399,8 @@ fn cue_motion_frame(motion: &CueMotion, now: Duration) -> (Vec<LyricCueFrame>, V
                 after.map_or(0.0, |cue| cue.opacity),
                 progress,
             );
-            // Invisible blank anchors yield their space gradually on entry/exit.
+            // Timed blank rows keep their extent in both endpoints. Only the
+            // synthetic preparation anchor yields its space as lyrics begin.
             cue.extent = if cue.text.trim().is_empty() {
                 mix(
                     before.map_or(0.0, |cue| cue.extent),
@@ -426,11 +433,15 @@ fn stable_cues(lyrics: Option<&LyricPresentation>) -> Vec<LyricCueFrame> {
         return Vec::new();
     };
     let anchor = anchor_index(lyrics);
-    let blank = lyrics.current().trim().is_empty();
     let mut cues = Vec::new();
+    let mut previous_was_blank = true;
     for (index, text) in lyrics.timeline.iter().enumerate() {
         let index = index as i64;
-        if text.trim().is_empty() {
+        let blank = text.trim().is_empty();
+        let skip = blank && previous_was_blank;
+        previous_was_blank = blank;
+        // Ignore leading blanks and retain just the first row of each run.
+        if skip {
             continue;
         }
         let role = if index < anchor {
@@ -443,14 +454,14 @@ fn stable_cues(lyrics: Option<&LyricPresentation>) -> Vec<LyricCueFrame> {
         cues.push(LyricCueFrame {
             role,
             index,
-            text: text.clone(),
+            text: if blank { String::new() } else { text.clone() },
             emphasis: f64::from(index == anchor),
-            opacity: 1.0,
+            opacity: f64::from(!blank),
             extent: 1.0,
             color_weights: role.weights(),
         });
     }
-    if blank {
+    if lyrics.preparing {
         cues.push(LyricCueFrame {
             role: LyricColorRole::Focal,
             index: anchor,
@@ -616,6 +627,86 @@ mod tests {
             assert_eq!(midpoint.cause, LyricMotionCause::NaturalCueHandoff);
             assert!(midpoint.cues[0].emphasis < 0.5);
             assert!(midpoint.cues[1].emphasis > 0.5);
+        }
+    }
+
+    #[test]
+    fn intentional_blank_context_keeps_one_row_throughout_handoffs() {
+        let mut presentation = LyricPresentation {
+            timeline_signature: 1,
+            timeline: ["Before", "", " \n ", "After", "", "Later"]
+                .map(str::to_owned)
+                .to_vec(),
+            current_index: 0,
+            preparing: false,
+        };
+        let mut motion = LyricMotion::new(1, Some(&presentation));
+        for current_index in 0..presentation.timeline.len() {
+            presentation.current_index = current_index;
+            let now = Duration::from_secs(current_index as u64);
+            motion.update(1, Some(&presentation), now, true);
+            for offset in [0, 100, 310, 620] {
+                let frame = motion.frame_at(now + Duration::from_millis(offset));
+                let blanks: Vec<_> = frame
+                    .cues
+                    .iter()
+                    .filter(|cue| cue.text.trim().is_empty())
+                    .map(|cue| (cue.index, cue.extent, cue.opacity))
+                    .collect();
+                assert_eq!(blanks, vec![(1, 1.0, 0.0), (4, 1.0, 0.0)]);
+            }
+            let direct = LyricMotion::new(2, Some(&presentation)).frame_at(now);
+            assert_eq!(
+                direct.cues,
+                motion.frame_at(now + CUE_HANDOFF_DURATION).cues
+            );
+            assert_eq!(
+                direct.anchors,
+                vec![(
+                    if current_index == 2 {
+                        1
+                    } else {
+                        current_index as i64
+                    },
+                    1.0
+                )]
+            );
+        }
+    }
+
+    #[test]
+    fn preparation_keeps_a_separate_anchor_and_ignores_leading_blanks() {
+        for leading_blanks in [0, 2] {
+            let mut presentation = LyricPresentation {
+                timeline_signature: 1,
+                timeline: vec![String::new(); leading_blanks],
+                current_index: leading_blanks,
+                preparing: true,
+            };
+            presentation
+                .timeline
+                .extend(["First", "", " \n "].map(str::to_owned));
+            let mut motion = LyricMotion::new(1, Some(&presentation));
+            let prepared = motion.frame_at(Duration::ZERO);
+            let synthetic_index = leading_blanks as i64 - 1;
+            assert_eq!(prepared.anchors, vec![(synthetic_index, 1.0)]);
+            assert_eq!(prepared.cues.len(), 3);
+            assert_eq!(prepared.cues[0].index, synthetic_index);
+            assert_eq!(prepared.cues[0].extent, 1.0);
+            assert_eq!(prepared.cues[0].opacity, 0.0);
+
+            presentation.preparing = false;
+            motion.update(1, Some(&presentation), Duration::ZERO, true);
+            let midpoint = motion.frame_at(CUE_HANDOFF_DURATION / 2);
+            let synthetic = &midpoint.cues[0];
+            assert_eq!(synthetic.index, synthetic_index);
+            assert!(synthetic.extent > 0.0 && synthetic.extent < 1.0);
+            let settled = motion.frame_at(CUE_HANDOFF_DURATION);
+            assert_eq!(settled.cues.len(), 2);
+            assert_eq!(settled.cues[0].text, "First");
+            assert_eq!(settled.cues[1].text, "");
+            assert_eq!(settled.cues[1].extent, 1.0);
+            assert_eq!(settled.cues[1].opacity, 0.0);
         }
     }
 
