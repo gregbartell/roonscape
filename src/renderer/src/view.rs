@@ -202,6 +202,7 @@ struct RenderedLyrics {
     reel_region: gtk::ScrolledWindow,
     reel: Rc<LyricReel>,
     cue_width_px: Cell<i32>,
+    cue_height_px: Cell<i32>,
     typography: Cell<roonscape_renderer::NowPlayingTypography>,
     motion: RefCell<LyricMotion>,
     rendered_composition_progress: Cell<f64>,
@@ -1412,6 +1413,7 @@ fn lyric_view(
         reel_region,
         reel,
         cue_width_px: Cell::new(1),
+        cue_height_px: Cell::new(1),
         typography: Cell::new(
             NowPlayingLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE).typography,
         ),
@@ -1888,7 +1890,7 @@ impl RenderedLyrics {
     fn apply_layout(&self, layout: &NowPlayingLayout) {
         let width = dimension(layout.information.musical_metadata_width_px);
         let height = dimension(layout.metadata_height_budget_px);
-        self.cue_width_px.set(width);
+        self.cue_width_px.set(dimension(layout.lyric_width_px));
         self.typography.set(layout.typography);
         self.root.set_width_request(width);
         self.root.set_height_request(height);
@@ -1910,6 +1912,7 @@ impl RenderedLyrics {
         let reel_height = dimension(layout.metadata_height_budget_px)
             .saturating_sub(masthead_height)
             .saturating_sub(reel_margin_top);
+        self.cue_height_px.set(reel_height.max(1));
         self.reel_region.set_height_request(reel_height);
         self.apply_frame(Duration::ZERO, layout);
     }
@@ -1935,8 +1938,12 @@ impl RenderedLyrics {
 
     fn apply_frame_state(&self, frame: &LyricFrame, layout: &NowPlayingLayout) {
         self.update_rendered_composition_progress(frame.composition_progress);
-        self.reel
-            .update(frame, self.cue_width_px.get(), layout.typography);
+        self.reel.update(
+            frame,
+            self.cue_width_px.get(),
+            self.cue_height_px.get(),
+            layout.typography,
+        );
     }
 
     fn layout_ready(&self) -> bool {
@@ -2908,6 +2915,7 @@ mod tests {
         blanks_retain_the_packed_reel_across_peer_viewports();
         complete_cues_fit_below_the_primary_position();
         reel_handoffs_keep_wrapping_and_outgoing_geometry();
+        composition_transitions_preserve_fitted_cues();
         status_and_timing_replacements_preserve_the_existing_metadata();
         full_field_replacement_never_superimposes_messages();
         lyric_masthead_fits_long_metadata();
@@ -3306,6 +3314,70 @@ mod tests {
             natural_lyrics.next(),
         );
         assert_rendered_composition_ownership(&reduced, 0.0, 1.0, 1.0);
+    }
+
+    fn composition_transitions_preserve_fitted_cues() {
+        for (width, height) in [
+            (1280, 720),
+            (1600, 900),
+            (1600, 1200),
+            (1920, 1200),
+            (2560, 1080),
+            (3840, 2160),
+            (3840, 2400),
+        ] {
+            for fixture in ["lyrics-four-lines.json", "lyrics-two-line.json"] {
+                let presentation = lyric_presentation(fixture);
+                let rendered = lyric_view(
+                    &presentation,
+                    presentation.lyrics.as_deref(),
+                    PresentationPalette::fallback(),
+                    PresentationBehavior::StaticFixture,
+                );
+                let viewport = Viewport::new(width, height);
+                let destination = NowPlayingLayout::for_presentation(&presentation, viewport);
+                allocate_lyrics(&rendered, &destination);
+                let fitted = || {
+                    rendered
+                        .reel
+                        .visible_cues()
+                        .into_iter()
+                        .map(|cue| {
+                            let lines = cue
+                                .layout
+                                .lines_readonly()
+                                .iter()
+                                .map(|line| (line.start_index(), line.length()))
+                                .collect::<Vec<_>>();
+                            (cue.index, lines, cue.scale)
+                        })
+                        .collect::<Vec<_>>()
+                };
+                let expected = fitted();
+                assert!(!expected.is_empty());
+                // Entry, exit, and reversal all use the same fitted destination.
+                for progress in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 0.8, 0.4, 0.6, 1.0] {
+                    let layout = NowPlayingLayout::for_composition_progress(
+                        &presentation,
+                        viewport,
+                        progress,
+                    );
+                    allocate_lyrics(&rendered, &layout);
+                    assert_eq!(
+                        fitted(),
+                        expected,
+                        "{fixture}, {width}x{height}, {progress}"
+                    );
+                }
+                // Allocation changes during travel must not trigger height fitting.
+                rendered.reel.widget.allocate(width as i32, 120, -1, None);
+                let allocated = fitted();
+                assert!(!allocated.is_empty());
+                for cue in allocated {
+                    assert_eq!(&cue, expected.iter().find(|item| item.0 == cue.0).unwrap());
+                }
+            }
+        }
     }
 
     fn reel_capacity_and_primary_position_follow_available_space() {

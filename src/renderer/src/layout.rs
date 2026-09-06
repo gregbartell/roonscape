@@ -603,6 +603,7 @@ pub struct NowPlayingLayout {
     pub metadata_fitting: MetadataFitting,
     pub metadata_optical_correction_px: u32,
     pub metadata_height_budget_px: u32,
+    pub lyric_width_px: u32,
     pub metadata_region_top_viewport_y_px: u32,
     pub metadata_region_bottom_viewport_y_px: u32,
 }
@@ -623,18 +624,13 @@ impl NowPlayingLayout {
     ) -> Self {
         let mut layout = Self::for_viewport(viewport);
         let progress = composition_progress.clamp(0.0, 1.0);
-        let content_width_px = viewport
-            .width_px
-            .saturating_sub(layout.outer_gutter_px.saturating_mul(2))
-            .saturating_sub(layout.column_gap_px);
-        let lyric_artwork_size_px = rounded_fraction(viewport.height_px, 68, 100)
-            .min(rounded_fraction(viewport.width_px, 42, 100));
+        let lyric_artwork_size_px = lyric_artwork_size(viewport);
         let artwork_size_px = interpolate_px(
             layout.artwork_field_width_px,
             lyric_artwork_size_px,
             progress,
         );
-        let lyric_utility_width_px = content_width_px.saturating_sub(lyric_artwork_size_px);
+        let lyric_utility_width_px = layout.lyric_width_px;
         layout.artwork_column_width_px = artwork_size_px;
         layout.artwork_field_width_px = artwork_size_px;
         layout.artwork_field_height_px = artwork_size_px;
@@ -807,6 +803,8 @@ impl NowPlayingLayout {
             metadata_fitting,
             metadata_optical_correction_px: scaled(viewport.height_px, 0.004, 3, 10),
             metadata_height_budget_px: 0,
+            // Keep lyric shaping at the settled composition width during travel.
+            lyric_width_px: content_width_px.saturating_sub(lyric_artwork_size(viewport)),
             metadata_region_top_viewport_y_px: 0,
             metadata_region_bottom_viewport_y_px: 0,
         };
@@ -898,6 +896,10 @@ fn scaled(axis_px: u32, ratio: f64, minimum_px: u32, maximum_px: u32) -> u32 {
     ((axis_px as f64) * ratio)
         .round()
         .clamp(minimum_px as f64, maximum_px as f64) as u32
+}
+
+fn lyric_artwork_size(viewport: Viewport) -> u32 {
+    rounded_fraction(viewport.height_px, 68, 100).min(rounded_fraction(viewport.width_px, 42, 100))
 }
 
 fn rounded_fraction(value: u32, numerator: u32, denominator: u32) -> u32 {

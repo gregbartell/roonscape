@@ -12,9 +12,8 @@ use crate::lyric_motion::{LyricCueFrame, LyricFrame};
 pub(crate) struct LyricReel {
     pub widget: gtk::DrawingArea,
     frame: RefCell<Option<LyricFrame>>,
-    metrics: Cell<Option<(i32, u32)>>,
+    metrics: Cell<Option<(i32, i32, u32)>>,
     layouts: RefCell<HashMap<String, FittedCue>>,
-    fitted_height: Cell<f64>,
     typography: Cell<NowPlayingTypography>,
     palette: PresentationPalette,
     supporting_family: &'static str,
@@ -54,7 +53,6 @@ impl LyricReel {
             frame: RefCell::new(None),
             metrics: Cell::new(None),
             layouts: RefCell::new(HashMap::new()),
-            fitted_height: Cell::new(0.0),
             typography: Cell::new(typography),
             palette,
             supporting_family,
@@ -68,8 +66,14 @@ impl LyricReel {
         reel
     }
 
-    pub fn update(&self, frame: &LyricFrame, width: i32, typography: NowPlayingTypography) {
-        let metrics = (width, typography.lyric_current_px);
+    pub fn update(
+        &self,
+        frame: &LyricFrame,
+        width: i32,
+        height: i32,
+        typography: NowPlayingTypography,
+    ) {
+        let metrics = (width, height, typography.lyric_current_px);
         if self.metrics.get() == Some(metrics)
             && self.typography.get() == typography
             && self.frame.borrow().as_ref() == Some(frame)
@@ -113,18 +117,19 @@ impl LyricReel {
             return Vec::new();
         };
         let typography = self.typography.get();
-        let (width, font_px) = self
-            .metrics
-            .get()
-            .unwrap_or((1, typography.lyric_current_px));
+        let (width, fitting_height, font_px) =
+            self.metrics
+                .get()
+                .unwrap_or((1, 1, typography.lyric_current_px));
         let neighbor_scale = f64::from(typography.lyric_neighbor_px) / f64::from(font_px);
         let gap = f64::from(typography.lyric_neighbor_px) * 0.42;
         let area_height = f64::from(self.widget.height());
         let primary_y = area_height / 3.0;
-        let available_height = (area_height - primary_y - self.fade_height(area_height)).max(0.0);
-        if self.fitted_height.replace(available_height) != available_height {
-            self.layouts.borrow_mut().clear();
-        }
+        // Allocation can change during composition travel. Fit against the
+        // destination budget while placement and clipping follow the allocation.
+        let fitting_height = f64::from(fitting_height);
+        let available_height =
+            (fitting_height * 2.0 / 3.0 - self.fade_height(fitting_height)).max(0.0);
         let mut cues = Vec::with_capacity(frame.cues.len());
         for cue in &frame.cues {
             let fitted = {
