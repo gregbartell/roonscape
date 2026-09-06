@@ -1192,7 +1192,6 @@ fn lyric_presentation(
     lyrics: &SynchronizedLyrics,
     position_seconds: f64,
 ) -> Option<LyricPresentation> {
-    const LOOK_AHEAD_SECONDS: f64 = 0.7;
     const FINAL_HOLD_SECONDS: f64 = 3.0;
     const ENTRY_LEAD_SECONDS: f64 = 1.1;
 
@@ -1202,13 +1201,12 @@ fn lyric_presentation(
         .position(|cue| !cue.text.trim().is_empty())?;
     let first = &lyrics.cues[first_index];
     let last = lyrics.cues.last()?;
-    let selection_position = position_seconds + LOOK_AHEAD_SECONDS;
     if position_seconds + ENTRY_LEAD_SECONDS < first.at_seconds
         || position_seconds > last.at_seconds + FINAL_HOLD_SECONDS
     {
         return None;
     }
-    if selection_position < first.at_seconds {
+    if position_seconds < first.at_seconds {
         return Some(LyricPresentation {
             timeline_signature: lyric_timeline_signature(lyrics),
             timeline: lyrics.cues.iter().map(|cue| cue.text.clone()).collect(),
@@ -1216,22 +1214,12 @@ fn lyric_presentation(
             preparing: true,
         });
     }
-    // Nonblank cues anticipate their sung timestamp; blanks begin at their
-    // own timestamp. This lets advance promotion pass through a short blank
-    // without inventing a forced empty dwell or changing the source timeline.
     let current_index = lyrics
         .cues
         .iter()
         .enumerate()
         .rev()
-        .find(|(_, cue)| {
-            cue.at_seconds
-                <= if cue.text.trim().is_empty() {
-                    position_seconds
-                } else {
-                    selection_position
-                }
-        })
+        .find(|(_, cue)| cue.at_seconds <= position_seconds)
         .map(|(index, _)| index)
         .unwrap_or(first_index);
     let timeline_signature = lyric_timeline_signature(lyrics);

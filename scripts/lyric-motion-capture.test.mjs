@@ -67,11 +67,11 @@ test("plans the maintained Reel Lift tour", () => {
       .filter(({ name }) => name.startsWith("natural-cue-handoff-"))
       .map(({ atSeconds, name }) => ({ atSeconds, name })),
     [
-      { atSeconds: 3.25, name: "natural-cue-handoff-before" },
-      { atSeconds: 3.4, name: "natural-cue-handoff-outgoing" },
-      { atSeconds: 3.62, name: "natural-cue-handoff-midpoint" },
-      { atSeconds: 3.78, name: "natural-cue-handoff-incoming" },
-      { atSeconds: 3.95, name: "natural-cue-handoff-settled" },
+      { atSeconds: 3.95, name: "natural-cue-handoff-before" },
+      { atSeconds: 4.1, name: "natural-cue-handoff-outgoing" },
+      { atSeconds: 4.32, name: "natural-cue-handoff-midpoint" },
+      { atSeconds: 4.48, name: "natural-cue-handoff-incoming" },
+      { atSeconds: 4.65, name: "natural-cue-handoff-settled" },
     ],
   );
   assert.ok(
@@ -243,7 +243,7 @@ test("plans pause-during-handoff evidence", () => {
     parseLyricMotionCaptureRequest(["--example", "paused-handoff"]),
   );
   assert.deepEqual(paused.publications.at(-1), {
-    atSeconds: 3.7,
+    atSeconds: 4.18,
     fixture: "src/shared/fixtures/lyrics-reel-lift-tour-paused.json",
     positionSeconds: 3.68,
   });
@@ -433,7 +433,7 @@ test("aligns entry review frames to the renderer's recorded paint", () => {
     [
       { atSeconds: 1.25, name: "lyrics-entry-before" },
       { atSeconds: 1.6, name: "lyrics-entry-midpoint" },
-      { atSeconds: 3.62, name: "natural-cue-handoff-midpoint" },
+      { atSeconds: 4.32, name: "natural-cue-handoff-midpoint" },
     ],
     [
       {
@@ -444,7 +444,7 @@ test("aligns entry review frames to the renderer's recorded paint", () => {
   );
   assert.deepEqual(
     aligned.map(({ atSeconds }) => atSeconds),
-    [1.65, 1.99, 3.62],
+    [1.65, 1.99, 4.32],
   );
 });
 

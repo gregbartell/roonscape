@@ -2914,7 +2914,7 @@ mod tests {
         composed_lyrics_remain_above_footer();
         ordinary_metadata_remains_stable_on_playback_updates();
         timing_variants_keep_allocated_content_stable();
-        short_blanks_promote_without_a_skipped_cue_cut();
+        short_blanks_return_during_their_departure();
         a_seek_within_the_incoming_cue_settles_its_handoff();
 
         blank_promotion_preserves_context_and_an_interrupted_departure();
@@ -3940,7 +3940,7 @@ mod tests {
         assert_eq!(frame.cause, LyricMotionCause::ExternalSeek);
     }
 
-    fn short_blanks_promote_without_a_skipped_cue_cut() {
+    fn short_blanks_return_during_their_departure() {
         let mut snapshot =
             parse_snapshot(include_str!("../../shared/fixtures/lyrics-one-line.json")).unwrap();
         snapshot.lyrics = Some(roonscape_renderer::SynchronizedLyrics {
@@ -3966,7 +3966,7 @@ mod tests {
             .position
             .as_mut()
             .unwrap()
-            .seconds = 9.4;
+            .seconds = 9.9;
         let Presentation::NowPlaying(before) = presentation_from_snapshot(&snapshot).unwrap()
         else {
             panic!("Now Playing");
@@ -3980,27 +3980,39 @@ mod tests {
             std::time::Duration::ZERO,
             Some(viewport),
         );
-        snapshot
-            .timing
-            .as_mut()
-            .unwrap()
-            .position
-            .as_mut()
-            .unwrap()
-            .seconds = 9.7;
-        let after = presentation_from_snapshot(&snapshot).unwrap();
-        rendered.update_in_place(
-            1,
-            &after,
-            std::time::Duration::from_millis(300),
-            Some(viewport),
-        );
-        let frame = lyric_motion_frame(&rendered, std::time::Duration::from_millis(300));
-        assert!(
-            frame.cue_motion_active,
-            "short blanks preserve advance promotion: {frame:?}"
-        );
-        assert_eq!(frame.cause, LyricMotionCause::NaturalCueHandoff);
+        for (seconds, milliseconds, expected_cause) in [
+            (9.999, 99, LyricMotionCause::Settled),
+            (10.0, 100, LyricMotionCause::IntentionalBlankEntry),
+            (10.299, 399, LyricMotionCause::IntentionalBlankEntry),
+            (10.3, 400, LyricMotionCause::IntentionalBlankExit),
+        ] {
+            snapshot
+                .timing
+                .as_mut()
+                .unwrap()
+                .position
+                .as_mut()
+                .unwrap()
+                .seconds = seconds;
+            let after = presentation_from_snapshot(&snapshot).unwrap();
+            let at = std::time::Duration::from_millis(milliseconds);
+            let departing = lyric_motion_frame(&rendered, at);
+            rendered.update_in_place(1, &after, at, Some(viewport));
+            let frame = lyric_motion_frame(&rendered, at);
+            assert_eq!(frame.cause, expected_cause, "at {seconds}s");
+            assert_eq!(frame.cue_motion_active, milliseconds >= 100);
+            if expected_cause == LyricMotionCause::IntentionalBlankExit {
+                assert_eq!(
+                    departing.anchors,
+                    frame
+                        .anchors
+                        .into_iter()
+                        .filter(|(_, weight)| *weight > 0.0)
+                        .collect::<Vec<_>>(),
+                    "returning lyrics continue from the unfinished blank departure"
+                );
+            }
+        }
     }
 
     #[test]

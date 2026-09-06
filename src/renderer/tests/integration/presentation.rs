@@ -95,7 +95,7 @@ fn now_playing(
 }
 
 #[test]
-fn selects_synchronized_lyrics_with_lookahead_and_a_bounded_final_hold() {
+fn selects_synchronized_lyrics_at_cue_timestamps_with_a_bounded_final_hold() {
     let snapshot = snapshot_with_lyrics("playing.json", &[(172.0, "First"), (175.0, "Final")]);
     let state = PresentationState::new(snapshot, presentation_time(0, PLAYING_SAMPLED_AT))
         .expect("lyric snapshot should be presentable");
@@ -112,7 +112,7 @@ fn selects_synchronized_lyrics_with_lookahead_and_a_bounded_final_hold() {
     );
 
     let Presentation::NowPlaying(active) = state
-        .presentation_at(Duration::from_millis(400))
+        .presentation_at(Duration::from_millis(1_000))
         .expect("active lyrics should be presentable")
     else {
         panic!("Playing should use Now Playing");
@@ -121,6 +121,22 @@ fn selects_synchronized_lyrics_with_lookahead_and_a_bounded_final_hold() {
         active.lyrics.as_ref().map(|lyrics| lyrics.current()),
         Some("First")
     );
+
+    for (milliseconds, expected) in [
+        (999, ""),
+        (1_001, "First"),
+        (3_999, "First"),
+        (4_000, "Final"),
+        (7_000, "Final"),
+    ] {
+        let Presentation::NowPlaying(presentation) = state
+            .presentation_at(Duration::from_millis(milliseconds))
+            .unwrap()
+        else {
+            panic!("Now Playing");
+        };
+        assert_eq!(presentation.lyrics.unwrap().current(), expected);
+    }
 
     let Presentation::NowPlaying(after) = state
         .presentation_at(Duration::from_millis(7_100))
@@ -297,7 +313,9 @@ fn prepares_before_first_cue_and_ignores_all_leading_blanks() {
         for (seconds, expected) in [
             (8.8, None),
             (9.0, Some("")),
-            (9.4, Some("Opening")),
+            (9.4, Some("")),
+            (9.999, Some("")),
+            (10.0, Some("Opening")),
             (23.1, None),
         ] {
             snapshot
@@ -329,7 +347,7 @@ fn prepares_before_first_cue_and_ignores_all_leading_blanks() {
 }
 
 #[test]
-fn short_blanks_preserve_advance_promotion_without_retiring_the_current_cue_early() {
+fn short_blanks_and_returning_lyrics_activate_at_their_timestamps() {
     let mut snapshot = snapshot_with_lyrics(
         "paused.json",
         &[
@@ -342,11 +360,14 @@ fn short_blanks_preserve_advance_promotion_without_retiring_the_current_cue_earl
     );
     for (seconds, expected) in [
         (9.4, "Before"),
-        (9.7, "After"),
-        (10.0, "After"),
+        (9.999, "Before"),
+        (10.0, ""),
+        (10.299, ""),
+        (10.3, "After"),
         (14.8, "After"),
         (15.0, ""),
-        (19.4, "Final"),
+        (19.999, ""),
+        (20.0, "Final"),
     ] {
         snapshot
             .timing

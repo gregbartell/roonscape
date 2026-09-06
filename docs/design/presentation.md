@@ -110,9 +110,12 @@ cues around an empty Primary Position, even after a tall cue, using the same
 bounds, surrounding emphasis, partial-cue clipping, and edge fades as the
 nonblank Lyric Reel. Consecutive blanks retain that arrangement without
 repeated lifts or additional empty rows, including on direct seeks. Leading blanks
-are ignored and all-blank timelines retain ordinary Now Playing. Short blanks
-preserve advance promotion without a forced empty dwell. The focal size is not
-reduced to retain context. Cues have no rendered-line cap or lyric ellipsis.
+are ignored and all-blank timelines retain ordinary Now Playing. Every Cue,
+including an Intentional Blank, activates at its source timestamp. Short blanks
+may be interrupted by the next cue before their departure settles; returning
+lyrics continue from the displayed geometry without a forced empty dwell.
+The focal size is not reduced to retain context. Cues have no rendered-line cap
+or lyric ellipsis.
 When complete active text would exceed the area below the Primary Position,
 fit the complete cue using the full column width and the height above the
 bottom edge fade. Establish that wrapping before motion, and scale the whole
@@ -126,7 +129,7 @@ masthead and reel without duplicating artwork, Presentation Status, or footer.
 Ordinary metadata finishes fading out before the compact masthead and lyric
 reel fade in. Exit reverses this sequence, so departing cues and compact Titles
 never compete with the returning large Title.
-Preparation starts before the first nonblank cue's advance promotion; its
+Preparation starts before the first nonblank cue's timestamp; its
 arrival may overlap the geometry movement. Internal gaps and blanks retain one
 continuous composition interval, ending after the hold following the final
 timeline entry, including trailing blanks.
