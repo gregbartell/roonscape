@@ -1472,7 +1472,10 @@ fn idle_starting_and_playing_share_the_incomplete_timing_grace() {
                     presentation_time(1, PLAYING_SAMPLED_AT + 1),
                 )
                 .expect("Starting should begin timing grace");
-            assert_eq!(now_playing(&state, 1).progress, None);
+            assert_eq!(
+                now_playing(&state, 1).progress.is_some(),
+                duration.is_some()
+            );
             assert_eq!(now_playing(&state, 1).activity, None);
             if playing_at == 7 {
                 assert_eq!(now_playing(&state, 6).activity, None);
@@ -1495,7 +1498,7 @@ fn idle_starting_and_playing_share_the_incomplete_timing_grace() {
                 else {
                     panic!("Now Playing should remain visible");
                 };
-                assert_eq!(before.progress, None);
+                assert_eq!(before.progress.is_some(), duration.is_some());
                 assert_eq!(before.activity, None);
             }
             let expired = now_playing(&state, playing_at.max(6));
@@ -1525,7 +1528,10 @@ fn authoritative_timing_arrival_replaces_quiet_grace_or_expired_activity() {
                 )
                 .unwrap();
             let before = now_playing(&state, arrives_at);
-            assert_eq!(before.progress, None);
+            assert_eq!(
+                before.progress.is_some(),
+                duration.is_some() && arrives_at < 6
+            );
             assert_eq!(before.activity.is_some(), arrives_at >= 6);
             state
                 .update(
@@ -1602,6 +1608,74 @@ fn continues_from_each_retained_authoritative_timing_dimension_and_reconciles_in
             .map(|progress| progress.elapsed),
         Some("0:05".to_owned())
     );
+}
+
+#[test]
+fn seeds_first_track_only_while_the_idle_observation_remains_continuous() {
+    for (intermediate_fixture, changes_zone, expected) in [
+        ("loading-empty.json", false, Some("0:00")),
+        ("playing-empty.json", false, Some("0:00")),
+        ("loading-empty.json", true, None),
+        ("disconnected.json", false, None),
+        ("output-unavailable.json", false, None),
+    ] {
+        let idle = snapshot_with_timing("stopped.json", 1, None, None);
+        let mut state =
+            PresentationState::new(idle, presentation_time(0, PLAYING_SAMPLED_AT)).unwrap();
+        let mut intermediate = snapshot_with_timing(intermediate_fixture, 2, None, None);
+        if changes_zone {
+            intermediate.tracked_zone.as_mut().unwrap().id = "zone-kitchen".to_owned();
+        }
+        state
+            .update(intermediate, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+            .unwrap();
+        state
+            .update(
+                snapshot_with_timing("playing.json", 3, None, Some(100.0)),
+                presentation_time(2, PLAYING_SAMPLED_AT + 2),
+            )
+            .unwrap();
+        assert_eq!(
+            now_playing(&state, 2)
+                .progress
+                .map(|progress| progress.elapsed),
+            expected.map(str::to_owned),
+            "{intermediate_fixture}, changes_zone={changes_zone}"
+        );
+    }
+}
+
+#[test]
+fn zero_anchors_first_track_after_idle_until_expiry() {
+    for fixture_name in ["playing.json", "loading.json", "paused.json"] {
+        let idle = snapshot_with_timing("stopped.json", 1, None, None);
+        let mut state = PresentationState::new(idle, presentation_time(0, PLAYING_SAMPLED_AT))
+            .expect("Idle should be presentable");
+        state
+            .update(
+                snapshot_with_timing(fixture_name, 2, None, Some(100.0)),
+                presentation_time(1, PLAYING_SAMPLED_AT + 1),
+            )
+            .expect("first track should be presentable");
+        assert_eq!(
+            now_playing(&state, 1)
+                .progress
+                .map(|progress| progress.elapsed),
+            Some("0:00".to_owned())
+        );
+        let expected = if fixture_name == "playing.json" {
+            "0:02"
+        } else {
+            "0:00"
+        };
+        assert_eq!(
+            now_playing(&state, 3)
+                .progress
+                .map(|progress| progress.elapsed),
+            Some(expected.to_owned())
+        );
+        assert_eq!(now_playing(&state, 6).progress, None);
+    }
 }
 
 #[test]
@@ -1945,11 +2019,19 @@ fn discards_provisional_timing_on_idle_unavailability_and_absent_now_playing() {
         state
             .update(resumed, presentation_time(3, PLAYING_SAMPLED_AT + 3))
             .expect("resumed partial timing should be accepted");
-        assert_eq!(
-            now_playing(&state, 3).progress,
-            None,
-            "{discard_fixture} should discard and block retained timing"
-        );
+        let progress = now_playing(&state, 3).progress;
+        if discard_fixture == "stopped.json" {
+            assert_eq!(
+                progress.unwrap().elapsed,
+                "0:00",
+                "Idle should seed fresh timing"
+            );
+        } else {
+            assert_eq!(
+                progress, None,
+                "{discard_fixture} should block retained timing"
+            );
+        }
     }
 }
 

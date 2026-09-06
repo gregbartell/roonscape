@@ -279,6 +279,7 @@ struct TimingContinuity {
     retained_duration_seconds: Option<f64>,
     grace: TimingGrace,
     known_now_playing: Option<KnownNowPlaying>,
+    awaiting_first_track: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -336,6 +337,8 @@ impl TimingContinuity {
             retained_duration_seconds,
             grace,
             known_now_playing: snapshot.now_playing.as_ref().map(KnownNowPlaying::from),
+            awaiting_first_track: snapshot.availability == Availability::Available
+                && snapshot.playback == Some(Playback::Stopped),
         })
     }
 
@@ -345,6 +348,7 @@ impl TimingContinuity {
             retained_duration_seconds: None,
             grace: TimingGrace::Expired,
             known_now_playing: None,
+            awaiting_first_track: false,
         }
     }
 
@@ -369,11 +373,16 @@ impl TimingContinuity {
                     .is_some_and(|next| known.is_compatible_with(next))
             });
         let now_playing_changed = zone_continues
-            && self.known_now_playing.is_some()
             && next_known.is_some()
-            && !now_playing_continues;
+            && (self.awaiting_first_track
+                || (self.known_now_playing.is_some() && !now_playing_continues));
         let keeps_timing =
             can_observe_timing(next) && (now_playing_continues || now_playing_changed);
+
+        // Starting can arrive before Now Playing; retain the observed Idle boundary.
+        self.awaiting_first_track = next.availability == Availability::Available
+            && (next.playback == Some(Playback::Stopped)
+                || (zone_continues && self.awaiting_first_track && next_known.is_none()));
 
         if self.grace.has_expired_at(anchored_at.monotonic) {
             self.grace = TimingGrace::Expired;

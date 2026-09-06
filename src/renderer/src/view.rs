@@ -1666,7 +1666,7 @@ impl RenderedMetadata {
         if self.timing_fade.update(
             TimingContent::for_presentation(presentation),
             now,
-            animations_enabled(self.lyrics.behavior),
+            animations_enabled(self.lyrics.behavior) && presentation.progress.is_none(),
         ) {
             if let Some(progress) = self.progress.take() {
                 self.timing_slot.remove_overlay(&progress.root);
@@ -3687,7 +3687,6 @@ mod tests {
             source.status = unavailable.status;
             source.activity = unavailable.activity;
             let old_status = source.status.label;
-            let had_activity = source.activity.is_some();
             let target = lyric_presentation("playing.json");
             assert_eq!(
                 classify_presentation_update(
@@ -3722,20 +3721,21 @@ mod tests {
                 let status = &metadata.presentation_status;
                 if millis < 225 {
                     assert_eq!(status.label.text(), old_status);
-                    assert_eq!(metadata.activity.is_some(), had_activity);
-                    assert!(metadata.progress.is_none());
                 } else {
                     assert_eq!(status.label.text(), "PLAYING");
-                    assert!(metadata.progress.is_some());
-                    assert!(metadata.activity.is_none());
                 }
                 if millis == 225 {
                     assert_eq!(
                         status.root.opacity(),
                         if old_status == "PLAYING" { 1.0 } else { 0.0 }
                     );
-                    assert_eq!(metadata.timing_slot.opacity(), 0.0);
                 }
+                assert!(
+                    metadata.progress.is_some(),
+                    "determinate timing appears immediately"
+                );
+                assert!(metadata.activity.is_none());
+                assert_eq!(metadata.timing_slot.opacity(), 1.0);
                 if let Some(child) = metadata.timing_slot.first_child() {
                     assert!(
                         child.next_sibling().is_none(),

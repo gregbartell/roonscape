@@ -236,6 +236,9 @@ viewports.
 During the existing five-second timing grace, show supported Provisional Timing
 when it supplies determinate progress; otherwise leave the timing area quiet.
 Starting and Playing share this grace, so entering Playing does not restart it.
+When playback begins after Idle in the same Tracked Zone, seed Provisional
+Timing at zero if position is absent; expose it only when duration is known.
+Initial subscription, reconnection, and Tracked Zone changes do not seed zero.
 After grace expires, Playing without determinate timing uses the same footer
 role for a compact activity treatment instead of fabricating a timeline.
 Seven rounded vertical bars use symmetrical reference heights of
@@ -273,8 +276,9 @@ Motion is restrained to information that changes over time or protects the
 display. Determinate progress advances in place while Playing and remains
 frozen while Paused. Status and timing updates retain unchanged text and its
 position in the current composition. Replacement text in the same space fades
-out completely before its replacement fades in; numeric progress advances in
-place. A transition to a Full-field Presentation retires outgoing text,
+out completely before its replacement fades in; determinate timing appears
+immediately when available, then numeric progress advances in place.
+A transition to a Full-field Presentation retires outgoing text,
 crossfades the background with text absent, then fades replacement text in.
 Availability loss and disconnection retain that sequence. Now Playing
 Transitions follow the coordinated reveal below; Presentation Status changes
