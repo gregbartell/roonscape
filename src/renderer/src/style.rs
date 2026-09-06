@@ -4,14 +4,29 @@ use crate::{FullFieldLayout, NowPlayingLayout, PresentationPalette, Rgb, Typogra
 pub enum PresentationStyleLayer {
     Current,
     Outgoing,
+    Retained(usize),
 }
 
 impl PresentationStyleLayer {
-    pub const fn class_name(self) -> &'static str {
+    pub fn class_name(self) -> String {
         match self {
-            Self::Current => "presentation-current",
-            Self::Outgoing => "presentation-outgoing",
+            Self::Current => "presentation-current".into(),
+            Self::Outgoing => "presentation-outgoing".into(),
+            Self::Retained(index) => format!("presentation-retained-{index}"),
         }
+    }
+
+    pub fn to_css(
+        self,
+        palette: PresentationPalette,
+        layout: &NowPlayingLayout,
+        full_field_layout: &FullFieldLayout,
+    ) -> String {
+        let mut styles = presentation_palette_styles(self, palette, layout, full_field_layout);
+        styles.push_str(&diagnostics_palette_styles(diagnostics_style(
+            self, palette,
+        )));
+        styles
     }
 }
 
@@ -76,15 +91,7 @@ impl PresentationTransitionStyles {
     pub fn to_css(self, layout: &NowPlayingLayout, full_field_layout: &FullFieldLayout) -> String {
         let mut styles = String::new();
         for (layer, palette) in self.layers() {
-            styles.push_str(&presentation_palette_styles(
-                layer,
-                palette,
-                layout,
-                full_field_layout,
-            ));
-        }
-        for diagnostics in self.diagnostics() {
-            styles.push_str(&diagnostics_palette_styles(diagnostics));
+            styles.push_str(&layer.to_css(palette, layout, full_field_layout));
         }
         styles
     }

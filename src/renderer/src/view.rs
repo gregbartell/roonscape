@@ -353,7 +353,7 @@ impl PresentationView {
         );
         rendered
             .root
-            .add_css_class(PresentationStyleLayer::Current.class_name());
+            .add_css_class(&PresentationStyleLayer::Current.class_name());
         let transition = PresentationTransition::new(revision, rendered);
         let layers = gtk::Overlay::new();
         layers.set_hexpand(true);
@@ -483,11 +483,11 @@ impl PresentationView {
         outgoing
             .value()
             .root
-            .remove_css_class(PresentationStyleLayer::Current.class_name());
+            .remove_css_class(&PresentationStyleLayer::Current.class_name());
         outgoing
             .value()
             .root
-            .add_css_class(PresentationStyleLayer::Outgoing.class_name());
+            .add_css_class(&PresentationStyleLayer::Outgoing.class_name());
         self.reveal_current();
     }
 
@@ -541,11 +541,10 @@ impl PresentationView {
                 self.remove_layer(outgoing);
             } else {
                 let root = &outgoing.value().root;
-                root.remove_css_class(PresentationStyleLayer::Outgoing.class_name());
-                root.add_css_class(&format!(
-                    "presentation-retained-{}",
-                    self.retained_layers.len()
-                ));
+                root.remove_css_class(&PresentationStyleLayer::Outgoing.class_name());
+                root.add_css_class(
+                    &PresentationStyleLayer::Retained(self.retained_layers.len()).class_name(),
+                );
                 self.retained_layers.push(outgoing);
             }
         }
@@ -671,14 +670,11 @@ impl PresentationView {
         );
         let mut css = styles.to_css(&layout, &full_field_layout);
         for (index, layer) in self.retained_layers.iter().enumerate() {
-            css.push_str(
-                &PresentationTransitionStyles::new(layer.value().palette, None)
-                    .to_css(&layout, &full_field_layout)
-                    .replace(
-                        PresentationStyleLayer::Current.class_name(),
-                        &format!("presentation-retained-{index}"),
-                    ),
-            );
+            css.push_str(&PresentationStyleLayer::Retained(index).to_css(
+                layer.value().palette,
+                &layout,
+                &full_field_layout,
+            ));
         }
         self.palette_provider.load_from_data(&css);
     }
@@ -894,7 +890,7 @@ fn render_current_from_resolved(
     );
     rendered
         .root
-        .add_css_class(PresentationStyleLayer::Current.class_name());
+        .add_css_class(&PresentationStyleLayer::Current.class_name());
     rendered
 }
 
