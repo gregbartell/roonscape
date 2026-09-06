@@ -30,9 +30,12 @@ Add `--resolution WIDTHxHEIGHT`, `--fullscreen`, `--duration SECONDS`, or
 `--roon-server HOST` only when the request calls for them. The helper
 preflights its optional tools and existing RoonScape setup, refuses to disturb
 another Live Mode session, builds the app, starts an isolated X display, and
-records losslessly at 20 fps. It prints the session directory before
-preparation and prints `runtime-ready` when visual inspection can begin. Its
-two-minute recording timeout is a hard limit.
+records losslessly at 20 fps. The recorder must capture its first frame before
+RoonScape launches, preserving a pre-window baseline and early startup. It
+prints the session directory before preparation and prints `runtime-ready`
+when the RoonScape window is ready for visual inspection. Startup has already
+been recorded by then. The two-minute recording timeout includes startup and
+is a hard limit.
 
 While the record command continues, capture the current observation frame:
 
@@ -40,10 +43,12 @@ While the record command continues, capture the current observation frame:
 node .agents/skills/capture-live-session/scripts/live-capture-session.mjs snapshot --session <session-directory>
 ```
 
-Inspect the printed image path. Poll often enough to establish that the
-requested pre-event presentation is stable. Only then tell the user that
-capture is ready. If the event is already underway or no trustworthy baseline
-appears, stop and treat the session as incomplete.
+Inspect the printed image path. For an externally triggered event, poll until
+the requested pre-event presentation is stable, then tell the user capture is
+ready. If that event is already underway or no trustworthy baseline appears,
+stop and treat the session as incomplete. When startup itself is the event,
+observe its concluding state now and validate the recorded pre-window baseline
+during curation.
 
 Continue inspecting observation frames while the external actor causes the
 event. Stop autonomously when the requested concluding state is clear, or use

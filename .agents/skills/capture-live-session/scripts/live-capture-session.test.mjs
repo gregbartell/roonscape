@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
@@ -20,6 +20,8 @@ import {
   renderReadme,
   validateSelection,
 } from "./live-capture-session.mjs";
+
+import { findExecutable } from "../../../../scripts/native-test-environment.mjs";
 
 const executeFile = promisify(execFile);
 const scratchRoot = "/var/tmp/codex/roonscape";
@@ -320,3 +322,181 @@ test("publication writes frames, timeline, and timestamped overview without over
   await finalizeSession(sessionDirectory);
   await assert.rejects(readFile(path.join(sessionDirectory, "session.json")));
 });
+
+for (const recorderFailure of [false, true]) {
+  test(
+    recorderFailure
+      ? "recorder failure prevents application startup"
+      : "record captures a baseline before application startup",
+    async (context) => {
+      await mkdir(scratchRoot, { recursive: true });
+      const directory = await mkdtemp(path.join(scratchRoot, "task.test."));
+      let sessionDirectory;
+      context.after(async () => {
+        await rm(directory, { recursive: true, force: true });
+        if (sessionDirectory !== undefined)
+          await rm(sessionDirectory, { recursive: true, force: true });
+      });
+      const source = path.join(directory, "source");
+      const helperDirectory = path.join(
+        source,
+        ".agents/skills/capture-live-session/scripts",
+      );
+      const bin = path.join(directory, "bin");
+      for (const subdirectory of [
+        helperDirectory,
+        bin,
+        path.join(source, "scripts"),
+        path.join(source, "src/launcher"),
+      ])
+        await mkdir(subdirectory, { recursive: true });
+      await cp(
+        new URL("./live-capture-session.mjs", import.meta.url),
+        path.join(helperDirectory, "live-capture-session.mjs"),
+      );
+      await cp(
+        new URL("../../../../scripts/process-harness.mjs", import.meta.url),
+        path.join(source, "scripts/process-harness.mjs"),
+      );
+      await writeFile(
+        path.join(directory, "display.json"),
+        JSON.stringify({ trackedOutputId: "test-output" }),
+      );
+      await writeFile(
+        path.join(directory, "authorization.json"),
+        JSON.stringify({ synthetic: true }),
+      );
+      const ffmpegPath = findExecutable("ffmpeg");
+      const video = path.join(directory, "synthetic.mkv");
+      await executeFile(ffmpegPath, [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:size=1280x720:rate=20:duration=0.15",
+        "-c:v",
+        "ffv1",
+        "-level",
+        "3",
+        "-g",
+        "1",
+        video,
+      ]);
+      // Exercise the real record command with synthetic native boundaries.
+      // The delayed first frame must precede application launch; process spawn
+      // or an initial zero-frame progress report is not sufficient readiness.
+      const stub = `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
+const directory = process.env.CAPTURE_TEST_DIRECTORY;
+const trace = (event) => fs.appendFileSync(path.join(directory, "trace"), event + "\\n");
+switch (path.basename(process.argv[1])) {
+  case "npm": case "cargo": break;
+  case "Xvfb":
+    process.stdout.write("91\\n");
+    setInterval(() => {}, 1000);
+    break;
+  case "xwininfo":
+    process.stdout.write("Width: 1280\\nHeight: 720\\n");
+    break;
+  case "roonscape":
+    trace("application-started");
+    setTimeout(() => {
+      const session = fs.readFileSync(path.join(directory, "session-path"), "utf8");
+      fs.writeFileSync(path.join(session, "stop-requested"), "");
+    }, 800);
+    setInterval(() => {}, 1000);
+    break;
+  case "ffmpeg":
+    if (!process.argv.includes("x11grab")) {
+      const result = spawnSync(process.env.CAPTURE_TEST_FFMPEG, process.argv.slice(2), { stdio: "inherit" });
+      process.exit(result.status ?? 1);
+    }
+    trace("recorder-started");
+    if (process.env.CAPTURE_TEST_RECORDER_FAILURE === "1") process.exit(17);
+    fs.writeFileSync(path.join(directory, "session-path"), path.dirname(process.argv.at(-1)));
+    fs.copyFileSync(path.join(directory, "synthetic.mkv"), process.argv.at(-1));
+    process.stdout.write("frame=0\\nprogress=continue\\n");
+    setTimeout(() => {
+      trace("baseline-captured");
+      process.stdout.write("frame=1\\nprogress=continue\\n");
+    }, 600);
+    setInterval(() => {}, 1000);
+    break;
+}
+`;
+      for (const name of [
+        "npm",
+        "cargo",
+        "Xvfb",
+        "xwininfo",
+        "ffmpeg",
+        "roonscape",
+      ]) {
+        await writeFile(
+          name === "roonscape"
+            ? path.join(source, "src/launcher/roonscape")
+            : path.join(bin, name),
+          stub,
+          { mode: 0o755 },
+        );
+      }
+      let result;
+      try {
+        result = await executeFile(
+          process.execPath,
+          [
+            path.join(helperDirectory, "live-capture-session.mjs"),
+            "record",
+            "--event",
+            "synthetic startup",
+            "--config",
+            path.join(directory, "display.json"),
+          ],
+          {
+            cwd: source,
+            env: {
+              ...process.env,
+              PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+              XDG_RUNTIME_DIR: path.join(directory, "runtime"),
+              ROONSCAPE_AUTHORIZATION_FILE: path.join(
+                directory,
+                "authorization.json",
+              ),
+              CAPTURE_TEST_DIRECTORY: directory,
+              CAPTURE_TEST_FFMPEG: ffmpegPath,
+              CAPTURE_TEST_RECORDER_FAILURE: recorderFailure ? "1" : "0",
+            },
+            timeout: 15_000,
+          },
+        );
+      } catch (error) {
+        result = error;
+      }
+      const events = result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      sessionDirectory = events.find(({ type }) => type === "session")?.path;
+      const trace = (await readFile(path.join(directory, "trace"), "utf8"))
+        .trim()
+        .split("\n");
+      if (recorderFailure) {
+        assert.equal(result.code, 1, result.stderr);
+        assert.deepEqual(trace, ["recorder-started"]);
+        assert.ok(!events.some(({ type }) => type === "runtime-ready"));
+      } else {
+        assert.equal(result.code, undefined, result.stderr);
+        assert.deepEqual(trace, [
+          "recorder-started",
+          "baseline-captured",
+          "application-started",
+        ]);
+        assert.equal(events.at(-1).type, "recorded");
+      }
+    },
+  );
+}

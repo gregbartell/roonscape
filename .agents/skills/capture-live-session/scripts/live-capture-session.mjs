@@ -24,6 +24,7 @@ import {
   startMonitoredProcess,
   startXvfbDisplay,
   stopProcess,
+  waitFor,
 } from "../../../../scripts/process-harness.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -395,13 +396,6 @@ async function recordSession(options) {
     if (options.roonServerHost) {
       launcherArguments.push("--roon-server", options.roonServerHost);
     }
-    roonscape = startMonitoredProcess(
-      path.join(repositoryRoot, "src/launcher/roonscape"),
-      launcherArguments,
-      { cwd: repositoryRoot, environment },
-    );
-    await roonscape.spawned;
-    await waitForWindow(roonscape, environment, options.resolution);
     const recordingLimitSeconds =
       options.durationSeconds ?? maximumRecordingSeconds;
     const recorderStartedAt = Date.now();
@@ -413,8 +407,29 @@ async function recordSession(options) {
       recordingLimitSeconds,
     );
     await recorder.spawned;
-    await delay(250);
-    assertProcessRunning(recorder, "Live Capture Session recorder");
+    // A spawned FFmpeg process may not have captured anything yet. Preserve a
+    // pre-window baseline before allowing RoonScape's startup to begin.
+    await waitFor(
+      () => {
+        if (
+          !/(?:^|\n)frame=\s*[1-9]\d*\r?\n/.test(
+            recorder.capturedStandardOutput,
+          )
+        )
+          throw new Error("recorder has not captured its first frame");
+      },
+      recorder,
+      "Live Capture Session first frame",
+      { timeoutMilliseconds: Math.min(5_000, recordingLimitSeconds * 1000) },
+    );
+
+    roonscape = startMonitoredProcess(
+      path.join(repositoryRoot, "src/launcher/roonscape"),
+      launcherArguments,
+      { cwd: repositoryRoot, environment },
+    );
+    await roonscape.spawned;
+    await waitForWindow(roonscape, environment, options.resolution);
 
     state = {
       ...state,
@@ -673,6 +688,10 @@ function startRecorder(
       "-hide_banner",
       "-loglevel",
       "warning",
+      "-stats_period",
+      "0.05",
+      "-progress",
+      "pipe:1",
       "-nostdin",
       "-f",
       "x11grab",
