@@ -2,7 +2,7 @@ use std::mem;
 use std::time::Duration;
 
 const FADE_PHASE_DURATION: Duration = Duration::from_millis(225);
-const PRESENTATION_TRANSITION_DURATION: Duration = Duration::from_millis(675);
+const PRESENTATION_TRANSITION_DURATION: Duration = Duration::from_millis(450);
 
 /// Retains the displayed value until it is invisible, then reveals the latest target.
 #[derive(Debug)]
@@ -95,6 +95,7 @@ pub struct PresentationTransition<T> {
     current: PresentationRevision<T>,
     outgoing: Option<PresentationRevision<T>>,
     started_at: Option<Duration>,
+    duration: Duration,
 }
 
 impl<T> PresentationTransition<T> {
@@ -103,6 +104,7 @@ impl<T> PresentationTransition<T> {
             current: PresentationRevision { revision, value },
             outgoing: None,
             started_at: None,
+            duration: PRESENTATION_TRANSITION_DURATION,
         }
     }
 
@@ -112,6 +114,22 @@ impl<T> PresentationTransition<T> {
         value: T,
         started_at: Duration,
     ) -> Option<PresentationRevision<T>> {
+        self.begin_with_duration(
+            revision,
+            value,
+            started_at,
+            PRESENTATION_TRANSITION_DURATION,
+        )
+    }
+
+    pub fn begin_with_duration(
+        &mut self,
+        revision: u64,
+        value: T,
+        started_at: Duration,
+        duration: Duration,
+    ) -> Option<PresentationRevision<T>> {
+        self.duration = duration;
         let discarded = self.outgoing.take();
         let outgoing = mem::replace(&mut self.current, PresentationRevision { revision, value });
         self.outgoing = Some(outgoing);
@@ -136,7 +154,7 @@ impl<T> PresentationTransition<T> {
 
     pub fn finish(&mut self, now: Duration) -> Option<PresentationRevision<T>> {
         let started_at = self.started_at?;
-        if now.saturating_sub(started_at) < PRESENTATION_TRANSITION_DURATION {
+        if now.saturating_sub(started_at) < self.duration {
             return None;
         }
 
@@ -158,14 +176,12 @@ impl<T> PresentationTransition<T> {
     }
 
     pub fn duration(&self) -> Duration {
-        PRESENTATION_TRANSITION_DURATION
+        self.duration
     }
 
     pub fn progress(&self, now: Duration) -> f64 {
         self.started_at.map_or(1.0, |start| {
-            (now.saturating_sub(start).as_secs_f64()
-                / PRESENTATION_TRANSITION_DURATION.as_secs_f64())
-            .min(1.0)
+            (now.saturating_sub(start).as_secs_f64() / self.duration.as_secs_f64()).min(1.0)
         })
     }
 

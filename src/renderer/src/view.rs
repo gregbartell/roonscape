@@ -34,7 +34,7 @@ const PRESENTATION_CACHE_CAPACITY: usize = 2;
 
 pub(crate) struct PresentationView {
     root: gtk::Overlay,
-    stack: gtk::Stack,
+    layers: gtk::Overlay,
     transition: PresentationTransition<RenderedPresentation>,
     palette_provider: gtk::CssProvider,
     rendering: RenderingConfiguration,
@@ -43,7 +43,6 @@ pub(crate) struct PresentationView {
     inactivity: InactivityTransform,
     transition_clock: Instant,
     outgoing_text_opacity: f64,
-    incoming_text_started_at: Option<Duration>,
     caches: PresentationCaches,
 }
 
@@ -355,20 +354,18 @@ impl PresentationView {
             .root
             .add_css_class(PresentationStyleLayer::Current.class_name());
         let transition = PresentationTransition::new(revision, rendered);
-        let stack = gtk::Stack::new();
-        stack.set_hexpand(true);
-        stack.set_vexpand(true);
-        stack.set_transition_type(gtk::StackTransitionType::Crossfade);
-        stack.set_transition_duration(transition.duration().as_millis() as u32 / 3);
-        stack.add_child(&transition.current().value().root);
+        let layers = gtk::Overlay::new();
+        layers.set_hexpand(true);
+        layers.set_vexpand(true);
+        layers.add_overlay(&transition.current().value().root);
         let root = gtk::Overlay::new();
         root.set_hexpand(true);
         root.set_vexpand(true);
-        root.set_child(Some(&stack));
+        root.set_child(Some(&layers));
 
         let mut view = Self {
             root,
-            stack,
+            layers,
             transition,
             palette_provider,
             rendering,
@@ -377,7 +374,6 @@ impl PresentationView {
             inactivity: InactivityTransform::default(),
             transition_clock: Instant::now(),
             outgoing_text_opacity: 1.0,
-            incoming_text_started_at: None,
             caches,
         };
         view.apply_layout();
@@ -445,19 +441,26 @@ impl PresentationView {
             return;
         }
         let rendered = self.render_replacement_at_viewport(presentation, repository_root);
-        rendered.set_text_opacity(0.0);
+        rendered.root.set_opacity(0.0);
+        rendered.set_text_opacity(if rendered.now_playing.is_some() {
+            1.0
+        } else {
+            0.0
+        });
         // Retarget an unrevealed replacement without exposing the superseded target
         // or restarting the visible outgoing text's fade.
-        if self.transition.outgoing().is_some_and(|outgoing| {
-            self.stack.visible_child().as_ref() == Some(&outgoing.value().root)
-        }) {
+        if self.transition.is_active()
+            && self.transition.current().value().root.opacity() == 0.0
+            && self.transition.current().value().now_playing.is_some()
+                == rendered.now_playing.is_some()
+        {
             let released = self.transition.current().value().root.clone();
             self.transition.update_current(revision, |current| {
                 *current = rendered;
             });
-            self.stack.remove(&released);
-            self.stack
-                .add_child(&self.transition.current().value().root);
+            self.layers.remove_overlay(&released);
+            self.layers
+                .add_overlay(&self.transition.current().value().root);
             self.install_palette_styles();
             return;
         }
@@ -465,9 +468,16 @@ impl PresentationView {
             self.remove_layer(discarded);
         }
         self.outgoing_text_opacity = self.transition.current().value().text_opacity();
-        self.incoming_text_started_at = None;
         let started_at = self.transition_clock.elapsed();
-        let discarded = self.transition.begin(revision, rendered, started_at);
+        // Full-field destinations retain departure, background, and arrival phases.
+        let duration = Duration::from_millis(if rendered.now_playing.is_some() {
+            450
+        } else {
+            675
+        });
+        let discarded = self
+            .transition
+            .begin_with_duration(revision, rendered, started_at, duration);
         debug_assert!(discarded.is_none());
 
         let outgoing = self
@@ -482,8 +492,8 @@ impl PresentationView {
             .value()
             .root
             .add_css_class(PresentationStyleLayer::Outgoing.class_name());
-        self.stack
-            .add_child(&self.transition.current().value().root);
+        self.layers
+            .add_overlay(&self.transition.current().value().root);
         self.install_palette_styles();
     }
 
@@ -495,32 +505,31 @@ impl PresentationView {
     fn advance_transition(&mut self, now: Duration) {
         if let Some(outgoing) = self.transition.outgoing() {
             let progress = self.transition.progress(now);
-            outgoing.value().set_text_opacity(
-                self.outgoing_text_opacity * (1.0 - motion_phase(progress, 0.0, 1.0 / 3.0)),
-            );
             let current = self.transition.current().value();
-            if progress >= 1.0 / 3.0 {
-                // GtkStack snapshots the outgoing layer for the artwork/palette
-                // crossfade only after its text has become completely invisible.
-                self.stack.set_visible_child(&current.root);
-            }
-            // GtkStack caches both children while crossfading. Reveal text only
-            // after that cache is gone, using a fresh clock even after a late frame.
-            if progress >= 2.0 / 3.0 && !self.stack.is_transition_running() {
-                let started_at = *self.incoming_text_started_at.get_or_insert(now);
-                let phase = now.saturating_sub(started_at).as_secs_f64()
-                    / (self.transition.duration().as_secs_f64() / 3.0);
-                current.set_text_opacity(motion_phase(phase, 0.0, 1.0));
-            }
-            if current.text_opacity() < 1.0 {
-                return;
+            let departure_end = if current.now_playing.is_some() {
+                0.5
+            } else {
+                1.0 / 3.0
+            };
+            outgoing.value().set_text_opacity(
+                self.outgoing_text_opacity * (1.0 - motion_phase(progress, 0.0, departure_end)),
+            );
+            // Composite the live incoming widget tree over an opaque outgoing
+            // background. Fading both roots would expose the surface underneath.
+            if current.now_playing.is_some() {
+                current.root.set_opacity(motion_phase(progress, 0.5, 0.5));
+            } else {
+                current
+                    .root
+                    .set_opacity(motion_phase(progress, 1.0 / 3.0, 1.0 / 3.0));
+                current.set_text_opacity(motion_phase(progress, 2.0 / 3.0, 1.0 / 3.0));
             }
         }
         let Some(outgoing) = self.transition.finish(now) else {
             return;
         };
 
-        self.stack.remove(&outgoing.value().root);
+        self.layers.remove_overlay(&outgoing.value().root);
         self.install_palette_styles();
     }
 
@@ -558,7 +567,7 @@ impl PresentationView {
     }
 
     fn remove_layer(&self, layer: PresentationRevision<RenderedPresentation>) {
-        self.stack.remove(&layer.value().root);
+        self.layers.remove_overlay(&layer.value().root);
     }
 
     fn render_replacement_at_viewport(
@@ -619,9 +628,8 @@ impl PresentationView {
 
     fn reveal_current(&self) {
         let current = self.transition.current();
-        self.stack.add_child(&current.value().root);
+        self.layers.add_overlay(&current.value().root);
         self.install_palette_styles();
-        self.stack.set_visible_child(&current.value().root);
     }
 
     fn install_palette_styles(&self) {
@@ -2401,6 +2409,7 @@ mod tests {
     fn lyric_presentation(fixture: &str) -> roonscape_renderer::NowPlayingPresentation {
         let snapshot = parse_snapshot(match fixture {
             "playing.json" => include_str!("../../shared/fixtures/playing.json"),
+            "paused.json" => include_str!("../../shared/fixtures/paused.json"),
             "long-metadata.json" => include_str!("../../shared/fixtures/long-metadata.json"),
             "lyrics-one-line.json" => include_str!("../../shared/fixtures/lyrics-one-line.json"),
             "lyrics-two-line.json" => include_str!("../../shared/fixtures/lyrics-two-line.json"),
@@ -2714,7 +2723,7 @@ mod tests {
                             view.replace(index as u64 + 1, &next, &repository)
                         }
                     }
-                    // Inspect early, middle, and settled frames of the real GTK crossfade.
+                    // Inspect early, middle, and settled frames of the live layers.
                     for delay in [50, 175, 250] {
                         settle(delay);
                         assert_eq!(
@@ -2917,6 +2926,8 @@ mod tests {
         reel_handoffs_keep_wrapping_and_outgoing_geometry();
         composition_transitions_preserve_fitted_cues();
         status_and_timing_replacements_preserve_the_existing_metadata();
+        now_playing_artwork_and_text_reveal_together();
+        incoming_foreground_updates_during_the_coordinated_reveal();
         full_field_replacement_never_superimposes_messages();
         lyric_masthead_fits_long_metadata();
         composed_lyrics_remain_above_footer();
@@ -3822,6 +3833,147 @@ mod tests {
         }
     }
 
+    fn now_playing_artwork_and_text_reveal_together() {
+        use std::time::Duration;
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let presentation = |fixture: &str| {
+            presentation_from_snapshot(
+                &parse_snapshot(
+                    &std::fs::read_to_string(repository.join("src/shared/fixtures").join(fixture))
+                        .unwrap(),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        gtk::Settings::default()
+            .unwrap()
+            .set_gtk_enable_animations(true);
+        for source in ["stopped.json", "loading-empty.json", "playing.json"] {
+            for target in ["lyrics-one-line.json", "missing-artwork.json"] {
+                let mut view = super::PresentationView::new(
+                    0,
+                    &presentation(source),
+                    Viewport::new(1280, 720),
+                    &repository,
+                    super::install_style_providers(typography),
+                    None,
+                    RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
+                );
+                view.replace(1, &presentation(target), &repository);
+                let start = view.transition_clock.elapsed();
+                for millis in [0, 112, 225, 337, 449] {
+                    view.advance_transition(start + Duration::from_millis(millis));
+                    let outgoing = view.transition.outgoing().unwrap().value();
+                    let incoming = view.transition.current().value();
+                    assert_eq!(
+                        outgoing.root.opacity(),
+                        1.0,
+                        "the outgoing background remains opaque"
+                    );
+                    if millis < 225 {
+                        assert_eq!(
+                            incoming.root.opacity(),
+                            0.0,
+                            "incoming artwork and text must both wait for outgoing text"
+                        );
+                    } else {
+                        assert_eq!(
+                            outgoing.text_opacity(),
+                            0.0,
+                            "outgoing text retires before the reveal"
+                        );
+                        assert_eq!(
+                            incoming.text_opacity(),
+                            1.0,
+                            "text shares the artwork's layer opacity without a second fade"
+                        );
+                    }
+                    if millis == 337 {
+                        assert!(
+                            (incoming.root.opacity() - 0.5).abs() < 0.02,
+                            "artwork and text are halfway revealed together"
+                        );
+                    }
+                }
+                view.advance_transition(start + Duration::from_millis(450));
+                assert!(
+                    !view.transition.is_active(),
+                    "the reveal completes at 450ms"
+                );
+                assert_eq!(view.transition.current().value().root.opacity(), 1.0);
+
+                gtk::Settings::default()
+                    .unwrap()
+                    .set_gtk_enable_animations(false);
+                view.replace(2, &presentation(source), &repository);
+                view.replace(3, &presentation(target), &repository);
+                assert!(!view.transition.is_active());
+                assert_eq!(view.transition.current().value().root.opacity(), 1.0);
+                assert_eq!(view.transition.current().value().text_opacity(), 1.0);
+                gtk::Settings::default()
+                    .unwrap()
+                    .set_gtk_enable_animations(true);
+            }
+        }
+    }
+
+    fn incoming_foreground_updates_during_the_coordinated_reveal() {
+        use std::time::{Duration, Instant};
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        let mut incoming = lyric_presentation("lyrics-one-line.json");
+        incoming.status = lyric_presentation("paused.json").status;
+        let mut view = super::PresentationView::new(
+            0,
+            &Presentation::NowPlaying(lyric_presentation("playing.json")),
+            Viewport::new(1280, 720),
+            &repository,
+            super::install_style_providers(typography),
+            None,
+            RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
+        );
+        view.replace(1, &Presentation::NowPlaying(incoming.clone()), &repository);
+        let start = view.transition_clock.elapsed();
+        incoming.status = lyric_presentation("playing.json").status;
+        let mut previous_anchors = None;
+        for millis in [0, 226, 337, 400] {
+            // Drive both transition and in-place updates from the same test clock.
+            let now = start + Duration::from_millis(millis);
+            view.transition_clock = Instant::now() - now;
+            incoming.progress.as_mut().unwrap().elapsed = format!("3:{:02}", millis / 10);
+            if millis >= 226 {
+                incoming.lyrics.as_mut().unwrap().current_index = 2;
+            }
+            view.update_in_place(2, &Presentation::NowPlaying(incoming.clone()));
+            view.advance_transition(now);
+            let current = view.transition.current().value();
+            let metadata = &current.now_playing.as_ref().unwrap().metadata;
+            assert_eq!(
+                metadata.progress.as_ref().unwrap().elapsed.text(),
+                incoming.progress.as_ref().unwrap().elapsed
+            );
+            if millis >= 337 {
+                assert!(current.root.opacity() > 0.0 && current.root.opacity() < 1.0);
+                assert_eq!(metadata.presentation_status.label.text(), "PLAYING");
+                assert!(metadata.presentation_status.root.opacity() > 0.0);
+                let frame = metadata.lyrics.motion.borrow().frame_at(now);
+                assert!(
+                    frame.cue_motion_active,
+                    "Natural Cue Handoff stays live during the reveal"
+                );
+                if let Some(previous) = previous_anchors {
+                    assert_ne!(
+                        frame.anchors, previous,
+                        "the incoming Lyric Reel keeps moving"
+                    );
+                }
+                previous_anchors = Some(frame.anchors);
+            }
+        }
+    }
+
     fn full_field_replacement_never_superimposes_messages() {
         use std::time::Duration;
         let presentation = |fixture: &str| {
@@ -3857,13 +4009,13 @@ mod tests {
             if millis == 350 {
                 assert_eq!(
                     new_opacity, 0.0,
-                    "incoming text waits until GtkStack finishes caching its crossfade"
+                    "Full-field text waits until the background crossfade finishes"
                 );
             }
             if millis == 600 {
                 assert!(
                     new_opacity > 0.0 && new_opacity < 1.0,
-                    "the replacement fades in after the cached crossfade"
+                    "Full-field replacement text fades in after the background"
                 );
             }
             assert!(
@@ -3871,10 +4023,10 @@ mod tests {
                 "Full-field messages must not coexist at {millis}ms"
             );
             if millis < 225 {
-                assert_eq!(view.stack.visible_child().as_ref(), Some(&outgoing.root));
+                assert_eq!(incoming.root.opacity(), 0.0);
             } else {
                 assert_eq!(old_opacity, 0.0);
-                assert_eq!(view.stack.visible_child().as_ref(), Some(&incoming.root));
+                assert!(incoming.root.opacity() > 0.0);
             }
         }
         view.advance_transition(start + Duration::from_millis(750));

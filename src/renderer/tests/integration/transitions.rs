@@ -267,3 +267,13 @@ fn crossfades_light_now_playing_into_missing_content_as_complete_layers() {
     assert!(outgoing.value().artwork_path.is_some());
     assert_ne!(outgoing.value().palette, PresentationPalette::fallback());
 }
+
+#[test]
+fn now_playing_reveal_completes_after_two_225ms_phases() {
+    let mut transition = PresentationTransition::new(0, "Idle");
+    transition.begin(1, "Playing", Duration::from_secs(1));
+    assert_eq!(transition.duration(), Duration::from_millis(450));
+    assert_eq!(transition.progress(Duration::from_millis(1225)), 0.5);
+    assert!(transition.finish(Duration::from_millis(1449)).is_none());
+    assert!(transition.finish(Duration::from_millis(1450)).is_some());
+}
