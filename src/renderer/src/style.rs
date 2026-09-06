@@ -22,10 +22,41 @@ impl PresentationStyleLayer {
         layout: &NowPlayingLayout,
         full_field_layout: &FullFieldLayout,
     ) -> String {
-        let mut styles = presentation_palette_styles(self, palette, layout, full_field_layout);
-        styles.push_str(&diagnostics_palette_styles(diagnostics_style(
-            self, palette,
-        )));
+        self.to_css_for_selector(
+            &format!(".{}", self.class_name()),
+            palette,
+            layout,
+            full_field_layout,
+        )
+    }
+
+    pub fn to_css_within(
+        self,
+        parent: Self,
+        palette: PresentationPalette,
+        layout: &NowPlayingLayout,
+        full_field_layout: &FullFieldLayout,
+    ) -> String {
+        self.to_css_for_selector(
+            &format!(".{} .{}", parent.class_name(), self.class_name()),
+            palette,
+            layout,
+            full_field_layout,
+        )
+    }
+
+    fn to_css_for_selector(
+        self,
+        selector: &str,
+        palette: PresentationPalette,
+        layout: &NowPlayingLayout,
+        full_field_layout: &FullFieldLayout,
+    ) -> String {
+        let mut styles = presentation_palette_styles(selector, palette, layout, full_field_layout);
+        styles.push_str(&diagnostics_palette_styles(
+            diagnostics_style(self, palette),
+            selector,
+        ));
         styles
     }
 }
@@ -117,12 +148,11 @@ fn diagnostics_style(
 }
 
 fn presentation_palette_styles(
-    layer: PresentationStyleLayer,
+    selector: &str,
     palette: PresentationPalette,
     layout: &NowPlayingLayout,
     full_field_layout: &FullFieldLayout,
 ) -> String {
-    let class_name = layer.class_name();
     let background = palette.background.to_hex();
     let artwork_field = palette.artwork_field.to_hex();
     let primary_text = palette.primary_text.to_hex();
@@ -138,32 +168,31 @@ fn presentation_palette_styles(
     let artwork_border_width = layout.artwork_border_width_px;
     let accent_width = full_field_layout.accent_width_px;
     format!(
-        ".{class_name} {{ background-color: {background}; color: {primary_text}; }}\n\
-         .{class_name} .artwork-print-plate {{ background-color: {accent}; }}\n\
-         .{class_name} .artwork {{ border: {artwork_border_width}px solid alpha({primary_text}, 0.16); background-color: {artwork_field}; box-shadow: 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.38); }}\n\
-         .{class_name} .artwork-missing {{ border-color: alpha({muted_text}, 0.22); background-image: linear-gradient(142deg, alpha({muted_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16), 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.38); }}\n\
-         .{class_name}.full-field .full-copy {{ border-left: {accent_width}px solid {accent}; }}\n\
-         .{class_name} .status-full {{ color: {accent}; }}\n\
-         .{class_name} .status-muted {{ color: {muted_accent}; }}\n\
-         .{class_name} .title, .{class_name} .lyric-masthead-title, .{class_name} .full-field-heading {{ color: {primary_text}; }}\n\
-         .{class_name} .artist, .{class_name} .album, .{class_name} .lyric-masthead-artist, .{class_name} .time, .{class_name} .identity-name {{ color: {secondary_text}; }}\n\
-         .{class_name} .activity-waveform {{ color: {accent}; }}\n\
-         .{class_name} .activity-heading {{ color: {primary_text}; }}\n\
-         .{class_name} .activity-detail, .{class_name} .full-field-explanation {{ color: {muted_text}; }}\n\
-         .{class_name} .identity-label {{ color: {muted_text}; }}\n\
-         .{class_name} .identity-separator {{ background-color: {muted_text}; }}\n\
-         .{class_name} .progress-track {{ background-color: {progress_track}; }}\n\
-         .{class_name} .progress-fill trough, .{class_name} .progress-fill progress {{ min-height: {progress_fill_height}px; }}\n\
-         .{class_name} .progress-fill progress {{ background-color: {progress_fill}; }}\n"
+        "{selector} {{ background-color: {background}; color: {primary_text}; }}\n\
+         {selector} .artwork-print-plate {{ background-color: {accent}; }}\n\
+         {selector} .artwork {{ border: {artwork_border_width}px solid alpha({primary_text}, 0.16); background-color: {artwork_field}; box-shadow: 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.38); }}\n\
+         {selector} .artwork-missing {{ border-color: alpha({muted_text}, 0.22); background-image: linear-gradient(142deg, alpha({muted_text}, 0.09), {artwork_field} 52%, {background}); box-shadow: inset 0 0 0 24px alpha({background}, 0.16), 0 {shadow_offset}px {shadow_blur}px alpha({background}, 0.38); }}\n\
+         {selector}.full-field .full-copy {{ border-left: {accent_width}px solid {accent}; }}\n\
+         {selector} .status-full {{ color: {accent}; }}\n\
+         {selector} .status-muted {{ color: {muted_accent}; }}\n\
+         {selector} .title, {selector} .lyric-masthead-title, {selector} .full-field-heading {{ color: {primary_text}; }}\n\
+         {selector} .artist, {selector} .album, {selector} .lyric-masthead-artist, {selector} .time, {selector} .identity-name {{ color: {secondary_text}; }}\n\
+         {selector} .activity-waveform {{ color: {accent}; }}\n\
+         {selector} .activity-heading {{ color: {primary_text}; }}\n\
+         {selector} .activity-detail, {selector} .full-field-explanation {{ color: {muted_text}; }}\n\
+         {selector} .identity-label {{ color: {muted_text}; }}\n\
+         {selector} .identity-separator {{ background-color: {muted_text}; }}\n\
+         {selector} .progress-track {{ background-color: {progress_track}; }}\n\
+         {selector} .progress-fill trough, {selector} .progress-fill progress {{ min-height: {progress_fill_height}px; }}\n\
+         {selector} .progress-fill progress {{ background-color: {progress_fill}; }}\n"
     )
 }
 
-fn diagnostics_palette_styles(style: DiagnosticsStyle) -> String {
-    let class_name = style.layer.class_name();
+fn diagnostics_palette_styles(style: DiagnosticsStyle, selector: &str) -> String {
     let field = style.field.to_hex();
     let text = style.text.to_hex();
     let border = style.border.to_hex();
     format!(
-        ".{class_name} .diagnostics {{ color: {text}; background-color: {field}; border-color: {border}; }}\n"
+        "{selector} .diagnostics {{ color: {text}; background-color: {field}; border-color: {border}; }}\n"
     )
 }

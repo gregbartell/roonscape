@@ -164,6 +164,27 @@ impl<T> PresentationTransition<T> {
         self.outgoing.take()
     }
 
+    /// Preserve the visible stack beneath a partially revealed destination.
+    /// Once the current layer is opaque, everything underneath can be released.
+    pub fn retain_visible_composite(
+        &mut self,
+        current_is_opaque: bool,
+        retained: &mut Vec<PresentationRevision<T>>,
+    ) -> Vec<PresentationRevision<T>> {
+        let mut released = Vec::new();
+        if current_is_opaque {
+            released.append(retained);
+        }
+        if let Some(outgoing) = self.discard_outgoing() {
+            if current_is_opaque {
+                released.push(outgoing);
+            } else {
+                retained.push(outgoing);
+            }
+        }
+        released
+    }
+
     pub fn finish(&mut self, now: Duration) -> Option<PresentationRevision<T>> {
         let started_at = self.started_at?;
         if now.saturating_sub(started_at) < self.duration {
@@ -189,6 +210,10 @@ impl<T> PresentationTransition<T> {
 
     pub fn duration(&self) -> Duration {
         self.duration
+    }
+
+    pub fn started_at(&self) -> Option<Duration> {
+        self.started_at
     }
 
     pub fn progress(&self, now: Duration) -> f64 {

@@ -974,7 +974,7 @@ fn updates_authoritative_and_provisional_timing_in_place() {
     let visual_update = state
         .update(revised, presentation_time(4, PLAYING_SAMPLED_AT + 4))
         .expect("visual revision should update the presentation");
-    assert_eq!(visual_update, PresentationUpdate::TransitionRequired);
+    assert_eq!(visual_update, PresentationUpdate::InPlace);
     assert_eq!(state.revision(), 11);
 }
 
@@ -1025,7 +1025,7 @@ fn simultaneous_playback_and_now_playing_changes_require_a_transition() {
 }
 
 #[test]
-fn every_composition_field_requests_one_coordinated_transition() {
+fn composition_fields_select_their_intended_update_path() {
     let playing_snapshot = || {
         parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid")
     };
@@ -1059,11 +1059,7 @@ fn every_composition_field_requests_one_coordinated_transition() {
             progress_presence,
             PresentationUpdate::InPlace,
         ),
-        (
-            "artwork and palette",
-            artwork,
-            PresentationUpdate::TransitionRequired,
-        ),
+        ("artwork and palette", artwork, PresentationUpdate::InPlace),
     ]
     .into_iter()
     .enumerate()
@@ -1084,6 +1080,69 @@ fn every_composition_field_requests_one_coordinated_transition() {
             "{field} should use its intended update path"
         );
     }
+}
+
+#[test]
+fn artwork_updates_do_not_hide_a_tracked_zone_continuity_break() {
+    let playing = parse_snapshot(&support::fixture("playing.json")).unwrap();
+    let mut changed = playing.clone();
+    changed.tracked_zone.as_mut().unwrap().id = "another-zone".to_owned();
+    changed.artwork = None;
+    let mut state =
+        PresentationState::new(playing, presentation_time(0, PLAYING_SAMPLED_AT)).unwrap();
+    assert_eq!(
+        state
+            .update(changed, presentation_time(1, PLAYING_SAMPLED_AT + 1))
+            .unwrap(),
+        PresentationUpdate::TransitionRequired,
+        "identical visible metadata and zone names cannot erase a zone boundary"
+    );
+}
+
+#[test]
+fn artwork_continuity_retains_known_metadata_across_missing_fields() {
+    let mut snapshot = parse_snapshot(&support::fixture("playing.json")).unwrap();
+    snapshot.now_playing.as_mut().unwrap().title = None;
+    let mut state =
+        PresentationState::new(snapshot.clone(), presentation_time(0, PLAYING_SAMPLED_AT)).unwrap();
+    let generation = state.now_playing_generation();
+    for (index, title) in [Some("Known title"), None, Some("Known title")]
+        .into_iter()
+        .enumerate()
+    {
+        snapshot.now_playing.as_mut().unwrap().title = title.map(str::to_owned);
+        snapshot.artwork = None;
+        state
+            .update(
+                snapshot.clone(),
+                presentation_time(index as u64 + 1, PLAYING_SAMPLED_AT + index as u64 + 1),
+            )
+            .unwrap();
+        assert_eq!(
+            state.now_playing_generation(),
+            generation,
+            "missing fields and artwork changes do not establish a new track"
+        );
+    }
+    snapshot.now_playing.as_mut().unwrap().title = None;
+    state
+        .update(
+            snapshot.clone(),
+            presentation_time(4, PLAYING_SAMPLED_AT + 4),
+        )
+        .unwrap();
+    snapshot.now_playing.as_mut().unwrap().title = Some("Conflicting title".into());
+    assert_eq!(
+        state
+            .update(snapshot, presentation_time(5, PLAYING_SAMPLED_AT + 5))
+            .unwrap(),
+        PresentationUpdate::TransitionRequired
+    );
+    assert_ne!(
+        state.now_playing_generation(),
+        generation,
+        "a retained known value still detects a conflicting track"
+    );
 }
 
 #[test]

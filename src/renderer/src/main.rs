@@ -74,6 +74,7 @@ enum FirstRevealedPaintPhase {
 struct PresentationRuntime {
     presentation: Rc<RefCell<PresentationState>>,
     rendered_presentation: RefCell<Presentation>,
+    rendered_now_playing_generation: Cell<u64>,
     reported_lyric_visibility: Cell<Option<u64>>,
     presentation_view: Rc<RefCell<PresentationView>>,
     updates: Option<Rc<SnapshotSubscription>>,
@@ -348,7 +349,9 @@ fn build_window(
         keyboard.borrow_mut().set_focused(window.is_active());
     });
 
+    let rendered_now_playing_generation = Cell::new(presentation.borrow().now_playing_generation());
     let runtime = Rc::new(PresentationRuntime {
+        rendered_now_playing_generation,
         presentation,
         rendered_presentation: RefCell::new(initial_frame.presentation.clone()),
         reported_lyric_visibility: Cell::new(None),
@@ -789,10 +792,21 @@ impl PresentationRuntime {
             }
         };
 
-        let presentation_update = classify_presentation_update(
-            &self.rendered_presentation.borrow(),
-            &current_frame.presentation,
-        );
+        let generation = self.presentation.borrow().now_playing_generation();
+        let presentation_update = if generation != self.rendered_now_playing_generation.get()
+            && matches!(
+                &*self.rendered_presentation.borrow(),
+                Presentation::NowPlaying(_)
+            )
+            && matches!(&current_frame.presentation, Presentation::NowPlaying(_))
+        {
+            PresentationUpdate::TransitionRequired
+        } else {
+            classify_presentation_update(
+                &self.rendered_presentation.borrow(),
+                &current_frame.presentation,
+            )
+        };
         match presentation_update {
             PresentationUpdate::TransitionRequired => {
                 self.presentation_view.borrow_mut().replace(
@@ -805,11 +819,13 @@ impl PresentationRuntime {
                 self.presentation_view.borrow_mut().update_in_place(
                     self.presentation.borrow().revision(),
                     &current_frame.presentation,
+                    &self.repository_root,
                 );
             }
         }
         self.rendered_presentation
             .replace(current_frame.presentation.clone());
+        self.rendered_now_playing_generation.set(generation);
         self.presentation_view
             .borrow_mut()
             .apply_inactivity(current_frame.inactivity);

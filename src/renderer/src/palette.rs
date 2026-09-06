@@ -337,6 +337,64 @@ pub struct PresentationPalette {
 }
 
 impl PresentationPalette {
+    /// Blend artwork fields without letting text converge with a dark/light
+    /// midpoint. Exact endpoint palettes retain their calibrated role hierarchy.
+    pub fn mix(self, other: Self, amount: f64) -> Self {
+        let amount = amount.clamp(0.0, 1.0);
+        if amount == 0.0 || self == other {
+            return self;
+        }
+        if amount == 1.0 {
+            return other;
+        }
+        let background = self.background.mix(other.background, amount);
+        let metadata_field = self.metadata_field.mix(other.metadata_field, amount);
+        let fields = [background, metadata_field];
+        let minimum_contrast = |color: Rgb, fields: &[Rgb]| {
+            fields
+                .iter()
+                .map(|field| color.contrast_ratio(*field))
+                .fold(f64::INFINITY, f64::min)
+        };
+        let readable_mix = |first: Rgb, second: Rgb| {
+            let color = first.mix(second, amount);
+            let target = minimum_contrast(first, &[self.background, self.metadata_field])
+                .min(minimum_contrast(
+                    second,
+                    &[other.background, other.metadata_field],
+                ))
+                .min(7.0);
+            if minimum_contrast(color, &fields) >= target {
+                return color;
+            }
+            // Mid-gray cannot support 7:1 even with black or white. Search both
+            // polarities and retain the best feasible contrast, using the same
+            // hue-preserving lightness adjustment as settled palette selection.
+            [-0.02, 0.02]
+                .into_iter()
+                .map(|step| readable_tint(color.hsl(), &fields, target, step))
+                .max_by(|left, right| {
+                    minimum_contrast(*left, &fields).total_cmp(&minimum_contrast(*right, &fields))
+                })
+                .expect("two lightness directions")
+        };
+        Self {
+            background,
+            artwork_field: self.artwork_field.mix(other.artwork_field, amount),
+            metadata_field,
+            primary_text: readable_mix(self.primary_text, other.primary_text),
+            secondary_text: readable_mix(self.secondary_text, other.secondary_text),
+            muted_text: readable_mix(self.muted_text, other.muted_text),
+            accent: readable_mix(self.accent, other.accent),
+            status_muted_accent: readable_mix(self.status_muted_accent, other.status_muted_accent),
+            progress_track: self.progress_track.mix(other.progress_track, amount),
+            progress_fill: readable_mix(self.progress_fill, other.progress_fill),
+            diagnostics_field: self.diagnostics_field.mix(other.diagnostics_field, amount),
+            diagnostics_text: readable_mix(self.diagnostics_text, other.diagnostics_text),
+            diagnostics_border: readable_mix(self.diagnostics_border, other.diagnostics_border),
+        }
+    }
+
     pub const fn fallback() -> Self {
         Self {
             background: Rgb::new(0x07, 0x15, 0x22),

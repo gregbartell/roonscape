@@ -51,6 +51,173 @@ const defaultRendererExecutable = path.join(
 );
 
 const examples = {
+  "artwork-updates": {
+    durationSeconds: 10,
+    initialFixture: "src/shared/fixtures/missing-artwork.json",
+    publications: [
+      {
+        atSeconds: 0.5,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 82,
+      },
+      {
+        atSeconds: 1.5,
+        fixture: "src/shared/fixtures/artwork-revision-changed.json",
+        positionSeconds: 83,
+      },
+      {
+        atSeconds: 1.65,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 83.15,
+      },
+      {
+        atSeconds: 2.5,
+        fixture: "src/shared/fixtures/missing-artwork.json",
+        positionSeconds: 84,
+      },
+      {
+        atSeconds: 3.2,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 84.7,
+      },
+      {
+        atSeconds: 3.35,
+        fixture: "src/shared/fixtures/long-metadata.json",
+        positionSeconds: 0,
+        artwork: null,
+      },
+      {
+        atSeconds: 3.5,
+        fixture: "src/shared/fixtures/long-metadata.json",
+        positionSeconds: 0.15,
+      },
+      {
+        atSeconds: 3.7,
+        fixture: "src/shared/fixtures/long-metadata.json",
+        positionSeconds: 0.35,
+        artwork: {
+          revision: 9,
+          path: "src/shared/fixtures/artwork/revised.jpg",
+        },
+      },
+      {
+        atSeconds: 4.35,
+        fixture: "src/shared/fixtures/missing-artwork.json",
+        positionSeconds: 167.35,
+      },
+      {
+        atSeconds: 5,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 168,
+        artwork: null,
+      },
+      {
+        atSeconds: 7.1,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 170.1,
+      },
+      {
+        atSeconds: 7.65,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 170.65,
+        artwork: {
+          revision: 9,
+          path: "src/shared/fixtures/artwork/light.jpg",
+        },
+      },
+      {
+        atSeconds: 8.5,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 171.5,
+        artwork: {
+          revision: 10,
+          path: "src/shared/fixtures/artwork/unavailable.jpg",
+        },
+      },
+    ],
+    reviewFrames: [
+      reviewFrame(
+        0.3,
+        "fallback",
+        "Readable Now Playing with fallback artwork.",
+      ),
+      reviewFrame(
+        0.65,
+        "artwork-arriving",
+        "Artwork and palette crossfade while text stays readable.",
+      ),
+      reviewFrame(
+        0.9,
+        "artwork-supplied",
+        "Supplied artwork with uninterrupted timing.",
+      ),
+      reviewFrame(
+        1.6,
+        "revision-midpoint",
+        "The artwork revision blends with the current appearance.",
+      ),
+      reviewFrame(
+        1.8,
+        "revision-retargeted",
+        "Repeated artwork retargets the visible blend without retiring text.",
+      ),
+      reviewFrame(
+        2.65,
+        "artwork-removing",
+        "Removal crossfades to the established fallback.",
+      ),
+      reviewFrame(
+        3.3,
+        "before-track-replacement",
+        "Artwork is still changing when a new track supersedes it.",
+      ),
+      reviewFrame(
+        3.55,
+        "destination-artwork-during-departure",
+        "New artwork joins the invisible destination without restarting departure.",
+      ),
+      reviewFrame(
+        3.75,
+        "destination-artwork-during-reveal",
+        "Artwork updates within the coordinated track reveal.",
+      ),
+      reviewFrame(
+        4.2,
+        "replacement-settled",
+        "Only the latest track and artwork remain.",
+      ),
+      reviewFrame(
+        6.7,
+        "lyrics-fallback",
+        "Synchronized lyrics remain visible with fallback artwork.",
+      ),
+      reviewFrame(
+        7.25,
+        "lyrics-artwork-arrival",
+        "Natural Cue Handoff and artwork arrival run together.",
+      ),
+      reviewFrame(
+        7.8,
+        "lyrics-artwork-revision",
+        "A further artwork revision preserves the established Lyric Reel.",
+      ),
+      reviewFrame(
+        8.1,
+        "lyrics-artwork-settled",
+        "The active cue and supplied artwork reach their destinations.",
+      ),
+      reviewFrame(
+        8.65,
+        "artwork-failure",
+        "Unusable artwork crossfades to fallback with lyrics retained.",
+      ),
+      reviewFrame(
+        9.1,
+        "failure-settled",
+        "Fallback presentation keeps all live text.",
+      ),
+    ],
+  },
   "timing-stability": {
     durationSeconds: 26,
     initialFixture: "src/shared/fixtures/playing.json",
@@ -966,12 +1133,14 @@ export function reanchorLyricMotionSnapshot(
     sampledAt,
     playback = fixture.playback,
     durationSeconds = fixture.timing?.durationSeconds,
+    artwork = fixture.artwork,
   },
 ) {
   return {
     ...structuredClone(fixture),
     revision,
     playback,
+    artwork: structuredClone(artwork),
     timing:
       fixture.timing === null
         ? null

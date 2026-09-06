@@ -15,6 +15,58 @@ const WHITE: Rgb = Rgb {
     blue: 255,
 };
 
+#[test]
+fn artwork_palette_blends_keep_text_distinct_across_dark_and_light_fields() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork");
+    let dark = PresentationPalette::from_artwork(&root.join("playing.jpg")).unwrap();
+    let light = PresentationPalette::from_artwork(&root.join("light.jpg")).unwrap();
+    assert_eq!(dark.mix(light, 0.0), dark);
+    assert_eq!(dark.mix(light, 1.0), light);
+    for (from, to) in [
+        (dark, light),
+        (light, dark),
+        (PresentationPalette::fallback(), light),
+        (dark.mix(light, 0.5), dark),
+    ] {
+        for step in 1..100 {
+            let palette = from.mix(to, f64::from(step) / 100.0);
+            for text in [
+                palette.primary_text,
+                palette.secondary_text,
+                palette.muted_text,
+                palette.accent,
+                palette.status_muted_accent,
+            ] {
+                for field in [palette.background, palette.metadata_field] {
+                    assert!(
+                        text.contrast_ratio(field) >= 3.0,
+                        "a crossfade must not converge to unreadable text: step={step}, text={text:?}, field={field:?}"
+                    );
+                }
+            }
+            for neighbor in [palette.secondary_text, palette.muted_text] {
+                for weight in [0.25, 0.5, 0.75] {
+                    let channel = |primary: u8, supporting: u8| {
+                        (f64::from(primary) * weight + f64::from(supporting) * (1.0 - weight))
+                            .round() as u8
+                    };
+                    let cue = Rgb {
+                        red: channel(palette.primary_text.red, neighbor.red),
+                        green: channel(palette.primary_text.green, neighbor.green),
+                        blue: channel(palette.primary_text.blue, neighbor.blue),
+                    };
+                    for field in [palette.background, palette.metadata_field] {
+                        assert!(
+                            cue.contrast_ratio(field) >= 3.0,
+                            "Natural Cue Handoff colors must stay readable during artwork blending: step={step}, cue={cue:?}, field={field:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
 const fn rgb(red: u8, green: u8, blue: u8) -> Rgb {
     Rgb { red, green, blue }
 }

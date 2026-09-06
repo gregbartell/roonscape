@@ -142,6 +142,13 @@ For lyric entry, Natural Cue Handoffs, Intentional Blanks, seeks, and interrupte
 motion, use the [lyric motion captures](../development.md#lyric-motion-captures)
 against the [Synchronized Lyric Composition](../design/presentation.md#synchronized-lyric-composition).
 
+Use the `artwork-updates` motion example to inspect fallback arrival, repeated
+artwork changes, removal/failure, and artwork updates during a Now Playing
+Transition. Compare intermediate frames for continuous artwork/background
+blending, readable metadata, and uninterrupted timing and Lyric Reel motion.
+The reduced-animation version should show immediate artwork destinations while
+preserving the same content and fallback behavior.
+
 Automated checks belong at the shared fixture, layout, typography,
 palette-contrast, transition, and preserved-behavior seams; do not commit PNG goldens or add screenshot
 comparisons to CI.

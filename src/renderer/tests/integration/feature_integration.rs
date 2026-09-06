@@ -106,8 +106,8 @@ fn playback_updates_in_place_and_a_new_composition_crossfades_from_its_latest_re
     assert_eq!(
         state
             .update(resumed, presentation_time(120))
-            .expect("Playing should resume during the active transition"),
-        PresentationUpdate::TransitionRequired
+            .expect("Playing should resume with revised artwork in place"),
+        PresentationUpdate::InPlace
     );
     let restored = state
         .frame_at(Duration::from_millis(120))
@@ -118,10 +118,25 @@ fn playback_updates_in_place_and_a_new_composition_crossfades_from_its_latest_re
     };
     assert_eq!(now_playing.status.label, "PLAYING");
 
-    let discarded = transition.begin(9, restored.presentation, Duration::from_millis(120));
+    transition.update_current(9, |presentation| {
+        *presentation = restored.presentation;
+    });
+    assert!(!transition.is_active());
+
+    let replacement = snapshot("long-metadata.json", 10);
+    assert_eq!(
+        state
+            .update(replacement, presentation_time(130))
+            .expect("a new track should replace the presentation"),
+        PresentationUpdate::TransitionRequired
+    );
+    let replaced = state
+        .frame_at(Duration::from_millis(130))
+        .expect("the new track should be presentable");
+    let discarded = transition.begin(10, replaced.presentation, Duration::from_millis(130));
     assert!(discarded.is_none());
-    assert_eq!(transition.current().revision(), 9);
-    assert_eq!(transition.outgoing().map(|layer| layer.revision()), Some(8));
+    assert_eq!(transition.current().revision(), 10);
+    assert_eq!(transition.outgoing().map(|layer| layer.revision()), Some(9));
 }
 
 #[test]
@@ -138,7 +153,7 @@ fn local_disconnect_transitions_and_reconnect_keeps_resources_bounded() {
         .expect("initial Playing frame should be valid");
     let mut transition = PresentationTransition::new(7, initial.presentation);
 
-    let revised = snapshot("artwork-revision-changed.json", 9);
+    let revised = snapshot("long-metadata.json", 9);
     state
         .update(revised, presentation_time(20))
         .expect("a revision should update presentation state");
@@ -199,7 +214,7 @@ fn local_disconnect_transitions_and_reconnect_keeps_resources_bounded() {
     assert_eq!(replayed_frame.inactivity, InactivityTransform::default());
     transition.begin(10, replayed_frame.presentation, Duration::from_millis(250));
 
-    let rapid_revision = snapshot("artwork-revision-changed.json", 11);
+    let rapid_revision = snapshot("long-metadata.json", 11);
     state
         .update(rapid_revision, presentation_time(260))
         .expect("rapid replay revision should be accepted");

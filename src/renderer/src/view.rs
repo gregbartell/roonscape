@@ -45,6 +45,7 @@ pub(crate) struct PresentationView {
     outgoing_text_opacity: f64,
     retained_layers: Vec<PresentationRevision<RenderedPresentation>>,
     caches: PresentationCaches,
+    artwork_source: Option<(String, Option<u64>)>,
 }
 
 #[derive(Clone, Copy)]
@@ -217,12 +218,27 @@ struct RenderedActivity {
 }
 
 struct RenderedNowPlaying {
+    visuals: RenderedArtworkLayers,
+    content: gtk::Box,
+    artwork_column: gtk::CenterBox,
+    metadata_slot: gtk::Box,
+    metadata: RenderedMetadata,
+}
+
+struct RenderedArtworkLayer {
+    root: gtk::Overlay,
     background: RenderedNowPlayingBackground,
     content: gtk::Box,
     artwork_column: gtk::CenterBox,
     artwork: RenderedArtwork,
-    metadata_slot: gtk::Box,
-    metadata: RenderedMetadata,
+    palette: PresentationPalette,
+}
+
+struct RenderedArtworkLayers {
+    root: gtk::Overlay,
+    transition: PresentationTransition<RenderedArtworkLayer>,
+    retained: Vec<PresentationRevision<RenderedArtworkLayer>>,
+    from_palette: PresentationPalette,
 }
 
 struct RenderedNowPlayingBackground {
@@ -377,6 +393,7 @@ impl PresentationView {
             outgoing_text_opacity: 1.0,
             retained_layers: Vec::new(),
             caches,
+            artwork_source: artwork_source(presentation),
         };
         view.apply_layout();
         view
@@ -436,6 +453,7 @@ impl PresentationView {
         presentation: &Presentation,
         repository_root: &Path,
     ) {
+        self.artwork_source = artwork_source(presentation);
         if !animations_enabled(self.rendering.behavior) {
             let rendered = self.render_replacement_at_viewport(presentation, repository_root);
             let released = self.transition.replace_immediately(revision, rendered);
@@ -497,6 +515,20 @@ impl PresentationView {
     }
 
     fn advance_transition(&mut self, now: Duration) {
+        let mut palette_changed = false;
+        self.transition
+            .update_current(self.transition.current().revision(), |current| {
+                if let Some(rendered) = &mut current.now_playing
+                    && rendered.visuals.transition.is_active()
+                {
+                    let palette = rendered.visuals.advance(now);
+                    current.set_palette(palette);
+                    palette_changed = true;
+                }
+            });
+        if palette_changed {
+            self.install_palette_styles();
+        }
         if let Some(outgoing) = self.transition.outgoing() {
             let progress = self.transition.progress(now);
             let current = self.transition.current().value();
@@ -533,20 +565,14 @@ impl PresentationView {
     // beneath it; making that target opaque instead exposes an obsolete track.
     fn retain_visible_composite(&mut self) {
         let opaque = self.transition.current().value().root.opacity() == 1.0;
-        if opaque {
-            self.release_retained_layers();
+        for layer in self
+            .transition
+            .retain_visible_composite(opaque, &mut self.retained_layers)
+        {
+            self.remove_layer(layer);
         }
-        if let Some(outgoing) = self.transition.discard_outgoing() {
-            if opaque {
-                self.remove_layer(outgoing);
-            } else {
-                let root = &outgoing.value().root;
-                root.remove_css_class(&PresentationStyleLayer::Outgoing.class_name());
-                root.add_css_class(
-                    &PresentationStyleLayer::Retained(self.retained_layers.len()).class_name(),
-                );
-                self.retained_layers.push(outgoing);
-            }
+        for (index, layer) in self.retained_layers.iter().enumerate() {
+            set_layer_style(&layer.value().root, PresentationStyleLayer::Retained(index));
         }
     }
 
@@ -556,12 +582,74 @@ impl PresentationView {
         }
     }
 
-    pub(crate) fn update_in_place(&mut self, revision: u64, presentation: &Presentation) {
+    pub(crate) fn update_in_place(
+        &mut self,
+        revision: u64,
+        presentation: &Presentation,
+        repository_root: &Path,
+    ) {
         let now = self.transition_clock.elapsed();
+        if self.artwork_source != artwork_source(presentation) {
+            self.update_artwork(revision, presentation, repository_root);
+        }
         let viewport = self.layout_viewport;
         self.transition.update_current(revision, |current| {
             current.update_in_place(revision, presentation, now, viewport);
         });
+    }
+
+    fn update_artwork(
+        &mut self,
+        revision: u64,
+        presentation: &Presentation,
+        repository_root: &Path,
+    ) {
+        let (resolved, capture_error) =
+            resolve_for_rendering(presentation, repository_root, self.rendering);
+        let Presentation::NowPlaying(incoming) = &resolved.presentation else {
+            self.replace(revision, presentation, repository_root);
+            return;
+        };
+        if self.transition.current().value().now_playing.is_none() {
+            self.replace(revision, presentation, repository_root);
+            return;
+        }
+        self.artwork_source = artwork_source(presentation);
+        let transition_clock = self.transition_clock;
+        let animated = animations_enabled(self.rendering.behavior);
+        let viewport = self.layout_viewport;
+        let layer =
+            RenderedArtworkLayer::new(incoming, repository_root, resolved.palette, &self.caches);
+        self.transition.update_current(revision, |current| {
+            let rendered = current
+                .now_playing
+                .as_mut()
+                .expect("Now Playing artwork update");
+            if let Some(viewport) = viewport {
+                let layout = NowPlayingLayout::for_composition_progress(
+                    incoming,
+                    viewport,
+                    rendered.metadata.rendered_composition_progress(),
+                );
+                layer.apply_layout(&layout);
+                layer.background.apply_viewport(viewport);
+            }
+            // An invisible destination can take its latest artwork immediately;
+            // its parent still owns the coordinated Now Playing reveal.
+            let animate_artwork = animated && current.root.opacity() > 0.0;
+            rendered.visuals.replace(
+                revision,
+                layer,
+                transition_clock.elapsed(),
+                animate_artwork,
+                current.palette,
+            );
+            if !animate_artwork {
+                current.set_palette(resolved.palette);
+            }
+            current.capture_error = capture_error;
+        });
+        self.install_palette_styles();
     }
 
     pub(crate) fn update_diagnostics(&self, text: &str) {
@@ -676,6 +764,24 @@ impl PresentationView {
                 &full_field_layout,
             ));
         }
+        let presentations =
+            std::iter::once((PresentationStyleLayer::Current, self.transition.current()))
+                .chain(
+                    self.transition
+                        .outgoing()
+                        .map(|layer| (PresentationStyleLayer::Outgoing, layer)),
+                )
+                .chain(
+                    self.retained_layers
+                        .iter()
+                        .enumerate()
+                        .map(|(index, layer)| (PresentationStyleLayer::Retained(index), layer)),
+                );
+        for (style, layer) in presentations {
+            if let Some(rendered) = &layer.value().now_playing {
+                css.push_str(&rendered.visuals.styles(style, &layout, &full_field_layout));
+            }
+        }
         self.palette_provider.load_from_data(&css);
     }
 }
@@ -740,6 +846,13 @@ impl FullFieldFitGeneration {
 }
 
 impl RenderedPresentation {
+    fn set_palette(&mut self, palette: PresentationPalette) {
+        self.palette = palette;
+        if let Some(rendered) = &self.now_playing {
+            rendered.metadata.lyrics.reel.set_palette(palette);
+        }
+    }
+
     fn text_opacity(&self) -> f64 {
         if let Some(now_playing) = &self.now_playing {
             now_playing.metadata.root.opacity()
@@ -779,7 +892,9 @@ impl RenderedPresentation {
             return Err(error.clone());
         }
         if let Some(now_playing) = self.now_playing.as_ref() {
-            return Ok(now_playing.artwork.capture_ready()? && self.layout_ready());
+            return Ok(!now_playing.visuals.transition.is_active()
+                && now_playing.visuals.current().artwork.capture_ready()?
+                && self.layout_ready());
         }
         Ok(self.layout_ready())
     }
@@ -821,6 +936,12 @@ impl RenderedPresentation {
                     .presentation_status
                     .update(&presentation.status, now);
             }
+            (None, Some(rendered), Presentation::NowPlaying(presentation)) => {
+                // Unusable artwork with no metadata resolves to Full-field.
+                rendered
+                    .presentation_status
+                    .update(&presentation.status, now);
+            }
             _ => debug_assert!(
                 false,
                 "in-place updates must preserve presentation composition"
@@ -851,13 +972,17 @@ impl RenderedPresentation {
 
     fn apply_now_playing_background(&self, viewport: Viewport) {
         if let Some(now_playing) = self.now_playing.as_ref() {
-            now_playing.background.apply_viewport(viewport);
+            now_playing.visuals.apply_background_viewport(viewport);
         }
     }
 
     fn apply_prepared_now_playing_background(&self, gradient: PreparedNowPlayingGradient) {
         if let Some(now_playing) = self.now_playing.as_ref() {
-            now_playing.background.apply_prepared(gradient);
+            now_playing
+                .visuals
+                .current()
+                .background
+                .apply_prepared(gradient);
         }
     }
 
@@ -1065,8 +1190,13 @@ fn now_playing(
     surface.set_hexpand(true);
     surface.set_vexpand(true);
 
-    let background = RenderedNowPlayingBackground::new(palette, Rc::clone(&caches.gradients));
-    surface.set_child(Some(&background.picture));
+    let visuals = RenderedArtworkLayers::new(RenderedArtworkLayer::new(
+        presentation,
+        repository_root,
+        palette,
+        &caches,
+    ));
+    surface.set_child(Some(&visuals.root));
 
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     content.add_css_class("now-playing-content");
@@ -1080,8 +1210,6 @@ fn now_playing(
     artwork_column.set_hexpand(false);
     artwork_column.set_vexpand(true);
     artwork_column.set_overflow(gtk::Overflow::Visible);
-    let artwork = artwork(presentation, repository_root, Rc::clone(&caches.artwork));
-    artwork_column.set_center_widget(Some(&artwork.reservation));
 
     let metadata = metadata(presentation, &layout, palette, rendering);
     let metadata_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -1093,10 +1221,9 @@ fn now_playing(
     content.append(&artwork_column);
     content.append(&metadata_slot);
     let now_playing = RenderedNowPlaying {
-        background,
+        visuals,
         content,
         artwork_column,
-        artwork,
         metadata_slot,
         metadata,
     };
@@ -1128,6 +1255,189 @@ fn presentation_layer(
         diagnostics
     });
     (root, diagnostics)
+}
+
+fn artwork_source(presentation: &Presentation) -> Option<(String, Option<u64>)> {
+    match presentation {
+        Presentation::NowPlaying(presentation) => presentation
+            .artwork_path
+            .as_ref()
+            .map(|path| (path.clone(), presentation.artwork_revision)),
+        Presentation::FullField(_) => None,
+    }
+}
+
+fn set_layer_style(root: &impl IsA<gtk::Widget>, style: PresentationStyleLayer) {
+    if root.has_css_class(&style.class_name()) {
+        return;
+    }
+    for class in root.css_classes() {
+        if class.starts_with("presentation-") {
+            root.remove_css_class(&class);
+        }
+    }
+    root.add_css_class(&style.class_name());
+}
+
+impl RenderedArtworkLayer {
+    fn new(
+        presentation: &NowPlayingPresentation,
+        repository_root: &Path,
+        palette: PresentationPalette,
+        caches: &PresentationCaches,
+    ) -> Self {
+        let root = gtk::Overlay::new();
+        root.set_hexpand(true);
+        root.set_vexpand(true);
+        let background = RenderedNowPlayingBackground::new(palette, Rc::clone(&caches.gradients));
+        root.set_child(Some(&background.picture));
+        let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        content.set_hexpand(true);
+        content.set_vexpand(true);
+        let artwork_column = gtk::CenterBox::new();
+        artwork_column.set_orientation(gtk::Orientation::Vertical);
+        artwork_column.set_vexpand(true);
+        artwork_column.set_overflow(gtk::Overflow::Visible);
+        let artwork = artwork(presentation, repository_root, Rc::clone(&caches.artwork));
+        artwork_column.set_center_widget(Some(&artwork.reservation));
+        content.append(&artwork_column);
+        root.add_overlay(&content);
+        Self {
+            root,
+            background,
+            content,
+            artwork_column,
+            artwork,
+            palette,
+        }
+    }
+
+    fn apply_layout(&self, layout: &NowPlayingLayout) {
+        let gutter = dimension(layout.outer_gutter_px);
+        self.content.set_margin_start(gutter);
+        self.content.set_margin_end(gutter);
+        self.artwork_column
+            .set_width_request(dimension(layout.artwork_column_width_px));
+        self.artwork.apply_layout(layout);
+    }
+}
+
+impl RenderedArtworkLayers {
+    fn new(layer: RenderedArtworkLayer) -> Self {
+        let root = gtk::Overlay::new();
+        root.set_hexpand(true);
+        root.set_vexpand(true);
+        root.add_overlay(&layer.root);
+        root.set_measure_overlay(&layer.root, true);
+        let from_palette = layer.palette;
+        Self {
+            root,
+            transition: PresentationTransition::new(0, layer),
+            retained: Vec::new(),
+            from_palette,
+        }
+    }
+
+    fn current(&self) -> &RenderedArtworkLayer {
+        self.transition.current().value()
+    }
+
+    fn layers(&self) -> impl Iterator<Item = (PresentationStyleLayer, &RenderedArtworkLayer)> {
+        std::iter::once((PresentationStyleLayer::Current, self.current()))
+            .chain(
+                self.transition
+                    .outgoing()
+                    .map(|layer| (PresentationStyleLayer::Outgoing, layer.value())),
+            )
+            .chain(
+                self.retained
+                    .iter()
+                    .enumerate()
+                    .map(|(index, layer)| (PresentationStyleLayer::Retained(index), layer.value())),
+            )
+    }
+
+    fn replace(
+        &mut self,
+        revision: u64,
+        layer: RenderedArtworkLayer,
+        now: Duration,
+        animated: bool,
+        visible_palette: PresentationPalette,
+    ) {
+        let duration = Duration::from_millis(225);
+        if !animated {
+            for released in self.transition.replace_immediately(revision, layer) {
+                self.root.remove_overlay(&released.value().root);
+            }
+            self.release_retained();
+        } else {
+            layer.root.set_opacity(0.0);
+            if self.transition.is_active() && self.current().root.opacity() == 0.0 {
+                let released = self.transition.retarget_current(revision, layer, duration);
+                self.root.remove_overlay(&released.value().root);
+            } else {
+                let opaque = self.current().root.opacity() == 1.0;
+                for released in self
+                    .transition
+                    .retain_visible_composite(opaque, &mut self.retained)
+                {
+                    self.root.remove_overlay(&released.value().root);
+                }
+                self.from_palette = visible_palette;
+                let discarded = self
+                    .transition
+                    .begin_with_duration(revision, layer, now, duration);
+                debug_assert!(discarded.is_none());
+            }
+        }
+        self.root.add_overlay(&self.current().root);
+        self.root.set_measure_overlay(&self.current().root, true);
+    }
+
+    fn advance(&mut self, now: Duration) -> PresentationPalette {
+        let progress = self.transition.progress(now);
+        let opacity = motion_phase(progress, 0.0, 1.0);
+        self.current().root.set_opacity(opacity);
+        let palette = self.from_palette.mix(self.current().palette, opacity);
+        if let Some(outgoing) = self.transition.finish(now) {
+            self.root.remove_overlay(&outgoing.value().root);
+            self.release_retained();
+        }
+        palette
+    }
+
+    fn release_retained(&mut self) {
+        for layer in self.retained.drain(..) {
+            self.root.remove_overlay(&layer.value().root);
+        }
+    }
+
+    fn apply_layout(&self, layout: &NowPlayingLayout) {
+        for (_, layer) in self.layers() {
+            layer.apply_layout(layout);
+        }
+    }
+
+    fn apply_background_viewport(&self, viewport: Viewport) {
+        for (_, layer) in self.layers() {
+            layer.background.apply_viewport(viewport);
+        }
+    }
+
+    fn styles(
+        &self,
+        parent: PresentationStyleLayer,
+        layout: &NowPlayingLayout,
+        full_field: &FullFieldLayout,
+    ) -> String {
+        let mut css = String::new();
+        for (style, layer) in self.layers() {
+            set_layer_style(&layer.root, style);
+            css.push_str(&style.to_css_within(parent, layer.palette, layout, full_field));
+        }
+        css
+    }
 }
 
 fn artwork(
@@ -1543,7 +1853,7 @@ impl RenderedNowPlaying {
 
         self.artwork_column
             .set_width_request(dimension(layout.artwork_column_width_px));
-        self.artwork.apply_layout(layout);
+        self.visuals.apply_layout(layout);
         self.metadata_slot
             .set_width_request(dimension(layout.information.utility_width_px));
         self.metadata.apply_layout(layout);
@@ -2648,6 +2958,8 @@ mod tests {
             let mut bounds = vec![
                 (
                     content
+                        .visuals
+                        .current()
                         .artwork
                         .reservation
                         .compute_bounds(&rendered.root)
@@ -2750,7 +3062,7 @@ mod tests {
                     }
                     match classify_presentation_update(&previous, &next) {
                         PresentationUpdate::InPlace => {
-                            view.update_in_place(index as u64 + 1, &next)
+                            view.update_in_place(index as u64 + 1, &next, &repository)
                         }
                         PresentationUpdate::TransitionRequired => {
                             view.replace(index as u64 + 1, &next, &repository)
@@ -2960,6 +3272,10 @@ mod tests {
         composition_transitions_preserve_fitted_cues();
         status_and_timing_replacements_preserve_the_existing_metadata();
         now_playing_artwork_and_text_reveal_together();
+        current_track_artwork_preserves_readable_text();
+        artwork_updates_recolor_the_existing_lyric_reel();
+        repeated_artwork_updates_preserve_visible_appearance();
+        track_replacement_supersedes_artwork_without_restarting_its_reveal();
         interrupted_reveal_preserves_the_visible_layers();
         invisible_destinations_keep_the_original_departure_clock();
         incoming_foreground_updates_during_the_coordinated_reveal();
@@ -3008,7 +3324,7 @@ mod tests {
             .now_playing
             .as_ref()
             .expect("ordinary state should render Now Playing");
-        let artwork = now_playing.artwork.surface.as_ptr();
+        let artwork = now_playing.visuals.current().artwork.surface.as_ptr();
         let status = now_playing.metadata.presentation_status.root.as_ptr();
         let footer = now_playing.metadata.footer.as_ptr();
         let identity = now_playing.metadata.identity.root.as_ptr();
@@ -3042,7 +3358,10 @@ mod tests {
             .now_playing
             .as_ref()
             .expect("lyric state should retain Now Playing");
-        assert_eq!(now_playing.artwork.surface.as_ptr(), artwork);
+        assert_eq!(
+            now_playing.visuals.current().artwork.surface.as_ptr(),
+            artwork
+        );
         assert_eq!(
             now_playing.metadata.presentation_status.root.as_ptr(),
             status
@@ -3052,7 +3371,7 @@ mod tests {
         assert!(now_playing.metadata.lyrics.reel_region.opacity() > 0.8);
         assert!(now_playing.metadata.lyrics.masthead.opacity() > 0.5);
         assert_eq!(now_playing.metadata.ordinary_metadata.opacity(), 0.0);
-        assert_eq!(now_playing.artwork.surface.opacity(), 1.0);
+        assert_eq!(now_playing.visuals.current().artwork.surface.opacity(), 1.0);
         let ordinary_midpoint = now_playing
             .metadata
             .ordinary_metadata
@@ -3897,7 +4216,10 @@ mod tests {
                     RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
                 );
                 view.replace(1, pending, &repository);
-                let start = view.transition_clock.elapsed();
+                let start = view
+                    .transition
+                    .started_at()
+                    .unwrap_or_else(|| view.transition_clock.elapsed());
                 view.advance_transition(start + Duration::from_millis(at_millis));
                 let original = view.transition.outgoing().unwrap().value().root.clone();
                 let opacity = view.transition.outgoing().unwrap().value().text_opacity();
@@ -3964,7 +4286,10 @@ mod tests {
                 let mut contributing = vec![(base, 1.0)];
                 view.replace(1, &second, &repository);
                 for revision in 2..=5 {
-                    let start = view.transition_clock.elapsed();
+                    let start = view
+                        .transition
+                        .started_at()
+                        .unwrap_or_else(|| view.transition_clock.elapsed());
                     view.advance_transition(start + Duration::from_millis(337));
                     let revealed = view.transition.current().value().root.clone();
                     let opacity = revealed.opacity();
@@ -3984,7 +4309,10 @@ mod tests {
                         );
                     }
                     assert_eq!(view.transition.current().value().root.opacity(), 0.0);
-                    let start = view.transition_clock.elapsed();
+                    let start = view
+                        .transition
+                        .started_at()
+                        .unwrap_or_else(|| view.transition_clock.elapsed());
                     view.advance_transition(start + Duration::from_millis(112));
                     assert!(view.transition.outgoing().unwrap().value().text_opacity() < 0.6);
                     assert_eq!(view.transition.current().value().root.opacity(), 0.0);
@@ -4000,7 +4328,10 @@ mod tests {
                         .set_gtk_enable_animations(false);
                     view.replace(6, &second, &repository);
                 } else {
-                    let start = view.transition_clock.elapsed();
+                    let start = view
+                        .transition
+                        .started_at()
+                        .unwrap_or_else(|| view.transition_clock.elapsed());
                     view.advance_transition(start + Duration::from_millis(675));
                 }
                 for (root, _) in contributing {
@@ -4018,6 +4349,517 @@ mod tests {
         gtk::Settings::default()
             .unwrap()
             .set_gtk_enable_animations(true);
+    }
+
+    fn artwork_view(
+        presentation: &roonscape_renderer::NowPlayingPresentation,
+        behavior: PresentationBehavior,
+    ) -> super::PresentationView {
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        super::PresentationView::new(
+            0,
+            &Presentation::NowPlaying(presentation.clone()),
+            Viewport::new(1280, 720),
+            &repository,
+            super::install_style_providers(typography),
+            None,
+            RenderingConfiguration::live(typography, behavior),
+        )
+    }
+
+    fn current_track_artwork_preserves_readable_text() {
+        use std::rc::Rc;
+        use std::time::{Duration, Instant};
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        gtk::Settings::default()
+            .unwrap()
+            .set_gtk_enable_animations(true);
+        for fixture in ["playing.json", "lyrics-one-line.json"] {
+            let mut supplied = lyric_presentation(fixture);
+            let mut missing = supplied.clone();
+            missing.artwork_path = None;
+            missing.artwork_revision = None;
+            if let Some(lyrics) = &mut missing.lyrics {
+                lyrics.current_index = 0;
+                missing.playback_position_seconds = Some(169.9);
+                supplied.playback_position_seconds = Some(170.0);
+            }
+            // Prepare both appearances through the view before measuring motion,
+            // so debug-build raster preparation is outside the handoff clock.
+            let mut initial = missing.clone();
+            initial.artwork_path.clone_from(&supplied.artwork_path);
+            initial.artwork_revision = supplied.artwork_revision;
+            let mut view = artwork_view(&initial, PresentationBehavior::Dynamic);
+            gtk::Settings::default()
+                .unwrap()
+                .set_gtk_enable_animations(false);
+            view.update_in_place(0, &Presentation::NowPlaying(missing.clone()), &repository);
+            gtk::Settings::default()
+                .unwrap()
+                .set_gtk_enable_animations(true);
+            // Start local cue progression before a new artwork publication.
+            view.update_in_place(0, &Presentation::NowPlaying(missing.clone()), &repository);
+            missing.lyrics.clone_from(&supplied.lyrics);
+            missing.playback_position_seconds = supplied.playback_position_seconds;
+            view.update_in_place(0, &Presentation::NowPlaying(missing), &repository);
+            let rendered = view
+                .transition
+                .current()
+                .value()
+                .now_playing
+                .as_ref()
+                .unwrap();
+            let text = rendered.metadata.root.clone();
+            let timing = rendered.metadata.progress.as_ref().unwrap().root.clone();
+            let identity = rendered.metadata.identity.root.clone();
+            let lyrics = Rc::clone(&rendered.metadata.lyrics);
+            view.update_in_place(1, &Presentation::NowPlaying(supplied.clone()), &repository);
+            let start = view
+                .transition
+                .current()
+                .value()
+                .now_playing
+                .as_ref()
+                .unwrap()
+                .visuals
+                .transition
+                .started_at()
+                .unwrap();
+            let mut previous_anchors = None;
+            for millis in [0, 112, 180, 225] {
+                let now = start + Duration::from_millis(millis);
+                view.transition_clock = Instant::now() - now;
+                supplied.progress.as_mut().unwrap().elapsed = format!("2:{millis:03}");
+                view.update_in_place(2, &Presentation::NowPlaying(supplied.clone()), &repository);
+                view.advance_transition(now);
+                let current = view.transition.current().value();
+                let rendered = current.now_playing.as_ref().unwrap();
+                assert_eq!(
+                    rendered.metadata.root, text,
+                    "artwork preserves the live text widgets"
+                );
+                assert_eq!(text.opacity(), 1.0, "artwork must not retire readable text");
+                assert_eq!(rendered.metadata.progress.as_ref().unwrap().root, timing);
+                assert_eq!(
+                    rendered.metadata.progress.as_ref().unwrap().elapsed.text(),
+                    supplied.progress.as_ref().unwrap().elapsed
+                );
+                assert_eq!(rendered.metadata.identity.root, identity);
+                assert_eq!(
+                    rendered.metadata.presentation_status.label.text(),
+                    "PLAYING"
+                );
+                assert!(Rc::ptr_eq(&lyrics, &rendered.metadata.lyrics));
+                assert!(!view.transition.is_active(), "artwork is a partial update");
+                if millis == 112 {
+                    let opacity = rendered.visuals.current().root.opacity();
+                    assert!(
+                        (0.45..0.55).contains(&opacity),
+                        "artwork and its background are halfway blended at 112ms"
+                    );
+                    assert_eq!(
+                        rendered
+                            .visuals
+                            .transition
+                            .outgoing()
+                            .unwrap()
+                            .value()
+                            .root
+                            .opacity(),
+                        1.0
+                    );
+                }
+                if supplied.lyrics.is_some() && millis > 0 {
+                    let frame = lyrics.motion.borrow().frame_at(now);
+                    assert!(
+                        frame.cue_motion_active,
+                        "artwork must not restart or settle a Natural Cue Handoff: now={now:?}, start={start:?}, frame={frame:?}"
+                    );
+                    if let Some(previous) = previous_anchors {
+                        assert_ne!(frame.anchors, previous);
+                    }
+                    previous_anchors = Some(frame.anchors);
+                }
+            }
+            let current = view.transition.current().value();
+            assert_eq!(
+                current.palette,
+                roonscape_renderer::resolve_presentation(
+                    &Presentation::NowPlaying(supplied),
+                    &repository
+                )
+                .palette
+            );
+            let visuals = &current.now_playing.as_ref().unwrap().visuals;
+            assert!(
+                !visuals.transition.is_active(),
+                "the artwork crossfade ends at 225ms"
+            );
+            assert_eq!(visuals.current().root.opacity(), 1.0);
+        }
+    }
+
+    fn artwork_updates_recolor_the_existing_lyric_reel() {
+        use std::time::Duration;
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for animated in [true, false] {
+            gtk::Settings::default()
+                .unwrap()
+                .set_gtk_enable_animations(animated);
+            let mut target = lyric_presentation("lyrics-one-line.json");
+            let mut view = artwork_view(&target, PresentationBehavior::Dynamic);
+            let window = gtk::Window::new();
+            window.set_default_size(1280, 720);
+            window.set_child(Some(&view.root()));
+            window.present();
+            for _ in 0..40 {
+                while gtk::glib::MainContext::default().iteration(false) {}
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let reel = std::rc::Rc::clone(
+                &view
+                    .transition
+                    .current()
+                    .value()
+                    .now_playing
+                    .as_ref()
+                    .unwrap()
+                    .metadata
+                    .lyrics
+                    .reel,
+            );
+            let before = reel.visible_cues();
+            target.artwork_path = Some("src/shared/fixtures/artwork/light.jpg".into());
+            target.artwork_revision = Some(9);
+            view.update_in_place(1, &Presentation::NowPlaying(target.clone()), &repository);
+            if animated {
+                let start = view
+                    .transition
+                    .current()
+                    .value()
+                    .now_playing
+                    .as_ref()
+                    .unwrap()
+                    .visuals
+                    .transition
+                    .started_at()
+                    .unwrap();
+                for millis in [112, 225] {
+                    view.advance_transition(start + Duration::from_millis(millis));
+                    let cues = reel.visible_cues();
+                    let active = cues
+                        .iter()
+                        .find(|cue| cue.cue.color_weights == [0.0, 1.0, 0.0])
+                        .unwrap();
+                    assert_eq!(
+                        active.color,
+                        view.transition.current().value().palette.primary_text,
+                        "lyric colors follow intermediate palettes too"
+                    );
+                }
+            }
+            let current = view.transition.current().value();
+            let after = reel.visible_cues();
+            assert!(
+                !after.is_empty(),
+                "the lyric palette check needs painted cues"
+            );
+            let active = after
+                .iter()
+                .find(|cue| cue.cue.color_weights == [0.0, 1.0, 0.0])
+                .unwrap();
+            assert_eq!(
+                active.color, current.palette.primary_text,
+                "painted lyrics must use the destination artwork's text palette"
+            );
+            assert_eq!(
+                before
+                    .iter()
+                    .map(|cue| (&cue.cue.text, cue.y, cue.height, cue.layout.as_ptr()))
+                    .collect::<Vec<_>>(),
+                after
+                    .iter()
+                    .map(|cue| (&cue.cue.text, cue.y, cue.height, cue.layout.as_ptr()))
+                    .collect::<Vec<_>>(),
+                "recoloring must preserve the fitted reel and its positions"
+            );
+            window.destroy();
+        }
+        gtk::Settings::default()
+            .unwrap()
+            .set_gtk_enable_animations(true);
+    }
+
+    fn repeated_artwork_updates_preserve_visible_appearance() {
+        use std::time::{Duration, Instant};
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut target = lyric_presentation("playing.json");
+        let mut view = artwork_view(&target, PresentationBehavior::Dynamic);
+        for (revision, path) in [
+            (2, Some("src/shared/fixtures/artwork/revised.jpg")),
+            (3, None),
+            (4, Some("src/shared/fixtures/artwork/playing.jpg")),
+            (5, Some("src/shared/fixtures/artwork/unavailable.jpg")),
+        ] {
+            let before = view.transition.current().value();
+            let palette = before.palette;
+            let visible: Vec<_> = before
+                .now_playing
+                .as_ref()
+                .unwrap()
+                .visuals
+                .layers()
+                .map(|(_, layer)| (layer.root.clone(), layer.root.opacity()))
+                .collect();
+            target.artwork_path = path.map(str::to_owned);
+            target.artwork_revision = path.map(|_| revision);
+            view.update_in_place(
+                revision,
+                &Presentation::NowPlaying(target.clone()),
+                &repository,
+            );
+            let current = view.transition.current().value();
+            assert_eq!(
+                current.palette, palette,
+                "retargeting starts at the visible palette"
+            );
+            for (root, opacity) in &visible {
+                assert!(
+                    root.parent().is_some(),
+                    "visible artwork is retained beneath the new destination"
+                );
+                assert_eq!(
+                    root.opacity(),
+                    *opacity,
+                    "a repeated update must not jump to an opaque intermediate artwork"
+                );
+            }
+            let start = current
+                .now_playing
+                .as_ref()
+                .unwrap()
+                .visuals
+                .transition
+                .started_at()
+                .unwrap();
+            let now = start + Duration::from_millis(112);
+            view.advance_transition(now);
+            view.transition_clock = Instant::now() - now;
+            assert_eq!(view.transition.current().value().text_opacity(), 1.0);
+        }
+        let visuals = &view
+            .transition
+            .current()
+            .value()
+            .now_playing
+            .as_ref()
+            .unwrap()
+            .visuals;
+        let obsolete: Vec<_> = visuals
+            .layers()
+            .skip(1)
+            .map(|(_, layer)| layer.root.clone())
+            .collect();
+        let end = visuals.transition.started_at().unwrap() + Duration::from_millis(225);
+        view.advance_transition(end);
+        let current = view.transition.current().value();
+        assert_eq!(current.palette, PresentationPalette::fallback());
+        assert!(
+            current
+                .now_playing
+                .as_ref()
+                .unwrap()
+                .visuals
+                .current()
+                .artwork
+                .source_key
+                .is_none()
+        );
+        for root in obsolete {
+            assert!(
+                root.parent().is_none(),
+                "completed updates release obsolete artwork"
+            );
+        }
+
+        for behavior in [
+            PresentationBehavior::Dynamic,
+            PresentationBehavior::StaticFixture,
+        ] {
+            gtk::Settings::default()
+                .unwrap()
+                .set_gtk_enable_animations(false);
+            let mut view = artwork_view(&target, behavior);
+            target = lyric_presentation("playing.json");
+            view.update_in_place(10, &Presentation::NowPlaying(target.clone()), &repository);
+            let current = view.transition.current().value();
+            assert_eq!(current.text_opacity(), 1.0);
+            assert!(
+                !current
+                    .now_playing
+                    .as_ref()
+                    .unwrap()
+                    .visuals
+                    .transition
+                    .is_active()
+            );
+            assert_eq!(
+                current.palette,
+                roonscape_renderer::resolve_presentation(
+                    &Presentation::NowPlaying(target.clone()),
+                    &repository
+                )
+                .palette
+            );
+            target.artwork_path = None;
+            target.artwork_revision = None;
+            view.update_in_place(11, &Presentation::NowPlaying(target.clone()), &repository);
+            assert_eq!(
+                view.transition.current().value().palette,
+                PresentationPalette::fallback()
+            );
+        }
+        gtk::Settings::default()
+            .unwrap()
+            .set_gtk_enable_animations(true);
+    }
+
+    fn track_replacement_supersedes_artwork_without_restarting_its_reveal() {
+        use std::time::{Duration, Instant};
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut target = lyric_presentation("playing.json");
+        let mut view = artwork_view(&target, PresentationBehavior::Dynamic);
+        target.artwork_path = None;
+        target.artwork_revision = None;
+        view.update_in_place(1, &Presentation::NowPlaying(target.clone()), &repository);
+        let start = view
+            .transition
+            .current()
+            .value()
+            .now_playing
+            .as_ref()
+            .unwrap()
+            .visuals
+            .transition
+            .started_at()
+            .unwrap();
+        let now = start + Duration::from_millis(112);
+        view.advance_transition(now);
+        view.transition_clock = Instant::now() - now;
+        let obsolete: Vec<_> = view
+            .transition
+            .current()
+            .value()
+            .now_playing
+            .as_ref()
+            .unwrap()
+            .visuals
+            .layers()
+            .map(|(_, layer)| (layer.root.clone(), layer.root.opacity()))
+            .collect();
+        target.title = Some("A new track".into());
+        view.replace(2, &Presentation::NowPlaying(target.clone()), &repository);
+        let track_start = view.transition.started_at().unwrap();
+        let text = view
+            .transition
+            .current()
+            .value()
+            .now_playing
+            .as_ref()
+            .unwrap()
+            .metadata
+            .root
+            .clone();
+        for millis in [100, 337] {
+            let now = track_start + Duration::from_millis(millis);
+            view.advance_transition(now);
+            view.transition_clock = Instant::now() - now;
+            let before = view.transition.current().value().root.opacity();
+            target.artwork_path = Some(
+                if millis == 100 {
+                    "src/shared/fixtures/artwork/playing.jpg"
+                } else {
+                    "src/shared/fixtures/artwork/revised.jpg"
+                }
+                .into(),
+            );
+            target.artwork_revision = Some(millis);
+            view.update_in_place(
+                3 + millis,
+                &Presentation::NowPlaying(target.clone()),
+                &repository,
+            );
+            assert_eq!(
+                view.transition.started_at(),
+                Some(track_start),
+                "artwork must not restart the Now Playing Transition"
+            );
+            let current = view.transition.current().value();
+            assert_eq!(current.root.opacity(), before);
+            assert_eq!(current.now_playing.as_ref().unwrap().metadata.root, text);
+            assert_eq!(
+                text.opacity(),
+                1.0,
+                "the coordinated reveal still owns text visibility"
+            );
+            if millis == 100 {
+                assert!(
+                    !current
+                        .now_playing
+                        .as_ref()
+                        .unwrap()
+                        .visuals
+                        .transition
+                        .is_active(),
+                    "artwork joins an invisible destination immediately"
+                );
+            } else {
+                assert!(
+                    current
+                        .now_playing
+                        .as_ref()
+                        .unwrap()
+                        .visuals
+                        .transition
+                        .is_active()
+                );
+            }
+            for (root, opacity) in &obsolete {
+                assert_eq!(
+                    root.opacity(),
+                    *opacity,
+                    "obsolete artwork cannot finish revealing on a new track"
+                );
+            }
+        }
+        view.advance_transition(track_start + Duration::from_millis(450));
+        assert!(
+            !view.transition.is_active(),
+            "the original coordinated reveal finishes on time"
+        );
+        let artwork_end = view
+            .transition
+            .current()
+            .value()
+            .now_playing
+            .as_ref()
+            .unwrap()
+            .visuals
+            .transition
+            .started_at()
+            .unwrap()
+            + Duration::from_millis(225);
+        view.advance_transition(artwork_end);
+        assert_eq!(
+            view.transition.current().value().palette,
+            roonscape_renderer::resolve_presentation(
+                &Presentation::NowPlaying(target),
+                &repository
+            )
+            .palette
+        );
+        assert_eq!(view.transition.current().value().text_opacity(), 1.0);
     }
 
     fn now_playing_artwork_and_text_reveal_together() {
@@ -4049,7 +4891,10 @@ mod tests {
                     RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
                 );
                 view.replace(1, &presentation(target), &repository);
-                let start = view.transition_clock.elapsed();
+                let start = view
+                    .transition
+                    .started_at()
+                    .unwrap_or_else(|| view.transition_clock.elapsed());
                 for millis in [0, 112, 225, 337, 449] {
                     view.advance_transition(start + Duration::from_millis(millis));
                     let outgoing = view.transition.outgoing().unwrap().value();
@@ -4145,7 +4990,10 @@ mod tests {
                 .elapsed
                 .clone();
             let retiring_elapsed = retiring_timing.text();
-            let start = view.transition_clock.elapsed();
+            let start = view
+                .transition
+                .started_at()
+                .unwrap_or_else(|| view.transition_clock.elapsed());
             incoming.status = lyric_presentation("playing.json").status;
             let mut previous_anchors = None;
             for millis in [0, 226, 337, 400] {
@@ -4156,7 +5004,7 @@ mod tests {
                 if millis >= 226 {
                     incoming.lyrics.as_mut().unwrap().current_index = 2;
                 }
-                view.update_in_place(2, &Presentation::NowPlaying(incoming.clone()));
+                view.update_in_place(2, &Presentation::NowPlaying(incoming.clone()), &repository);
                 view.advance_transition(now);
                 assert_eq!(
                     retiring_timing.text(),
@@ -4215,7 +5063,10 @@ mod tests {
             RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
         );
         view.replace(1, &presentation("stopped.json"), &repository);
-        let start = view.transition_clock.elapsed();
+        let start = view
+            .transition
+            .started_at()
+            .unwrap_or_else(|| view.transition_clock.elapsed());
         for millis in [0, 100, 200, 250, 350, 449, 500, 600] {
             view.advance_transition(start + Duration::from_millis(millis));
             let outgoing = view.transition.outgoing().unwrap().value();

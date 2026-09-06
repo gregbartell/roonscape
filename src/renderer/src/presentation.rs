@@ -268,6 +268,7 @@ impl PresentationStatusMotion {
 pub struct PresentationState {
     snapshot: PresentationSnapshot,
     timing: TimingContinuity,
+    now_playing_generation: u64,
     inactivity_configuration: InactivityConfiguration,
     inactivity_condition: Option<InactivityCondition>,
     inactivity_anchored_at: Duration,
@@ -358,7 +359,7 @@ impl TimingContinuity {
         next: &PresentationSnapshot,
         anchored_at: PresentationTime,
         behavior: PresentationBehavior,
-    ) -> Result<(), PresentationError> {
+    ) -> Result<bool, PresentationError> {
         let next_authoritative_position =
             authoritative_position_anchor(next, anchored_at, behavior)?;
         let zone_continues = previous.availability == Availability::Available
@@ -457,7 +458,7 @@ impl TimingContinuity {
                 .map(|known| known.enriched_with(next)),
             (_, next) => next,
         };
-        Ok(())
+        Ok(now_playing_continues)
     }
 
     fn resolved_at(
@@ -579,6 +580,7 @@ impl PresentationState {
         Self {
             snapshot: disconnected_snapshot(0),
             timing: TimingContinuity::discarded(),
+            now_playing_generation: 0,
             inactivity_configuration,
             inactivity_condition: Some(InactivityCondition::Unavailable(
                 Availability::Disconnected,
@@ -620,6 +622,7 @@ impl PresentationState {
         Ok(Self {
             snapshot,
             timing,
+            now_playing_generation: 0,
             inactivity_configuration,
             inactivity_condition,
             inactivity_anchored_at: anchored_at.monotonic,
@@ -659,8 +662,12 @@ impl PresentationState {
                 && same_composition_except_timing(&self.snapshot, &snapshot);
         presentation_from_snapshot(&snapshot)?;
         let next_inactivity_condition = inactivity_condition(&snapshot);
-        self.timing
-            .update(&self.snapshot, &snapshot, anchored_at, self.behavior)?;
+        let now_playing_continues =
+            self.timing
+                .update(&self.snapshot, &snapshot, anchored_at, self.behavior)?;
+        if !now_playing_continues {
+            self.now_playing_generation += 1;
+        }
         if self.inactivity_condition != next_inactivity_condition
             || (restart_inactivity && next_inactivity_condition.is_some())
         {
@@ -669,11 +676,18 @@ impl PresentationState {
         }
         self.snapshot = snapshot;
         let next_presentation = self.presentation_at(anchored_at.monotonic)?;
-        Ok(if reconciles_provisional_timing {
-            PresentationUpdate::InPlace
-        } else {
-            classify_presentation_update(&previous_presentation, &next_presentation)
-        })
+        Ok(
+            if !now_playing_continues
+                && matches!(previous_presentation, Presentation::NowPlaying(_))
+                && matches!(next_presentation, Presentation::NowPlaying(_))
+            {
+                PresentationUpdate::TransitionRequired
+            } else if reconciles_provisional_timing {
+                PresentationUpdate::InPlace
+            } else {
+                classify_presentation_update(&previous_presentation, &next_presentation)
+            },
+        )
     }
 
     pub fn disconnect(&mut self, anchored_at: Duration) -> PresentationUpdate {
@@ -690,6 +704,7 @@ impl PresentationState {
         }
         self.snapshot = snapshot;
         self.timing = TimingContinuity::discarded();
+        self.now_playing_generation += 1;
         update
     }
 
@@ -703,6 +718,12 @@ impl PresentationState {
 
     pub fn revision(&self) -> u64 {
         self.snapshot.revision
+    }
+
+    /// Changes when the timing continuity rule observes a new track or a break
+    /// in Tracked Zone availability, including boundaries between rendered frames.
+    pub fn now_playing_generation(&self) -> u64 {
+        self.now_playing_generation
     }
 
     pub fn frame_at(&self, now: Duration) -> Result<PresentationFrame, PresentationError> {
@@ -815,6 +836,8 @@ pub fn classify_presentation_update(
             previous.progress.clone_from(&next.progress);
             previous.activity.clone_from(&next.activity);
             previous.lyrics.clone_from(&next.lyrics);
+            previous.artwork_path.clone_from(&next.artwork_path);
+            previous.artwork_revision = next.artwork_revision;
         }
         (Presentation::FullField(previous), Presentation::FullField(next)) => {
             previous.status = next.status;

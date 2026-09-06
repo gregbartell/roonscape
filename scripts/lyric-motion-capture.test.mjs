@@ -329,6 +329,34 @@ test("Full-field review publications retain absent timing", () => {
   assert.equal(snapshot.revision, 3);
 });
 
+test("artwork review publications preserve the track and timing while changing artwork", () => {
+  const fixture = {
+    playback: "playing",
+    nowPlaying: { title: "Same track" },
+    artwork: { revision: 1, path: "supplied.jpg" },
+    timing: { durationSeconds: 266 },
+  };
+  const publication = {
+    revision: 3,
+    positionSeconds: 170,
+    sampledAt: "2026-09-05T00:00:00Z",
+  };
+  const removed = reanchorLyricMotionSnapshot(fixture, {
+    ...publication,
+    artwork: null,
+  });
+  assert.equal(removed.artwork, null);
+  assert.deepEqual(removed.nowPlaying, fixture.nowPlaying);
+  assert.equal(removed.timing.position.seconds, 170);
+  const revised = { revision: 9, path: "revised.jpg" };
+  assert.deepEqual(
+    reanchorLyricMotionSnapshot(fixture, { ...publication, artwork: revised })
+      .artwork,
+    revised,
+  );
+  assert.deepEqual(fixture.artwork, { revision: 1, path: "supplied.jpg" });
+});
+
 test("schedules publications from the recorder start clock, not delayed progress observations", () => {
   const recordingStartedAtMilliseconds = 10_000;
   assert.equal(

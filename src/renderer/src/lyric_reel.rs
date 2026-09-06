@@ -15,7 +15,7 @@ pub(crate) struct LyricReel {
     metrics: Cell<Option<(i32, i32, u32)>>,
     layouts: RefCell<HashMap<String, FittedCue>>,
     typography: Cell<NowPlayingTypography>,
-    palette: PresentationPalette,
+    palette: Cell<PresentationPalette>,
     supporting_family: &'static str,
 }
 
@@ -32,6 +32,7 @@ pub(crate) struct PositionedCue {
     pub height: f64,
     pub scale: f64,
     pub cue: LyricCueFrame,
+    pub color: Rgb,
     pub layout: pango::Layout,
     fitted_scale: f64,
 }
@@ -54,7 +55,7 @@ impl LyricReel {
             metrics: Cell::new(None),
             layouts: RefCell::new(HashMap::new()),
             typography: Cell::new(typography),
-            palette,
+            palette: Cell::new(palette),
             supporting_family,
         });
         let weak = Rc::downgrade(&reel);
@@ -90,6 +91,12 @@ impl LyricReel {
         self.typography.set(typography);
         self.frame.replace(Some(frame.clone()));
         self.widget.queue_draw();
+    }
+
+    pub fn set_palette(&self, palette: PresentationPalette) {
+        if self.palette.replace(palette) != palette {
+            self.widget.queue_draw();
+        }
     }
 
     fn shape(&self, text: &str, width: i32, font_px: u32) -> pango::Layout {
@@ -142,6 +149,7 @@ impl LyricReel {
             let scale = fitted.scale * (neighbor_scale + (1.0 - neighbor_scale) * cue.emphasis);
             let height = f64::from(fitted.layout.pixel_size().1) * scale * cue.extent;
             cues.push(PositionedCue {
+                color: self.color(cue),
                 index: cue.index,
                 y: 0.0,
                 height,
@@ -233,7 +241,7 @@ impl LyricReel {
         context.push_group();
         for positioned in self.visible_cues() {
             let cue = &positioned.cue;
-            let color = self.color(cue);
+            let color = positioned.color;
             context.save().expect("save lyric drawing state");
             context.translate(0.0, positioned.y);
             context.scale(positioned.scale, positioned.scale);
@@ -262,10 +270,11 @@ impl LyricReel {
     }
 
     fn color(&self, cue: &LyricCueFrame) -> Rgb {
+        let palette = self.palette.get();
         let colors = [
-            self.palette.muted_text,
-            self.palette.primary_text,
-            self.palette.secondary_text,
+            palette.muted_text,
+            palette.primary_text,
+            palette.secondary_text,
         ];
         let component = |channel: fn(Rgb) -> u8| {
             colors
