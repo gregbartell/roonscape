@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   createFullRateReviewSheets,
-  createReviewOverview,
+  createReviewSheets,
   extractReviewFrames,
   reviewImageFormat,
 } from "./capture-review-artifacts.mjs";
@@ -1473,19 +1473,33 @@ export async function createLyricMotionReviewArtifacts(
     const fileName = `${String(index).padStart(2, "0")}-${semanticSlug(review.name)}.${format.extension}`;
     frames.push({ ...review, fileName });
   }
-  await extractReviewFrames(
-    videoPath,
-    frames.map(({ atSeconds, fileName }) => ({
-      atSeconds,
-      outputPath: path.join(sessionDirectory, fileName),
-    })),
-    { framesPerSecond: state.framesPerSecond, lossless: plan.lossless, signal },
+  const thumbnailDirectory = await mkdtemp(
+    path.join(sessionDirectory, ".thumbnails."),
   );
-  await createReviewOverview(
-    frames.map(({ fileName }) => path.join(sessionDirectory, fileName)),
-    path.join(sessionDirectory, `overview.${format.extension}`),
-    { lossless: plan.lossless, columns: Math.min(5, frames.length), signal },
-  );
+  try {
+    await extractReviewFrames(
+      videoPath,
+      frames.map(({ atSeconds, fileName }) => ({
+        atSeconds,
+        outputPath: path.join(sessionDirectory, fileName),
+      })),
+      {
+        framesPerSecond: state.framesPerSecond,
+        lossless: plan.lossless,
+        thumbnailDirectory,
+        signal,
+      },
+    );
+    await createReviewSheets(
+      frames.map(({ fileName }) =>
+        path.join(thumbnailDirectory, `${fileName}.png`),
+      ),
+      [path.join(sessionDirectory, `overview.${format.extension}`)],
+      { lossless: plan.lossless, columns: Math.min(5, frames.length), signal },
+    );
+  } finally {
+    await rm(thumbnailDirectory, { force: true, recursive: true });
+  }
   await writeFile(
     path.join(sessionDirectory, "README.md"),
     renderLyricMotionCaptureReadme({

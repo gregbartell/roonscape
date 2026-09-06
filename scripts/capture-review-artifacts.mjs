@@ -1,6 +1,7 @@
 import {
   copyFile,
   mkdtemp,
+  mkdir,
   readdir,
   rename,
   rm,
@@ -32,6 +33,9 @@ export function reviewImageFormat(lossless) {
       };
 }
 
+const thumbnailFilter =
+  "scale=384:216:force_original_aspect_ratio=decrease,pad=384:216:(ow-iw)/2:(oh-ih)/2:black";
+
 const ffmpegArguments = [
   "-hide_banner",
   "-loglevel",
@@ -49,7 +53,7 @@ const ffmpegArguments = [
 export async function extractReviewFrames(
   videoPath,
   frames,
-  { framesPerSecond = 20, lossless = false, signal } = {},
+  { framesPerSecond = 20, lossless = false, thumbnailDirectory, signal } = {},
 ) {
   if (frames.length === 0) return;
   const byTick = new Map();
@@ -69,6 +73,9 @@ export async function extractReviewFrames(
     path.join(path.dirname(frames[0].outputPath), ".frames."),
   );
   try {
+    if (thumbnailDirectory)
+      await mkdir(thumbnailDirectory, { recursive: true });
+    const selection = `select='${frameSelection(ticks.map((tick) => tick - firstTick))}'`;
     await runMonitoredProcess(
       "ffmpeg",
       [
@@ -77,8 +84,16 @@ export async function extractReviewFrames(
         (firstTick / framesPerSecond).toFixed(6),
         "-i",
         videoPath,
-        "-vf",
-        `select='${frameSelection(ticks.map((tick) => tick - firstTick))}'`,
+        ...(thumbnailDirectory
+          ? [
+              "-filter_complex_threads",
+              "2",
+              "-filter_complex",
+              `${selection},split[full][small];[small]${thumbnailFilter}[thumbnail]`,
+              "-map",
+              "[full]",
+            ]
+          : ["-vf", selection]),
         "-vsync",
         "vfr",
         "-frames:v",
@@ -89,7 +104,24 @@ export async function extractReviewFrames(
         "-start_number",
         "0",
         "-y",
-        path.join(work, `%06d.${format.extension}`),
+        path.join(work, `full-%06d.${format.extension}`),
+        ...(thumbnailDirectory
+          ? [
+              "-map",
+              "[thumbnail]",
+              "-vsync",
+              "vfr",
+              "-frames:v",
+              String(ticks.length),
+              ...reviewImageFormat(true).encoderArguments,
+              "-threads",
+              "2",
+              "-start_number",
+              "0",
+              "-y",
+              path.join(work, "thumbnail-%06d.png"),
+            ]
+          : []),
       ],
       {
         description: "review frame extraction",
@@ -97,8 +129,8 @@ export async function extractReviewFrames(
         signal,
       },
     );
-    const files = (await readdir(work)).sort();
-    if (files.length !== ticks.length) {
+    const files = await readdir(work);
+    if (files.length !== ticks.length * (thumbnailDirectory ? 2 : 1)) {
       throw new Error(
         "recording does not contain every requested review frame",
       );
@@ -106,8 +138,24 @@ export async function extractReviewFrames(
     for (const [index, tick] of ticks.entries()) {
       signal?.throwIfAborted();
       const [first, ...duplicates] = byTick.get(tick);
-      await rename(path.join(work, files[index]), first);
+      const number = String(index).padStart(6, "0");
+      await rename(
+        path.join(work, `full-${number}.${format.extension}`),
+        first,
+      );
       for (const outputPath of duplicates) await copyFile(first, outputPath);
+      if (thumbnailDirectory) {
+        const thumbnail = path.join(
+          thumbnailDirectory,
+          `${path.basename(first)}.png`,
+        );
+        await rename(path.join(work, `thumbnail-${number}.png`), thumbnail);
+        for (const outputPath of duplicates)
+          await copyFile(
+            thumbnail,
+            path.join(thumbnailDirectory, `${path.basename(outputPath)}.png`),
+          );
+      }
     }
   } finally {
     await rm(work, { force: true, recursive: true });
@@ -194,46 +242,58 @@ export async function createFullRateReviewSheets(
   return pages.map(({ file }) => path.join(reviewDirectory, file));
 }
 
-export async function createReviewOverview(
-  inputPaths,
-  outputPath,
-  { lossless = false, labels, columns = 5, signal } = {},
+export async function createReviewSheets(
+  thumbnailPaths,
+  outputPaths,
+  {
+    lossless = false,
+    labels,
+    columns = 5,
+    framesPerPage = thumbnailPaths.length,
+    signal,
+  } = {},
 ) {
   if (
-    inputPaths.length === 0 ||
-    (labels && labels.length !== inputPaths.length)
+    thumbnailPaths.length === 0 ||
+    !Number.isSafeInteger(framesPerPage) ||
+    framesPerPage < 1 ||
+    outputPaths.length !== Math.ceil(thumbnailPaths.length / framesPerPage) ||
+    (labels && labels.length !== thumbnailPaths.length)
   ) {
     throw new Error(
       "contact sheet requires images and a label for every frame",
     );
   }
-  const work = await mkdtemp(path.join(path.dirname(outputPath), ".overview."));
+  const work = await mkdtemp(
+    path.join(path.dirname(outputPaths[0]), ".overview."),
+  );
   const format = reviewImageFormat(lossless);
   try {
-    for (const [index, inputPath] of inputPaths.entries()) {
+    for (const [index, inputPath] of thumbnailPaths.entries()) {
       await symlink(
         path.resolve(inputPath),
-        path.join(
-          work,
-          `${String(index).padStart(6, "0")}.${format.extension}`,
-        ),
+        path.join(work, `${String(index).padStart(6, "0")}.png`),
       );
     }
     const render = async (annotate) => {
-      const filters = [
-        "scale=384:216:force_original_aspect_ratio=decrease",
-        "pad=384:216:(ow-iw)/2:(oh-ih)/2:black",
-      ];
+      const filters = [];
       if (annotate) {
         for (const [index, label] of labels.entries()) {
           filters.push(
-            `drawtext=font=monospace:text='${label}':enable='eq(n,${index})':fontcolor=white:fontsize=22:box=1:boxcolor=black@0.78:boxborderw=6:x=8:y=h-th-8`,
+            `metadata=mode=add:key=capture_label:value='${label}':enable='eq(n,${index})'`,
           );
         }
+        // Load the font once; each frame carries its own timestamp metadata.
+        filters.push(
+          "drawtext=font=monospace:text='%{metadata\\:capture_label}':fontcolor=white:fontsize=22:box=1:boxcolor=black@0.78:boxborderw=6:x=8:y=h-th-8",
+        );
       }
       filters.push(
-        `tile=${columns}x${Math.ceil(inputPaths.length / columns)}:nb_frames=${inputPaths.length}:padding=2:margin=0:color=black`,
+        `tile=${columns}x${Math.ceil(framesPerPage / columns)}:nb_frames=${framesPerPage}:padding=2:margin=0:color=black`,
       );
+      // A two-minute capture can exceed the OS argument limit with inline labels.
+      const filterPath = path.join(work, "sheet-filter.txt");
+      await writeFile(filterPath, filters.join(","));
       await runMonitoredProcess(
         "ffmpeg",
         [
@@ -243,23 +303,37 @@ export async function createReviewOverview(
           "-start_number",
           "0",
           "-i",
-          path.join(work, `%06d.${format.extension}`),
-          "-vf",
-          filters.join(","),
+          path.join(work, "%06d.png"),
+          "-filter_script:v",
+          filterPath,
+          "-vsync",
+          "vfr",
           "-frames:v",
-          "1",
+          String(outputPaths.length),
           ...format.encoderArguments,
           "-threads",
           "2",
+          "-start_number",
+          "0",
           "-y",
-          outputPath,
+          path.join(work, `page-%06d.${format.extension}`),
         ],
         {
           description: "review overview",
-          timeoutMilliseconds: 120_000,
+          timeoutMilliseconds: outputPaths.length * 120_000,
           signal,
         },
       );
+      for (const [index, outputPath] of outputPaths.entries()) {
+        signal?.throwIfAborted();
+        await rename(
+          path.join(
+            work,
+            `page-${String(index).padStart(6, "0")}.${format.extension}`,
+          ),
+          outputPath,
+        );
+      }
     };
     try {
       await render(labels !== undefined);

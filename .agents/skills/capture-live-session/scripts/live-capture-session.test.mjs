@@ -214,6 +214,21 @@ for (const lossless of [false, true]) {
     );
     assert.equal(candidates.at(-1).capturedSeconds, 0.95);
     assert.equal(candidates.length, 4, JSON.stringify(candidates));
+    const { stdout: thumbnailDimensions } = await executeFile("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "stream=width,height",
+      "-of",
+      "csv=p=0:s=x",
+      path.join(
+        sessionDirectory,
+        "candidates",
+        ".thumbnails",
+        `${candidates[0].file}.png`,
+      ),
+    ]);
+    assert.equal(thumbnailDimensions.trim(), "384x216");
 
     await writeFile(
       path.join(sessionDirectory, "session.json"),
@@ -377,6 +392,98 @@ for (const [durationSeconds, holdTicks, expectedCount] of [
       await readFile(path.join(directory, "candidates", file));
   });
 }
+
+test("candidate sheets preserve order and captions across a partial final page", async (context) => {
+  await mkdir(scratchRoot, { recursive: true });
+  const directory = await mkdtemp(path.join(scratchRoot, "task."));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  await executeFile("ffmpeg", [
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=red:size=1280x720:rate=20:duration=1.4,drawbox=color=blue:t=fill:enable='mod(n,2)'",
+    "-c:v",
+    "ffv1",
+    "-level",
+    "3",
+    "-g",
+    "1",
+    path.join(directory, "capture.mkv"),
+  ]);
+  const state = {
+    status: "recorded",
+    durationSeconds: 1.4,
+    framesPerSecond: 20,
+    lossless: true,
+  };
+  const candidates = await extractCandidates(directory, state);
+  assert.equal(candidates.length, 28);
+  await writeFile(path.join(directory, "session.json"), JSON.stringify(state));
+  const { candidatePages } = await reviewSession(directory);
+  assert.equal(candidatePages.length, 2);
+  for (const [page, x, y, color] of [
+    [0, 1600, 900, [255, 0, 0]], // Frame 24, last tile of the first page.
+    [1, 60, 30, [0, 0, 255]], // Frame 25.
+    [1, 446, 30, [255, 0, 0]], // Frame 26.
+    [1, 832, 30, [0, 0, 255]], // Frame 27, final candidate.
+    [1, 1218, 30, [0, 0, 0]], // Unused tile.
+  ]) {
+    const { stdout } = await executeFile(
+      "ffmpeg",
+      [
+        "-v",
+        "error",
+        "-i",
+        candidatePages[page],
+        "-vf",
+        `format=rgb24,crop=1:1:${x}:${y}`,
+        "-frames:v",
+        "1",
+        "-f",
+        "rawvideo",
+        "-",
+      ],
+      { encoding: "buffer" },
+    );
+    assert.equal(stdout.length, 3);
+    color.forEach((channel, index) =>
+      assert.ok(
+        Math.abs(stdout[index] - channel) <= 3,
+        `${page}: ${[...stdout]}`,
+      ),
+    );
+  }
+  // Compare the first caption after the page boundary with a standalone label.
+  const { stdout: expected } = await executeFile("ffmpeg", [
+    "-v",
+    "error",
+    "-i",
+    path.join(directory, "candidates", ".thumbnails", "000025.png.png"),
+    "-vf",
+    "drawtext=font=monospace:text='R+001.25s':fontcolor=white:fontsize=22:box=1:boxcolor=black@0.78:boxborderw=6:x=8:y=h-th-8,format=rgb24",
+    "-frames:v",
+    "1",
+    "-f",
+    "md5",
+    "-",
+  ]);
+  const { stdout: actual } = await executeFile("ffmpeg", [
+    "-v",
+    "error",
+    "-i",
+    candidatePages[1],
+    "-vf",
+    "format=rgb24,crop=384:216:0:0",
+    "-frames:v",
+    "1",
+    "-f",
+    "md5",
+    "-",
+  ]);
+  assert.equal(actual, expected);
+});
 
 for (const recorderFailure of [false, true]) {
   test(

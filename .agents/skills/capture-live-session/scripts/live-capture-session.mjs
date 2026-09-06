@@ -28,7 +28,7 @@ import {
 
 import {
   createFullRateReviewSheets,
-  createReviewOverview,
+  createReviewSheets,
   extractReviewFrames,
   reviewImageFormat,
 } from "../../../../scripts/capture-review-artifacts.mjs";
@@ -844,7 +844,11 @@ export async function extractCandidates(sessionDirectory, state) {
       atSeconds: capturedSeconds,
       outputPath: path.join(candidateDirectory, file),
     })),
-    { framesPerSecond, lossless: state.lossless },
+    {
+      framesPerSecond,
+      lossless: state.lossless,
+      thumbnailDirectory: path.join(candidateDirectory, ".thumbnails"),
+    },
   );
   await writeJson(path.join(sessionDirectory, "candidates.json"), candidates);
   return candidates;
@@ -922,27 +926,27 @@ export async function reviewSession(sessionPath) {
     state,
   );
   const format = reviewImageFormat(state.lossless);
-  const candidatePages = [];
-  for (let offset = 0; offset < candidates.length; offset += 25) {
-    const pageCandidates = candidates.slice(offset, offset + 25);
-    const outputPath = path.join(
-      reviewDirectory,
-      `candidate-page-${String(candidatePages.length + 1).padStart(3, "0")}.${format.extension}`,
-    );
-    await createReviewOverview(
-      pageCandidates.map((candidate) =>
-        path.join(sessionDirectory, "candidates", candidate.file),
+  const candidatePages = Array.from(
+    { length: Math.ceil(candidates.length / 25) },
+    (_, index) =>
+      path.join(
+        reviewDirectory,
+        `candidate-page-${String(index + 1).padStart(3, "0")}.${format.extension}`,
       ),
-      outputPath,
-      {
-        lossless: state.lossless,
-        labels: pageCandidates.map((candidate) =>
-          formatRelativeTimestamp(candidate.capturedSeconds, "R"),
-        ),
-      },
-    );
-    candidatePages.push(outputPath);
-  }
+  );
+  await createReviewSheets(
+    candidates.map(({ file }) =>
+      path.join(sessionDirectory, "candidates", ".thumbnails", `${file}.png`),
+    ),
+    candidatePages,
+    {
+      lossless: state.lossless,
+      framesPerPage: 25,
+      labels: candidates.map(({ capturedSeconds }) =>
+        formatRelativeTimestamp(capturedSeconds, "R"),
+      ),
+    },
+  );
   for (const page of [...fullRatePages, ...candidatePages]) {
     process.stdout.write(`${page}\n`);
   }
@@ -993,6 +997,7 @@ export async function publishSession(sessionPath, selectionPath) {
   const outputDirectory = await createCollisionSafeDirectory(outputBase);
   const format = reviewImageFormat(state.lossless);
   const publishedFrames = [];
+  const thumbnailDirectory = path.join(outputDirectory, ".thumbnails");
   let annotationWarning;
   try {
     for (const [index, frame] of selection.frames.entries()) {
@@ -1006,15 +1011,17 @@ export async function publishSession(sessionPath, selectionPath) {
         atSeconds: at,
         outputPath,
       })),
-      { framesPerSecond, lossless: state.lossless },
+      { framesPerSecond, lossless: state.lossless, thumbnailDirectory },
     );
     for (const frame of publishedFrames)
       await assertImageDimensions(frame.outputPath, state.resolution);
     if (publishedFrames.length > 0) {
       const origin = publishedFrames[0].at;
-      const overviewResult = await createReviewOverview(
-        publishedFrames.map((frame) => frame.outputPath),
-        path.join(outputDirectory, `overview.${format.extension}`),
+      const overviewResult = await createReviewSheets(
+        publishedFrames.map(({ fileName }) =>
+          path.join(thumbnailDirectory, `${fileName}.png`),
+        ),
+        [path.join(outputDirectory, `overview.${format.extension}`)],
         {
           lossless: state.lossless,
           labels: publishedFrames.map((frame) =>
@@ -1027,6 +1034,7 @@ export async function publishSession(sessionPath, selectionPath) {
           "Overview timestamp annotation was unavailable; consult this timeline for authoritative relative times.";
       }
     }
+    await rm(thumbnailDirectory, { force: true, recursive: true });
     await writeFile(
       path.join(outputDirectory, "README.md"),
       renderReadme(selection, state, publishedFrames, annotationWarning),
