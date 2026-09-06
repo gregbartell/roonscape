@@ -157,12 +157,12 @@ const examples = {
       reviewFrame(
         10.35,
         "first-cue-rising",
-        "The first cue rises from below the focal position.",
+        "The first cue rises from below the Primary Position.",
       ),
       reviewFrame(
         15.5,
         "blank-context",
-        "Intentional Blank retains available neighbors.",
+        "Intentional Blank retains available Lyric Reel context.",
       ),
       reviewFrame(
         17.25,
@@ -266,7 +266,7 @@ const examples = {
       reviewFrame(
         17,
         "longer-blank-context",
-        "A longer blank settles with context and an empty focal position.",
+        "A longer blank settles with context and an empty Primary Position.",
       ),
       reviewFrame(
         17.5,
@@ -595,7 +595,7 @@ const examples = {
       reviewFrame(
         5.95,
         "middle-intentional-blank-midpoint",
-        "A middle Intentional Blank retains context around an empty focal position.",
+        "A middle Intentional Blank retains context around an empty Primary Position.",
       ),
       reviewFrame(
         6.95,

@@ -28,17 +28,17 @@ pub(crate) enum LyricMotionCause {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LyricColorRole {
-    Previous,
+    Earlier,
     Focal,
-    Next,
+    Upcoming,
 }
 
 impl LyricColorRole {
     fn weights(self) -> [f64; 3] {
         match self {
-            Self::Previous => [1.0, 0.0, 0.0],
+            Self::Earlier => [1.0, 0.0, 0.0],
             Self::Focal => [0.0, 1.0, 0.0],
-            Self::Next => [0.0, 0.0, 1.0],
+            Self::Upcoming => [0.0, 0.0, 1.0],
         }
     }
 }
@@ -434,11 +434,11 @@ fn stable_cues(lyrics: Option<&LyricPresentation>) -> Vec<LyricCueFrame> {
             continue;
         }
         let role = if index < anchor {
-            LyricColorRole::Previous
+            LyricColorRole::Earlier
         } else if index == anchor {
             LyricColorRole::Focal
         } else {
-            LyricColorRole::Next
+            LyricColorRole::Upcoming
         };
         cues.push(LyricCueFrame {
             role,
@@ -570,7 +570,7 @@ mod tests {
         let outgoing = midpoint
             .cues
             .iter()
-            .find(|cue| cue.role == LyricColorRole::Previous)
+            .find(|cue| cue.role == LyricColorRole::Earlier)
             .expect("a compact Reel Lift keeps the outgoing cue as visual memory");
         let incoming = midpoint
             .cues
@@ -593,9 +593,9 @@ mod tests {
                 .map(|cue| (cue.role, cue.text.as_str()))
                 .collect::<Vec<_>>(),
             vec![
-                (LyricColorRole::Previous, "Again"),
+                (LyricColorRole::Earlier, "Again"),
                 (LyricColorRole::Focal, "Again"),
-                (LyricColorRole::Next, "After"),
+                (LyricColorRole::Upcoming, "After"),
             ]
         );
     }

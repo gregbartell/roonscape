@@ -201,7 +201,7 @@ struct RenderedLyrics {
     masthead_artist: Option<gtk::Label>,
     reel_region: gtk::ScrolledWindow,
     reel: Rc<LyricReel>,
-    line_width_px: Cell<i32>,
+    cue_width_px: Cell<i32>,
     typography: Cell<roonscape_renderer::NowPlayingTypography>,
     motion: RefCell<LyricMotion>,
     rendered_composition_progress: Cell<f64>,
@@ -1411,7 +1411,7 @@ fn lyric_view(
         masthead_artist,
         reel_region,
         reel,
-        line_width_px: Cell::new(1),
+        cue_width_px: Cell::new(1),
         typography: Cell::new(
             NowPlayingLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE).typography,
         ),
@@ -1888,7 +1888,7 @@ impl RenderedLyrics {
     fn apply_layout(&self, layout: &NowPlayingLayout) {
         let width = dimension(layout.information.musical_metadata_width_px);
         let height = dimension(layout.metadata_height_budget_px);
-        self.line_width_px.set(width);
+        self.cue_width_px.set(width);
         self.typography.set(layout.typography);
         self.root.set_width_request(width);
         self.root.set_height_request(height);
@@ -1936,7 +1936,7 @@ impl RenderedLyrics {
     fn apply_frame_state(&self, frame: &LyricFrame, layout: &NowPlayingLayout) {
         self.update_rendered_composition_progress(frame.composition_progress);
         self.reel
-            .update(frame, self.line_width_px.get(), layout.typography);
+            .update(frame, self.cue_width_px.get(), layout.typography);
     }
 
     fn layout_ready(&self) -> bool {
@@ -2496,14 +2496,14 @@ mod tests {
             .into_iter()
             .map(|cue| cue.cue)
             .collect();
-        for (slot, expected) in [
-            (crate::lyric_motion::LyricColorRole::Previous, previous),
+        for (role, expected) in [
+            (crate::lyric_motion::LyricColorRole::Earlier, previous),
             (crate::lyric_motion::LyricColorRole::Focal, current),
-            (crate::lyric_motion::LyricColorRole::Next, next),
+            (crate::lyric_motion::LyricColorRole::Upcoming, next),
         ] {
             let actual = cues
                 .iter()
-                .filter(|cue| cue.role == slot && cue.opacity > 0.0 && !cue.text.trim().is_empty());
+                .filter(|cue| cue.role == role && cue.opacity > 0.0 && !cue.text.trim().is_empty());
             if let Some(expected) = expected {
                 assert!(
                     actual
@@ -2566,7 +2566,7 @@ mod tests {
                     previous.insert(cue.index, (lines.clone(), cue.y))
                 {
                     assert_eq!(lines, last_lines, "wrapping must not change during motion");
-                    if cue.cue.role != crate::lyric_motion::LyricColorRole::Next {
+                    if cue.cue.role != crate::lyric_motion::LyricColorRole::Upcoming {
                         assert!(
                             cue.y <= last_y + 0.1,
                             "incoming and earlier cues must travel upward: cue={cue:?}, last_y={last_y}"
@@ -2904,7 +2904,7 @@ mod tests {
             .unwrap();
         gtk::init().expect("GTK should initialize for native lyric layout coverage");
         super::install_style_providers(roonscape_renderer::select_typography(&HashSet::new()));
-        reel_capacity_and_first_line_anchor_follow_available_space();
+        reel_capacity_and_primary_position_follow_available_space();
         blanks_retain_the_packed_reel_across_peer_viewports();
         complete_cues_fit_below_the_primary_position();
         reel_handoffs_keep_wrapping_and_outgoing_geometry();
@@ -3308,7 +3308,7 @@ mod tests {
         assert_rendered_composition_ownership(&reduced, 0.0, 1.0, 1.0);
     }
 
-    fn reel_capacity_and_first_line_anchor_follow_available_space() {
+    fn reel_capacity_and_primary_position_follow_available_space() {
         let mut presentation = lyric_presentation("lyrics-one-line.json");
         let lyrics = presentation.lyrics.as_mut().unwrap();
         lyrics.timeline = [
@@ -3849,11 +3849,9 @@ mod tests {
         let at = std::time::Duration::from_millis(100);
         let departing = lyric_motion_frame(&rendered, at);
         assert!(
-            departing
-                .cues
-                .iter()
-                .any(|cue| cue.role == crate::lyric_motion::LyricColorRole::Next
-                    && cue.opacity == 1.0),
+            departing.cues.iter().any(|cue| cue.role
+                == crate::lyric_motion::LyricColorRole::Upcoming
+                && cue.opacity == 1.0),
             "blank entry should retain anticipation"
         );
         let mut after = blank;
@@ -3870,7 +3868,7 @@ mod tests {
             frame
                 .cues
                 .iter()
-                .find(|cue| cue.role == crate::lyric_motion::LyricColorRole::Previous)
+                .find(|cue| cue.role == crate::lyric_motion::LyricColorRole::Earlier)
                 .unwrap()
                 .clone()
         };

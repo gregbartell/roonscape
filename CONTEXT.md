@@ -22,6 +22,11 @@ Playback position or duration observed directly from Roon, independently of
 whether both are currently available.
 _Avoid_: Reported timing, real timing
 
+**Cue**:
+A timed lyric entry whose lines become active together. A cue may contain
+multiple lines or be an Intentional Blank.
+_Avoid_: Line when referring to an entire cue
+
 **Display Configuration**:
 A choice that changes what or how RoonScape presents without changing
 Roon state.
@@ -50,8 +55,8 @@ _Avoid_: Stopped in viewer-facing copy
 
 **Intentional Blank**:
 A timed empty lyric cue marking a pause in focal lyrics. Within the
-Synchronized Lyric Composition, its settled presentation leaves the focal
-position empty while retaining available Previous Cue and Next Cue context;
+Synchronized Lyric Composition, its settled presentation leaves the Primary
+Position empty while retaining surrounding Lyric Reel context;
 leading blanks do not establish that composition.
 _Avoid_: Missing lyric, composition exit
 
@@ -81,6 +86,11 @@ An optional RoonScape Bridge capability that observes synchronized lyric cues
 for the current Tracked Zone without controlling playback or a Web Display.
 _Avoid_: Lyrics service, Web Display connection
 
+**Lyric Reel**:
+The sequence of timed cues presented around the active cue, with earlier cues
+above and upcoming cues below, filling the available lyric area as space permits.
+_Avoid_: Three-cue hierarchy
+
 **Natural Cue Handoff**:
 The viewer-facing progression from one nonblank timed lyric cue to its
 immediately adjacent nonblank cue as local playback advances.
@@ -106,6 +116,11 @@ playback or availability condition, such as Playing, Paused, Idle, or
 Disconnected.
 _Avoid_: Screen name, eyebrow
 
+**Primary Position**:
+The fixed vertical position where the first line of the active cue lands in
+the Lyric Reel, with any remaining lines extending below it.
+_Avoid_: Center of the active cue
+
 **Previous Cue**:
 The nearest nonblank timed cue preceding the current cue in the lyric
 timeline. It provides destination-relative context and is not a history of
@@ -119,8 +134,8 @@ _Avoid_: Fabricated progress, interpolated timing
 
 **Reel Lift**:
 The selected viewer-facing treatment for a Natural Cue Handoff, in which the
-incoming cue rises into focus as the outgoing cue moves upward, retaining
-Previous Cue context when the settled hierarchy permits.
+incoming cue rises into the Primary Position as earlier cues move upward,
+remaining in the Lyric Reel while space permits.
 _Avoid_: Lyric scroll, lyric crossfade
 
 **Roon Authorization**:

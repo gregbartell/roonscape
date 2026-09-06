@@ -118,7 +118,7 @@ fit the complete cue using the full column width and the height above the
 bottom edge fade. Establish that wrapping before motion, and scale the whole
 cue together. Otherwise retain the established focal size. Surrounding cues use a smaller scale of
 that same fitted layout, and pack around the displayed active bounds. All lines
-remain active together; fitting never moves the first-line anchor.
+remain active together; fitting never moves the Primary Position.
 
 Same-identity lyric entry and exit animate persistent artwork and information
 rail geometry in place. Ordinary metadata relinquishes ownership to the compact
@@ -143,8 +143,7 @@ crossings still animate composition geometry. Interrupted composition movement
 retargets from its current geometry; interrupted handoffs prioritize the newest
 cue and never queue skipped lyrics. The
 platform's reduced-animation preference and deterministic Presentation
-Capture behavior suppress this motion while preserving the complete lyric
-hierarchy.
+Capture behavior suppress this motion while preserving the complete Lyric Reel.
 
 ## Artwork and palette
 
