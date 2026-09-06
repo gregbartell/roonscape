@@ -14,8 +14,9 @@ use roonscape_renderer::{
     NowPlayingRole, Presentation, PresentationActivity, PresentationBehavior, PresentationPalette,
     PresentationProgress, PresentationRevision, PresentationStatus, PresentationStatusEmphasis,
     PresentationStatusLayout, PresentationStyleLayer, PresentationTransition,
-    PresentationTransitionStyles, ResolvedPresentation, TypographySelection, TypographyStyles,
-    Viewport, metadata_layout, resolve_capture_presentation, resolve_presentation,
+    PresentationTransitionStyles, ReplacementFade, ResolvedPresentation, TypographySelection,
+    TypographyStyles, Viewport, metadata_layout, resolve_capture_presentation,
+    resolve_presentation,
 };
 
 use crate::activity_waveform::activity_waveform;
@@ -40,6 +41,8 @@ pub(crate) struct PresentationView {
     layout_viewport: Option<Viewport>,
     inactivity: InactivityTransform,
     transition_clock: Instant,
+    outgoing_text_opacity: f64,
+    incoming_text_started_at: Option<Duration>,
     caches: PresentationCaches,
 }
 
@@ -94,7 +97,6 @@ impl RenderingConfiguration {
 
 struct RenderedPresentation {
     root: gtk::Widget,
-    progress: Option<RenderedProgress>,
     palette: PresentationPalette,
     layout_source: PresentationLayoutSource,
     now_playing: Option<RenderedNowPlaying>,
@@ -134,7 +136,6 @@ impl PresentationLayoutSource {
     }
 }
 
-#[derive(Clone)]
 struct RenderedProgress {
     root: gtk::Box,
     rail: gtk::Overlay,
@@ -168,8 +169,28 @@ struct RenderedMetadata {
     progress: Option<RenderedProgress>,
     activity: Option<RenderedActivity>,
     timing_slot: gtk::Overlay,
+    timing_fade: ReplacementFade<TimingContent>,
     footer: gtk::Box,
     identity: RenderedIdentity,
+}
+
+#[derive(PartialEq)]
+enum TimingContent {
+    Quiet,
+    Progress,
+    Activity(Box<PresentationActivity>),
+}
+
+impl TimingContent {
+    fn for_presentation(presentation: &NowPlayingPresentation) -> Self {
+        if presentation.progress.is_some() {
+            Self::Progress
+        } else if let Some(activity) = &presentation.activity {
+            Self::Activity(activity.clone())
+        } else {
+            Self::Quiet
+        }
+    }
 }
 
 struct RenderedLyrics {
@@ -298,7 +319,7 @@ struct RenderedPresentationStatus {
     symbol: gtk::Box,
     label: gtk::Label,
     decoration: roonscape_renderer::PresentationStatusDecoration,
-    status: PresentationStatus,
+    fade: ReplacementFade<PresentationStatus>,
     behavior: PresentationBehavior,
 }
 
@@ -349,7 +370,7 @@ impl PresentationView {
         stack.set_hexpand(true);
         stack.set_vexpand(true);
         stack.set_transition_type(gtk::StackTransitionType::Crossfade);
-        stack.set_transition_duration(transition.duration().as_millis() as u32);
+        stack.set_transition_duration(transition.duration().as_millis() as u32 / 3);
         stack.add_child(&transition.current().value().root);
         let root = gtk::Overlay::new();
         root.set_hexpand(true);
@@ -366,6 +387,8 @@ impl PresentationView {
             layout_viewport: None,
             inactivity: InactivityTransform::default(),
             transition_clock: Instant::now(),
+            outgoing_text_opacity: 1.0,
+            incoming_text_started_at: None,
             caches,
         };
         view.apply_layout();
@@ -423,7 +446,7 @@ impl PresentationView {
         presentation: &Presentation,
         repository_root: &Path,
     ) {
-        if self.rendering.behavior == PresentationBehavior::StaticFixture {
+        if !animations_enabled(self.rendering.behavior) {
             let rendered = self.render_replacement_at_viewport(presentation, repository_root);
             let released = self.transition.replace_immediately(revision, rendered);
             for layer in released {
@@ -432,10 +455,28 @@ impl PresentationView {
             self.reveal_current();
             return;
         }
+        let rendered = self.render_replacement_at_viewport(presentation, repository_root);
+        rendered.set_text_opacity(0.0);
+        // Retarget an unrevealed replacement without exposing the superseded target
+        // or restarting the visible outgoing text's fade.
+        if self.transition.outgoing().is_some_and(|outgoing| {
+            self.stack.visible_child().as_ref() == Some(&outgoing.value().root)
+        }) {
+            let released = self.transition.current().value().root.clone();
+            self.transition.update_current(revision, |current| {
+                *current = rendered;
+            });
+            self.stack.remove(&released);
+            self.stack
+                .add_child(&self.transition.current().value().root);
+            self.install_palette_styles();
+            return;
+        }
         if let Some(discarded) = self.transition.discard_outgoing() {
             self.remove_layer(discarded);
         }
-        let rendered = self.render_replacement_at_viewport(presentation, repository_root);
+        self.outgoing_text_opacity = self.transition.current().value().text_opacity();
+        self.incoming_text_started_at = None;
         let started_at = self.transition_clock.elapsed();
         let discarded = self.transition.begin(revision, rendered, started_at);
         debug_assert!(discarded.is_none());
@@ -452,11 +493,40 @@ impl PresentationView {
             .value()
             .root
             .add_css_class(PresentationStyleLayer::Outgoing.class_name());
-        self.reveal_current();
+        self.stack
+            .add_child(&self.transition.current().value().root);
+        self.install_palette_styles();
     }
 
     pub(crate) fn finish_transition(&mut self) {
         let now = self.transition_clock.elapsed();
+        self.advance_transition(now);
+    }
+
+    fn advance_transition(&mut self, now: Duration) {
+        if let Some(outgoing) = self.transition.outgoing() {
+            let progress = self.transition.progress(now);
+            outgoing.value().set_text_opacity(
+                self.outgoing_text_opacity * (1.0 - motion_phase(progress, 0.0, 1.0 / 3.0)),
+            );
+            let current = self.transition.current().value();
+            if progress >= 1.0 / 3.0 {
+                // GtkStack snapshots the outgoing layer for the artwork/palette
+                // crossfade only after its text has become completely invisible.
+                self.stack.set_visible_child(&current.root);
+            }
+            // GtkStack caches both children while crossfading. Reveal text only
+            // after that cache is gone, using a fresh clock even after a late frame.
+            if progress >= 2.0 / 3.0 && !self.stack.is_transition_running() {
+                let started_at = *self.incoming_text_started_at.get_or_insert(now);
+                let phase = now.saturating_sub(started_at).as_secs_f64()
+                    / (self.transition.duration().as_secs_f64() / 3.0);
+                current.set_text_opacity(motion_phase(phase, 0.0, 1.0));
+            }
+            if current.text_opacity() < 1.0 {
+                return;
+            }
+        }
         let Some(outgoing) = self.transition.finish(now) else {
             return;
         };
@@ -640,6 +710,30 @@ impl FullFieldFitGeneration {
 }
 
 impl RenderedPresentation {
+    fn text_opacity(&self) -> f64 {
+        if let Some(now_playing) = &self.now_playing {
+            now_playing.metadata.root.opacity()
+        } else {
+            self.full_field
+                .as_ref()
+                .expect("Full-field presentation")
+                .copy
+                .opacity()
+        }
+    }
+
+    fn set_text_opacity(&self, opacity: f64) {
+        if let Some(now_playing) = &self.now_playing {
+            now_playing.metadata.root.set_opacity(opacity);
+        }
+        if let Some(full_field) = &self.full_field {
+            full_field.copy.set_opacity(opacity);
+            if let Some(identity) = &full_field.identity {
+                identity.root.set_opacity(opacity);
+            }
+        }
+    }
+
     fn layout_ready(&self) -> bool {
         self.now_playing
             .as_ref()
@@ -676,12 +770,8 @@ impl RenderedPresentation {
                 rendered
                     .metadata
                     .presentation_status
-                    .update(&presentation.status);
-                if let (Some(rendered), Some(progress)) =
-                    (self.progress.as_ref(), presentation.progress.as_ref())
-                {
-                    rendered.update(progress);
-                }
+                    .update(&presentation.status, now);
+                rendered.metadata.update_timing(presentation, now);
                 rendered
                     .metadata
                     .update_lyrics(revision, presentation, now, viewport);
@@ -699,7 +789,9 @@ impl RenderedPresentation {
                 }
             }
             (None, Some(rendered), Presentation::FullField(presentation)) => {
-                rendered.presentation_status.update(&presentation.status);
+                rendered
+                    .presentation_status
+                    .update(&presentation.status, now);
             }
             _ => debug_assert!(
                 false,
@@ -902,7 +994,6 @@ fn full_field(
     let (root, diagnostics) = presentation_layer(&content, "full-field", diagnostics_text);
     RenderedPresentation {
         root: root.upcast(),
-        progress: None,
         palette,
         layout_source,
         now_playing: None,
@@ -973,7 +1064,6 @@ fn now_playing(
 
     content.append(&artwork_column);
     content.append(&metadata_slot);
-    let progress = metadata.progress.clone();
     let now_playing = RenderedNowPlaying {
         background,
         content,
@@ -985,7 +1075,6 @@ fn now_playing(
     let (root, diagnostics) = presentation_layer(&surface, "now-playing", diagnostics_text);
     RenderedPresentation {
         root: root.upcast(),
-        progress,
         palette,
         layout_source,
         now_playing: Some(now_playing),
@@ -1272,6 +1361,7 @@ fn metadata(
         progress,
         activity,
         timing_slot,
+        timing_fade: ReplacementFade::new(TimingContent::for_presentation(presentation)),
         footer,
         identity,
     };
@@ -1635,6 +1725,43 @@ impl RenderedFullField {
 }
 
 impl RenderedMetadata {
+    fn update_timing(&mut self, presentation: &NowPlayingPresentation, now: Duration) {
+        if self.timing_fade.update(
+            TimingContent::for_presentation(presentation),
+            now,
+            animations_enabled(self.lyrics.behavior),
+        ) {
+            if let Some(progress) = self.progress.take() {
+                self.timing_slot.remove_overlay(&progress.root);
+            }
+            if let Some(activity) = self.activity.take() {
+                self.timing_slot.remove_overlay(&activity.root);
+            }
+            match self.timing_fade.displayed() {
+                TimingContent::Progress => {
+                    let progress = progress_view(
+                        presentation
+                            .progress
+                            .as_ref()
+                            .expect("numeric timing target"),
+                    );
+                    self.timing_slot.add_overlay(&progress.root);
+                    self.progress = Some(progress);
+                }
+                TimingContent::Activity(activity) => {
+                    let activity = activity_view(activity, self.lyrics.behavior);
+                    self.timing_slot.add_overlay(&activity.root);
+                    self.activity = Some(activity);
+                }
+                TimingContent::Quiet => {}
+            }
+        }
+        self.timing_slot.set_opacity(self.timing_fade.opacity());
+        if let (Some(rendered), Some(progress)) = (&self.progress, &presentation.progress) {
+            rendered.update(progress);
+        }
+    }
+
     fn update_lyrics(
         &self,
         revision: u64,
@@ -1642,8 +1769,6 @@ impl RenderedMetadata {
         now: Duration,
         viewport: Option<Viewport>,
     ) {
-        let system_animations_enabled =
-            gtk::Settings::default().is_none_or(|settings| settings.is_gtk_enable_animations());
         let measurement_layout = viewport.map(|viewport| {
             NowPlayingLayout::for_composition_progress(presentation, viewport, 1.0)
         });
@@ -1665,9 +1790,7 @@ impl RenderedMetadata {
             presentation.lyrics.as_deref(),
             rendered_lines,
             now,
-            self.lyrics
-                .behavior
-                .animations_enabled(system_animations_enabled),
+            animations_enabled(self.lyrics.behavior),
         );
         drop(motion);
         self.apply_composition_ownership(self.lyrics.composition_timeline_progress(now));
@@ -1676,7 +1799,8 @@ impl RenderedMetadata {
     fn apply_composition_ownership(&self, progress: f64) {
         let (ordinary_opacity, reel_opacity, masthead_opacity) = composition_ownership(progress);
         self.ordinary_metadata.set_opacity(ordinary_opacity);
-        let ordinary_retirement = 1.0 - ordinary_opacity;
+        // Preserve the established travel independently of exclusive text ownership.
+        let ordinary_retirement = motion_phase(progress, 0.0, 0.62);
         let ordinary_travel_px = f64::from(self.lyrics.typography.get().lyric_current_px) * 1.75;
         self.ordinary_metadata_stage.move_(
             &self.ordinary_metadata,
@@ -1685,9 +1809,9 @@ impl RenderedMetadata {
         );
         self.lyrics.root.set_opacity(1.0);
         let lyric_travel_px = f64::from(self.lyrics.typography.get().lyric_current_px) * 1.8;
-        self.lyrics
-            .root
-            .set_margin_top(((1.0 - reel_opacity) * lyric_travel_px).round() as i32);
+        self.lyrics.root.set_margin_top(
+            ((1.0 - motion_phase(progress, 0.12, 0.46)) * lyric_travel_px).round() as i32,
+        );
         self.lyrics.reel_region.set_opacity(reel_opacity);
         self.lyrics.masthead.set_opacity(masthead_opacity);
     }
@@ -2135,10 +2259,19 @@ fn lyric_cue_y(
 }
 
 fn composition_ownership(progress: f64) -> (f64, f64, f64) {
-    let ordinary = 1.0 - motion_phase(progress, 0.0, 0.62);
-    let reel = motion_phase(progress, 0.12, 0.46);
-    let masthead = reel * motion_phase(1.0 - ordinary, 0.7, 0.3);
+    // The same ownership boundary works in both directions and on reversal.
+    // Entry establishes compact metadata before the prepared cue rises;
+    // exit retires the reel before ordinary text returns to its space.
+    let ordinary = 1.0 - motion_phase(progress, 0.0, 0.35);
+    let reel = motion_phase(progress, 0.35, 0.2);
+    let masthead = motion_phase(progress, 0.35, 0.25);
     (ordinary, reel, masthead)
+}
+
+fn animations_enabled(behavior: PresentationBehavior) -> bool {
+    behavior.animations_enabled(
+        gtk::Settings::default().is_none_or(|settings| settings.is_gtk_enable_animations()),
+    )
 }
 
 fn composition_geometry(progress: f64) -> f64 {
@@ -2151,10 +2284,15 @@ fn motion_phase(value: f64, start: f64, duration: f64) -> f64 {
 }
 
 impl RenderedPresentationStatus {
-    fn update(&mut self, status: &PresentationStatus) {
-        if self.status == *status {
+    fn update(&mut self, status: &PresentationStatus, now: Duration) {
+        let changed = self
+            .fade
+            .update(*status, now, animations_enabled(self.behavior));
+        self.root.set_opacity(self.fade.opacity());
+        if !changed {
             return;
         }
+        let status = self.fade.displayed();
 
         self.root.remove_css_class("status-full");
         self.root.remove_css_class("status-muted");
@@ -2171,7 +2309,6 @@ impl RenderedPresentationStatus {
         symbol.set_size_request(width, height);
         self.root.prepend(&symbol);
         self.symbol = symbol;
-        self.status = *status;
     }
 
     fn apply_layout(&self, layout: PresentationStatusLayout) {
@@ -2361,7 +2498,7 @@ fn presentation_status(
         symbol,
         label,
         decoration,
-        status: *status,
+        fade: ReplacementFade::new(*status),
         behavior,
     }
 }
@@ -3172,6 +3309,8 @@ mod tests {
             .unwrap();
         gtk::init().expect("GTK should initialize for native lyric layout coverage");
         super::install_style_providers(roonscape_renderer::select_typography(&HashSet::new()));
+        status_and_timing_replacements_preserve_the_existing_metadata();
+        full_field_replacement_never_superimposes_messages();
         lyric_masthead_fits_long_metadata();
         composed_lyrics_remain_above_footer();
         ordinary_metadata_remains_stable_on_playback_updates();
@@ -3300,7 +3439,9 @@ mod tests {
             }
         }
 
-        let blank = lyric_presentation("lyrics-blank-cue.json");
+        let mut blank = lyric_presentation("lyrics-blank-cue.json");
+        let repeated = blank.lyrics.as_mut().expect("fixture should have lyrics");
+        repeated.next.clone_from(&repeated.previous);
         let blank_lyrics = blank.lyrics.as_deref().expect("fixture should have lyrics");
         let blank_rendered = lyric_view(
             &blank,
@@ -3314,6 +3455,8 @@ mod tests {
         assert!(blank_rendered.previous.is_visible());
         assert!(!blank_rendered.current.is_visible());
         assert!(blank_rendered.next.is_visible());
+        assert_eq!(blank_rendered.previous.text(), "A quiet orbit fades");
+        assert_eq!(blank_rendered.next.text(), "A quiet orbit fades");
         gtk::Settings::default()
             .expect("GTK settings should be available")
             .set_gtk_enable_animations(true);
@@ -3579,17 +3722,7 @@ mod tests {
         assert_eq!(now_playing.metadata.identity.root.as_ptr(), identity);
         assert!(now_playing.metadata.lyrics.reel_region.opacity() > 0.8);
         assert!(now_playing.metadata.lyrics.masthead.opacity() > 0.5);
-        assert!(now_playing.metadata.ordinary_metadata.opacity() > 0.0);
-        assert!(
-            now_playing.metadata.ordinary_metadata.opacity() <= 0.12,
-            "the oversized ordinary Title must substantially relinquish ownership by midpoint"
-        );
-        assert!(
-            now_playing.metadata.ordinary_metadata.opacity()
-                * now_playing.metadata.lyrics.masthead.opacity()
-                <= 0.1,
-            "ordinary and compact Title/Artist groups must not compete perceptually"
-        );
+        assert_eq!(now_playing.metadata.ordinary_metadata.opacity(), 0.0);
         assert_eq!(now_playing.artwork.surface.opacity(), 1.0);
         let ordinary_midpoint = now_playing
             .metadata
@@ -3909,6 +4042,157 @@ mod tests {
         assert_rendered_composition_ownership(&reduced, 0.0, 1.0, 1.0);
     }
 
+    fn status_and_timing_replacements_preserve_the_existing_metadata() {
+        use roonscape_renderer::{PresentationUpdate, classify_presentation_update};
+        use std::time::Duration;
+        for fixture in [
+            include_str!("../../shared/fixtures/timing-stability.json"),
+            include_str!("../../shared/fixtures/indeterminate-progress.json"),
+        ] {
+            let mut source = lyric_presentation("playing.json");
+            source.progress = None;
+            let unavailable = parse_snapshot(fixture).unwrap();
+            let Presentation::NowPlaying(unavailable) =
+                presentation_from_snapshot(&unavailable).unwrap()
+            else {
+                unreachable!()
+            };
+            source.status = unavailable.status;
+            source.activity = unavailable.activity;
+            let old_status = source.status.label;
+            let had_activity = source.activity.is_some();
+            let target = lyric_presentation("playing.json");
+            assert_eq!(
+                classify_presentation_update(
+                    &Presentation::NowPlaying(source.clone()),
+                    &Presentation::NowPlaying(target.clone())
+                ),
+                PresentationUpdate::InPlace,
+                "status and timing changes must preserve the rendered composition"
+            );
+            let mut rendered = rendered_now_playing(&source, PresentationBehavior::Dynamic);
+            let title = rendered
+                .now_playing
+                .as_ref()
+                .unwrap()
+                .metadata
+                .title
+                .as_ref()
+                .unwrap()
+                .label
+                .clone();
+            let target = Presentation::NowPlaying(target);
+            for millis in [0, 100, 225, 325, 450] {
+                rendered.update_in_place(
+                    1,
+                    &target,
+                    Duration::from_millis(millis),
+                    Some(Viewport::new(1280, 720)),
+                );
+                let metadata = &rendered.now_playing.as_ref().unwrap().metadata;
+                assert_eq!(metadata.title.as_ref().unwrap().label, title);
+                assert_eq!(metadata.ordinary_metadata.opacity(), 1.0);
+                let status = &metadata.presentation_status;
+                if millis < 225 {
+                    assert_eq!(status.label.text(), old_status);
+                    assert_eq!(metadata.activity.is_some(), had_activity);
+                    assert!(metadata.progress.is_none());
+                } else {
+                    assert_eq!(status.label.text(), "PLAYING");
+                    assert!(metadata.progress.is_some());
+                    assert!(metadata.activity.is_none());
+                }
+                if millis == 225 {
+                    assert_eq!(
+                        status.root.opacity(),
+                        if old_status == "PLAYING" { 1.0 } else { 0.0 }
+                    );
+                    assert_eq!(metadata.timing_slot.opacity(), 0.0);
+                }
+                if let Some(child) = metadata.timing_slot.first_child() {
+                    assert!(
+                        child.next_sibling().is_none(),
+                        "timing has only one rendered version"
+                    );
+                }
+                if millis == 450 {
+                    assert_eq!(status.root.opacity(), 1.0);
+                    assert_eq!(metadata.timing_slot.opacity(), 1.0);
+                }
+            }
+        }
+    }
+
+    fn full_field_replacement_never_superimposes_messages() {
+        use std::time::Duration;
+        let presentation = |fixture: &str| {
+            let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+            presentation_from_snapshot(
+                &parse_snapshot(
+                    &std::fs::read_to_string(repository.join("src/shared/fixtures").join(fixture))
+                        .unwrap(),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        let mut view = super::PresentationView::new(
+            0,
+            &presentation("disconnected.json"),
+            Viewport::new(1280, 720),
+            &repository,
+            super::install_style_providers(typography),
+            None,
+            RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
+        );
+        view.replace(1, &presentation("stopped.json"), &repository);
+        let start = view.transition_clock.elapsed();
+        for millis in [0, 100, 200, 250, 350, 449, 500, 600] {
+            view.advance_transition(start + Duration::from_millis(millis));
+            let outgoing = view.transition.outgoing().unwrap().value();
+            let incoming = view.transition.current().value();
+            let old_opacity = outgoing.full_field.as_ref().unwrap().copy.opacity();
+            let new_opacity = incoming.full_field.as_ref().unwrap().copy.opacity();
+            if millis == 350 {
+                assert_eq!(
+                    new_opacity, 0.0,
+                    "incoming text waits until GtkStack finishes caching its crossfade"
+                );
+            }
+            if millis == 600 {
+                assert!(
+                    new_opacity > 0.0 && new_opacity < 1.0,
+                    "the replacement fades in after the cached crossfade"
+                );
+            }
+            assert!(
+                old_opacity == 0.0 || new_opacity == 0.0,
+                "Full-field messages must not coexist at {millis}ms"
+            );
+            if millis < 225 {
+                assert_eq!(view.stack.visible_child().as_ref(), Some(&outgoing.root));
+            } else {
+                assert_eq!(old_opacity, 0.0);
+                assert_eq!(view.stack.visible_child().as_ref(), Some(&incoming.root));
+            }
+        }
+        view.advance_transition(start + Duration::from_millis(750));
+        assert!(!view.transition.is_active());
+        assert_eq!(
+            view.transition
+                .current()
+                .value()
+                .full_field
+                .as_ref()
+                .unwrap()
+                .copy
+                .opacity(),
+            1.0
+        );
+    }
+
     fn blank_promotion_preserves_context_and_an_interrupted_departure() {
         let before = lyric_presentation("lyrics-one-line.json");
         let mut blank = before.clone();
@@ -4133,20 +4417,20 @@ mod tests {
     }
 
     #[test]
-    fn composition_ownership_crosses_continuously_without_doubling_the_masthead() {
-        let mut saw_copy_overlap = false;
+    fn composition_text_groups_transfer_ownership_without_overlap() {
         let mut previous = composition_ownership(0.0);
         for step in 0..=100 {
             let progress = f64::from(step) / 100.0;
             let (ordinary, reel, masthead) = composition_ownership(progress);
             assert!(
-                ordinary.max(reel) >= 0.4,
-                "one content group must retain clear ownership at progress {progress}: ordinary={ordinary}, reel={reel}"
+                ordinary == 0.0 || masthead == 0.0,
+                "large and compact Titles must never coexist at progress {progress}"
+            );
+            assert!(
+                ordinary == 0.0 || reel == 0.0,
+                "returning ordinary text must not cover departing lyric cues at progress {progress}"
             );
             assert!(masthead <= reel);
-            if ordinary > 0.0 && reel > 0.0 {
-                saw_copy_overlap = true;
-            }
             if step > 0 {
                 let current = (ordinary, reel, masthead);
                 assert!(
@@ -4158,11 +4442,6 @@ mod tests {
             }
             previous = (ordinary, reel, masthead);
         }
-        assert!(
-            saw_copy_overlap,
-            "copy groups should cross through a short overlap"
-        );
-
         assert_eq!(composition_ownership(0.0), (1.0, 0.0, 0.0));
         assert_eq!(composition_ownership(1.0), (0.0, 1.0, 1.0));
         let (ordinary, reel, masthead) = composition_ownership(0.5);

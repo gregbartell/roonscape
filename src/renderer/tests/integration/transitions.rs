@@ -10,6 +10,58 @@ use roonscape_renderer::{
 };
 use tempfile::tempdir;
 
+#[test]
+fn replacement_text_retires_before_the_latest_target_appears() {
+    use roonscape_renderer::ReplacementFade;
+    let mut fade = ReplacementFade::new("Starting");
+    assert!(!fade.update("Playing", Duration::ZERO, true));
+    assert_eq!(*fade.displayed(), "Starting");
+    fade.update("Playing", Duration::from_millis(100), true);
+    assert!(fade.opacity() > 0.0 && fade.opacity() < 1.0);
+    let interrupted_opacity = fade.opacity();
+    fade.update("Paused", Duration::from_millis(100), true);
+    assert_eq!(fade.opacity(), interrupted_opacity);
+    assert_eq!(*fade.displayed(), "Starting");
+    assert!(fade.update("Paused", Duration::from_millis(325), true));
+    assert_eq!(*fade.displayed(), "Paused");
+    assert_eq!(
+        fade.opacity(),
+        0.0,
+        "replacement happens only while invisible"
+    );
+    fade.update("Paused", Duration::from_millis(550), true);
+    assert_eq!(fade.opacity(), 1.0);
+    fade.update("Paused", Duration::from_secs(1), true);
+    assert_eq!(fade.opacity(), 1.0, "unchanged text must not fade");
+    assert!(fade.update("Playing", Duration::from_secs(1), false));
+    assert_eq!(*fade.displayed(), "Playing");
+    assert_eq!(
+        fade.opacity(),
+        1.0,
+        "reduced animation installs the endpoint"
+    );
+}
+
+#[test]
+fn a_cancelled_text_replacement_restores_the_still_displayed_text() {
+    use roonscape_renderer::ReplacementFade;
+    let mut fade = ReplacementFade::new("Playing");
+    fade.update("Paused", Duration::ZERO, true);
+    fade.update("Paused", Duration::from_millis(100), true);
+    let dimmed = fade.opacity();
+    assert!(!fade.update("Playing", Duration::from_millis(100), true));
+    assert_eq!(fade.opacity(), dimmed);
+    for millis in [150, 200, 250, 325] {
+        assert!(!fade.update("Playing", Duration::from_millis(millis), true));
+        assert_eq!(*fade.displayed(), "Playing");
+        assert!(
+            fade.opacity() >= dimmed,
+            "a cancelled replacement must not keep fading out"
+        );
+    }
+    assert_eq!(fade.opacity(), 1.0);
+}
+
 struct CoordinatedPresentation {
     presentation: Presentation,
     artwork_path: Option<String>,

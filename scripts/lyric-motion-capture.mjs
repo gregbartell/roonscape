@@ -52,7 +52,7 @@ const defaultRendererExecutable = path.join(
 
 const examples = {
   "timing-stability": {
-    durationSeconds: 21,
+    durationSeconds: 26,
     initialFixture: "src/shared/fixtures/playing.json",
     publications: [
       {
@@ -107,6 +107,15 @@ const examples = {
         fixture: "src/shared/fixtures/lyrics-timing-stability.json",
         positionSeconds: 10,
       },
+      {
+        atSeconds: 21,
+        fixture: "src/shared/fixtures/timing-stability.json",
+        playback: "playing",
+        positionSeconds: 11,
+        durationSeconds: 266,
+      },
+      { atSeconds: 23, fixture: "src/shared/fixtures/disconnected.json" },
+      { atSeconds: 24, fixture: "src/shared/fixtures/stopped.json" },
     ],
     reviewFrames: [
       reviewFrame(
@@ -184,6 +193,41 @@ const examples = {
         20.25,
         "lyric-playing",
         "Playing resumes in the same composition.",
+      ),
+      reviewFrame(
+        21.2,
+        "lyric-exit-early",
+        "Compact metadata retires before the large Title returns.",
+      ),
+      reviewFrame(
+        21.4,
+        "lyric-exit-middle",
+        "Replacement Titles never coexist during exit.",
+      ),
+      reviewFrame(
+        22,
+        "lyric-exit-settled",
+        "Ordinary metadata resumes its settled layout.",
+      ),
+      reviewFrame(
+        24.1,
+        "disconnected-retiring",
+        "Disconnected copy fades out before Idle appears.",
+      ),
+      reviewFrame(
+        24.2,
+        "disconnected-final",
+        "No competing Full-field messages before the swap.",
+      ),
+      reviewFrame(
+        24.3,
+        "idle-arriving",
+        "Idle arrives after Disconnected has retired.",
+      ),
+      reviewFrame(
+        24.9,
+        "idle-settled",
+        "Idle retains its complete readable message.",
       ),
     ],
   },
@@ -919,14 +963,17 @@ export function reanchorLyricMotionSnapshot(
     ...structuredClone(fixture),
     revision,
     playback,
-    timing: {
-      ...fixture.timing,
-      durationSeconds,
-      position: {
-        seconds: positionSeconds,
-        sampledAt,
-      },
-    },
+    timing:
+      fixture.timing === null
+        ? null
+        : {
+            ...fixture.timing,
+            durationSeconds,
+            position: {
+              seconds: positionSeconds,
+              sampledAt,
+            },
+          },
   };
 }
 

@@ -767,9 +767,8 @@ pub fn classify_presentation_update(
         (Presentation::NowPlaying(previous), Presentation::NowPlaying(next)) => {
             previous.status = next.status;
             previous.playback_position_seconds = next.playback_position_seconds;
-            if previous.progress.is_some() && next.progress.is_some() {
-                previous.progress.clone_from(&next.progress);
-            }
+            previous.progress.clone_from(&next.progress);
+            previous.activity.clone_from(&next.activity);
             previous.lyrics.clone_from(&next.lyrics);
         }
         (Presentation::FullField(previous), Presentation::FullField(next)) => {

@@ -68,7 +68,7 @@ pub use resolution::{
 pub use style::{
     DiagnosticsStyle, PresentationStyleLayer, PresentationTransitionStyles, TypographyStyles,
 };
-pub use transition::{PresentationRevision, PresentationTransition};
+pub use transition::{PresentationRevision, PresentationTransition, ReplacementFade};
 pub use typography::{
     FALLBACK_FONT_FILES, FALLBACK_FONT_LICENSES, NowPlayingTitleFace, TypographyError,
     TypographySelection, register_packaged_fallback_fonts, select_capture_typography,

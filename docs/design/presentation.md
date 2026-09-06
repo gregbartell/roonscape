@@ -109,6 +109,9 @@ four lines with an end ellipsis.
 Same-identity lyric entry and exit animate persistent artwork and information
 rail geometry in place. Ordinary metadata relinquishes ownership to the compact
 masthead and reel without duplicating artwork, Presentation Status, or footer.
+Ordinary metadata finishes fading out before the compact masthead and lyric
+reel fade in. Exit reverses this sequence, so departing cues and compact Titles
+never compete with the returning large Title.
 Preparation starts before the first nonblank cue's advance promotion; its
 arrival may overlap the geometry movement. Internal gaps and blanks retain one
 continuous composition interval, ending after the hold following the final
@@ -249,12 +252,13 @@ characters.
 
 Motion is restrained to information that changes over time or protects the
 display. Determinate progress advances in place while Playing and remains
-frozen while Paused. A playback-only change that preserves the current
-composition updates Presentation Status and progress in place. A composition
-change crossfades artwork, metadata, identities, and the full palette as one
-coordinated layer, including when Now Playing and playback change together.
-Availability loss and disconnection also replace the composition through that
-crossfade. Composition identity is determined from the resolved content and
+frozen while Paused. Status and timing updates retain unchanged text and its
+position in the current composition. Replacement text in the same space fades
+out completely before its replacement fades in; numeric progress advances in
+place. A composition change retires outgoing text, crossfades artwork and
+palette with text absent, then fades replacement text in, including when Now
+Playing and playback change together. Availability loss and disconnection use
+the same sequence. Composition identity is determined from the resolved content and
 artwork reference, never inferred from playback state, so a Paused update with
 changed Now Playing content cannot be mistaken for a playback-only update.
 

@@ -322,6 +322,17 @@ test("timing review publications override status and duration without changing c
   assert.equal(fixture.timing.durationSeconds, 266);
 });
 
+test("Full-field review publications retain absent timing", () => {
+  const fixture = { playback: "stopped", timing: null };
+  const snapshot = reanchorLyricMotionSnapshot(fixture, {
+    revision: 3,
+    sampledAt: "2026-09-05T00:00:00Z",
+  });
+  assert.equal(snapshot.timing, null);
+  assert.equal(snapshot.playback, "stopped");
+  assert.equal(snapshot.revision, 3);
+});
+
 test("schedules publications from the recorder start clock, not delayed progress observations", () => {
   const recordingStartedAtMilliseconds = 10_000;
   assert.equal(
