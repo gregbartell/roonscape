@@ -102,11 +102,47 @@ pub struct NowPlayingPresentation {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LyricPresentation {
     pub timeline_signature: u64,
+    pub timeline: Vec<String>,
     pub current_index: usize,
-    pub previous_index: Option<usize>,
-    pub previous: Option<String>,
-    pub current: String,
-    pub next: Option<String>,
+    pub preparing: bool,
+}
+
+impl LyricPresentation {
+    pub fn current(&self) -> &str {
+        if self.preparing {
+            ""
+        } else {
+            &self.timeline[self.current_index]
+        }
+    }
+
+    pub fn previous_index(&self) -> Option<usize> {
+        if self.preparing {
+            return None;
+        }
+        self.timeline[..self.current_index]
+            .iter()
+            .rposition(|text| !text.trim().is_empty())
+    }
+
+    pub fn previous(&self) -> Option<&str> {
+        self.previous_index()
+            .map(|index| self.timeline[index].as_str())
+    }
+
+    pub fn next_index(&self) -> Option<usize> {
+        let start = self.current_index + usize::from(!self.preparing);
+        self.timeline
+            .iter()
+            .enumerate()
+            .skip(start)
+            .find(|(_, text)| !text.trim().is_empty())
+            .map(|(index, _)| index)
+    }
+
+    pub fn next(&self) -> Option<&str> {
+        self.next_index().map(|index| self.timeline[index].as_str())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1175,11 +1211,9 @@ fn lyric_presentation(
     if selection_position < first.at_seconds {
         return Some(LyricPresentation {
             timeline_signature: lyric_timeline_signature(lyrics),
+            timeline: lyrics.cues.iter().map(|cue| cue.text.clone()).collect(),
             current_index: first_index,
-            previous_index: None,
-            previous: None,
-            current: String::new(),
-            next: Some(first.text.clone()),
+            preparing: true,
         });
     }
     // Nonblank cues anticipate their sung timestamp; blanks begin at their
@@ -1200,23 +1234,12 @@ fn lyric_presentation(
         })
         .map(|(index, _)| index)
         .unwrap_or(first_index);
-    let current = lyrics.cues.get(current_index)?;
     let timeline_signature = lyric_timeline_signature(lyrics);
-    let previous_index = lyrics.cues[..current_index]
-        .iter()
-        .rposition(|cue| !cue.text.trim().is_empty());
-    let previous = previous_index.map(|index| lyrics.cues[index].text.clone());
-    let next = lyrics.cues[current_index + 1..]
-        .iter()
-        .find(|cue| !cue.text.trim().is_empty())
-        .map(|cue| cue.text.clone());
     Some(LyricPresentation {
         timeline_signature,
+        timeline: lyrics.cues.iter().map(|cue| cue.text.clone()).collect(),
         current_index,
-        previous_index,
-        previous,
-        current: current.text.clone(),
-        next,
+        preparing: false,
     })
 }
 

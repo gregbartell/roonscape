@@ -16,7 +16,6 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
         (".presentation-current", "color", "#F3EAD7"),
         (".presentation-current .artist", "color", "#C9C5BD"),
         (".presentation-current .album", "color", "#C9C5BD"),
-        (".presentation-current .lyric-next", "color", "#C9C5BD"),
         (
             ".presentation-current .lyric-masthead-artist",
             "color",
@@ -25,7 +24,6 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
         (".presentation-current .time", "color", "#C9C5BD"),
         (".presentation-current .identity-name", "color", "#C9C5BD"),
         (".presentation-current .title", "color", "#F3EAD7"),
-        (".presentation-current .lyric-current", "color", "#F3EAD7"),
         (
             ".presentation-current .lyric-masthead-title",
             "color",
@@ -37,7 +35,6 @@ fn semantic_palette_roles_drive_every_presentation_surface() {
             "#F3EAD7",
         ),
         (".presentation-current .activity-detail", "color", "#9299A8"),
-        (".presentation-current .lyric-previous", "color", "#9299A8"),
         (
             ".presentation-current .full-field-explanation",
             "color",

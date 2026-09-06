@@ -42,10 +42,10 @@ pub use keyboard::{NavigationIntent, RendererAction, RendererKey, RendererKeyboa
 pub use layout::{
     ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkFieldAnchors, ArtworkLayout,
     ArtworkPrintPlateGeometry, ArtworkPrintPlateLayout, BottomAnchor, FullFieldFontSize,
-    FullFieldLayout, FullFieldSlot, IdentityRowLayout, InactivityLayout, LyricNeighborVisibility,
-    MetadataFitting, MetadataFontSizes, NowPlayingFooterContent, NowPlayingInformationLayout,
-    NowPlayingLayout, NowPlayingRole, NowPlayingTypography, PresentationStatusDecoration,
-    PresentationStatusLayout, Viewport,
+    FullFieldLayout, FullFieldSlot, IdentityRowLayout, InactivityLayout, MetadataFitting,
+    MetadataFontSizes, NowPlayingFooterContent, NowPlayingInformationLayout, NowPlayingLayout,
+    NowPlayingRole, NowPlayingTypography, PresentationStatusDecoration, PresentationStatusLayout,
+    Viewport,
 };
 pub use metadata::{
     MetadataDensity, MetadataGroupPlan, MetadataLayout, MetadataLineLayout, MetadataLinePlan,

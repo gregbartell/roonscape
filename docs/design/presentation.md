@@ -95,16 +95,22 @@ unified footer retain their vertical anchors and travel with the information rai
 masthead replaces the ordinary Title/Artist/Album group; Album is omitted in
 this composition.
 
-The current cue is the room-scale focal point on the information rail. The
-nearest nonblank previous cue uses muted text as memory, while the nearest
-nonblank next cue uses secondary text as anticipation. A settled Intentional
-Blank keeps these contextual neighbors around an empty focal position, even
-after a tall cue. Leading blanks are ignored and all-blank timelines retain
-ordinary Now Playing. Short blanks preserve advance promotion without a forced
-empty dwell. When the current cue occupies three rendered lines, the previous cue is
-omitted; at four or more lines both neighbors are omitted. The current tier is
-never reduced merely to retain neighbors, and defensive overflow is limited to
-four lines with an end ellipsis.
+The active Cue is the room-scale focal point on the information rail. Its first
+line lands at the fixed Primary Position, approximately one-third down the
+available lyric area; subsequent lines extend below it. The Lyric Reel packs
+earlier cues above and upcoming cues below, using the available space rather
+than a fixed cue count. Earlier cues use smaller muted text and upcoming cues
+use smaller secondary text. Normal internal line spacing and modest inter-cue
+gaps keep each Cue distinct. Short fades at the top and bottom allow partial
+cues to enter and leave progressively; cues do not overlap or escape the lyric
+column into the masthead or footer.
+
+A settled Intentional Blank retains the nearest nonblank previous and next
+cues around an empty Primary Position, even after a tall cue. Leading blanks
+are ignored and all-blank timelines retain ordinary Now Playing. Short blanks
+preserve advance promotion without a forced empty dwell. The focal size is not
+reduced to retain context. Defensive overflow remains limited to four lines
+with an end ellipsis.
 
 Same-identity lyric entry and exit animate persistent artwork and information
 rail geometry in place. Ordinary metadata relinquishes ownership to the compact
@@ -117,12 +123,13 @@ arrival may overlap the geometry movement. Internal gaps and blanks retain one
 continuous composition interval, ending after the hold following the final
 timeline entry, including trailing blanks.
 
-Natural Cue Handoffs use Reel Lift: compact cues promote from Next Cue to focus
-while the outgoing focal cue becomes Previous Cue. If either cue occupies three
-or four Pango-rendered lines, the outgoing cue departs upward at focal size under
-the reel's clip, and the incoming cue takes a shorter path. Available memory
-returns as the incoming cue settles. Position, scale, semantic color, and weight
-transfer together without a missing-focus interval. External seeks and timeline
+Natural Cue Handoffs use Reel Lift: the incoming Cue rises into the Primary
+Position while the outgoing cue becomes smaller, quieter context above it.
+Every cue retains its timed identity, including repeated identical text. Cues
+use stable focal-size Pango wrapping throughout the size-changing motion.
+Position, scale, and semantic color transfer together without a missing-focus
+interval. Outgoing cues remain visible while their geometry intersects the
+lyric area, including handoffs to and from three- and four-line cues. External seeks and timeline
 revisions install destination-relative cue state directly, while boundary
 crossings still animate composition geometry. Interrupted composition movement
 retargets from its current geometry; interrupted handoffs prioritize the newest

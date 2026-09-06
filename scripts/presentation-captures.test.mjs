@@ -29,6 +29,7 @@ const REQUIRED_SCENARIOS = [
   "playing",
   "paused",
   "lyrics-one-line",
+  "lyrics-reel-capacity",
   "lyrics-two-line",
   "lyrics-three-line",
   "lyrics-four-lines",

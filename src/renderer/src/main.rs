@@ -3,6 +3,7 @@ mod artwork_cache;
 mod bounded_lru_cache;
 mod gradient_cache;
 mod lyric_motion;
+mod lyric_reel;
 mod status_symbol;
 mod view;
 

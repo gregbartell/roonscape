@@ -63,7 +63,7 @@ test("preflights and groups the complete maintained capture plan", async () => {
       { workingDirectory, environment },
     );
 
-    assert.equal(plan.captures.length, 259);
+    assert.equal(plan.captures.length, 266);
     assert.equal(plan.sessions.length, 28);
     assert.equal(plan.sessions.flat().length, plan.captures.length);
     assert.ok(
@@ -124,7 +124,7 @@ test("preflights custom artwork only for compatible Fixture Scenarios", async ()
       .digest("hex")
       .slice(0, 12);
 
-    assert.equal(plan.captures.length, 24);
+    assert.equal(plan.captures.length, 25);
     assert.equal(plan.sessions.length, 1);
     assert.deepEqual(
       plan.captures
@@ -134,6 +134,7 @@ test("preflights custom artwork only for compatible Fixture Scenarios", async ()
         "playing",
         "paused",
         "lyrics-one-line",
+        "lyrics-reel-capacity",
         "lyrics-two-line",
         "lyrics-three-line",
         "lyrics-four-lines",

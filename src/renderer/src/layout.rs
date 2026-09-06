@@ -271,31 +271,6 @@ pub struct NowPlayingTypography {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LyricNeighborVisibility {
-    pub previous: bool,
-    pub next: bool,
-}
-
-impl LyricNeighborVisibility {
-    pub fn for_rendered_lines(rendered_lines: i32) -> Self {
-        match rendered_lines {
-            ..=2 => Self {
-                previous: true,
-                next: true,
-            },
-            3 => Self {
-                previous: false,
-                next: true,
-            },
-            _ => Self {
-                previous: false,
-                next: false,
-            },
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MetadataFitting {
     pub normal_title_to_credit_gap_px: u32,
     pub compact_title_to_credit_gap_px: u32,

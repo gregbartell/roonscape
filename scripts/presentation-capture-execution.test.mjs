@@ -53,7 +53,7 @@ test("executes the complete maintained plan through in-memory sessions", async (
       onCapturePublished: (capturePath) => published.push(capturePath),
     });
 
-    assert.equal(plan.captures.length, 259);
+    assert.equal(plan.captures.length, 266);
     assert.deepEqual(observedSessions, plan.sessions);
     const executionOrder = plan.sessions.flat();
     assert.deepEqual(
@@ -94,7 +94,7 @@ test("executes the complete maintained plan through in-memory sessions", async (
         );
         assert.match(
           error.message,
-          /Visual-acceptance profile is incomplete \(100\/259 captures completed\)/,
+          /Visual-acceptance profile is incomplete \(100\/266 captures completed\)/,
         );
         return true;
       },

@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 4,
+  "revision": 48,
+  "availability": "available",
+  "playback": "playing",
+  "trackedOutput": {
+    "name": "Speaker System"
+  },
+  "trackedZone": {
+    "id": "zone-living-room",
+    "name": "Living Room"
+  },
+  "nowPlaying": {
+    "title": "Last Light on Phobos",
+    "artist": "Evelyn Lark & The Orbital Choir",
+    "album": "Signals from the Quiet Sea"
+  },
+  "artwork": {
+    "revision": 3,
+    "path": "src/shared/fixtures/artwork/playing.jpg"
+  },
+  "lyrics": {
+    "cues": [
+      {
+        "atSeconds": 110,
+        "text": "The first pale light"
+      },
+      {
+        "atSeconds": 120,
+        "text": "Across the water"
+      },
+      {
+        "atSeconds": 130,
+        "text": "We find the signal"
+      },
+      {
+        "atSeconds": 140,
+        "text": "A quiet orbit fades"
+      },
+      {
+        "atSeconds": 150,
+        "text": "The stars remember"
+      },
+      {
+        "atSeconds": 160,
+        "text": "Before the morning"
+      },
+      {
+        "atSeconds": 170,
+        "text": "We find the signal"
+      },
+      {
+        "atSeconds": 180,
+        "text": "Beyond the cobalt tide"
+      },
+      {
+        "atSeconds": 190,
+        "text": "Through the open window"
+      },
+      {
+        "atSeconds": 200,
+        "text": "Again the light returns"
+      },
+      {
+        "atSeconds": 210,
+        "text": "We find the signal"
+      },
+      {
+        "atSeconds": 220,
+        "text": "The night grows quiet"
+      },
+      {
+        "atSeconds": 230,
+        "text": "And carries us home"
+      },
+      {
+        "atSeconds": 240,
+        "text": "Across the water"
+      },
+      {
+        "atSeconds": 250,
+        "text": "Until the dawn"
+      }
+    ]
+  },
+  "timing": {
+    "position": {
+      "seconds": 171,
+      "sampledAt": "2026-08-15T19:20:00Z"
+    },
+    "durationSeconds": 266
+  }
+}

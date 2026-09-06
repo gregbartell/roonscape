@@ -466,9 +466,9 @@ const examples = {
     durationSeconds: 14,
     lineCountEvidenceByResolution: {
       "1600x900":
-        "Native Pango measurement: height-aware source 2 lines; destination 3 lines.",
+        "Native Pango measurement: wrapping source 2 lines; destination 3 lines.",
       "1600x1200":
-        "Native Pango measurement: height-aware source 3 lines; destination 4 lines.",
+        "Native Pango measurement: wrapping source 3 lines; destination 4 lines.",
     },
     initialFixture: "src/shared/fixtures/playing.json",
     publications: [
@@ -492,7 +492,7 @@ const examples = {
       reviewFrame(
         1.85,
         "one-line-cue-settled",
-        "One-line cue and both neighbors settled.",
+        "One-line cue with its available Lyric Reel context settled.",
       ),
       reviewFrame(
         3.01,
@@ -527,18 +527,18 @@ const examples = {
       ),
       reviewFrame(
         9.01,
-        "short-to-height-aware-midpoint",
+        "short-to-tall-midpoint",
         "Natural Cue Handoff into a taller Pango-wrapped cue.",
       ),
       reviewFrame(
         9.4,
-        "height-aware-cue-settled",
-        "Taller focal cue settled without Previous Cue.",
+        "tall-cue-settled",
+        "Taller focal cue settled with space-limited Lyric Reel context.",
       ),
       reviewFrame(
         10.21,
-        "height-aware-to-short-midpoint",
-        "Taller cue leaving through the abbreviated path.",
+        "tall-to-short-midpoint",
+        "Taller cue shrinking into earlier context during continuous Reel Lift.",
       ),
       reviewFrame(
         11.41,
@@ -548,12 +548,12 @@ const examples = {
       reviewFrame(
         11.8,
         "capped-cue-settled",
-        "Capped-height focal cue settled without neighbors.",
+        "Capped-height focal cue settled with geometrically visible context.",
       ),
       reviewFrame(
         12.61,
         "capped-to-short-midpoint",
-        "Capped-height cue leaving through the abbreviated path.",
+        "Capped-height cue shrinking into earlier Lyric Reel context.",
       ),
       reviewFrame(
         13,

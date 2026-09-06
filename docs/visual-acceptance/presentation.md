@@ -87,7 +87,7 @@ comparisons for affected behavior.
 | --- | --- |
 | Composition and responsive bounds | Compare ordinary and ultrawide captures for rail alignment, negative space, and clipping of artwork, metadata, shadows, and diagnostics. Check [composition and hierarchy](../design/presentation.md#composition-and-hierarchy) and the [inactivity movement envelope](../design/presentation.md#motion-and-inactivity). |
 | Metadata hierarchy and fitting | Compare short, long, extreme, punctuation-heavy, and missing-field metadata using [composition and hierarchy](../design/presentation.md#composition-and-hierarchy) and [typography](../design/presentation.md#typography). Look for orphan lines, crowding, incorrect font tiers, and ellipsis. |
-| Synchronized lyrics | Compare cue lengths, Intentional Blanks, missing artwork, and long mastheads against the [Synchronized Lyric Composition](../design/presentation.md#synchronized-lyric-composition). |
+| Synchronized lyrics | Compare Lyric Reel capacity and repeated cues, cue lengths, Intentional Blanks, missing artwork, and long mastheads against the [Synchronized Lyric Composition](../design/presentation.md#synchronized-lyric-composition). |
 | Artwork fit and decoration | Compare square, non-square, missing, and unusable artwork against [artwork and palette](../design/presentation.md#artwork-and-palette). Inspect visible image bounds, border, shadow, plate alignment, and transparent reservation space without movement of the information rail. |
 | Palette and determinate progress | Compare dark, light, fixed-no-art, matte, and progress representatives against [artwork and palette](../design/presentation.md#artwork-and-palette). Check text readability, fill/track separation, bright-field restraint, and retained artwork hue. |
 | Presentation Status | Compare Playing, Paused, Starting, and Full-field symbols, emphasis, and anchors against [Presentation Status](../design/presentation.md#presentation-status). |
@@ -119,6 +119,10 @@ Compare behavior with [motion and inactivity](../design/presentation.md#motion-a
   presentations, including shadow and diagnostics containment. Confirm that
   Playing and Starting retain their normal appearance. Keep production defaults
   unchanged.
+
+For settled Lyric Reel context, include `lyrics-reel-capacity` at all seven peer
+viewports. Check the first-line Primary Position, modest inter-cue gaps, and
+partially visible cues at both faded edges.
 
 For lyric entry, Natural Cue Handoffs, Intentional Blanks, seeks, and interrupted
 motion, use the [lyric motion captures](../development.md#lyric-motion-captures)

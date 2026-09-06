@@ -7,8 +7,8 @@ use gtk::pango::{self, FontDescription, Layout};
 use gtk::prelude::FontMapExt;
 use roonscape_renderer::{
     ArtworkContent, ArtworkDecoration, ArtworkDimensions, ArtworkLayout, ArtworkReference,
-    LyricNeighborVisibility, NowPlayingFooterContent, NowPlayingLayout, NowPlayingRole,
-    Presentation, PresentationStatusDecoration, parse_snapshot, presentation_from_snapshot,
+    NowPlayingFooterContent, NowPlayingLayout, NowPlayingRole, Presentation,
+    PresentationStatusDecoration, parse_snapshot, presentation_from_snapshot,
     register_packaged_fallback_fonts, resolve_presentation,
 };
 
@@ -54,31 +54,6 @@ fn timing_and_status_variants_reserve_identical_composition_geometry() {
             }
         }
     }
-}
-
-#[test]
-fn omits_lyric_neighbors_as_the_current_cue_grows() {
-    assert_eq!(
-        LyricNeighborVisibility::for_rendered_lines(2),
-        LyricNeighborVisibility {
-            previous: true,
-            next: true
-        }
-    );
-    assert_eq!(
-        LyricNeighborVisibility::for_rendered_lines(3),
-        LyricNeighborVisibility {
-            previous: false,
-            next: true
-        }
-    );
-    assert_eq!(
-        LyricNeighborVisibility::for_rendered_lines(4),
-        LyricNeighborVisibility {
-            previous: false,
-            next: false
-        }
-    );
 }
 
 #[test]

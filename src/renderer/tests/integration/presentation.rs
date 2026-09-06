@@ -11,6 +11,28 @@ use roonscape_renderer::{
 
 const PLAYING_SAMPLED_AT: u64 = 1_786_821_600;
 
+#[test]
+fn lyric_reel_retains_destination_timeline_and_distinct_repeated_cues() {
+    let snapshot = snapshot_with_lyrics(
+        "playing.json",
+        &[
+            (140.0, "Before"),
+            (150.0, "Again"),
+            (160.0, "Again"),
+            (170.0, "Active"),
+            (180.0, "After"),
+            (190.0, "Further"),
+        ],
+    );
+    let state = PresentationState::new(snapshot, presentation_time(0, PLAYING_SAMPLED_AT)).unwrap();
+    let presentation = now_playing(&state, 0);
+    let lyrics = presentation.lyrics.unwrap();
+    assert_eq!(lyrics.current_index, 3);
+    assert_eq!(lyrics.timeline.len(), 6);
+    assert_eq!(&lyrics.timeline[1..3], &["Again", "Again"]);
+    assert_eq!(lyrics.timeline[5], "Further");
+}
+
 fn presentation_time(monotonic_seconds: u64, utc_seconds: u64) -> PresentationTime {
     PresentationTime::new(
         Duration::from_secs(monotonic_seconds),
@@ -85,7 +107,7 @@ fn selects_synchronized_lyrics_with_lookahead_and_a_bounded_final_hold() {
         panic!("Playing should use Now Playing");
     };
     assert_eq!(
-        before.lyrics.as_ref().map(|lyrics| lyrics.current.as_str()),
+        before.lyrics.as_ref().map(|lyrics| lyrics.current()),
         Some("")
     );
 
@@ -96,7 +118,7 @@ fn selects_synchronized_lyrics_with_lookahead_and_a_bounded_final_hold() {
         panic!("Playing should use Now Playing");
     };
     assert_eq!(
-        active.lyrics.as_ref().map(|lyrics| lyrics.current.as_str()),
+        active.lyrics.as_ref().map(|lyrics| lyrics.current()),
         Some("First")
     );
 
@@ -153,9 +175,9 @@ fn preserves_intentional_blanks_and_freezes_the_reel_while_paused() {
         let lyrics = presentation
             .lyrics
             .expect("Intentional Blank should keep the Synchronized Lyric Composition");
-        assert_eq!(lyrics.current, "");
-        assert_eq!(lyrics.previous.as_deref(), Some("Previous"));
-        assert_eq!(lyrics.next.as_deref(), Some("Upcoming"));
+        assert_eq!(lyrics.current(), "");
+        assert_eq!(lyrics.previous(), Some("Previous"));
+        assert_eq!(lyrics.next(), Some("Upcoming"));
     }
 
     let mut approaching_snapshot = snapshot_with_lyrics("paused.json", &cues);
@@ -182,9 +204,9 @@ fn preserves_intentional_blanks_and_freezes_the_reel_while_paused() {
     let lyrics = presentation
         .lyrics
         .expect("Intentional Blank should remain active");
-    assert_eq!(lyrics.previous.as_deref(), Some("Previous"));
-    assert_eq!(lyrics.current, "   ");
-    assert_eq!(lyrics.next.as_deref(), Some("Upcoming"));
+    assert_eq!(lyrics.previous(), Some("Previous"));
+    assert_eq!(lyrics.current(), "   ");
+    assert_eq!(lyrics.next(), Some("Upcoming"));
 }
 
 #[test]
@@ -258,7 +280,7 @@ fn ignores_leading_blanks_and_retains_internal_and_trailing_blanks() {
             presentation
                 .lyrics
                 .as_deref()
-                .map(|lyrics| lyrics.current.as_str()),
+                .map(|lyrics| lyrics.current()),
             expected,
             "unexpected lyric state at {seconds}s"
         );
@@ -292,10 +314,7 @@ fn prepares_before_first_cue_and_ignores_all_leading_blanks() {
                 panic!("Now Playing");
             };
             assert_eq!(
-                presentation
-                    .lyrics
-                    .as_ref()
-                    .map(|lyrics| lyrics.current.as_str()),
+                presentation.lyrics.as_ref().map(|lyrics| lyrics.current()),
                 expected,
                 "at {seconds}"
             );
@@ -342,7 +361,7 @@ fn short_blanks_preserve_advance_promotion_without_retiring_the_current_cue_earl
             panic!("Now Playing");
         };
         assert_eq!(
-            presentation.lyrics.unwrap().current,
+            presentation.lyrics.unwrap().current(),
             expected,
             "at {seconds}"
         );
@@ -1732,7 +1751,9 @@ fn selects_lyrics_from_authoritative_position_without_duration_and_both_provisio
     let state = PresentationState::new(position_only, presentation_time(0, PLAYING_SAMPLED_AT))
         .expect("position-only timing should be presentable");
     assert_eq!(
-        now_playing(&state, 0).lyrics.map(|lyrics| lyrics.current),
+        now_playing(&state, 0)
+            .lyrics
+            .map(|lyrics| lyrics.current().to_owned()),
         Some("Current".to_owned())
     );
 
@@ -1751,7 +1772,7 @@ fn selects_lyrics_from_authoritative_position_without_duration_and_both_provisio
     assert_eq!(
         now_playing(&compatible, 1)
             .lyrics
-            .map(|lyrics| lyrics.current),
+            .map(|lyrics| lyrics.current().to_owned()),
         Some("Current".to_owned())
     );
 
@@ -1787,7 +1808,7 @@ fn selects_lyrics_from_authoritative_position_without_duration_and_both_provisio
     assert_eq!(
         now_playing(&compatible, 3)
             .lyrics
-            .map(|lyrics| lyrics.current),
+            .map(|lyrics| lyrics.current().to_owned()),
         Some("Opening".to_owned())
     );
 }

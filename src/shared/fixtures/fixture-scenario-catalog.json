@@ -20,6 +20,12 @@
       "palette": "dark"
     },
     {
+      "scenario": "lyrics-reel-capacity",
+      "label": "Lyric Reel — context and repeated cues",
+      "fixture": "src/shared/fixtures/lyrics-reel-capacity.json",
+      "palette": "dark"
+    },
+    {
       "scenario": "lyrics-two-line",
       "label": "Lyrics — two lines",
       "fixture": "src/shared/fixtures/lyrics-two-line.json",

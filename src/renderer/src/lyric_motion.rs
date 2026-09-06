@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use roonscape_renderer::{LyricNeighborVisibility, LyricPresentation};
+use roonscape_renderer::LyricPresentation;
 
 const CUE_HANDOFF_DURATION: Duration = Duration::from_millis(620);
 const BLANK_TRANSITION_DURATION: Duration = Duration::from_millis(440);
@@ -14,7 +14,7 @@ const SEEK_DISCONTINUITY_SECONDS: f64 = 0.5;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LyricMotionCause {
     Settled,
-    NaturalCueHandoff { height_aware: bool },
+    NaturalCueHandoff,
     IntentionalBlankEntry,
     IntentionalBlankExit,
     IntentionalBlankContinuation,
@@ -27,30 +27,31 @@ pub(crate) enum LyricMotionCause {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum LyricCueSlot {
-    Previous,
-    Current,
-    Next,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LyricColorRole {
     Previous,
     Focal,
     Next,
 }
 
+impl LyricColorRole {
+    fn weights(self) -> [f64; 3] {
+        match self {
+            Self::Previous => [1.0, 0.0, 0.0],
+            Self::Focal => [0.0, 1.0, 0.0],
+            Self::Next => [0.0, 0.0, 1.0],
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct LyricCueFrame {
-    pub slot: LyricCueSlot,
+    pub role: LyricColorRole,
+    pub index: i64,
+    pub extent: f64,
     pub text: String,
-    pub position: f64,
     pub emphasis: f64,
     pub opacity: f64,
-    pub color_from: LyricColorRole,
-    pub color_to: LyricColorRole,
-    pub color_progress: f64,
-    pub departing: bool,
+    pub color_weights: [f64; 3],
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -58,6 +59,7 @@ pub(crate) struct LyricFrame {
     pub composition_progress: f64,
     pub cause: LyricMotionCause,
     pub cues: Vec<LyricCueFrame>,
+    pub anchors: Vec<(i64, f64)>,
     pub cue_motion_active: bool,
     pub composition_motion_active: bool,
 }
@@ -106,7 +108,7 @@ impl ScalarMotion {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CueMotionKind {
-    Natural { height_aware: bool },
+    Natural,
     BlankEntry,
     BlankExit,
 }
@@ -116,16 +118,14 @@ struct CueMotion {
     kind: CueMotionKind,
     source: LyricPresentation,
     target: LyricPresentation,
-    target_lines: i32,
-    source_lines: i32,
-    interrupted_frame: Option<Vec<LyricCueFrame>>,
+    interrupted_frame: Option<LyricFrame>,
     started_at: Duration,
 }
 
 impl CueMotion {
     fn duration(&self) -> Duration {
         match self.kind {
-            CueMotionKind::Natural { .. } | CueMotionKind::BlankExit => CUE_HANDOFF_DURATION,
+            CueMotionKind::Natural | CueMotionKind::BlankExit => CUE_HANDOFF_DURATION,
             CueMotionKind::BlankEntry => BLANK_TRANSITION_DURATION,
         }
     }
@@ -143,7 +143,6 @@ pub(crate) struct LyricMotion {
     revision: u64,
     semantic: Option<LyricPresentation>,
     displayed: Option<LyricPresentation>,
-    rendered_lines: i32,
     cause: LyricMotionCause,
     cue_motion: Option<CueMotion>,
     composition: ScalarMotion,
@@ -159,16 +158,11 @@ struct PlaybackSample {
 }
 
 impl LyricMotion {
-    pub(crate) fn new(
-        revision: u64,
-        lyrics: Option<&LyricPresentation>,
-        rendered_lines: i32,
-    ) -> Self {
+    pub(crate) fn new(revision: u64, lyrics: Option<&LyricPresentation>) -> Self {
         Self {
             revision,
             semantic: lyrics.cloned(),
             displayed: lyrics.cloned(),
-            rendered_lines,
             cause: LyricMotionCause::Settled,
             cue_motion: None,
             composition: ScalarMotion::settled(f64::from(lyrics.is_some())),
@@ -214,7 +208,6 @@ impl LyricMotion {
         &mut self,
         revision: u64,
         lyrics: Option<&LyricPresentation>,
-        rendered_lines: i32,
         now: Duration,
         animations_enabled: bool,
     ) {
@@ -224,7 +217,7 @@ impl LyricMotion {
 
         if !animations_enabled && self.semantic == next {
             self.displayed.clone_from(&next);
-            self.rendered_lines = rendered_lines;
+
             self.cue_motion = None;
             self.composition = ScalarMotion::settled(f64::from(self.semantic.is_some()));
             return;
@@ -233,17 +226,10 @@ impl LyricMotion {
         if self.semantic == next {
             if revision_changed && self.timing_discontinuity {
                 self.displayed.clone_from(&next);
-                self.rendered_lines = rendered_lines;
+
                 self.cue_motion = None;
                 self.cause = LyricMotionCause::ExternalSeek;
                 return;
-            }
-            if self
-                .cue_motion
-                .as_ref()
-                .is_none_or(|motion| !motion.is_active_at(now))
-            {
-                self.rendered_lines = rendered_lines;
             }
             return;
         }
@@ -260,7 +246,7 @@ impl LyricMotion {
                 LyricMotionCause::CompositionExit
             };
             self.semantic = next;
-            self.rendered_lines = rendered_lines;
+
             return;
         }
 
@@ -275,8 +261,8 @@ impl LyricMotion {
             .cue_motion
             .as_ref()
             .is_some_and(|motion| motion.is_active_at(now));
-        let source_is_blank = source.current.trim().is_empty();
-        let target_is_blank = target.current.trim().is_empty();
+        let source_is_blank = source.current().trim().is_empty();
+        let target_is_blank = target.current().trim().is_empty();
         let continuing_blank_departure = active_motion_is_interrupted
             && !target_is_blank
             && self
@@ -284,12 +270,12 @@ impl LyricMotion {
                 .as_ref()
                 .is_some_and(|motion| motion.kind == CueMotionKind::BlankEntry);
         let adjacent = target.current_index == source.current_index.saturating_add(1)
-            || (!target_is_blank && target.previous_index == Some(source.current_index))
+            || (!target_is_blank && target.previous_index() == Some(source.current_index))
             || (source_is_blank
                 && !target_is_blank
                 && target.current_index >= source.current_index
                 && target
-                    .previous_index
+                    .previous_index()
                     .is_none_or(|index| index < source.current_index));
 
         if !revision_changed && adjacent && source_is_blank && target_is_blank {
@@ -299,7 +285,7 @@ impl LyricMotion {
             }
             self.semantic.clone_from(&next);
             self.displayed.clone_from(&next);
-            self.rendered_lines = rendered_lines;
+
             return;
         }
 
@@ -325,27 +311,23 @@ impl LyricMotion {
                 LyricMotionCause::IntentionalBlankExit,
             )
         } else {
-            let height_aware = self.rendered_lines >= 3 || rendered_lines >= 3;
             (
-                Some(CueMotionKind::Natural { height_aware }),
-                LyricMotionCause::NaturalCueHandoff { height_aware },
+                Some(CueMotionKind::Natural),
+                LyricMotionCause::NaturalCueHandoff,
             )
         };
 
-        let interrupted_frame = continuing_blank_departure.then(|| self.frame_at(now).cues);
+        let interrupted_frame = continuing_blank_departure.then(|| self.frame_at(now));
         self.cue_motion = kind.filter(|_| animations_enabled).map(|kind| CueMotion {
             kind,
             source: source.clone(),
             target: target.clone(),
-            target_lines: rendered_lines,
-            source_lines: self.rendered_lines,
             interrupted_frame,
             started_at: now,
         });
         self.cause = cause;
         self.semantic = next;
         self.displayed = lyrics.cloned();
-        self.rendered_lines = rendered_lines;
     }
 
     pub(crate) fn frame_at(&self, now: Duration) -> LyricFrame {
@@ -353,342 +335,141 @@ impl LyricMotion {
             .cue_motion
             .as_ref()
             .is_some_and(|motion| motion.is_active_at(now));
-        let cues = match self
+        let (cues, anchors) = match self
             .cue_motion
             .as_ref()
             .filter(|motion| motion.is_active_at(now))
         {
             Some(motion) => cue_motion_frame(motion, now),
-            None => stable_cues(self.displayed.as_ref(), self.rendered_lines),
+            None => (
+                stable_cues(self.displayed.as_ref()),
+                self.displayed
+                    .as_ref()
+                    .map(|lyrics| vec![(anchor_index(lyrics), 1.0)])
+                    .unwrap_or_default(),
+            ),
         };
         LyricFrame {
             composition_progress: self.composition.value_at(now),
             cause: self.cause,
             cues,
+            anchors,
             cue_motion_active,
             composition_motion_active: self.composition.is_active_at(now),
         }
     }
-
-    pub(crate) fn reconcile_rendered_lines(&mut self, rendered_lines: i32, now: Duration) {
-        if self
-            .cue_motion
-            .as_ref()
-            .is_none_or(|motion| !motion.is_active_at(now))
-        {
-            self.rendered_lines = rendered_lines;
-        }
-    }
 }
 
-fn cue_motion_frame(motion: &CueMotion, now: Duration) -> Vec<LyricCueFrame> {
-    let progress = motion.progress_at(now);
-    match motion.kind {
-        CueMotionKind::Natural { height_aware } => natural_cue_frame(
-            &motion.source,
-            &motion.target,
-            motion.target_lines,
-            progress,
-            height_aware,
-        ),
-        CueMotionKind::BlankEntry => {
-            let tall = motion.source_lines >= 3;
-            let mut cues = stable_cues(Some(&motion.target), 1);
-            cues.retain(|cue| cue.slot != LyricCueSlot::Previous);
-            let mut outgoing = cue_frame(
-                LyricCueSlot::Previous,
-                &motion.source.current,
-                if tall {
-                    -1.55 * phase(progress, 0.0, 0.6)
-                } else {
-                    -smoothstep(progress)
-                },
-                if tall {
-                    1.0
-                } else {
-                    1.0 - smoothstep(progress)
-                },
-                if tall {
-                    1.0 - phase(progress, 0.0, 0.58)
-                } else {
-                    1.0
-                },
-                LyricColorRole::Focal,
-                LyricColorRole::Previous,
-                smoothstep(progress),
+// Indices identify timed entries, even when their text is identical. Preparation
+// uses the position immediately before the first nonblank cue.
+fn anchor_index(lyrics: &LyricPresentation) -> i64 {
+    lyrics.current_index as i64 - i64::from(lyrics.preparing)
+}
+
+fn cue_motion_frame(motion: &CueMotion, now: Duration) -> (Vec<LyricCueFrame>, Vec<(i64, f64)>) {
+    let progress = phase(motion.progress_at(now), 0.0, 0.78);
+    let source = motion
+        .interrupted_frame
+        .as_ref()
+        .map(|frame| frame.cues.clone())
+        .unwrap_or_else(|| stable_cues(Some(&motion.source)));
+    let target = stable_cues(Some(&motion.target));
+    let mut indices: Vec<_> = source.iter().chain(&target).map(|cue| cue.index).collect();
+    indices.sort_unstable();
+    indices.dedup();
+    let cues = indices
+        .into_iter()
+        .map(|index| {
+            let before = source.iter().find(|cue| cue.index == index);
+            let after = target.iter().find(|cue| cue.index == index);
+            let mut cue = after.or(before).unwrap().clone();
+            cue.emphasis = mix(
+                before.map_or(0.0, |cue| cue.emphasis),
+                after.map_or(0.0, |cue| cue.emphasis),
+                progress,
             );
-            outgoing.departing = tall;
-            if tall && progress >= 0.6 {
-                outgoing = cue_frame(
-                    LyricCueSlot::Previous,
-                    &motion.source.current,
-                    -1.0,
-                    0.0,
-                    phase(progress, 0.6, 0.4),
-                    LyricColorRole::Previous,
-                    LyricColorRole::Previous,
-                    1.0,
-                );
-            }
-            cues.push(outgoing);
-            cues
-        }
-        CueMotionKind::BlankExit => {
-            let visibility = LyricNeighborVisibility::for_rendered_lines(motion.target_lines);
-            let mut cues = stable_cues(Some(&motion.target), motion.target_lines);
-            cues.retain(|cue| cue.slot != LyricCueSlot::Current);
-            for cue in &mut cues {
-                if cue.slot == LyricCueSlot::Next {
-                    cue.opacity = phase(progress, 0.58, 0.34);
-                }
-            }
-            if let Some(initial) = motion
-                .interrupted_frame
-                .as_ref()
-                .and_then(|cues| cues.iter().find(|cue| cue.slot == LyricCueSlot::Previous))
-            {
-                cues.retain(|cue| cue.slot != LyricCueSlot::Previous);
-                cues.push(continue_blank_departure(
-                    initial,
-                    visibility.previous,
-                    progress,
-                ));
-            }
-            let arrival = phase(progress, 0.0, 0.78);
-            let focus = phase(progress, 0.08, 0.58);
-            cues.push(cue_frame(
-                LyricCueSlot::Current,
-                &motion.target.current,
+            cue.opacity = mix(
+                before.map_or(0.0, |cue| cue.opacity),
+                after.map_or(0.0, |cue| cue.opacity),
+                progress,
+            );
+            // Invisible blank anchors yield their space gradually on entry/exit.
+            cue.extent = if cue.text.trim().is_empty() {
                 mix(
-                    if motion.target_lines >= 3 { 0.55 } else { 1.0 },
-                    0.0,
-                    arrival,
-                ),
-                focus,
-                1.0,
-                LyricColorRole::Next,
-                LyricColorRole::Focal,
-                focus,
-            ));
-            cues
-        }
-    }
-}
-
-fn continue_blank_departure(
-    initial: &LyricCueFrame,
-    show_previous: bool,
-    progress: f64,
-) -> LyricCueFrame {
-    let departure = phase(progress, 0.0, 0.6);
-    let mut previous = initial.clone();
-    if initial.departing {
-        if progress < 0.6 {
-            previous.position = mix(initial.position, -1.55, departure);
-            previous.opacity = initial.opacity * (1.0 - departure);
-            return previous;
-        }
-        return cue_frame(
-            LyricCueSlot::Previous,
-            &initial.text,
-            -1.0,
-            0.0,
-            if show_previous {
-                phase(progress, 0.6, 0.4)
+                    before.map_or(0.0, |cue| cue.extent),
+                    after.map_or(0.0, |cue| cue.extent),
+                    progress,
+                )
             } else {
-                0.0
-            },
-            LyricColorRole::Previous,
-            LyricColorRole::Previous,
-            1.0,
-        );
+                1.0
+            };
+            let from = before.map_or(cue.color_weights, |cue| cue.color_weights);
+            let to = after.map_or(cue.color_weights, |cue| cue.color_weights);
+            cue.color_weights = std::array::from_fn(|index| mix(from[index], to[index], progress));
+            cue
+        })
+        .collect();
+    let mut anchors = motion
+        .interrupted_frame
+        .as_ref()
+        .map(|frame| frame.anchors.clone())
+        .unwrap_or_else(|| vec![(anchor_index(&motion.source), 1.0)]);
+    for (_, weight) in &mut anchors {
+        *weight *= 1.0 - progress;
     }
-    previous.position = mix(initial.position, -1.0, departure);
-    previous.emphasis = initial.emphasis * (1.0 - departure);
-    previous.opacity = if show_previous {
-        1.0
-    } else {
-        initial.opacity * (1.0 - departure)
-    };
-    previous.color_progress = mix(initial.color_progress, 1.0, departure);
-    previous
+    anchors.push((anchor_index(&motion.target), progress));
+    (cues, anchors)
 }
 
-fn natural_cue_frame(
-    source: &LyricPresentation,
-    target: &LyricPresentation,
-    target_lines: i32,
-    progress: f64,
-    height_aware: bool,
-) -> Vec<LyricCueFrame> {
-    let (
-        outgoing_position,
-        outgoing_emphasis,
-        outgoing_opacity,
-        incoming_position,
-        incoming_emphasis,
-        incoming_opacity,
-    ) = if height_aware {
-        let departure = phase(progress, 0.0, 0.6);
-        let arrival = phase(progress, 0.0, 0.55);
-        let focus = phase(progress, 0.0, 0.4);
-        (
-            mix(0.0, -1.55, departure),
-            1.0,
-            1.0 - phase(progress, 0.0, 0.22),
-            mix(0.55, 0.0, arrival),
-            mix(0.38, 1.0, focus),
-            phase(progress, 0.0, 0.12),
-        )
-    } else {
-        let trajectory = phase(progress, 0.0, 0.78);
-        let memory = phase(progress, 0.0, 0.72);
-        let focus = phase(progress, 0.08, 0.58);
-        (
-            mix(0.0, -1.0, memory),
-            1.0 - memory,
-            1.0,
-            mix(1.0, 0.0, trajectory),
-            focus,
-            1.0,
-        )
-    };
-    let mut cues = vec![
-        cue_frame(
-            LyricCueSlot::Previous,
-            &source.current,
-            outgoing_position,
-            outgoing_emphasis,
-            outgoing_opacity,
-            LyricColorRole::Focal,
-            LyricColorRole::Previous,
-            if height_aware {
-                progress
-            } else {
-                1.0 - outgoing_emphasis
-            },
-        ),
-        cue_frame(
-            LyricCueSlot::Current,
-            &target.current,
-            incoming_position,
-            incoming_emphasis,
-            incoming_opacity,
-            LyricColorRole::Next,
-            LyricColorRole::Focal,
-            incoming_emphasis,
-        ),
-    ];
-    if height_aware {
-        cues[0].departing = true;
-        if progress >= 0.58 {
-            cues[0] = cue_frame(
-                LyricCueSlot::Previous,
-                &source.current,
-                -1.0,
-                0.0,
-                if LyricNeighborVisibility::for_rendered_lines(target_lines).previous {
-                    phase(progress, 0.58, 0.34)
-                } else {
-                    0.0
-                },
-                LyricColorRole::Previous,
-                LyricColorRole::Previous,
-                1.0,
-            );
-        }
-    }
-    if LyricNeighborVisibility::for_rendered_lines(target_lines).next
-        && let Some(next) = target.next.as_deref()
-    {
-        let arrival = phase(progress, 0.58, 0.34);
-        cues.push(cue_frame(
-            LyricCueSlot::Next,
-            next,
-            1.0,
-            0.0,
-            arrival,
-            LyricColorRole::Next,
-            LyricColorRole::Next,
-            arrival,
-        ));
-    }
-    cues
-}
-
-fn stable_cues(lyrics: Option<&LyricPresentation>, rendered_lines: i32) -> Vec<LyricCueFrame> {
+fn stable_cues(lyrics: Option<&LyricPresentation>) -> Vec<LyricCueFrame> {
     let Some(lyrics) = lyrics else {
         return Vec::new();
     };
-    let blank = lyrics.current.trim().is_empty();
-    let visibility =
-        LyricNeighborVisibility::for_rendered_lines(if blank { 1 } else { rendered_lines });
-    let mut cues = Vec::with_capacity(3);
-    if visibility.previous
-        && let Some(previous) = lyrics.previous.as_deref()
-    {
-        cues.push(cue_frame(
-            LyricCueSlot::Previous,
-            previous,
-            -1.0,
-            0.0,
-            1.0,
-            LyricColorRole::Previous,
-            LyricColorRole::Previous,
-            1.0,
-        ));
+    let anchor = anchor_index(lyrics);
+    let blank = lyrics.current().trim().is_empty();
+    let next_index = lyrics.next_index();
+    let mut cues = Vec::new();
+    for (index, text) in lyrics.timeline.iter().enumerate() {
+        let index = index as i64;
+        if text.trim().is_empty() {
+            continue;
+        }
+        if blank
+            && Some(index as usize) != lyrics.previous_index()
+            && Some(index as usize) != next_index
+        {
+            continue;
+        }
+        let role = if index < anchor {
+            LyricColorRole::Previous
+        } else if index == anchor {
+            LyricColorRole::Focal
+        } else {
+            LyricColorRole::Next
+        };
+        cues.push(LyricCueFrame {
+            role,
+            index,
+            text: text.clone(),
+            emphasis: f64::from(index == anchor),
+            opacity: 1.0,
+            extent: 1.0,
+            color_weights: role.weights(),
+        });
     }
-    if !blank {
-        cues.push(cue_frame(
-            LyricCueSlot::Current,
-            &lyrics.current,
-            0.0,
-            1.0,
-            1.0,
-            LyricColorRole::Focal,
-            LyricColorRole::Focal,
-            1.0,
-        ));
+    if blank {
+        cues.push(LyricCueFrame {
+            role: LyricColorRole::Focal,
+            index: anchor,
+            text: String::new(),
+            emphasis: 1.0,
+            opacity: 0.0,
+            extent: 1.0,
+            color_weights: LyricColorRole::Focal.weights(),
+        });
     }
-    if visibility.next
-        && let Some(next) = lyrics.next.as_deref()
-    {
-        cues.push(cue_frame(
-            LyricCueSlot::Next,
-            next,
-            1.0,
-            0.0,
-            1.0,
-            LyricColorRole::Next,
-            LyricColorRole::Next,
-            1.0,
-        ));
-    }
+    cues.sort_by_key(|cue| cue.index);
     cues
-}
-
-#[allow(clippy::too_many_arguments)]
-fn cue_frame(
-    slot: LyricCueSlot,
-    text: &str,
-    position: f64,
-    emphasis: f64,
-    opacity: f64,
-    color_from: LyricColorRole,
-    color_to: LyricColorRole,
-    color_progress: f64,
-) -> LyricCueFrame {
-    LyricCueFrame {
-        slot,
-        text: text.to_owned(),
-        position,
-        emphasis,
-        opacity,
-        color_from,
-        color_to,
-        color_progress,
-        departing: false,
-    }
 }
 
 fn linear_progress(now: Duration, started_at: Duration, duration: Duration) -> f64 {
@@ -737,11 +518,48 @@ mod tests {
     ) -> LyricPresentation {
         LyricPresentation {
             timeline_signature,
+            timeline: (0..current_index)
+                .map(|index| {
+                    if index + 1 == current_index {
+                        previous.unwrap_or("").to_owned()
+                    } else {
+                        String::new()
+                    }
+                })
+                .chain(std::iter::once(current.to_owned()))
+                .chain(next.map(str::to_owned))
+                .collect(),
             current_index,
-            previous_index: current_index.checked_sub(1),
-            previous: previous.map(str::to_owned),
-            current: current.to_owned(),
-            next: next.map(str::to_owned),
+            preparing: false,
+        }
+    }
+
+    #[test]
+    fn reel_keeps_context_and_timed_identity_during_a_tall_handoff() {
+        let mut first = lyrics(2, Some("Again"), "Short", Some("One\nTwo\nThree\nFour"));
+        first.timeline = [
+            "Earlier",
+            "Again",
+            "Short",
+            "One\nTwo\nThree\nFour",
+            "Again",
+            "Later",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        let mut second = first.clone();
+        second.current_index = 3;
+        let mut motion = LyricMotion::new(1, Some(&first));
+        assert!(motion.frame_at(Duration::ZERO).cues.len() > 3);
+        motion.update(1, Some(&second), Duration::ZERO, true);
+        for millis in [0, 100, 310, 500, 620] {
+            let frame = motion.frame_at(Duration::from_millis(millis));
+            let outgoing = frame.cues.iter().find(|cue| cue.text == "Short").unwrap();
+            assert_eq!(outgoing.opacity, 1.0, "outgoing must leave by geometry");
+            assert_eq!(
+                frame.cues.iter().filter(|cue| cue.text == "Again").count(),
+                2
+            );
         }
     }
 
@@ -749,27 +567,22 @@ mod tests {
     fn compact_adjacent_cues_transfer_focal_ownership_without_an_opacity_valley() {
         let first = lyrics(0, None, "Again", Some("Again"));
         let second = lyrics(1, Some("Again"), "Again", Some("After"));
-        let mut motion = LyricMotion::new(7, Some(&first), 1);
+        let mut motion = LyricMotion::new(7, Some(&first));
 
-        motion.update(7, Some(&second), 1, Duration::ZERO, true);
+        motion.update(7, Some(&second), Duration::ZERO, true);
         let midpoint = motion.frame_at(CUE_HANDOFF_DURATION / 2);
 
-        assert_eq!(
-            midpoint.cause,
-            LyricMotionCause::NaturalCueHandoff {
-                height_aware: false
-            }
-        );
+        assert_eq!(midpoint.cause, LyricMotionCause::NaturalCueHandoff);
         assert_eq!(midpoint.cues.len(), 3);
         let outgoing = midpoint
             .cues
             .iter()
-            .find(|cue| cue.slot == LyricCueSlot::Previous)
+            .find(|cue| cue.role == LyricColorRole::Previous)
             .expect("a compact Reel Lift keeps the outgoing cue as visual memory");
         let incoming = midpoint
             .cues
             .iter()
-            .find(|cue| cue.slot == LyricCueSlot::Current)
+            .find(|cue| cue.role == LyricColorRole::Focal)
             .expect("a compact Reel Lift promotes the incoming cue");
         assert!(
             incoming.emphasis * incoming.opacity >= 0.7,
@@ -779,46 +592,37 @@ mod tests {
             incoming.emphasis * incoming.opacity >= outgoing.emphasis * outgoing.opacity + 0.25,
             "midpoint ownership must be decisive: outgoing={outgoing:?}, incoming={incoming:?}"
         );
-        assert!(
-            outgoing.position <= -0.65,
-            "the outgoing cue should be nearing the Previous Cue tier: {outgoing:?}"
-        );
-        assert!(
-            incoming.position <= 0.35,
-            "the anticipation cue should be nearing the focal tier: {incoming:?}"
-        );
-
         let settled = motion.frame_at(CUE_HANDOFF_DURATION);
         assert_eq!(
             settled
                 .cues
                 .iter()
-                .map(|cue| (cue.slot, cue.text.as_str()))
+                .map(|cue| (cue.role, cue.text.as_str()))
                 .collect::<Vec<_>>(),
             vec![
-                (LyricCueSlot::Previous, "Again"),
-                (LyricCueSlot::Current, "Again"),
-                (LyricCueSlot::Next, "After"),
+                (LyricColorRole::Previous, "Again"),
+                (LyricColorRole::Focal, "Again"),
+                (LyricColorRole::Next, "After"),
             ]
         );
     }
 
     #[test]
-    fn either_tall_endpoint_selects_the_abbreviated_height_aware_path() {
-        for (source_lines, target_lines) in [(3, 1), (1, 4)] {
-            let first = lyrics(0, None, "Source", Some("Target"));
-            let second = lyrics(1, Some("Source"), "Target", Some("After"));
-            let mut motion = LyricMotion::new(11, Some(&first), source_lines);
+    fn multiline_endpoints_use_the_same_continuous_handoff() {
+        for (source, target) in [
+            ("One\nTwo\nThree", "Short"),
+            ("Short", "One\nTwo\nThree\nFour"),
+        ] {
+            let first = lyrics(0, None, source, Some(target));
+            let second = lyrics(1, Some(source), target, Some("After"));
+            let mut motion = LyricMotion::new(11, Some(&first));
 
-            motion.update(11, Some(&second), target_lines, Duration::ZERO, true);
+            motion.update(11, Some(&second), Duration::ZERO, true);
             let midpoint = motion.frame_at(CUE_HANDOFF_DURATION / 2);
 
-            assert_eq!(
-                midpoint.cause,
-                LyricMotionCause::NaturalCueHandoff { height_aware: true }
-            );
-            assert!(midpoint.cues[0].position < -0.5);
-            assert!(midpoint.cues[1].position < 0.5);
+            assert_eq!(midpoint.cause, LyricMotionCause::NaturalCueHandoff);
+            assert!(midpoint.cues[0].emphasis < 0.5);
+            assert!(midpoint.cues[1].emphasis > 0.5);
         }
     }
 
@@ -827,15 +631,15 @@ mod tests {
         let current = lyrics(0, None, "Before", Some("After"));
         let first_blank = lyrics(1, None, "", None);
         let second_blank = lyrics(2, None, " ", None);
-        let mut motion = LyricMotion::new(13, Some(&current), 1);
+        let mut motion = LyricMotion::new(13, Some(&current));
 
-        motion.update(13, Some(&first_blank), 1, Duration::ZERO, true);
+        motion.update(13, Some(&first_blank), Duration::ZERO, true);
         assert_eq!(
             motion.frame_at(Duration::ZERO).cause,
             LyricMotionCause::IntentionalBlankEntry
         );
         let continued_at = Duration::from_millis(100);
-        motion.update(13, Some(&second_blank), 1, continued_at, true);
+        motion.update(13, Some(&second_blank), continued_at, true);
         let continued = motion.frame_at(continued_at);
         assert_eq!(
             continued.cause,
@@ -846,22 +650,22 @@ mod tests {
 
         let settled = motion.frame_at(BLANK_TRANSITION_DURATION);
         assert!(!settled.cue_motion_active);
-        assert!(settled.cues.is_empty());
+        assert!(settled.cues.iter().all(|cue| cue.opacity == 0.0));
     }
 
     #[test]
     fn external_seeks_install_the_destination_without_travel() {
         let current = lyrics(0, None, "First", Some("Second"));
         let destination = lyrics(1, Some("First"), "Second", Some("Third"));
-        let mut motion = LyricMotion::new(17, Some(&current), 1);
+        let mut motion = LyricMotion::new(17, Some(&current));
 
-        motion.update(18, Some(&destination), 1, Duration::ZERO, true);
+        motion.update(18, Some(&destination), Duration::ZERO, true);
         let frame = motion.frame_at(Duration::ZERO);
 
         assert_eq!(frame.cause, LyricMotionCause::ExternalSeek);
         assert!(!frame.cue_motion_active);
         assert_eq!(frame.cues[1].text, "Second");
-        assert_eq!(frame.cues[1].position, 0.0);
+        assert_eq!(frame.cues[1].emphasis, 1.0);
         assert_eq!(frame.cues[1].emphasis, 1.0);
     }
 
@@ -869,9 +673,9 @@ mod tests {
     fn timeline_revisions_that_change_the_selected_cue_are_distinct_from_external_seeks() {
         let current = lyrics_on_timeline(1, 1, Some("First"), "Second", Some("Third"));
         let corrected = lyrics_on_timeline(2, 2, Some("Corrected"), "Third", Some("Fourth"));
-        let mut motion = LyricMotion::new(19, Some(&current), 1);
+        let mut motion = LyricMotion::new(19, Some(&current));
 
-        motion.update(20, Some(&corrected), 1, Duration::ZERO, true);
+        motion.update(20, Some(&corrected), Duration::ZERO, true);
 
         let frame = motion.frame_at(Duration::ZERO);
         assert_eq!(frame.cause, LyricMotionCause::TimelineRevision);
@@ -883,9 +687,9 @@ mod tests {
     fn delayed_local_progression_is_distinct_from_an_external_seek() {
         let first = lyrics(0, None, "First", Some("Second"));
         let third = lyrics(2, Some("Second"), "Third", Some("Fourth"));
-        let mut motion = LyricMotion::new(21, Some(&first), 1);
+        let mut motion = LyricMotion::new(21, Some(&first));
 
-        motion.update(21, Some(&third), 1, Duration::ZERO, true);
+        motion.update(21, Some(&third), Duration::ZERO, true);
 
         let frame = motion.frame_at(Duration::ZERO);
         assert_eq!(frame.cause, LyricMotionCause::SkippedCueDestination);
@@ -898,10 +702,10 @@ mod tests {
         let first = lyrics(0, None, "First", Some("Second"));
         let second = lyrics(1, Some("First"), "Second", Some("Third"));
         let third = lyrics(2, Some("Second"), "Third", Some("Fourth"));
-        let mut motion = LyricMotion::new(23, Some(&first), 1);
-        motion.update(23, Some(&second), 1, Duration::ZERO, true);
+        let mut motion = LyricMotion::new(23, Some(&first));
+        motion.update(23, Some(&second), Duration::ZERO, true);
 
-        motion.update(23, Some(&third), 1, Duration::from_millis(160), true);
+        motion.update(23, Some(&third), Duration::from_millis(160), true);
 
         for now in [Duration::from_millis(160), Duration::from_secs(2)] {
             let frame = motion.frame_at(now);
@@ -914,13 +718,13 @@ mod tests {
     #[test]
     fn composition_motion_retargets_from_current_progress_and_reduced_animation_jumps() {
         let cue = lyrics(0, None, "Opening", None);
-        let mut motion = LyricMotion::new(29, None, 1);
-        motion.update(29, Some(&cue), 1, Duration::ZERO, true);
+        let mut motion = LyricMotion::new(29, None);
+        motion.update(29, Some(&cue), Duration::ZERO, true);
         let interrupted_at = COMPOSITION_TRANSITION_DURATION / 2;
         let midpoint = motion.frame_at(interrupted_at).composition_progress;
         assert!(midpoint > 0.0 && midpoint < 1.0);
 
-        motion.update(29, None, 1, interrupted_at, true);
+        motion.update(29, None, interrupted_at, true);
         assert_eq!(
             motion.frame_at(interrupted_at).composition_progress,
             midpoint,
@@ -931,7 +735,7 @@ mod tests {
             LyricMotionCause::CompositionExit
         );
 
-        motion.update(30, Some(&cue), 1, interrupted_at, false);
+        motion.update(30, Some(&cue), interrupted_at, false);
         let reduced = motion.frame_at(interrupted_at);
         assert_eq!(reduced.composition_progress, 1.0);
         assert!(!reduced.composition_motion_active);
@@ -942,17 +746,17 @@ mod tests {
     fn disabling_animation_during_a_natural_cue_handoff_installs_its_semantic_endpoint() {
         let first = lyrics(0, None, "First", Some("Second"));
         let second = lyrics(1, Some("First"), "Second", Some("Third"));
-        let mut motion = LyricMotion::new(31, Some(&first), 1);
-        motion.update(31, Some(&second), 1, Duration::ZERO, true);
+        let mut motion = LyricMotion::new(31, Some(&first));
+        motion.update(31, Some(&second), Duration::ZERO, true);
 
         let disabled_at = Duration::from_millis(100);
-        motion.update(31, Some(&second), 1, disabled_at, false);
+        motion.update(31, Some(&second), disabled_at, false);
         let frame = motion.frame_at(disabled_at);
 
         assert!(!frame.cue_motion_active);
         assert!(!frame.composition_motion_active);
         assert_eq!(frame.cues[1].text, "Second");
-        assert_eq!(frame.cues[1].position, 0.0);
+        assert_eq!(frame.cues[1].emphasis, 1.0);
         assert_eq!(frame.cues[1].emphasis, 1.0);
     }
 
@@ -960,34 +764,29 @@ mod tests {
     fn reduced_animation_preserves_the_natural_handoff_classification() {
         let first = lyrics(0, None, "First", Some("Second"));
         let second = lyrics(1, Some("First"), "Second", Some("Third"));
-        let mut motion = LyricMotion::new(35, Some(&first), 1);
+        let mut motion = LyricMotion::new(35, Some(&first));
 
-        motion.update(35, Some(&second), 1, Duration::ZERO, false);
+        motion.update(35, Some(&second), Duration::ZERO, false);
 
         let frame = motion.frame_at(Duration::ZERO);
-        assert_eq!(
-            frame.cause,
-            LyricMotionCause::NaturalCueHandoff {
-                height_aware: false
-            }
-        );
+        assert_eq!(frame.cause, LyricMotionCause::NaturalCueHandoff);
         assert!(!frame.cue_motion_active);
         assert_eq!(frame.cues[1].text, "Second");
-        assert_eq!(frame.cues[1].position, 0.0);
+        assert_eq!(frame.cues[1].emphasis, 1.0);
     }
 
     #[test]
     fn an_unchanged_pause_update_allows_the_selected_natural_cue_handoff_to_settle() {
         let first = lyrics(0, None, "First", Some("Second"));
         let second = lyrics(1, Some("First"), "Second", Some("Third"));
-        let mut motion = LyricMotion::new(37, Some(&first), 1);
-        motion.update(37, Some(&second), 1, Duration::ZERO, true);
+        let mut motion = LyricMotion::new(37, Some(&first));
+        motion.update(37, Some(&second), Duration::ZERO, true);
 
-        motion.update(38, Some(&second), 1, Duration::from_millis(100), true);
+        motion.update(38, Some(&second), Duration::from_millis(100), true);
 
         let settled = motion.frame_at(CUE_HANDOFF_DURATION);
         assert!(!settled.cue_motion_active);
         assert_eq!(settled.cues[1].text, "Second");
-        assert_eq!(settled.cues[1].position, 0.0);
+        assert_eq!(settled.cues[1].emphasis, 1.0);
     }
 }

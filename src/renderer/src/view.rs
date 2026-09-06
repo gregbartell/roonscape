@@ -25,7 +25,8 @@ use crate::gradient_cache::{
     CachedNowPlayingGradient, NowPlayingGradientCache, PreparedNowPlayingGradient,
     RenderedNowPlayingGradient,
 };
-use crate::lyric_motion::{LyricColorRole, LyricCueFrame, LyricCueSlot, LyricFrame, LyricMotion};
+use crate::lyric_motion::{LyricFrame, LyricMotion};
+use crate::lyric_reel::LyricReel;
 use crate::status_symbol::presentation_status_symbol;
 
 const STYLES: &str = include_str!("style.css");
@@ -199,25 +200,12 @@ struct RenderedLyrics {
     masthead_title: Option<gtk::Label>,
     masthead_artist: Option<gtk::Label>,
     reel_region: gtk::ScrolledWindow,
-    reel: gtk::Fixed,
-    previous: gtk::Label,
-    current: gtk::Label,
-    next: gtk::Label,
-    scale_percentages: Cell<[u8; 3]>,
+    reel: Rc<LyricReel>,
     line_width_px: Cell<i32>,
     typography: Cell<roonscape_renderer::NowPlayingTypography>,
-    palette: PresentationPalette,
     motion: RefCell<LyricMotion>,
     rendered_composition_progress: Cell<f64>,
     behavior: PresentationBehavior,
-    frame: RefCell<Option<LyricFrame>>,
-    positioned_geometry: Cell<Option<LyricReelGeometry>>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct LyricReelGeometry {
-    height: i32,
-    cue_heights: [i32; 3],
 }
 
 struct RenderedActivity {
@@ -772,9 +760,7 @@ impl RenderedPresentation {
                     .presentation_status
                     .update(&presentation.status, now);
                 rendered.metadata.update_timing(presentation, now);
-                rendered
-                    .metadata
-                    .update_lyrics(revision, presentation, now, viewport);
+                rendered.metadata.update_lyrics(revision, presentation, now);
                 self.layout_source =
                     PresentationLayoutSource::NowPlaying(Box::new(presentation.clone()));
                 if let Some(viewport) = viewport {
@@ -1285,6 +1271,7 @@ fn metadata(
         presentation.lyrics.as_deref(),
         palette,
         rendering.behavior,
+        rendering.typography.now_playing_supporting_family(),
     );
     let footer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     footer.add_css_class("utility-footer");
@@ -1374,10 +1361,12 @@ fn lyric_view(
     lyrics: Option<&LyricPresentation>,
     palette: PresentationPalette,
     behavior: PresentationBehavior,
+    supporting_family: &'static str,
 ) -> Rc<RenderedLyrics> {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("lyric-composition");
     root.set_hexpand(true);
+    root.set_valign(gtk::Align::Start);
     let masthead = gtk::Box::new(gtk::Orientation::Vertical, 0);
     masthead.add_css_class("lyric-masthead");
     let masthead_title = presentation.title.as_ref().map(|text| {
@@ -1400,30 +1389,11 @@ fn lyric_view(
     }
     root.append(&masthead);
 
-    let previous = lyric_label("", "lyric-previous");
-    let current = lyric_label(" ", "lyric-current");
-    let next = lyric_label("", "lyric-next");
-    for label in [&previous, &current, &next] {
-        label.set_lines(4);
-        label.set_ellipsize(pango::EllipsizeMode::End);
-    }
-    let reel = gtk::Fixed::new();
-    reel.add_css_class("lyric-reel");
-    reel.set_hexpand(true);
-    reel.set_vexpand(true);
-    reel.set_overflow(gtk::Overflow::Hidden);
-    for label in [&previous, &current, &next] {
-        reel.put(label, 0.0, 0.0);
-    }
-    // Traveling children may leave the reel without changing its allocation.
-    let reel_clip = gtk::Overlay::new();
-    let reel_field = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    reel_field.set_hexpand(true);
-    reel_field.set_vexpand(true);
-    reel_clip.set_child(Some(&reel_field));
-    reel_clip.add_overlay(&reel);
-    reel_clip.set_measure_overlay(&reel, false);
-    reel_clip.set_clip_overlay(&reel, true);
+    let reel = LyricReel::new(
+        NowPlayingLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE).typography,
+        palette,
+        supporting_family,
+    );
     let reel_region = gtk::ScrolledWindow::new();
     reel_region.add_css_class("lyric-reel-region");
     reel_region.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Never);
@@ -1431,7 +1401,7 @@ fn lyric_view(
     reel_region.set_hexpand(true);
     reel_region.set_vexpand(true);
     reel_region.set_overflow(gtk::Overflow::Hidden);
-    reel_region.set_child(Some(&reel_clip));
+    reel_region.set_child(Some(&reel.widget));
     root.append(&reel_region);
 
     let rendered = Rc::new(RenderedLyrics {
@@ -1441,52 +1411,19 @@ fn lyric_view(
         masthead_artist,
         reel_region,
         reel,
-        previous,
-        current,
-        next,
-        scale_percentages: Cell::new([100; 3]),
         line_width_px: Cell::new(1),
         typography: Cell::new(
             NowPlayingLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE).typography,
         ),
-        palette,
-        motion: RefCell::new(LyricMotion::new(0, lyrics, 1)),
+        motion: RefCell::new(LyricMotion::new(0, lyrics)),
         rendered_composition_progress: Cell::new(f64::from(lyrics.is_some())),
         behavior,
-        frame: RefCell::new(None),
-        positioned_geometry: Cell::new(None),
-    });
-    // GTK can finalize allocation and Pango metrics after the presentation update,
-    // including a later resize. Observe those dimensions without advancing motion.
-    let weak_rendered = Rc::downgrade(&rendered);
-    rendered.root.add_tick_callback(move |_, _| {
-        let Some(rendered) = weak_rendered.upgrade() else {
-            return gtk::glib::ControlFlow::Break;
-        };
-        if !rendered.layout_ready()
-            && let Some(frame) = rendered.frame.borrow().as_ref()
-        {
-            rendered.position_cues(frame);
-        }
-        gtk::glib::ControlFlow::Continue
     });
     rendered.apply_frame(
         Duration::ZERO,
         &NowPlayingLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE),
     );
     rendered
-}
-
-fn lyric_label(text: &str, class_name: &str) -> gtk::Label {
-    let label = metadata_label(text, class_name);
-    label.add_css_class("utility-text");
-    label.set_halign(gtk::Align::Start);
-    label.set_valign(gtk::Align::Start);
-    label.set_xalign(0.0);
-    label.set_wrap(true);
-    label.set_wrap_mode(pango::WrapMode::Word);
-    label.set_max_width_chars(1);
-    label
 }
 
 fn metadata_line(
@@ -1762,22 +1699,7 @@ impl RenderedMetadata {
         }
     }
 
-    fn update_lyrics(
-        &self,
-        revision: u64,
-        presentation: &NowPlayingPresentation,
-        now: Duration,
-        viewport: Option<Viewport>,
-    ) {
-        let measurement_layout = viewport.map(|viewport| {
-            NowPlayingLayout::for_composition_progress(presentation, viewport, 1.0)
-        });
-        let rendered_lines = presentation.lyrics.as_deref().map_or(1, |lyrics| {
-            measurement_layout.as_ref().map_or_else(
-                || self.lyrics.rendered_line_count(&lyrics.current),
-                |layout| self.lyrics.rendered_line_count_at(&lyrics.current, layout),
-            )
-        });
+    fn update_lyrics(&self, revision: u64, presentation: &NowPlayingPresentation, now: Duration) {
         let mut motion = self.lyrics.motion.borrow_mut();
         motion.observe_playback(
             revision,
@@ -1788,7 +1710,6 @@ impl RenderedMetadata {
         motion.update(
             revision,
             presentation.lyrics.as_deref(),
-            rendered_lines,
             now,
             animations_enabled(self.lyrics.behavior),
         );
@@ -1990,23 +1911,6 @@ impl RenderedLyrics {
             .saturating_sub(masthead_height)
             .saturating_sub(reel_margin_top);
         self.reel_region.set_height_request(reel_height);
-        for label in [&self.previous, &self.current, &self.next] {
-            label.set_width_request(width);
-        }
-        let current_text = self
-            .motion
-            .borrow()
-            .frame_at(Duration::ZERO)
-            .cues
-            .into_iter()
-            .find(|cue| cue.slot == LyricCueSlot::Current)
-            .map(|cue| cue.text);
-        if let Some(current_text) = current_text {
-            let rendered_lines = self.rendered_line_count(&current_text);
-            self.motion
-                .borrow_mut()
-                .reconcile_rendered_lines(rendered_lines, Duration::ZERO);
-        }
         self.apply_frame(Duration::ZERO, layout);
     }
 
@@ -2024,38 +1928,6 @@ impl RenderedLyrics {
         progress
     }
 
-    fn rendered_line_count(&self, text: &str) -> i32 {
-        self.rendered_line_count_with(
-            text,
-            self.line_width_px.get(),
-            self.typography.get().lyric_current_px,
-        )
-    }
-
-    fn rendered_line_count_at(&self, text: &str, layout: &NowPlayingLayout) -> i32 {
-        self.rendered_line_count_with(
-            text,
-            dimension(layout.information.musical_metadata_width_px),
-            layout.typography.lyric_current_px,
-        )
-    }
-
-    fn rendered_line_count_with(&self, text: &str, width: i32, font_size_px: u32) -> i32 {
-        if text.trim().is_empty() {
-            return 1;
-        }
-        let previous_text = self.current.text();
-        let previous_attributes = self.current.attributes();
-        self.current.set_text(text);
-        set_lyric_label_style(&self.current, font_size_px, self.palette.primary_text);
-        let layout = self.current.layout();
-        layout.set_width(width.saturating_mul(pango::SCALE));
-        let lines = layout.line_count();
-        self.current.set_text(&previous_text);
-        self.current.set_attributes(previous_attributes.as_ref());
-        lines
-    }
-
     fn apply_frame(&self, now: Duration, layout: &NowPlayingLayout) {
         let frame = self.motion.borrow().frame_at(now);
         self.apply_frame_state(&frame, layout);
@@ -2063,198 +1935,12 @@ impl RenderedLyrics {
 
     fn apply_frame_state(&self, frame: &LyricFrame, layout: &NowPlayingLayout) {
         self.update_rendered_composition_progress(frame.composition_progress);
-        for label in [&self.previous, &self.current, &self.next] {
-            label.set_visible(false);
-        }
-
-        for cue in &frame.cues {
-            let label = self.label(cue.slot);
-            label.set_text(&cue.text);
-            label.set_visible(true);
-            label.set_opacity(cue.opacity);
-            let scale = lyric_cue_scale(
-                layout.typography.lyric_neighbor_px,
-                layout.typography.lyric_current_px,
-                cue.emphasis,
-            );
-            let color = lyric_color(self.palette, cue);
-            set_lyric_label_style(label, layout.typography.lyric_current_px, color);
-            let attributes = label
-                .attributes()
-                .expect("lyric styling installs attributes");
-            attributes.insert(pango::AttrInt::new_weight(if cue.emphasis >= 0.5 {
-                pango::Weight::Semibold
-            } else {
-                pango::Weight::Normal
-            }));
-            label.set_attributes(Some(&attributes));
-            self.apply_scale(cue.slot, scale);
-            let label_layout = label.layout();
-            label_layout.set_width(self.line_width_px.get().saturating_mul(pango::SCALE));
-        }
-
-        self.frame.replace(Some(frame.clone()));
-        self.position_cues(frame);
-    }
-
-    fn reel_geometry(&self) -> LyricReelGeometry {
-        LyricReelGeometry {
-            height: self.reel_region.height(),
-            cue_heights: [&self.previous, &self.current, &self.next]
-                .map(|label| label.layout().pixel_size().1),
-        }
+        self.reel
+            .update(frame, self.line_width_px.get(), layout.typography);
     }
 
     fn layout_ready(&self) -> bool {
-        self.reel_region.height() > 0
-            && self.positioned_geometry.get() == Some(self.reel_geometry())
-    }
-
-    fn position_cues(&self, frame: &LyricFrame) {
-        let geometry = self.reel_geometry();
-        let reel_height = geometry.height;
-        let typography = self.typography.get();
-        let focal_center_y = f64::from(reel_height) / 2.0;
-        let gap = f64::from(typography.lyric_neighbor_px) * 0.72;
-        let current_geometry = frame
-            .cues
-            .iter()
-            .find(|cue| cue.slot == LyricCueSlot::Current)
-            .map(|cue| {
-                let label = self.label(cue.slot);
-                let label_height = f64::from(label.layout().pixel_size().1)
-                    * lyric_cue_scale(
-                        typography.lyric_neighbor_px,
-                        typography.lyric_current_px,
-                        cue.emphasis,
-                    );
-                let y = lyric_cue_y(
-                    cue.position,
-                    label_height,
-                    reel_height,
-                    typography.lyric_neighbor_px,
-                    focal_center_y,
-                );
-                (y, label_height)
-            });
-        for cue in &frame.cues {
-            let label = self.label(cue.slot);
-            let (_, label_height) = label.layout().pixel_size();
-            let label_height = f64::from(label_height)
-                * lyric_cue_scale(
-                    typography.lyric_neighbor_px,
-                    typography.lyric_current_px,
-                    cue.emphasis,
-                );
-            let mut y = lyric_cue_y(
-                cue.position,
-                label_height,
-                reel_height,
-                typography.lyric_neighbor_px,
-                focal_center_y,
-            );
-            if cue.departing {
-                let focal_y = focal_center_y - label_height / 2.0;
-                y = focal_y + cue.position * (focal_center_y + label_height / 2.0);
-            }
-            if frame.cue_motion_active
-                && !cue.departing
-                && let Some((current_y, current_height)) = current_geometry
-            {
-                y = match cue.slot {
-                    LyricCueSlot::Previous => y.min(current_y - gap - label_height),
-                    LyricCueSlot::Next => y.max(current_y + current_height + gap),
-                    LyricCueSlot::Current => y,
-                };
-            }
-            let maximum_y = (f64::from(reel_height) - label_height).max(0.0);
-            if !cue.departing {
-                y = y.clamp(0.0, maximum_y);
-            }
-            self.reel.move_(label, 0.0, y.round());
-        }
-        self.positioned_geometry.set(Some(geometry));
-    }
-
-    fn label(&self, slot: LyricCueSlot) -> &gtk::Label {
-        match slot {
-            LyricCueSlot::Previous => &self.previous,
-            LyricCueSlot::Current => &self.current,
-            LyricCueSlot::Next => &self.next,
-        }
-    }
-
-    fn apply_scale(&self, slot: LyricCueSlot, scale: f64) {
-        let index = match slot {
-            LyricCueSlot::Previous => 0,
-            LyricCueSlot::Current => 1,
-            LyricCueSlot::Next => 2,
-        };
-        let percentage = (scale * 100.0).round().clamp(30.0, 100.0) as u8;
-        let mut percentages = self.scale_percentages.get();
-        if percentages[index] == percentage {
-            return;
-        }
-        let label = self.label(slot);
-        label.remove_css_class(&format!("lyric-scale-{:03}", percentages[index]));
-        label.add_css_class(&format!("lyric-scale-{percentage:03}"));
-        percentages[index] = percentage;
-        self.scale_percentages.set(percentages);
-    }
-}
-
-fn set_lyric_label_style(label: &gtk::Label, font_size_px: u32, color: roonscape_renderer::Rgb) {
-    let attributes = font_size_attributes(font_size_px);
-    attributes.insert(pango::AttrInt::new_weight(pango::Weight::Semibold));
-    attributes.insert(pango::AttrColor::new_foreground(
-        u16::from(color.red) * 257,
-        u16::from(color.green) * 257,
-        u16::from(color.blue) * 257,
-    ));
-    label.set_attributes(Some(&attributes));
-}
-
-fn lyric_color(palette: PresentationPalette, cue: &LyricCueFrame) -> roonscape_renderer::Rgb {
-    let from = lyric_role_color(palette, cue.color_from);
-    let to = lyric_role_color(palette, cue.color_to);
-    let mix = |left: u8, right: u8| {
-        (f64::from(left) + (f64::from(right) - f64::from(left)) * cue.color_progress).round() as u8
-    };
-    roonscape_renderer::Rgb {
-        red: mix(from.red, to.red),
-        green: mix(from.green, to.green),
-        blue: mix(from.blue, to.blue),
-    }
-}
-
-fn lyric_role_color(palette: PresentationPalette, role: LyricColorRole) -> roonscape_renderer::Rgb {
-    match role {
-        LyricColorRole::Previous => palette.muted_text,
-        LyricColorRole::Focal => palette.primary_text,
-        LyricColorRole::Next => palette.secondary_text,
-    }
-}
-
-fn lyric_cue_scale(neighbor_px: u32, focal_px: u32, emphasis: f64) -> f64 {
-    let neighbor_scale = f64::from(neighbor_px) / f64::from(focal_px);
-    neighbor_scale + (1.0 - neighbor_scale) * emphasis
-}
-
-fn lyric_cue_y(
-    position: f64,
-    label_height: f64,
-    reel_height: i32,
-    neighbor_font_size_px: u32,
-    focal_center_y: f64,
-) -> f64 {
-    let focal_y = focal_center_y - label_height / 2.0;
-    let edge_inset = f64::from(neighbor_font_size_px) * 0.35;
-    let interpolate = |from: f64, to: f64, progress: f64| from + (to - from) * progress;
-    if position < 0.0 {
-        interpolate(focal_y, edge_inset, -position.clamp(-1.0, 0.0))
-    } else {
-        let next_y = (f64::from(reel_height) - edge_inset - label_height).max(0.0);
-        interpolate(focal_y, next_y, position.clamp(0.0, 1.0))
+        self.reel.widget.height() > 0 && self.reel.widget.height() == self.reel_region.height()
     }
 }
 
@@ -2652,8 +2338,7 @@ fn metadata_label(text: &str, class_name: &str) -> gtk::Label {
 pub(crate) fn install_style_providers(typography: TypographySelection) -> gtk::CssProvider {
     let static_provider = gtk::CssProvider::new();
     static_provider.load_from_data(&format!(
-        "{STYLES}\n{}\n{}",
-        lyric_scale_styles(),
+        "{STYLES}\n{}",
         TypographyStyles::new(typography).to_css()
     ));
     let palette_provider = gtk::CssProvider::new();
@@ -2671,18 +2356,6 @@ pub(crate) fn install_style_providers(typography: TypographySelection) -> gtk::C
     palette_provider
 }
 
-fn lyric_scale_styles() -> String {
-    (30..=100)
-        .map(|percentage| {
-            format!(
-                ".lyric-scale-{percentage:03} {{ transform: scale({:.2}); transform-origin: left top; }}",
-                f64::from(percentage) / 100.0
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -2694,14 +2367,29 @@ mod tests {
 
     use super::{
         PRESENTATION_CACHE_CAPACITY, PresentationCaches, PresentationLayoutSource,
-        RenderingConfiguration, STYLES, composition_ownership, lyric_view,
+        RenderingConfiguration, STYLES, composition_ownership,
     };
     use crate::lyric_motion::LyricMotionCause;
     use roonscape_renderer::{
-        LyricNeighborVisibility, NowPlayingFooterContent, NowPlayingGradientCacheKey,
-        NowPlayingLayout, Presentation, PresentationBehavior, PresentationPalette, Viewport,
-        parse_snapshot, presentation_from_snapshot,
+        NowPlayingFooterContent, NowPlayingGradientCacheKey, NowPlayingLayout, Presentation,
+        PresentationBehavior, PresentationPalette, Viewport, parse_snapshot,
+        presentation_from_snapshot,
     };
+
+    fn lyric_view(
+        presentation: &roonscape_renderer::NowPlayingPresentation,
+        lyrics: Option<&roonscape_renderer::LyricPresentation>,
+        palette: PresentationPalette,
+        behavior: PresentationBehavior,
+    ) -> std::rc::Rc<super::RenderedLyrics> {
+        super::lyric_view(
+            presentation,
+            lyrics,
+            palette,
+            behavior,
+            roonscape_renderer::select_typography(&HashSet::new()).now_playing_supporting_family(),
+        )
+    }
 
     fn lyric_presentation(fixture: &str) -> roonscape_renderer::NowPlayingPresentation {
         let snapshot = parse_snapshot(match fixture {
@@ -2795,15 +2483,33 @@ mod tests {
             .expect("rendered lyric roles require Now Playing")
             .metadata
             .lyrics;
-        for (label, expected) in [
-            (&lyrics.previous, previous),
-            (&lyrics.current, current),
-            (&lyrics.next, next),
+        for _ in 0..2 {
+            rendered.root.allocate(1280, 720, -1, None);
+            while gtk::glib::MainContext::default().iteration(false) {}
+        }
+        let cues: Vec<_> = lyrics
+            .reel
+            .visible_cues()
+            .into_iter()
+            .map(|cue| cue.cue)
+            .collect();
+        for (slot, expected) in [
+            (crate::lyric_motion::LyricColorRole::Previous, previous),
+            (crate::lyric_motion::LyricColorRole::Focal, current),
+            (crate::lyric_motion::LyricColorRole::Next, next),
         ] {
-            assert_eq!(label.is_visible(), expected.is_some());
+            let actual = cues
+                .iter()
+                .filter(|cue| cue.role == slot && cue.opacity > 0.0 && !cue.text.trim().is_empty());
             if let Some(expected) = expected {
-                assert_eq!(label.text(), expected);
-                assert_eq!(label.opacity(), 1.0);
+                assert!(
+                    actual
+                        .clone()
+                        .any(|cue| cue.text == expected && cue.opacity == 1.0),
+                    "expected {expected:?} in {cues:?}"
+                );
+            } else {
+                assert_eq!(actual.count(), 0);
             }
         }
     }
@@ -2824,123 +2530,44 @@ mod tests {
         assert_eq!(metadata.lyrics.masthead.opacity(), masthead);
     }
 
-    fn visual_label_bounds(
-        label: &gtk::Label,
-        ancestor: &impl IsA<gtk::Widget>,
-    ) -> gtk::graphene::Rect {
-        label
-            .compute_bounds(ancestor)
-            .expect("visible lyric label should have ancestor-relative bounds")
-    }
-
-    fn assert_height_aware_cues_remain_separate(
+    fn assert_reel_motion_remains_ordered(
         rendered: &super::RenderedLyrics,
         layout: &NowPlayingLayout,
         started_at: std::time::Duration,
     ) {
-        assert_eq!(
-            rendered.motion.borrow().frame_at(started_at).cause,
-            LyricMotionCause::NaturalCueHandoff { height_aware: true }
-        );
-        let mut rendered_line_counts = [None; 3];
-        let mut previous_centers = [None; 3];
-        for offset in (0..620).step_by(20).chain(std::iter::once(619)) {
-            let now = started_at + std::time::Duration::from_millis(offset);
-            rendered.apply_frame(now, layout);
-            rendered.root.allocate(
-                layout.information.musical_metadata_width_px as i32,
-                layout.metadata_height_budget_px as i32,
-                -1,
-                None,
+        let mut previous = std::collections::HashMap::new();
+        for offset in (0..=620).step_by(20) {
+            rendered.apply_frame(
+                started_at + std::time::Duration::from_millis(offset),
+                layout,
             );
-            while gtk::glib::MainContext::default().iteration(false) {}
-            let frame = rendered.motion.borrow().frame_at(now);
-            let visible = frame
-                .cues
-                .iter()
-                .filter(|cue| cue.opacity >= 0.05)
-                .map(|cue| {
-                    let slot_index = match cue.slot {
-                        crate::lyric_motion::LyricCueSlot::Previous => 0,
-                        crate::lyric_motion::LyricCueSlot::Current => 1,
-                        crate::lyric_motion::LyricCueSlot::Next => 2,
-                    };
-                    let line_count = rendered.label(cue.slot).layout().line_count();
-                    // The specified discrete weight switch can change Pango
-                    // wrapping. Scaling within either weight must not reflow.
-                    let focal_weight = cue.emphasis >= 0.5;
-                    if let Some((previous_weight, expected)) = rendered_line_counts[slot_index]
-                        && previous_weight == focal_weight
-                    {
-                        assert_eq!(
-                            line_count, expected,
-                            "a traveling cue must keep its Pango wrapping within one weight: cue={cue:?}, offset={offset}"
+            let cues = rendered.reel.visible_cues();
+            for pair in cues.windows(2) {
+                assert!(
+                    pair[0].index < pair[1].index,
+                    "timed identity must remain ordered"
+                );
+                assert!(
+                    pair[0].y + pair[0].height < pair[1].y,
+                    "cues must not overlap: {pair:?}"
+                );
+            }
+            for cue in cues {
+                let lines = cue.layout.line_count();
+                if let Some((last_lines, last_y)) = previous.insert(cue.index, (lines, cue.y)) {
+                    assert_eq!(lines, last_lines, "wrapping must not change during motion");
+                    if cue.cue.role != crate::lyric_motion::LyricColorRole::Next {
+                        assert!(
+                            cue.y <= last_y + 0.1,
+                            "incoming and earlier cues must travel upward: cue={cue:?}, last_y={last_y}"
                         );
                     }
-                    rendered_line_counts[slot_index] = Some((focal_weight, line_count));
-                    let bounds = visual_label_bounds(rendered.label(cue.slot), &rendered.reel);
-                    if !cue.departing {
-                        assert!(
-                            bounds.y() >= 0.0
-                                && bounds.y() + bounds.height() <= rendered.reel.height() as f32,
-                            "context and focal cues must remain inside the reel: cue={cue:?}, bounds={bounds:?}, offset={offset}"
-                        );
-                    } else {
-                        assert_eq!(rendered.reel.overflow(), gtk::Overflow::Hidden);
-                    }
-                    let center = bounds.y() + bounds.height() / 2.0;
-                    if let Some(previous_center) = previous_centers[slot_index]
-                        && (cue.departing || cue.slot != crate::lyric_motion::LyricCueSlot::Previous)
-                    {
-                        assert!(
-                            center <= previous_center + 1.0,
-                            "Reel Lift cues must travel monotonically upward: cue={cue:?}, previous_center={previous_center}, center={center}, offset={offset}"
-                        );
-                        assert!(
-                            previous_center - center <= rendered.reel.height() as f32 * 0.16,
-                            "Reel Lift must not catch up with a frame-to-frame jump: cue={cue:?}, previous_center={previous_center}, center={center}, offset={offset}"
-                        );
-                    }
-                    previous_centers[slot_index] = Some(center);
-                    (cue.slot, bounds)
-                })
-                .collect::<Vec<_>>();
-            let outgoing_bounds = visible.iter().find_map(|(slot, bounds)| {
-                (*slot == crate::lyric_motion::LyricCueSlot::Previous).then_some(bounds)
-            });
-            let incoming_bounds = visible.iter().find_map(|(slot, bounds)| {
-                (*slot == crate::lyric_motion::LyricCueSlot::Current).then_some(bounds)
-            });
-            if let (Some(outgoing_bounds), Some(incoming_bounds)) =
-                (outgoing_bounds, incoming_bounds)
-            {
-                let overlaps = outgoing_bounds.y() + outgoing_bounds.height() > incoming_bounds.y();
-                if overlaps {
-                    let outgoing = frame
-                        .cues
-                        .iter()
-                        .find(|cue| cue.slot == crate::lyric_motion::LyricCueSlot::Previous)
-                        .expect("outgoing cue should exist");
-                    let incoming = frame
-                        .cues
-                        .iter()
-                        .find(|cue| cue.slot == crate::lyric_motion::LyricCueSlot::Current)
-                        .expect("incoming cue should exist");
                     assert!(
-                        outgoing.opacity.min(incoming.opacity) <= 0.6,
-                        "overlapping height-aware cues must not form a fully opaque text block: outgoing={outgoing:?}, incoming={incoming:?}, outgoing_bounds={outgoing_bounds:?}, incoming_bounds={incoming_bounds:?}, offset={offset}"
+                        (cue.y - last_y).abs() < f64::from(rendered.reel_region.height()) * 0.16,
+                        "motion must remain continuous"
                     );
                 }
             }
-            assert!(
-                frame
-                    .cues
-                    .iter()
-                    .map(|cue| cue.emphasis * cue.opacity)
-                    .fold(0.0_f64, f64::max)
-                    >= 0.45,
-                "height-aware handoff must retain a dominant cue: frame={frame:?}, offset={offset}"
-            );
         }
     }
 
@@ -3190,64 +2817,22 @@ mod tests {
                     }
                     assert!(
                         std::time::Instant::now() < deadline,
-                        "composition should settle: fixture={fixture}, viewport={viewport:?}, actual={}x{}, geometry={:?}, positioned={:?}",
+                        "composition should settle: fixture={fixture}, viewport={viewport:?}, actual={}x{}",
                         rendered.root.width(),
-                        rendered.root.height(),
-                        rendered
-                            .now_playing
-                            .as_ref()
-                            .unwrap()
-                            .metadata
-                            .lyrics
-                            .reel_geometry(),
-                        rendered
-                            .now_playing
-                            .as_ref()
-                            .unwrap()
-                            .metadata
-                            .lyrics
-                            .positioned_geometry
-                            .get()
+                        rendered.root.height()
                     );
                     std::thread::sleep(std::time::Duration::from_millis(5));
                 }
                 let metadata = &rendered.now_playing.as_ref().unwrap().metadata;
                 let footer = metadata.footer.compute_bounds(&rendered.root).unwrap();
                 let lyrics = &metadata.lyrics;
-                if matches!(fixture, "lyrics-one-line.json" | "lyrics-blank-cue.json") {
-                    assert!(
-                        lyrics.next.is_visible(),
-                        "fixture={fixture}, viewport={viewport:?}"
-                    );
-                }
-                for label in [&lyrics.previous, &lyrics.current, &lyrics.next] {
-                    if !label.is_visible() {
-                        continue;
-                    }
-                    let cue = visual_label_bounds(label, &rendered.root);
-                    assert!(
-                        cue.y() + cue.height() <= footer.y(),
-                        "cue must be fully above the footer: fixture={fixture}, viewport={viewport:?}, cue={cue:?}, footer={footer:?}"
-                    );
-                    let mut ancestor = label.parent();
-                    while let Some(widget) = ancestor {
-                        let bounds = widget.compute_bounds(&rendered.root).unwrap();
-                        if widget.overflow() == gtk::Overflow::Hidden
-                            || widget.is::<gtk::ScrolledWindow>()
-                        {
-                            assert!(
-                                cue.y() >= bounds.y()
-                                    && cue.y() + cue.height() <= bounds.y() + bounds.height(),
-                                "cue must fit its clipping ancestors: fixture={fixture}, viewport={viewport:?}, cue={cue:?}, ancestor={} bounds={bounds:?}",
-                                widget.type_().name()
-                            );
-                        }
-                        ancestor = widget.parent();
-                        if widget == rendered.root {
-                            break;
-                        }
-                    }
-                }
+                let region = lyrics.reel.widget.compute_bounds(&rendered.root).unwrap();
+                assert!(
+                    region.y() + region.height() <= footer.y() + 1.0,
+                    "the reel clip must remain above the footer: fixture={fixture}, viewport={viewport:?}, region={region:?}, footer={footer:?}"
+                );
+                assert_eq!(lyrics.reel.widget.overflow(), gtk::Overflow::Hidden);
+                assert!(!lyrics.reel.visible_cues().is_empty());
                 // Refreshes can arrive faster than GTK paints, especially at 4K.
                 // They must not continually restart allocation readiness.
                 rendered.update_in_place(
@@ -3304,11 +2889,13 @@ mod tests {
     }
 
     #[test]
-    fn allocated_lyric_reel_recomputes_neighbors_and_blank_visibility() {
+    fn allocated_lyric_reel_preserves_geometry_and_events() {
         roonscape_renderer::register_packaged_fallback_fonts(Path::new(env!("CARGO_MANIFEST_DIR")))
             .unwrap();
         gtk::init().expect("GTK should initialize for native lyric layout coverage");
         super::install_style_providers(roonscape_renderer::select_typography(&HashSet::new()));
+        reel_capacity_and_first_line_anchor_follow_available_space();
+        reel_handoffs_keep_wrapping_and_outgoing_geometry();
         status_and_timing_replacements_preserve_the_existing_metadata();
         full_field_replacement_never_superimposes_messages();
         lyric_masthead_fits_long_metadata();
@@ -3317,336 +2904,12 @@ mod tests {
         timing_variants_keep_allocated_content_stable();
         short_blanks_promote_without_a_skipped_cue_cut();
         a_seek_within_the_incoming_cue_settles_its_handoff();
-        tall_departure_keeps_focal_size_and_reveals_separate_memory();
+
         blank_promotion_preserves_context_and_an_interrupted_departure();
 
-        let one_line = lyric_presentation("lyrics-one-line.json");
-        let one_line_lyrics = one_line
-            .lyrics
-            .as_deref()
-            .expect("fixture should have lyrics");
-        let rendered = lyric_view(
-            &one_line,
-            Some(one_line_lyrics),
-            PresentationPalette::fallback(),
-            PresentationBehavior::StaticFixture,
-        );
-        let compact_layout =
-            NowPlayingLayout::for_presentation(&one_line, Viewport::new(1_280, 720));
-        allocate_lyrics(&rendered, &compact_layout);
-
-        assert_eq!(rendered.current.layout().line_count(), 1);
-        assert!(rendered.previous.is_visible());
-        assert!(rendered.next.is_visible());
-        let root_height = rendered.root.height() as f32;
-        for label in [&rendered.previous, &rendered.current, &rendered.next] {
-            let bounds = visual_label_bounds(label, &rendered.root);
-            assert!(bounds.y() >= 0.0, "lyric bounds={bounds:?}");
-            assert!(
-                bounds.y() + bounds.height() <= root_height,
-                "lyric bounds={bounds:?}, root_height={root_height}, reel_height={}, region_height={}, region_bounds={:?}",
-                rendered.reel.height(),
-                rendered.reel_region.height(),
-                rendered.reel_region.compute_bounds(&rendered.root)
-            );
-        }
-        let region_bounds = rendered
-            .reel_region
-            .compute_bounds(&rendered.root)
-            .expect("lyric region should have root-relative bounds");
-        let current_bounds = rendered
-            .current
-            .compute_bounds(&rendered.root)
-            .expect("focal lyric should have root-relative bounds");
-        assert!(
-            ((current_bounds.y() + current_bounds.height() / 2.0)
-                - (region_bounds.y() + region_bounds.height() / 2.0))
-                .abs()
-                <= 1.0,
-            "the focal cue should preserve the lyric region's center anchor: current={current_bounds:?}, region={region_bounds:?}"
-        );
-        assert_eq!(rendered.reel_region.overflow(), gtk::Overflow::Hidden);
-        assert!(rendered.current.has_css_class("utility-text"));
-        assert!(!rendered.current.has_css_class("editorial-text"));
-        for label in [&rendered.previous, &rendered.current, &rendered.next] {
-            assert_eq!(label.lines(), 4);
-            assert_eq!(label.ellipsize(), gtk::pango::EllipsizeMode::End);
-        }
-
-        let two_line = lyric_presentation("lyrics-two-line.json");
-        let two_line_lyrics = two_line
-            .lyrics
-            .as_deref()
-            .expect("fixture should have lyrics");
-        let resized = lyric_view(
-            &two_line,
-            Some(two_line_lyrics),
-            PresentationPalette::fallback(),
-            PresentationBehavior::StaticFixture,
-        );
-        for viewport in [
-            Viewport::new(1_280, 720),
-            Viewport::new(1_600, 900),
-            Viewport::new(1_600, 1_200),
-            Viewport::new(1_920, 1_200),
-            Viewport::new(2_560, 1_080),
-            Viewport::new(3_840, 2_160),
-            Viewport::new(3_840, 2_400),
-        ] {
-            let layout = NowPlayingLayout::for_presentation(&two_line, viewport);
-            allocate_lyrics(&resized, &layout);
-            let expected =
-                LyricNeighborVisibility::for_rendered_lines(resized.current.layout().line_count());
-            assert_eq!(
-                resized.previous.is_visible(),
-                expected.previous,
-                "viewport={viewport:?} measured={} current={}",
-                resized.rendered_line_count(&two_line_lyrics.current),
-                resized.current.layout().line_count()
-            );
-            assert_eq!(resized.next.is_visible(), expected.next);
-            let root_height = resized.root.height() as f32;
-            for label in [&resized.previous, &resized.current, &resized.next] {
-                if label.is_visible() {
-                    let bounds = visual_label_bounds(label, &resized.root);
-                    assert!(bounds.y() >= 0.0);
-                    assert!(bounds.y() + bounds.height() <= root_height);
-                }
-            }
-            let region_bounds = resized
-                .reel_region
-                .compute_bounds(&resized.root)
-                .expect("peer viewport reel should have root-relative bounds");
-            let current_bounds = resized
-                .current
-                .compute_bounds(&resized.root)
-                .expect("peer viewport focal cue should have root-relative bounds");
-            assert!(
-                ((current_bounds.y() + current_bounds.height() / 2.0)
-                    - (region_bounds.y() + region_bounds.height() / 2.0))
-                    .abs()
-                    <= 1.0,
-                "peer viewport focal anchor should remain centered: viewport={viewport:?}, current={current_bounds:?}, region={region_bounds:?}"
-            );
-            if resized.next.is_visible() {
-                let next_bounds = visual_label_bounds(&resized.next, &resized.root);
-                let tier_distance = next_bounds.y() + next_bounds.height() / 2.0
-                    - (current_bounds.y() + current_bounds.height() / 2.0);
-                assert!(
-                    tier_distance >= region_bounds.height() * 0.28,
-                    "peer viewport tiers should remain broadly separated: viewport={viewport:?}, current={current_bounds:?}, next={next_bounds:?}, region={region_bounds:?}"
-                );
-            }
-        }
-
-        let mut blank = lyric_presentation("lyrics-blank-cue.json");
-        let repeated = blank.lyrics.as_mut().expect("fixture should have lyrics");
-        repeated.next.clone_from(&repeated.previous);
-        let blank_lyrics = blank.lyrics.as_deref().expect("fixture should have lyrics");
-        let blank_rendered = lyric_view(
-            &blank,
-            Some(blank_lyrics),
-            PresentationPalette::fallback(),
-            PresentationBehavior::StaticFixture,
-        );
-        let blank_layout = NowPlayingLayout::for_presentation(&blank, Viewport::new(1_280, 720));
-        allocate_lyrics(&blank_rendered, &blank_layout);
-
-        assert!(blank_rendered.previous.is_visible());
-        assert!(!blank_rendered.current.is_visible());
-        assert!(blank_rendered.next.is_visible());
-        assert_eq!(blank_rendered.previous.text(), "A quiet orbit fades");
-        assert_eq!(blank_rendered.next.text(), "A quiet orbit fades");
         gtk::Settings::default()
-            .expect("GTK settings should be available")
+            .unwrap()
             .set_gtk_enable_animations(true);
-
-        let presentation = lyric_presentation("lyrics-one-line.json");
-        let initial = presentation
-            .lyrics
-            .as_deref()
-            .expect("fixture should have lyrics");
-        let rendered = lyric_view(
-            &presentation,
-            Some(initial),
-            PresentationPalette::fallback(),
-            PresentationBehavior::Dynamic,
-        );
-        let layout = NowPlayingLayout::for_presentation(&presentation, Viewport::new(1_280, 720));
-        allocate_lyrics(&rendered, &layout);
-
-        let settled_focal = rendered
-            .current
-            .compute_bounds(&rendered.reel)
-            .expect("settled focal cue should have reel-relative bounds");
-        let settled_next = rendered
-            .next
-            .compute_bounds(&rendered.reel)
-            .expect("settled Next Cue should have reel-relative bounds");
-        let settled_focal_center = settled_focal.y() + settled_focal.height() / 2.0;
-        let settled_next_center = settled_next.y() + settled_next.height() / 2.0;
-        assert!(
-            settled_next_center - settled_focal_center >= rendered.reel.height() as f32 * 0.32,
-            "the focal and Next Cue tiers should remain broadly separated: focal={settled_focal:?}, next={settled_next:?}, reel_height={}",
-            rendered.reel.height()
-        );
-
-        let mut adjacent = initial.clone();
-        adjacent.current_index += 1;
-        adjacent.previous = Some(initial.current.clone());
-        adjacent.current = initial
-            .next
-            .clone()
-            .expect("fixture should have a next cue");
-        rendered.motion.borrow_mut().update(
-            0,
-            Some(&adjacent),
-            rendered.rendered_line_count(&adjacent.current),
-            std::time::Duration::ZERO,
-            true,
-        );
-        let midpoint = std::time::Duration::from_millis(310);
-        rendered.apply_frame(midpoint, &layout);
-        rendered.root.allocate(
-            layout.information.musical_metadata_width_px as i32,
-            layout.metadata_height_budget_px as i32,
-            -1,
-            None,
-        );
-        while gtk::glib::MainContext::default().iteration(false) {}
-        let frame = rendered.motion.borrow().frame_at(midpoint);
-        assert_eq!(
-            frame.cause,
-            LyricMotionCause::NaturalCueHandoff {
-                height_aware: false
-            }
-        );
-        assert_eq!(rendered.previous.text(), initial.current);
-        assert_eq!(rendered.current.text(), adjacent.current);
-        assert!(rendered.previous.opacity() > 0.0);
-        assert!(rendered.current.opacity() > 0.0);
-        let outgoing_bounds = visual_label_bounds(&rendered.previous, &rendered.reel);
-        let incoming_bounds = visual_label_bounds(&rendered.current, &rendered.reel);
-        assert!(
-            incoming_bounds.height() >= outgoing_bounds.height() * 1.35,
-            "the incoming cue should be decisively larger by midpoint: outgoing={outgoing_bounds:?}, incoming={incoming_bounds:?}"
-        );
-        let incoming_center = incoming_bounds.y() + incoming_bounds.height() / 2.0;
-        assert!(
-            (incoming_center - settled_focal_center).abs() <= rendered.reel.height() as f32 * 0.16,
-            "the incoming cue should be nearing the stable focal anchor by midpoint: focal={settled_focal:?}, incoming={incoming_bounds:?}, reel_height={}",
-            rendered.reel.height()
-        );
-
-        assert!(!STYLES.contains("lyric-promoting-out"));
-        assert!(!STYLES.contains("lyric-promoting-in"));
-
-        let mut wrapped = adjacent.clone();
-        wrapped.current_index += 1;
-        wrapped.previous = Some(adjacent.current.clone());
-        wrapped.current =
-            "We find the signal where the last blue horizon meets the dark beyond us".to_owned();
-        let wrapped_lines = rendered.rendered_line_count(&wrapped.current);
-        assert!(
-            wrapped_lines >= 3,
-            "the test cue must wrap through Pango rather than source newlines"
-        );
-        rendered.motion.borrow_mut().update(
-            0,
-            Some(&wrapped),
-            wrapped_lines,
-            std::time::Duration::from_secs(1),
-            true,
-        );
-        assert_height_aware_cues_remain_separate(
-            &rendered,
-            &layout,
-            std::time::Duration::from_secs(1),
-        );
-
-        let settled_at = std::time::Duration::from_millis(1_620);
-        rendered
-            .motion
-            .borrow_mut()
-            .reconcile_rendered_lines(wrapped_lines, settled_at);
-        let mut short = wrapped.clone();
-        short.current_index += 1;
-        short.previous = Some(wrapped.current.clone());
-        short.current = "Short destination".to_owned();
-        short.next = Some("After".to_owned());
-        rendered.motion.borrow_mut().update(
-            0,
-            Some(&short),
-            1,
-            std::time::Duration::from_secs(2),
-            true,
-        );
-        assert_height_aware_cues_remain_separate(
-            &rendered,
-            &layout,
-            std::time::Duration::from_secs(2),
-        );
-
-        let tall_layout =
-            NowPlayingLayout::for_presentation(&presentation, Viewport::new(1_600, 1_200));
-        let three_line_layout =
-            NowPlayingLayout::for_presentation(&presentation, Viewport::new(1_600, 900));
-        // Select naturally wrapped text using this host's Pango metrics while
-        // keeping the exact line-count boundaries exercised at both viewports.
-        let wrapped_cue = |tall_lines, shorter_lines| {
-            (1..=80)
-                .map(|words| vec!["signal"; words].join(" "))
-                .find(|text| {
-                    rendered.rendered_line_count_at(text, &tall_layout) == tall_lines
-                        && rendered.rendered_line_count_at(text, &three_line_layout)
-                            == shorter_lines
-                })
-                .expect("test text should cover the required Pango wrapping boundaries")
-        };
-        let mut tall_source = initial.clone();
-        tall_source.current_index = 20;
-        tall_source.current = wrapped_cue(3, 2);
-        tall_source.next = Some(wrapped_cue(4, 3));
-        let tall_rendered = lyric_view(
-            &presentation,
-            Some(&tall_source),
-            PresentationPalette::fallback(),
-            PresentationBehavior::Dynamic,
-        );
-        allocate_lyrics(&tall_rendered, &tall_layout);
-        let tall_source_lines = tall_rendered.rendered_line_count(&tall_source.current);
-        assert_eq!(tall_source_lines, 3);
-        tall_rendered
-            .motion
-            .borrow_mut()
-            .reconcile_rendered_lines(tall_source_lines, std::time::Duration::ZERO);
-        let mut tall_target = tall_source.clone();
-        tall_target.current_index += 1;
-        tall_target.previous = Some(tall_source.current.clone());
-        tall_target.current = tall_source.next.clone().expect("tall target should exist");
-        tall_target.next = Some("The signal returns".to_owned());
-        let tall_target_lines = tall_rendered.rendered_line_count(&tall_target.current);
-        assert_eq!(tall_target_lines, 4);
-        assert_eq!(
-            tall_rendered.rendered_line_count_at(&tall_source.current, &three_line_layout),
-            2
-        );
-        assert_eq!(
-            tall_rendered.rendered_line_count_at(&tall_target.current, &three_line_layout),
-            3
-        );
-        tall_rendered.motion.borrow_mut().update(
-            0,
-            Some(&tall_target),
-            tall_target_lines,
-            std::time::Duration::from_secs(3),
-            true,
-        );
-        assert_height_aware_cues_remain_separate(
-            &tall_rendered,
-            &tall_layout,
-            std::time::Duration::from_secs(3),
-        );
 
         let ordinary = lyric_presentation("playing.json");
         let mut entering = ordinary.clone();
@@ -3793,12 +3056,9 @@ mod tests {
 
         let mut natural_lyrics = initial_lyrics.clone();
         natural_lyrics.current_index += 1;
-        natural_lyrics.previous = Some(initial_lyrics.current.clone());
-        natural_lyrics.current = initial_lyrics
-            .next
-            .clone()
-            .expect("fixture should have an adjacent destination");
-        natural_lyrics.next = Some("A third complete-state cue".to_owned());
+        natural_lyrics
+            .timeline
+            .push("A third complete-state cue".to_owned());
         let mut natural = initial_presentation.clone();
         natural.lyrics = Some(Box::new(natural_lyrics.clone()));
         complete.update_in_place(
@@ -3809,9 +3069,7 @@ mod tests {
         );
         assert_eq!(
             lyric_motion_frame(&complete, std::time::Duration::ZERO).cause,
-            LyricMotionCause::NaturalCueHandoff {
-                height_aware: false
-            }
+            LyricMotionCause::NaturalCueHandoff
         );
 
         let mut paused = natural.clone();
@@ -3837,17 +3095,18 @@ mod tests {
         );
         assert_rendered_lyric_roles(
             &complete,
-            natural_lyrics.previous.as_deref(),
-            Some(&natural_lyrics.current),
-            natural_lyrics.next.as_deref(),
+            natural_lyrics.previous(),
+            Some(natural_lyrics.current()),
+            natural_lyrics.next(),
         );
         assert_rendered_composition_ownership(&complete, 0.0, 1.0, 1.0);
 
         let mut seek_lyrics = natural_lyrics.clone();
         seek_lyrics.current_index += 1;
-        seek_lyrics.previous = Some(natural_lyrics.current.clone());
-        seek_lyrics.current = "External seek destination".to_owned();
-        seek_lyrics.next = Some("Timeline revision source".to_owned());
+        seek_lyrics.timeline[seek_lyrics.current_index] = "External seek destination".to_owned();
+        seek_lyrics
+            .timeline
+            .push("Timeline revision source".to_owned());
         let mut seek = natural.clone();
         seek.lyrics = Some(Box::new(seek_lyrics.clone()));
         complete.update_in_place(
@@ -3861,9 +3120,9 @@ mod tests {
         assert!(!frame.cue_motion_active);
         assert_rendered_lyric_roles(
             &complete,
-            seek_lyrics.previous.as_deref(),
-            Some(&seek_lyrics.current),
-            seek_lyrics.next.as_deref(),
+            seek_lyrics.previous(),
+            Some(seek_lyrics.current()),
+            seek_lyrics.next(),
         );
 
         let mut revised_lyrics = seek_lyrics.clone();
@@ -3872,9 +3131,10 @@ mod tests {
             .expect("revision fixture should have lyrics")
             .timeline_signature;
         revised_lyrics.current_index += 1;
-        revised_lyrics.previous = Some("Corrected previous cue".to_owned());
-        revised_lyrics.current = "Corrected selected cue".to_owned();
-        revised_lyrics.next = Some("After correction".to_owned());
+        revised_lyrics.timeline[revised_lyrics.current_index - 1] =
+            "Corrected previous cue".to_owned();
+        revised_lyrics.timeline[revised_lyrics.current_index] = "Corrected selected cue".to_owned();
+        revised_lyrics.timeline.push("After correction".to_owned());
         let mut revised = seek.clone();
         revised.lyrics = Some(Box::new(revised_lyrics.clone()));
         complete.update_in_place(
@@ -3888,16 +3148,17 @@ mod tests {
         assert!(!frame.cue_motion_active);
         assert_rendered_lyric_roles(
             &complete,
-            revised_lyrics.previous.as_deref(),
-            Some(&revised_lyrics.current),
-            revised_lyrics.next.as_deref(),
+            revised_lyrics.previous(),
+            Some(revised_lyrics.current()),
+            revised_lyrics.next(),
         );
 
         let mut handoff_lyrics = revised_lyrics.clone();
         handoff_lyrics.current_index += 1;
-        handoff_lyrics.previous = Some(revised_lyrics.current.clone());
-        handoff_lyrics.current = "Handoff destination".to_owned();
-        handoff_lyrics.next = Some("Interruption destination".to_owned());
+        handoff_lyrics.timeline[handoff_lyrics.current_index] = "Handoff destination".to_owned();
+        handoff_lyrics
+            .timeline
+            .push("Interruption destination".to_owned());
         let mut handoff = revised.clone();
         handoff.lyrics = Some(Box::new(handoff_lyrics.clone()));
         complete.update_in_place(
@@ -3910,9 +3171,9 @@ mod tests {
 
         let mut interrupted_lyrics = handoff_lyrics.clone();
         interrupted_lyrics.current_index += 1;
-        interrupted_lyrics.previous = Some(handoff_lyrics.current.clone());
-        interrupted_lyrics.current = "Interruption destination".to_owned();
-        interrupted_lyrics.next = Some("Before Intentional Blank".to_owned());
+        interrupted_lyrics
+            .timeline
+            .push("Before Intentional Blank".to_owned());
         let mut interrupted = handoff.clone();
         interrupted.lyrics = Some(Box::new(interrupted_lyrics.clone()));
         complete.update_in_place(
@@ -3926,16 +3187,15 @@ mod tests {
         assert!(!frame.cue_motion_active);
         assert_rendered_lyric_roles(
             &complete,
-            interrupted_lyrics.previous.as_deref(),
-            Some(&interrupted_lyrics.current),
-            interrupted_lyrics.next.as_deref(),
+            interrupted_lyrics.previous(),
+            Some(interrupted_lyrics.current()),
+            interrupted_lyrics.next(),
         );
 
         let mut blank_lyrics = interrupted_lyrics.clone();
         blank_lyrics.current_index += 1;
-        blank_lyrics.previous = None;
-        blank_lyrics.current.clear();
-        blank_lyrics.next = None;
+        blank_lyrics.timeline[blank_lyrics.current_index].clear();
+        blank_lyrics.timeline.push(" ".to_owned());
         let mut blank = interrupted.clone();
         blank.lyrics = Some(Box::new(blank_lyrics.clone()));
         complete.update_in_place(
@@ -3951,7 +3211,6 @@ mod tests {
 
         let mut next_blank_lyrics = blank_lyrics.clone();
         next_blank_lyrics.current_index += 1;
-        next_blank_lyrics.current = " ".to_owned();
         let mut next_blank = blank.clone();
         next_blank.lyrics = Some(Box::new(next_blank_lyrics));
         complete.update_in_place(
@@ -3969,7 +3228,7 @@ mod tests {
             std::time::Duration::from_millis(3_440),
             Some(viewport),
         );
-        assert_rendered_lyric_roles(&complete, None, None, None);
+        assert_rendered_lyric_roles(&complete, Some("Interruption destination"), None, None);
         assert_rendered_composition_ownership(&complete, 0.0, 1.0, 1.0);
 
         let mut no_lyrics = next_blank.clone();
@@ -4007,7 +3266,7 @@ mod tests {
             std::time::Duration::from_millis(5_280),
             Some(viewport),
         );
-        assert_rendered_lyric_roles(&complete, None, None, None);
+        assert_rendered_lyric_roles(&complete, Some("Interruption destination"), None, None);
         assert_rendered_composition_ownership(&complete, 0.0, 1.0, 1.0);
 
         let mut reduced =
@@ -4026,20 +3285,114 @@ mod tests {
             Some(viewport),
         );
         let frame = lyric_motion_frame(&reduced, std::time::Duration::ZERO);
-        assert_eq!(
-            frame.cause,
-            LyricMotionCause::NaturalCueHandoff {
-                height_aware: false
-            }
-        );
+        assert_eq!(frame.cause, LyricMotionCause::NaturalCueHandoff);
         assert!(!frame.cue_motion_active);
         assert_rendered_lyric_roles(
             &reduced,
-            natural_lyrics.previous.as_deref(),
-            Some(&natural_lyrics.current),
-            natural_lyrics.next.as_deref(),
+            natural_lyrics.previous(),
+            Some(natural_lyrics.current()),
+            natural_lyrics.next(),
         );
         assert_rendered_composition_ownership(&reduced, 0.0, 1.0, 1.0);
+    }
+
+    fn reel_capacity_and_first_line_anchor_follow_available_space() {
+        let mut presentation = lyric_presentation("lyrics-one-line.json");
+        let lyrics = presentation.lyrics.as_mut().unwrap();
+        lyrics.timeline = [
+            "Earlier", "Again", "Before", "Focal", "Again", "After", "Further", "Last",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        lyrics.current_index = 3;
+
+        let rendered = lyric_view(
+            &presentation,
+            presentation.lyrics.as_deref(),
+            PresentationPalette::fallback(),
+            PresentationBehavior::StaticFixture,
+        );
+        let layout = NowPlayingLayout::for_presentation(&presentation, Viewport::new(1600, 1200));
+        allocate_lyrics(&rendered, &layout);
+        let cues = rendered.reel.visible_cues();
+        assert!(
+            cues.len() > 3,
+            "available space must expose additional context: {cues:?}"
+        );
+        let focal = cues.iter().find(|cue| cue.index == 3).unwrap();
+        assert!((focal.y - f64::from(rendered.reel_region.height()) / 3.0).abs() < 1.0);
+        for pair in cues.windows(2) {
+            assert!(pair[0].index < pair[1].index);
+            assert!(pair[0].y + pair[0].height < pair[1].y);
+        }
+    }
+
+    fn reel_handoffs_keep_wrapping_and_outgoing_geometry() {
+        for (width, height) in [
+            (1280, 720),
+            (1600, 900),
+            (1600, 1200),
+            (1920, 1200),
+            (2560, 1080),
+            (3840, 2160),
+            (3840, 2400),
+        ] {
+            let mut presentation = lyric_presentation("lyrics-one-line.json");
+            let lyrics = presentation.lyrics.as_mut().unwrap();
+            lyrics.timeline = [
+                "Earlier",
+                "Again",
+                "Short",
+                "One\nTwo\nThree",
+                "Short again",
+                "One\nTwo\nThree\nFour",
+                "Last",
+                "Again",
+                "After",
+                "Further",
+            ]
+            .map(str::to_owned)
+            .to_vec();
+            lyrics.current_index = 2;
+
+            let rendered = lyric_view(
+                &presentation,
+                presentation.lyrics.as_deref(),
+                PresentationPalette::fallback(),
+                PresentationBehavior::Dynamic,
+            );
+            let layout =
+                NowPlayingLayout::for_presentation(&presentation, Viewport::new(width, height));
+            allocate_lyrics(&rendered, &layout);
+            for index in 3..=6 {
+                let lyrics = presentation.lyrics.as_mut().unwrap();
+                lyrics.current_index = index;
+
+                let start = std::time::Duration::from_secs(index as u64);
+                rendered
+                    .motion
+                    .borrow_mut()
+                    .update(0, Some(lyrics), start, true);
+                assert_reel_motion_remains_ordered(&rendered, &layout, start);
+                for offset in [0, 100, 310, 500, 620] {
+                    let now = start + std::time::Duration::from_millis(offset);
+                    rendered.apply_frame(now, &layout);
+                    let frame = rendered.motion.borrow().frame_at(now);
+                    let outgoing = frame
+                        .cues
+                        .iter()
+                        .find(|cue| cue.index == index as i64 - 1)
+                        .unwrap();
+                    assert_eq!(
+                        outgoing.opacity, 1.0,
+                        "outgoing retention is geometric at {width}x{height}"
+                    );
+                }
+                let cues = rendered.reel.visible_cues();
+                let focal = cues.iter().find(|cue| cue.index == index as i64).unwrap();
+                assert!((focal.y - f64::from(rendered.reel_region.height()) / 3.0).abs() < 1.0);
+            }
+        }
     }
 
     fn status_and_timing_replacements_preserve_the_existing_metadata() {
@@ -4194,12 +3547,16 @@ mod tests {
     }
 
     fn blank_promotion_preserves_context_and_an_interrupted_departure() {
-        let before = lyric_presentation("lyrics-one-line.json");
+        let mut before = lyric_presentation("lyrics-one-line.json");
+        before
+            .lyrics
+            .as_mut()
+            .unwrap()
+            .timeline
+            .insert(2, String::new());
         let mut blank = before.clone();
         let cue = blank.lyrics.as_mut().unwrap();
         cue.current_index += 1;
-        cue.previous = Some(cue.current.clone());
-        cue.current.clear();
         let viewport = Viewport::new(1280, 720);
         let mut rendered = rendered_now_playing(&before, PresentationBehavior::Dynamic);
         rendered.apply_viewport(viewport);
@@ -4218,15 +3575,16 @@ mod tests {
         let at = std::time::Duration::from_millis(100);
         let departing = lyric_motion_frame(&rendered, at);
         assert!(
-            departing.cues.iter().any(|cue| cue.color_to
-                == crate::lyric_motion::LyricColorRole::Next
-                && cue.opacity == 1.0),
+            departing
+                .cues
+                .iter()
+                .any(|cue| cue.role == crate::lyric_motion::LyricColorRole::Next
+                    && cue.opacity == 1.0),
             "blank entry should retain anticipation"
         );
         let mut after = blank;
         let cue = after.lyrics.as_mut().unwrap();
         cue.current_index += 1;
-        cue.current = cue.next.take().unwrap();
         rendered.update_in_place(1, &Presentation::NowPlaying(after), at, Some(viewport));
         let promoting = lyric_motion_frame(&rendered, at);
         assert!(
@@ -4238,60 +3596,24 @@ mod tests {
             frame
                 .cues
                 .iter()
-                .find(|cue| cue.slot == crate::lyric_motion::LyricCueSlot::Previous)
+                .find(|cue| cue.role == crate::lyric_motion::LyricColorRole::Previous)
                 .unwrap()
                 .clone()
         };
-        assert_eq!(outgoing(&departing).position, outgoing(&promoting).position);
-        assert_eq!(outgoing(&departing).emphasis, outgoing(&promoting).emphasis);
-    }
-
-    fn tall_departure_keeps_focal_size_and_reveals_separate_memory() {
-        let mut before = lyric_presentation("lyrics-one-line.json");
-        let cue = before.lyrics.as_mut().unwrap();
-        cue.current = "First line\nSecond line\nThird line".into();
-        cue.next = Some("After".into());
-        let viewport = Viewport::new(1280, 720);
-        let mut rendered = rendered_now_playing(&before, PresentationBehavior::Dynamic);
-        rendered.apply_viewport(viewport);
-        rendered.update_in_place(
-            1,
-            &Presentation::NowPlaying(before.clone()),
-            std::time::Duration::ZERO,
-            Some(viewport),
-        );
-        let mut after = before.clone();
-        let cue = after.lyrics.as_mut().unwrap();
-        cue.current_index += 1;
-        cue.previous = Some(cue.current.clone());
-        cue.current = "After".into();
-        rendered.update_in_place(
-            1,
-            &Presentation::NowPlaying(after),
-            std::time::Duration::ZERO,
-            Some(viewport),
-        );
-        let departure = lyric_motion_frame(&rendered, std::time::Duration::from_millis(100));
-        let outgoing = departure
-            .cues
-            .iter()
-            .find(|cue| cue.text == before.lyrics.as_ref().unwrap().current)
-            .unwrap();
         assert_eq!(
-            outgoing.emphasis, 1.0,
-            "tall departure must not compress toward memory"
+            outgoing(&departing).color_weights,
+            outgoing(&promoting).color_weights
         );
-        let arrival = lyric_motion_frame(&rendered, std::time::Duration::from_millis(550));
-        let memory = arrival
-            .cues
-            .iter()
-            .find(|cue| cue.text == before.lyrics.as_ref().unwrap().current)
-            .unwrap();
-        assert_eq!(memory.emphasis, 0.0);
-        assert!(
-            memory.opacity > 0.5,
-            "context should return gently before settlement"
+        assert_eq!(
+            departing.anchors,
+            promoting
+                .anchors
+                .iter()
+                .copied()
+                .filter(|(_, weight)| *weight > 0.0)
+                .collect::<Vec<_>>()
         );
+        assert_eq!(outgoing(&departing).emphasis, outgoing(&promoting).emphasis);
     }
 
     fn a_seek_within_the_incoming_cue_settles_its_handoff() {
@@ -4310,8 +3632,6 @@ mod tests {
         incoming.playback_position_seconds = Some(171.1);
         let cue = incoming.lyrics.as_mut().unwrap();
         cue.current_index += 1;
-        cue.previous = Some(cue.current.clone());
-        cue.current = cue.next.take().unwrap();
         rendered.update_in_place(
             1,
             &Presentation::NowPlaying(incoming.clone()),
@@ -4408,12 +3728,7 @@ mod tests {
             frame.cue_motion_active,
             "short blanks preserve advance promotion: {frame:?}"
         );
-        assert_eq!(
-            frame.cause,
-            LyricMotionCause::NaturalCueHandoff {
-                height_aware: false
-            }
-        );
+        assert_eq!(frame.cause, LyricMotionCause::NaturalCueHandoff);
     }
 
     #[test]
