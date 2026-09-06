@@ -274,12 +274,11 @@ display. Determinate progress advances in place while Playing and remains
 frozen while Paused. Status and timing updates retain unchanged text and its
 position in the current composition. Replacement text in the same space fades
 out completely before its replacement fades in; numeric progress advances in
-place. A composition change retires outgoing text, crossfades artwork and
-palette with text absent, then fades replacement text in, including when Now
-Playing and playback change together. Availability loss and disconnection use
-the same sequence. Composition identity is determined from the resolved content and
-artwork reference, never inferred from playback state, so a Paused update with
-changed Now Playing content cannot be mistaken for a playback-only update.
+place. A transition to a Full-field Presentation retires outgoing text,
+crossfades the background with text absent, then fades replacement text in.
+Availability loss and disconnection retain that sequence. Now Playing
+Transitions follow the coordinated reveal below; Presentation Status changes
+and Lyric Composition Transitions retain their separate treatments.
 
 Paused, Idle, and unavailable presentations retain their normal appearance
 during the configured inactivity grace period, then dim and move periodically
@@ -295,6 +294,51 @@ toward 28% on an approximately 1.1-second alternating ease-in-out cycle with
 staggered phases. The platform's reduced-animation preference leaves Starting
 and the waveform on stable, meaningful frames without removing the activity or
 timing copy.
+
+### Now Playing Transitions and content updates
+
+A Now Playing Transition enters Now Playing from a Full-field Presentation or
+replaces a track. Fade outgoing text out over 225 ms, then reveal incoming
+artwork and text together over the next 225 ms with a continuous background. Incoming
+timing, Presentation Status, and lyric motion remain live throughout the reveal.
+The [layered compositing decision](../adr/0004-use-layered-compositing-for-now-playing-transitions.md)
+records the architectural tradeoff supporting this behavior.
+
+The Renderer presents received content with existing fallbacks and adds no wait
+for missing content. The Bridge retains its existing behavior of holding a
+pending presentation during artwork retrieval and publishing it with artwork
+on success or a fallback on failure.
+
+When another destination arrives during a transition, use the latest
+destination while preserving visual continuity. Replace an invisible
+destination without restarting departure. Retarget an already visible
+transition from its current appearance, retiring visible outgoing text before
+revealing the latest destination's text, rather than completing an obsolete
+presentation.
+
+Compatible updates to the current track change only the affected content.
+Crossfade artwork and its background palette together over 225 ms while text
+remains visible. For metadata, fade the title/artist/album group out over
+225 ms, replace and refit it while invisible, then fade it in over 225 ms;
+Presentation Status, timing, and lyrics remain visible and live. Use the same
+latest-destination interruption behavior for partial updates. When animations
+are disabled, apply the latest destination immediately.
+
+### Track continuity
+
+The current Presentation Snapshot contract has no stable track identifier.
+Within a continuously available Tracked Zone, use the timing continuity rule
+for presentation updates too: Now Playing descriptions are compatible when no
+Title, Artist, or Album value known on both sides conflicts. Missing values
+are compatible; retain known values for subsequent continuity comparisons as
+metadata arrives. Artwork changes alone do not establish a new track, and
+playback state alone does not determine continuity.
+
+A conflicting known metadata value is treated as a track change, even when it
+may be a correction to the current track. Consecutive tracks with identical
+metadata may be indistinguishable. Accept these limits rather than introduce
+a second competing identity heuristic for presentation transitions; this rule
+infers continuity and does not establish track identity.
 
 ## Full-field states
 

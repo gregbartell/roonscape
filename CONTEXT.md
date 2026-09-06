@@ -100,6 +100,13 @@ _Avoid_: Lyric transition, cue change
 The Roon-provided content currently associated with the Tracked Zone.
 _Avoid_: Now-playing presentation, current content
 
+**Now Playing Transition**:
+The viewer-facing replacement of a previous presentation with a new Now Playing
+presentation, including entry from a Full-field Presentation and replacement
+between tracks. It is distinct from a Presentation Status change and a Lyric
+Composition Transition.
+_Avoid_: Track transition when also referring to entry from a Full-field Presentation
+
 **Presentation Capture**:
 A screenshot artifact of a Fixture Scenario generated for repeatable human
 review of RoonScape's presentation.
