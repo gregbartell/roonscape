@@ -16,6 +16,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  createFullRateReviewSheets,
+  createReviewOverview,
+  extractReviewFrames,
+  reviewImageFormat,
+} from "./capture-review-artifacts.mjs";
+import {
   formatRelativeTimestamp,
   parseResolution,
 } from "../.agents/skills/capture-live-session/scripts/live-capture-session.mjs";
@@ -1166,6 +1172,7 @@ export function parseLyricMotionCaptureRequest(arguments_) {
     example: "reel-lift-tour",
     output: undefined,
     reducedAnimation: false,
+    lossless: false,
     resolution: defaultResolution,
   };
   const seen = new Set();
@@ -1184,6 +1191,9 @@ export function parseLyricMotionCaptureRequest(arguments_) {
         break;
       case "--reduced-animation":
         request.reducedAnimation = true;
+        break;
+      case "--lossless":
+        request.lossless = true;
         break;
       case "--resolution":
         request.resolution = parseResolution(
@@ -1211,6 +1221,7 @@ export function buildLyricMotionCapturePlan(
   return {
     example: request.example,
     reducedAnimation: request.reducedAnimation,
+    lossless: request.lossless,
     resolution: { ...request.resolution },
     durationSeconds: example.durationSeconds,
     initialFixture: example.initialFixture,
@@ -1404,6 +1415,7 @@ export function renderLyricMotionCaptureReadme({
   framesPerSecond,
   durationSeconds,
   reducedAnimation,
+  lossless,
   frames,
 }) {
   const lines = [
@@ -1413,6 +1425,8 @@ export function renderLyricMotionCaptureReadme({
     reducedAnimation
       ? "Reduced animation was enabled; semantic updates should appear only at complete endpoints."
       : "Dynamic animation was enabled for full-rate motion review.",
+    "",
+    `Review images use ${reviewImageFormat(lossless).description}; the source recording remains lossless.`,
     "",
     "These are review targets, not automated visual verdicts. Inspect the full-rate sheets for brief states between the selected frames.",
     "",
@@ -1435,7 +1449,16 @@ export async function createLyricMotionReviewArtifacts(
   const state = JSON.parse(
     await readFile(path.join(sessionDirectory, "session.json"), "utf8"),
   );
-  await createFullRateReviewSheets(sessionDirectory, state, signal);
+  const videoPath = path.join(sessionDirectory, "capture.mkv");
+  const reviewDirectory = path.join(sessionDirectory, "review");
+  const format = reviewImageFormat(plan.lossless);
+  await mkdir(reviewDirectory);
+  await createFullRateReviewSheets(
+    videoPath,
+    reviewDirectory,
+    { ...state, lossless: plan.lossless },
+    signal,
+  );
 
   const frames = [];
   for (const [index, review] of plan.reviewFrames.entries()) {
@@ -1447,34 +1470,21 @@ export async function createLyricMotionReviewArtifacts(
     ) {
       throw new Error("review frame lies outside the recorded interval");
     }
-    const fileName = `${String(index).padStart(2, "0")}-${semanticSlug(review.name)}.png`;
-    await runMonitoredProcess(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-ss",
-        String(review.atSeconds),
-        "-i",
-        path.join(sessionDirectory, "capture.mkv"),
-        "-frames:v",
-        "1",
-        "-y",
-        path.join(sessionDirectory, fileName),
-      ],
-      {
-        description: "lyric motion review frame",
-        timeoutMilliseconds: 30_000,
-        signal,
-      },
-    );
+    const fileName = `${String(index).padStart(2, "0")}-${semanticSlug(review.name)}.${format.extension}`;
     frames.push({ ...review, fileName });
   }
-  await createOverview(
-    sessionDirectory,
-    frames.map(({ fileName }) => fileName),
-    signal,
+  await extractReviewFrames(
+    videoPath,
+    frames.map(({ atSeconds, fileName }) => ({
+      atSeconds,
+      outputPath: path.join(sessionDirectory, fileName),
+    })),
+    { framesPerSecond: state.framesPerSecond, lossless: plan.lossless, signal },
+  );
+  await createReviewOverview(
+    frames.map(({ fileName }) => path.join(sessionDirectory, fileName)),
+    path.join(sessionDirectory, `overview.${format.extension}`),
+    { lossless: plan.lossless, columns: Math.min(5, frames.length), signal },
   );
   await writeFile(
     path.join(sessionDirectory, "README.md"),
@@ -1497,6 +1507,7 @@ export async function createLyricMotionReviewArtifacts(
         framesPerSecond: state.framesPerSecond,
         durationSeconds: state.durationSeconds,
         reducedAnimation: plan.reducedAnimation,
+        lossless: plan.lossless ?? false,
         initialFixture: plan.initialFixture,
         publications: plan.publications,
         frames,
@@ -1533,122 +1544,6 @@ function semanticSlug(value) {
     throw new Error(`review frame name cannot form a filename: ${value}`);
   }
   return slug;
-}
-
-async function createOverview(sessionDirectory, fileNames, signal) {
-  const work = await mkdtemp(path.join(sessionDirectory, ".overview."));
-  try {
-    for (const [index, fileName] of fileNames.entries()) {
-      await runMonitoredProcess(
-        "ffmpeg",
-        [
-          "-hide_banner",
-          "-loglevel",
-          "error",
-          "-i",
-          path.join(sessionDirectory, fileName),
-          "-vf",
-          "scale=384:216:force_original_aspect_ratio=decrease,pad=384:216:(ow-iw)/2:(oh-ih)/2:black",
-          "-frames:v",
-          "1",
-          "-y",
-          path.join(work, `${String(index).padStart(3, "0")}.png`),
-        ],
-        {
-          description: "lyric motion overview thumbnail",
-          timeoutMilliseconds: 30_000,
-          signal,
-        },
-      );
-    }
-    const columns = Math.min(5, fileNames.length);
-    const rows = Math.ceil(fileNames.length / columns);
-    await runMonitoredProcess(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-framerate",
-        "1",
-        "-start_number",
-        "0",
-        "-i",
-        path.join(work, "%03d.png"),
-        "-vf",
-        `tile=${columns}x${rows}:nb_frames=${fileNames.length}:padding=2:margin=0:color=black`,
-        "-frames:v",
-        "1",
-        "-y",
-        path.join(sessionDirectory, "overview.png"),
-      ],
-      {
-        description: "lyric motion overview",
-        timeoutMilliseconds: 120_000,
-        signal,
-      },
-    );
-  } finally {
-    await rm(work, { force: true, recursive: true });
-  }
-}
-
-async function createFullRateReviewSheets(sessionDirectory, state, signal) {
-  const reviewDirectory = path.join(sessionDirectory, "review");
-  await mkdir(reviewDirectory);
-  const framesPerPage = 100;
-  const columns = 10;
-  const frameCount = Math.max(
-    1,
-    Math.round(state.durationSeconds * state.framesPerSecond),
-  );
-  const index = { framesPerSecond: state.framesPerSecond, pages: [] };
-  for (
-    let firstFrame = 0;
-    firstFrame < frameCount;
-    firstFrame += framesPerPage
-  ) {
-    const count = Math.min(framesPerPage, frameCount - firstFrame);
-    const rows = Math.ceil(count / columns);
-    const pageNumber = firstFrame / framesPerPage + 1;
-    const file = `full-rate-page-${String(pageNumber).padStart(3, "0")}.png`;
-    await runMonitoredProcess(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-ss",
-        (firstFrame / state.framesPerSecond).toFixed(3),
-        "-i",
-        path.join(sessionDirectory, "capture.mkv"),
-        "-vf",
-        `scale=192:108,drawtext=font=monospace:text='%{n}':fontcolor=white:fontsize=16:box=1:boxcolor=black@0.78:boxborderw=3:x=4:y=h-th-4,tile=${columns}x${rows}:nb_frames=${count}:padding=1:margin=0:color=black`,
-        "-frames:v",
-        "1",
-        "-y",
-        path.join(reviewDirectory, file),
-      ],
-      {
-        cwd: repositoryRoot,
-        description: "full-rate lyric motion review sheet",
-        timeoutMilliseconds: 120_000,
-        signal,
-      },
-    );
-    index.pages.push({
-      file,
-      firstFrame,
-      count,
-      columns,
-      startSeconds:
-        Math.round((firstFrame / state.framesPerSecond) * 1000) / 1000,
-    });
-  }
-  await writeFile(
-    path.join(reviewDirectory, "review-index.json"),
-    `${JSON.stringify(index, null, 2)}\n`,
-  );
 }
 
 async function runNativeLyricMotionCapture(
@@ -1878,6 +1773,7 @@ async function runNativeLyricMotionCapture(
         status: "recorded",
         durationSeconds: video.durationSeconds,
         framesPerSecond,
+        lossless: plan.lossless,
         resolution: plan.resolution,
         publications: actualPublications,
       })}\n`,

@@ -26,6 +26,14 @@ import { findExecutable } from "../../../../scripts/native-test-environment.mjs"
 const executeFile = promisify(execFile);
 const scratchRoot = "/var/tmp/codex/roonscape";
 
+test("record options select lossy review images unless lossless is requested", () => {
+  assert.equal(parseRecordOptions(["--event", "transition"]).lossless, false);
+  assert.equal(
+    parseRecordOptions(["--event", "transition", "--lossless"]).lossless,
+    true,
+  );
+});
+
 test("record options forward an explicit Roon Server Host", () => {
   const options = parseRecordOptions([
     "--event",
@@ -157,171 +165,218 @@ test("README anchors time to the first retained frame", () => {
   assert.match(readme, /Metadata precedes artwork\./);
 });
 
-test("candidate extraction keeps meaningful changes and a final stability frame", async (context) => {
-  await mkdir(scratchRoot, { recursive: true });
-  const sessionDirectory = await mkdtemp(path.join(scratchRoot, "task.test."));
-  context.after(() => rm(sessionDirectory, { force: true, recursive: true }));
-  await executeFile("ffmpeg", [
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    "-f",
-    "lavfi",
-    "-i",
-    "color=c=red:size=1280x720:rate=20:duration=0.5",
-    "-f",
-    "lavfi",
-    "-i",
-    "color=c=blue:size=1280x720:rate=20:duration=0.5",
-    "-filter_complex",
-    "[0:v][1:v]concat=n=2:v=1:a=0",
-    "-c:v",
-    "ffv1",
-    "-level",
-    "3",
-    "-g",
-    "1",
-    "-y",
-    path.join(sessionDirectory, "capture.mkv"),
-  ]);
+for (const lossless of [false, true]) {
+  const extension = lossless ? "png" : "jpg";
+  test(`${extension} candidates keep changes, preceding ticks, and final stability`, async (context) => {
+    await mkdir(scratchRoot, { recursive: true });
+    const sessionDirectory = await mkdtemp(
+      path.join(scratchRoot, "task.test."),
+    );
+    context.after(() => rm(sessionDirectory, { force: true, recursive: true }));
+    await executeFile("ffmpeg", [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=red:size=1280x720:rate=20:duration=0.5",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=blue:size=1280x720:rate=20:duration=0.5",
+      "-filter_complex",
+      "[0:v][1:v]concat=n=2:v=1:a=0",
+      "-c:v",
+      "ffv1",
+      "-level",
+      "3",
+      "-g",
+      "1",
+      "-y",
+      path.join(sessionDirectory, "capture.mkv"),
+    ]);
 
-  const candidates = await extractCandidates(sessionDirectory, {
-    durationSeconds: 1,
-  });
-
-  assert.equal(candidates[0].capturedSeconds, 0);
-  assert.ok(
-    candidates.some(({ capturedSeconds }) => capturedSeconds === 0.5),
-    JSON.stringify(candidates),
-  );
-  assert.ok(
-    candidates.some(({ capturedSeconds }) => capturedSeconds === 0.45),
-    JSON.stringify(candidates),
-  );
-  assert.equal(candidates.at(-1).capturedSeconds, 0.95);
-  assert.equal(candidates.length, 4, JSON.stringify(candidates));
-
-  await writeFile(
-    path.join(sessionDirectory, "session.json"),
-    `${JSON.stringify({
-      status: "recorded",
+    const candidates = await extractCandidates(sessionDirectory, {
       durationSeconds: 1,
-      framesPerSecond: 20,
-      resolution: { width: 1280, height: 720 },
-    })}\n`,
-  );
-  const { fullRatePages } = await reviewSession(sessionDirectory);
-  assert.equal(fullRatePages.length, 1);
-  const reviewIndex = JSON.parse(
-    await readFile(
-      path.join(sessionDirectory, "review", "review-index.json"),
-      "utf8",
-    ),
-  );
-  assert.deepEqual(reviewIndex.pages, [
-    {
-      file: "full-rate-page-001.png",
-      firstFrame: 0,
-      count: 20,
-      columns: 10,
-      startSeconds: 0,
-    },
-  ]);
-  const inspectionPath = await inspectRecordedFrame(sessionDirectory, "0.5");
-  await readFile(inspectionPath);
-});
+      lossless,
+    });
 
-test("publication writes frames, timeline, and timestamped overview without overwriting", async (context) => {
-  await mkdir(scratchRoot, { recursive: true });
-  const sessionDirectory = await mkdtemp(path.join(scratchRoot, "task.test."));
-  const unique = `skill-test-${randomUUID()}`;
-  const date = "2099-01-02";
-  const collision = path.join(scratchRoot, `${unique}-${date}`);
-  let outputDirectory;
-  context.after(async () => {
-    await rm(sessionDirectory, { force: true, recursive: true });
-    await rm(collision, { force: true, recursive: true });
-    if (outputDirectory !== undefined) {
-      await rm(outputDirectory, { force: true, recursive: true });
-    }
+    assert.ok(candidates.every(({ file }) => file.endsWith(`.${extension}`)));
+    assert.equal(candidates[0].capturedSeconds, 0);
+    assert.ok(
+      candidates.some(({ capturedSeconds }) => capturedSeconds === 0.5),
+      JSON.stringify(candidates),
+    );
+    assert.ok(
+      candidates.some(({ capturedSeconds }) => capturedSeconds === 0.45),
+      JSON.stringify(candidates),
+    );
+    assert.equal(candidates.at(-1).capturedSeconds, 0.95);
+    assert.equal(candidates.length, 4, JSON.stringify(candidates));
+
+    await writeFile(
+      path.join(sessionDirectory, "session.json"),
+      `${JSON.stringify({
+        status: "recorded",
+        durationSeconds: 1,
+        lossless,
+        framesPerSecond: 20,
+        resolution: { width: 1280, height: 720 },
+      })}\n`,
+    );
+    const { fullRatePages } = await reviewSession(sessionDirectory);
+    assert.equal(fullRatePages.length, 1);
+    const reviewIndex = JSON.parse(
+      await readFile(
+        path.join(sessionDirectory, "review", "review-index.json"),
+        "utf8",
+      ),
+    );
+    assert.deepEqual(reviewIndex.pages, [
+      {
+        file: `full-rate-page-001.${extension}`,
+        firstFrame: 0,
+        count: 20,
+        columns: 10,
+        startSeconds: 0,
+      },
+    ]);
+    const inspectionPath = await inspectRecordedFrame(sessionDirectory, "0.5");
+    await readFile(inspectionPath);
   });
 
-  await executeFile("ffmpeg", [
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    "-f",
-    "lavfi",
-    "-i",
-    "testsrc=size=1280x720:rate=20:duration=0.25",
-    "-c:v",
-    "ffv1",
-    "-level",
-    "3",
-    "-g",
-    "1",
-    "-y",
-    path.join(sessionDirectory, "capture.mkv"),
-  ]);
-  await writeFile(
-    path.join(sessionDirectory, "session.json"),
-    `${JSON.stringify({
-      version: 1,
-      status: "recorded",
-      event: "Skill test",
-      eventSlug: unique,
-      date,
-      resolution: { width: 1280, height: 720 },
-      fullscreen: false,
-      framesPerSecond: 20,
-      durationSeconds: 0.25,
-    })}\n`,
-  );
-  const selectionPath = path.join(sessionDirectory, "selection.json");
-  await writeFile(
-    selectionPath,
-    `${JSON.stringify({
-      title: "Synthetic transition",
-      complete: true,
-      summary: "The synthetic source remains valid.",
-      frames: [
-        { at: 0, name: "before", observation: "Initial frame." },
-        { at: 0.1, name: "after", observation: "Concluding frame." },
-      ],
-    })}\n`,
-  );
-  await mkdir(collision);
+  test(`${extension} publication preserves its timeline, dimensions, and lifecycle`, async (context) => {
+    await mkdir(scratchRoot, { recursive: true });
+    const sessionDirectory = await mkdtemp(
+      path.join(scratchRoot, "task.test."),
+    );
+    const unique = `skill-test-${randomUUID()}`;
+    const date = "2099-01-02";
+    const collision = path.join(scratchRoot, `${unique}-${date}`);
+    let outputDirectory;
+    context.after(async () => {
+      await rm(sessionDirectory, { force: true, recursive: true });
+      await rm(collision, { force: true, recursive: true });
+      if (outputDirectory !== undefined) {
+        await rm(outputDirectory, { force: true, recursive: true });
+      }
+    });
 
-  outputDirectory = await publishSession(sessionDirectory, selectionPath);
+    await executeFile("ffmpeg", [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc=size=1280x720:rate=20:duration=0.25",
+      "-c:v",
+      "ffv1",
+      "-level",
+      "3",
+      "-g",
+      "1",
+      "-y",
+      path.join(sessionDirectory, "capture.mkv"),
+    ]);
+    await writeFile(
+      path.join(sessionDirectory, "session.json"),
+      `${JSON.stringify({
+        version: 1,
+        status: "recorded",
+        event: "Skill test",
+        eventSlug: unique,
+        date,
+        resolution: { width: 1280, height: 720 },
+        fullscreen: false,
+        framesPerSecond: 20,
+        durationSeconds: 0.25,
+        lossless,
+      })}\n`,
+    );
+    const selectionPath = path.join(sessionDirectory, "selection.json");
+    await writeFile(
+      selectionPath,
+      `${JSON.stringify({
+        title: "Synthetic transition",
+        complete: true,
+        summary: "The synthetic source remains valid.",
+        frames: [
+          { at: 0, name: "before", observation: "Initial frame." },
+          { at: 0.1, name: "after", observation: "Concluding frame." },
+        ],
+      })}\n`,
+    );
+    await mkdir(collision);
 
-  await readFile(path.join(sessionDirectory, "capture.mkv"));
-  await retractPublication(sessionDirectory);
-  await assert.rejects(readFile(path.join(outputDirectory, "README.md")));
-  outputDirectory = await publishSession(sessionDirectory, selectionPath);
+    outputDirectory = await publishSession(sessionDirectory, selectionPath);
 
-  assert.equal(outputDirectory, `${collision}-02`);
-  const readme = await readFile(
-    path.join(outputDirectory, "README.md"),
-    "utf8",
-  );
-  assert.match(readme, /T\+000\.10s/);
-  await readFile(path.join(outputDirectory, "00-before.png"));
-  await readFile(path.join(outputDirectory, "01-after.png"));
-  const { stdout } = await executeFile("ffprobe", [
-    "-v",
-    "error",
-    "-select_streams",
-    "v:0",
-    "-show_entries",
-    "stream=width,height",
-    "-of",
-    "csv=p=0:s=x",
-    path.join(outputDirectory, "overview.png"),
-  ]);
-  assert.equal(stdout.trim(), "1928x216");
-  await finalizeSession(sessionDirectory);
-  await assert.rejects(readFile(path.join(sessionDirectory, "session.json")));
-});
+    await readFile(path.join(sessionDirectory, "capture.mkv"));
+    await retractPublication(sessionDirectory);
+    await assert.rejects(readFile(path.join(outputDirectory, "README.md")));
+    outputDirectory = await publishSession(sessionDirectory, selectionPath);
+
+    assert.equal(outputDirectory, `${collision}-02`);
+    const readme = await readFile(
+      path.join(outputDirectory, "README.md"),
+      "utf8",
+    );
+    assert.match(readme, /T\+000\.10s/);
+    assert.match(readme, lossless ? /lossless PNG/ : /lossy JPEG/);
+    await readFile(path.join(outputDirectory, `00-before.${extension}`));
+    await readFile(path.join(outputDirectory, `01-after.${extension}`));
+    const { stdout } = await executeFile("ffprobe", [
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=width,height",
+      "-of",
+      "csv=p=0:s=x",
+      path.join(outputDirectory, `overview.${extension}`),
+    ]);
+    assert.equal(stdout.trim(), "1928x216");
+    await finalizeSession(sessionDirectory);
+    await assert.rejects(readFile(path.join(sessionDirectory, "session.json")));
+  });
+}
+
+for (const [durationSeconds, holdTicks, expectedCount] of [
+  [12, 1, 240],
+  [24, 3, 320],
+]) {
+  test(`candidate extraction retains sustained changes every ${holdTicks} ticks`, async (context) => {
+    await mkdir(scratchRoot, { recursive: true });
+    const directory = await mkdtemp(path.join(scratchRoot, "task."));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    await executeFile("ffmpeg", [
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      `color=c=red:size=1280x720:rate=20:duration=${durationSeconds},drawbox=color=blue:t=fill:enable='mod(floor(n/${holdTicks}),2)'`,
+      "-c:v",
+      "ffv1",
+      "-level",
+      "3",
+      "-g",
+      "1",
+      path.join(directory, "capture.mkv"),
+    ]);
+    const candidates = await extractCandidates(directory, {
+      durationSeconds,
+      lossless: false,
+    });
+    assert.equal(candidates.length, expectedCount);
+    assert.equal(candidates[0].capturedSeconds, 0);
+    assert.equal(candidates.at(-1).capturedSeconds, durationSeconds - 0.05);
+    for (const { file } of candidates)
+      await readFile(path.join(directory, "candidates", file));
+  });
+}
 
 for (const recorderFailure of [false, true]) {
   test(
@@ -357,6 +412,13 @@ for (const recorderFailure of [false, true]) {
       await cp(
         new URL("../../../../scripts/process-harness.mjs", import.meta.url),
         path.join(source, "scripts/process-harness.mjs"),
+      );
+      await cp(
+        new URL(
+          "../../../../scripts/capture-review-artifacts.mjs",
+          import.meta.url,
+        ),
+        path.join(source, "scripts/capture-review-artifacts.mjs"),
       );
       await writeFile(
         path.join(directory, "display.json"),

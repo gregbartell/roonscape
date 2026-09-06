@@ -363,9 +363,17 @@ Use `--output DIRECTORY` for a specific new destination. The command refuses
 to overwrite an existing path; without `--output`, it creates a collision-safe
 dated directory under `/var/tmp/codex/roonscape`.
 
-Each result retains the lossless 20-fps recording, exact full-resolution
-review frames, a compact overview, every full-rate review sheet, and a
-manifest. Full-rate sheets expose transitions between selected frames.
+Each result retains the lossless 20-fps recording, full-resolution review
+frames, a compact overview, every full-rate review sheet, and a manifest.
+Review images default to high-quality JPEG with full color resolution (4:4:4).
+Add `--lossless` for PNG review images when inspecting exact pixels, text edges,
+color, or subtle rendering artifacts. The source recording remains lossless in
+both modes; the selected mode is recorded in the manifest and README.
+
+Frame extraction and overview generation operate in batches. Full-rate sheets
+expose every recorded tick, including transitions between selected frames;
+unused tiles on the final 10x10 sheet are black and excluded from the review
+index's frame count.
 
 Run the self-contained design test suite before accepting changes to the
 Renderer, presentation design, capture planning or execution, Fixture

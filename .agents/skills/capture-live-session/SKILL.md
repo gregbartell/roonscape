@@ -30,7 +30,11 @@ Add `--resolution WIDTHxHEIGHT`, `--fullscreen`, `--duration SECONDS`, or
 `--roon-server HOST` only when the request calls for them. The helper
 preflights its optional tools and existing RoonScape setup, refuses to disturb
 another Live Mode session, builds the app, starts an isolated X display, and
-records losslessly at 20 fps. The recorder must capture its first frame before
+records losslessly at 20 fps. Review images default to high-quality JPEG with
+full color resolution (4:4:4). Add `--lossless` when the requested inspection
+depends on exact pixels, text edges, color, or subtle rendering artifacts; this
+selects PNG images throughout the session. The source recording stays lossless
+in both modes. The recorder must capture its first frame before
 RoonScape launches, preserving a pre-window baseline and early startup. It
 prints the session directory before preparation and prints `runtime-ready`
 when the RoonScape window is ready for visual inspection. Startup has already

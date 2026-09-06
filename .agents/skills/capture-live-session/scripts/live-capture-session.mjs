@@ -9,7 +9,6 @@ import {
   mkdir,
   mkdtemp,
   readFile,
-  readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -27,6 +26,13 @@ import {
   waitFor,
 } from "../../../../scripts/process-harness.mjs";
 
+import {
+  createFullRateReviewSheets,
+  createReviewOverview,
+  extractReviewFrames,
+  reviewImageFormat,
+} from "../../../../scripts/capture-review-artifacts.mjs";
+
 const repositoryRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 const scratchRoot = "/var/tmp/codex/roonscape";
 const framesPerSecond = 20;
@@ -36,7 +42,7 @@ const defaultResolution = { width: 1280, height: 720 };
 const maximumDimension = 32_767;
 
 const usage = `Usage:
-  live-capture-session.mjs record --event DESCRIPTION [--resolution WIDTHxHEIGHT] [--fullscreen] [--duration SECONDS] [--config PATH] [--roon-server HOST]
+  live-capture-session.mjs record --event DESCRIPTION [--resolution WIDTHxHEIGHT] [--fullscreen] [--lossless] [--duration SECONDS] [--config PATH] [--roon-server HOST]
   live-capture-session.mjs snapshot --session DIRECTORY
   live-capture-session.mjs stop --session DIRECTORY
   live-capture-session.mjs review --session DIRECTORY
@@ -205,6 +211,7 @@ export function renderReadme(selection, state, frames, annotationWarning) {
     `# ${selection.title}${status}`,
     "",
     `Captured from RoonScape Live Mode in ${mode} mode at ${resolutionText(state.resolution)} on ${state.date}.`,
+    `Review images use ${reviewImageFormat(state.lossless).description}, extracted from a lossless source recording.`,
   ];
   if (origin !== undefined) {
     lines.push(
@@ -287,6 +294,7 @@ export function parseRecordOptions(arguments_) {
     event: undefined,
     resolution: defaultResolution,
     fullscreen: false,
+    lossless: false,
     durationSeconds: undefined,
     configurationFile: undefined,
     roonServerHost: undefined,
@@ -301,6 +309,9 @@ export function parseRecordOptions(arguments_) {
         options.resolution = parseResolution(
           optionValue(arguments_, ++index, argument),
         );
+        break;
+      case "--lossless":
+        options.lossless = true;
         break;
       case "--fullscreen":
         options.fullscreen = true;
@@ -350,6 +361,7 @@ async function recordSession(options) {
     date: localDate(),
     resolution: options.resolution,
     fullscreen: options.fullscreen,
+    lossless: options.lossless,
     framesPerSecond,
     createdAt: new Date().toISOString(),
   };
@@ -711,6 +723,9 @@ function startRecorder(
       "3",
       "-g",
       "1",
+      // Review frame ordinals and timestamps share the same 20-fps clock.
+      "-vsync",
+      "cfr",
       "-t",
       String(recordingLimitSeconds),
       "-y",
@@ -782,6 +797,7 @@ async function probeVideo(videoPath) {
 export async function extractCandidates(sessionDirectory, state) {
   const candidateDirectory = path.join(sessionDirectory, "candidates");
   await mkdir(candidateDirectory);
+  const videoPath = path.join(sessionDirectory, "capture.mkv");
   const timestamps = [];
   await runStreamingProcess(
     "ffmpeg",
@@ -789,73 +805,49 @@ export async function extractCandidates(sessionDirectory, state) {
       "-hide_banner",
       "-loglevel",
       "info",
+      "-nostdin",
       "-i",
-      path.join(sessionDirectory, "capture.mkv"),
+      videoPath,
       "-vf",
-      "mpdecimate,showinfo",
-      // Ubuntu 22.04 ships FFmpeg 4.4, before the per-stream -fps_mode option.
+      "mpdecimate,showinfo=checksum=0",
       "-vsync",
       "vfr",
-      "-start_number",
-      "0",
-      "-y",
-      path.join(candidateDirectory, "%06d.png"),
+      "-f",
+      "null",
+      "-",
     ],
     (line) => {
       const value = line.match(/showinfo.*pts_time:\s*([0-9.]+)/)?.[1];
-      if (value !== undefined) {
-        timestamps.push(Number(value));
-      }
+      if (value !== undefined) timestamps.push(Number(value));
     },
   );
-  const names = (await readdir(candidateDirectory))
-    .filter((name) => /^\d{6}\.png$/.test(name))
-    .sort();
-  if (names.length !== timestamps.length || names.length === 0) {
+  if (timestamps.length === 0) {
     throw new Error(
       "candidate extraction did not produce a timestamped frame set",
     );
   }
-  const candidates = names.map((file, index) => ({
-    file,
-    capturedSeconds: roundedSeconds(timestamps[index]),
-  }));
-  for (const { capturedSeconds } of [...candidates]) {
-    await addCandidateAt(
-      candidates,
-      candidateDirectory,
-      path.join(sessionDirectory, "capture.mkv"),
-      Math.max(0, capturedSeconds - frameSeconds),
-    );
+  const times = new Set(timestamps.map(roundedSeconds));
+  for (const capturedSeconds of timestamps) {
+    times.add(roundedSeconds(Math.max(0, capturedSeconds - frameSeconds)));
   }
-  const finalTime = Math.max(0, state.durationSeconds - frameSeconds);
-  await addCandidateAt(
-    candidates,
-    candidateDirectory,
-    path.join(sessionDirectory, "capture.mkv"),
-    finalTime,
-  );
-  candidates.sort(
-    (left, right) => left.capturedSeconds - right.capturedSeconds,
+  times.add(roundedSeconds(Math.max(0, state.durationSeconds - frameSeconds)));
+  const format = reviewImageFormat(state.lossless);
+  const candidates = [...times]
+    .sort((left, right) => left - right)
+    .map((capturedSeconds, index) => ({
+      file: `${String(index).padStart(6, "0")}.${format.extension}`,
+      capturedSeconds,
+    }));
+  await extractReviewFrames(
+    videoPath,
+    candidates.map(({ file, capturedSeconds }) => ({
+      atSeconds: capturedSeconds,
+      outputPath: path.join(candidateDirectory, file),
+    })),
+    { framesPerSecond, lossless: state.lossless },
   );
   await writeJson(path.join(sessionDirectory, "candidates.json"), candidates);
   return candidates;
-}
-
-async function addCandidateAt(candidates, directory, videoPath, seconds) {
-  const capturedSeconds = roundedSeconds(seconds);
-  if (
-    candidates.some(
-      (candidate) =>
-        Math.abs(candidate.capturedSeconds - capturedSeconds) <
-        frameSeconds / 2,
-    )
-  ) {
-    return;
-  }
-  const file = `${String(candidates.length).padStart(6, "0")}.png`;
-  await extractFrameAt(videoPath, capturedSeconds, path.join(directory, file));
-  candidates.push({ file, capturedSeconds });
 }
 
 async function snapshotSession(sessionPath) {
@@ -864,7 +856,11 @@ async function snapshotSession(sessionPath) {
   if (state.status !== "recording") {
     throw new Error(`session is not recording: ${state.status}`);
   }
-  const outputPath = path.join(sessionDirectory, "observation.png");
+  const format = reviewImageFormat(state.lossless);
+  const outputPath = path.join(
+    sessionDirectory,
+    `observation.${format.extension}`,
+  );
   await runMonitoredProcess(
     "ffmpeg",
     [
@@ -881,6 +877,7 @@ async function snapshotSession(sessionPath) {
       `${state.display}.0+0,0`,
       "-frames:v",
       "1",
+      ...format.encoderArguments,
       "-update",
       "1",
       "-y",
@@ -920,25 +917,29 @@ export async function reviewSession(sessionPath) {
   await rm(reviewDirectory, { force: true, recursive: true });
   await mkdir(reviewDirectory);
   const fullRatePages = await createFullRateReviewSheets(
-    sessionDirectory,
-    state,
+    path.join(sessionDirectory, "capture.mkv"),
     reviewDirectory,
+    state,
   );
+  const format = reviewImageFormat(state.lossless);
   const candidatePages = [];
   for (let offset = 0; offset < candidates.length; offset += 25) {
     const pageCandidates = candidates.slice(offset, offset + 25);
     const outputPath = path.join(
       reviewDirectory,
-      `candidate-page-${String(candidatePages.length + 1).padStart(3, "0")}.png`,
+      `candidate-page-${String(candidatePages.length + 1).padStart(3, "0")}.${format.extension}`,
     );
-    await createContactSheet(
+    await createReviewOverview(
       pageCandidates.map((candidate) =>
         path.join(sessionDirectory, "candidates", candidate.file),
       ),
-      pageCandidates.map((candidate) =>
-        formatRelativeTimestamp(candidate.capturedSeconds, "R"),
-      ),
       outputPath,
+      {
+        lossless: state.lossless,
+        labels: pageCandidates.map((candidate) =>
+          formatRelativeTimestamp(candidate.capturedSeconds, "R"),
+        ),
+      },
     );
     candidatePages.push(outputPath);
   }
@@ -966,74 +967,16 @@ export async function inspectRecordedFrame(sessionPath, secondsText) {
   }
   const outputPath = path.join(
     sessionDirectory,
-    `inspection-${String(Math.round(seconds * 1000)).padStart(6, "0")}.png`,
+    `inspection-${String(Math.round(seconds * 1000)).padStart(6, "0")}.${reviewImageFormat(state.lossless).extension}`,
   );
-  await extractFrameAt(
+  await extractReviewFrames(
     path.join(sessionDirectory, "capture.mkv"),
-    seconds,
-    outputPath,
+    [{ atSeconds: seconds, outputPath }],
+    { framesPerSecond, lossless: state.lossless },
   );
   await assertImageDimensions(outputPath, state.resolution);
   process.stdout.write(`${outputPath}\n`);
   return outputPath;
-}
-
-async function createFullRateReviewSheets(
-  sessionDirectory,
-  state,
-  reviewDirectory,
-) {
-  const framesPerPage = 100;
-  const columns = 10;
-  const frameCount = Math.max(
-    1,
-    Math.round(state.durationSeconds * state.framesPerSecond),
-  );
-  const pages = [];
-  const index = { framesPerSecond: state.framesPerSecond, pages: [] };
-  for (
-    let firstFrame = 0;
-    firstFrame < frameCount;
-    firstFrame += framesPerPage
-  ) {
-    const count = Math.min(framesPerPage, frameCount - firstFrame);
-    const rows = Math.ceil(count / columns);
-    const file = `full-rate-page-${String(pages.length + 1).padStart(3, "0")}.png`;
-    const outputPath = path.join(reviewDirectory, file);
-    await runMonitoredProcess(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-ss",
-        (firstFrame / state.framesPerSecond).toFixed(3),
-        "-i",
-        path.join(sessionDirectory, "capture.mkv"),
-        "-vf",
-        `scale=192:108,drawtext=font=monospace:text='%{n}':fontcolor=white:fontsize=16:box=1:boxcolor=black@0.78:boxborderw=3:x=4:y=h-th-4,tile=${columns}x${rows}:nb_frames=${count}:padding=1:margin=0:color=black`,
-        "-frames:v",
-        "1",
-        "-y",
-        outputPath,
-      ],
-      {
-        cwd: repositoryRoot,
-        description: "full-rate Live Capture Session review sheet",
-        timeoutMilliseconds: 120_000,
-      },
-    );
-    pages.push(outputPath);
-    index.pages.push({
-      file,
-      firstFrame,
-      count,
-      columns,
-      startSeconds: roundedSeconds(firstFrame / state.framesPerSecond),
-    });
-  }
-  await writeJson(path.join(reviewDirectory, "review-index.json"), index);
-  return pages;
 }
 
 export async function publishSession(sessionPath, selectionPath) {
@@ -1048,28 +991,36 @@ export async function publishSession(sessionPath, selectionPath) {
   );
   const outputBase = `${state.eventSlug}-${state.date}${selection.complete ? "" : "-incomplete"}`;
   const outputDirectory = await createCollisionSafeDirectory(outputBase);
+  const format = reviewImageFormat(state.lossless);
   const publishedFrames = [];
   let annotationWarning;
   try {
     for (const [index, frame] of selection.frames.entries()) {
-      const fileName = `${String(index).padStart(2, "0")}-${semanticSlug(frame.name)}.png`;
+      const fileName = `${String(index).padStart(2, "0")}-${semanticSlug(frame.name)}.${format.extension}`;
       const outputPath = path.join(outputDirectory, fileName);
-      await extractFrameAt(
-        path.join(sessionDirectory, "capture.mkv"),
-        frame.at,
-        outputPath,
-      );
-      await assertImageDimensions(outputPath, state.resolution);
       publishedFrames.push({ ...frame, fileName, outputPath });
     }
+    await extractReviewFrames(
+      path.join(sessionDirectory, "capture.mkv"),
+      publishedFrames.map(({ at, outputPath }) => ({
+        atSeconds: at,
+        outputPath,
+      })),
+      { framesPerSecond, lossless: state.lossless },
+    );
+    for (const frame of publishedFrames)
+      await assertImageDimensions(frame.outputPath, state.resolution);
     if (publishedFrames.length > 0) {
       const origin = publishedFrames[0].at;
-      const overviewResult = await createContactSheet(
+      const overviewResult = await createReviewOverview(
         publishedFrames.map((frame) => frame.outputPath),
-        publishedFrames.map((frame) =>
-          formatRelativeTimestamp(frame.at - origin),
-        ),
-        path.join(outputDirectory, "overview.png"),
+        path.join(outputDirectory, `overview.${format.extension}`),
+        {
+          lossless: state.lossless,
+          labels: publishedFrames.map((frame) =>
+            formatRelativeTimestamp(frame.at - origin),
+          ),
+        },
       );
       if (!overviewResult.annotated) {
         annotationWarning =
@@ -1095,7 +1046,11 @@ export async function publishSession(sessionPath, selectionPath) {
         path.join(outputDirectory, "candidates.json"),
       );
     }
-    await validatePublishedOutput(outputDirectory, publishedFrames);
+    await validatePublishedOutput(
+      outputDirectory,
+      publishedFrames,
+      state.lossless,
+    );
     await writeJson(path.join(sessionDirectory, "session.json"), {
       ...state,
       status: "published",
@@ -1139,7 +1094,12 @@ export async function finalizeSession(sessionPath) {
   const outputDirectory = await validatedPublishedDirectory(state);
   await access(path.join(outputDirectory, "README.md"));
   if (state.publication.hasOverview) {
-    await access(path.join(outputDirectory, "overview.png"));
+    await access(
+      path.join(
+        outputDirectory,
+        `overview.${reviewImageFormat(state.lossless).extension}`,
+      ),
+    );
   }
   for (const fileName of state.publication.frameFiles) {
     await access(path.join(outputDirectory, fileName));
@@ -1159,113 +1119,6 @@ async function discardSession(sessionPath) {
   }
   await rm(sessionDirectory, { recursive: true });
   emit({ type: "discarded", path: sessionDirectory });
-}
-
-async function createContactSheet(inputPaths, labels, outputPath) {
-  if (inputPaths.length !== labels.length || inputPaths.length === 0) {
-    throw new Error("contact sheet requires a label for every frame");
-  }
-  const parent = path.dirname(outputPath);
-  const work = await mkdtemp(path.join(parent, ".contact-sheet."));
-  let annotated = true;
-  try {
-    try {
-      await createThumbnails(inputPaths, labels, work, true);
-    } catch {
-      annotated = false;
-      await rm(work, { force: true, recursive: true });
-      await mkdir(work);
-      await createThumbnails(inputPaths, labels, work, false);
-    }
-    const rows = Math.ceil(inputPaths.length / 5);
-    await runMonitoredProcess(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-framerate",
-        "1",
-        "-start_number",
-        "0",
-        "-i",
-        path.join(work, "%03d.png"),
-        "-vf",
-        `tile=5x${rows}:nb_frames=${inputPaths.length}:padding=2:margin=0:color=black`,
-        "-frames:v",
-        "1",
-        "-y",
-        outputPath,
-      ],
-      {
-        cwd: repositoryRoot,
-        description: "Live Capture Session overview",
-        timeoutMilliseconds: 120_000,
-      },
-    );
-  } finally {
-    await rm(work, { force: true, recursive: true });
-  }
-  return { annotated };
-}
-
-async function createThumbnails(inputPaths, labels, directory, annotate) {
-  for (const [index, inputPath] of inputPaths.entries()) {
-    const filters = [
-      "scale=384:216:force_original_aspect_ratio=decrease",
-      "pad=384:216:(ow-iw)/2:(oh-ih)/2:black",
-    ];
-    if (annotate) {
-      filters.push(
-        `drawtext=font=monospace:text='${labels[index]}':fontcolor=white:fontsize=22:box=1:boxcolor=black@0.78:boxborderw=6:x=8:y=h-th-8`,
-      );
-    }
-    await runMonitoredProcess(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-i",
-        inputPath,
-        "-vf",
-        filters.join(","),
-        "-frames:v",
-        "1",
-        "-y",
-        path.join(directory, `${String(index).padStart(3, "0")}.png`),
-      ],
-      {
-        cwd: repositoryRoot,
-        description: "Live Capture Session overview thumbnail",
-        timeoutMilliseconds: 30_000,
-      },
-    );
-  }
-}
-
-async function extractFrameAt(videoPath, seconds, outputPath) {
-  await runMonitoredProcess(
-    "ffmpeg",
-    [
-      "-hide_banner",
-      "-loglevel",
-      "error",
-      "-ss",
-      seconds.toFixed(3),
-      "-i",
-      videoPath,
-      "-frames:v",
-      "1",
-      "-y",
-      outputPath,
-    ],
-    {
-      cwd: repositoryRoot,
-      description: "Live Capture Frame extraction",
-      timeoutMilliseconds: 30_000,
-    },
-  );
 }
 
 async function assertImageDimensions(imagePath, expected) {
@@ -1295,10 +1148,15 @@ async function assertImageDimensions(imagePath, expected) {
   }
 }
 
-async function validatePublishedOutput(outputDirectory, frames) {
+async function validatePublishedOutput(outputDirectory, frames, lossless) {
   await access(path.join(outputDirectory, "README.md"));
   if (frames.length > 0) {
-    await access(path.join(outputDirectory, "overview.png"));
+    await access(
+      path.join(
+        outputDirectory,
+        `overview.${reviewImageFormat(lossless).extension}`,
+      ),
+    );
   }
   for (const frame of frames) {
     await access(frame.outputPath);

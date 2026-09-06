@@ -14,9 +14,10 @@ node .agents/skills/capture-live-session/scripts/live-capture-session.mjs review
 The `full-rate-page-*` sheets contain every recorded 20 fps frame in 10x10
 grids. Inspect every full-rate sheet in order; the small number in each tile is
 its zero-based position within that page. `review/review-index.json` maps each
-page and tile to an exact time from recording start. These sheets are the
-authoritative defense against a brief change being hidden by similarity
-filtering.
+page and tile to an exact time from recording start. The final sheet may have
+unused black tiles; its index count identifies the recorded frames. These
+sheets are the authoritative defense against a brief change being hidden by
+similarity filtering.
 
 When a full-rate thumbnail is ambiguous, extract that exact tick at the source
 resolution before deciding whether to retain it:
@@ -104,14 +105,16 @@ node .agents/skills/capture-live-session/scripts/live-capture-session.mjs publis
 ```
 
 The helper creates a collision-safe dated directory directly beneath
-`/var/tmp/codex/roonscape`, extracts pristine ordered PNGs, writes the README
-timeline, and builds a five-column `overview.png` containing every selected
-frame. Overview thumbnails receive bottom-left timestamps such as
+`/var/tmp/codex/roonscape`, extracts ordered full-resolution review images,
+writes the README timeline, and builds a five-column overview containing every
+selected frame. Images and the overview use `.jpg` by default, or `.png` when
+the session was recorded with `--lossless`; the README identifies the mode.
+Overview thumbnails receive bottom-left timestamps such as
 `T+001.25s`; annotation failure falls back to an unannotated overview and is
 disclosed in the README.
 
-Inspect every published PNG, the README, and the overview. Confirm that file
-order, relative times, descriptions, and findings agree with the visible
+Inspect every published review image, the README, and the overview. Confirm
+that file order, relative times, descriptions, and findings agree with the visible
 evidence. Publication deliberately retains the temporary recording during this
 inspection. If correction is needed, retract the generated output, revise the
 selection, and publish again:

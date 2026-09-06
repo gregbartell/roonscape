@@ -30,6 +30,14 @@ import {
 const executeFile = promisify(execFile);
 const scratchRoot = "/var/tmp/codex/roonscape";
 
+test("review images default to lossy with an explicit lossless option", () => {
+  const request = parseLyricMotionCaptureRequest([]);
+  assert.equal(request.lossless, false);
+  assert.equal(buildLyricMotionCapturePlan(request).lossless, false);
+  const lossless = parseLyricMotionCaptureRequest(["--lossless"]);
+  assert.equal(buildLyricMotionCapturePlan(lossless).lossless, true);
+});
+
 test("plans the maintained Reel Lift tour", () => {
   const request = parseLyricMotionCaptureRequest([
     "--example",
@@ -44,6 +52,7 @@ test("plans the maintained Reel Lift tour", () => {
     example: "reel-lift-tour",
     output: "captures/lyrics",
     reducedAnimation: false,
+    lossless: false,
     resolution: { width: 1280, height: 720 },
   });
 
@@ -87,6 +96,7 @@ test("capture request defaults to the smallest maintained viewport", () => {
     example: "reel-lift-tour",
     output: undefined,
     reducedAnimation: false,
+    lossless: false,
     resolution: { width: 1280, height: 720 },
   });
 });
@@ -538,12 +548,108 @@ test("renders an artifact index as Fixture Mode evidence", () => {
   assert.match(readme, /review targets, not automated visual verdicts/);
 });
 
-test("creates complete lyric motion review artifacts", async (context) => {
+for (const lossless of [false, true]) {
+  const extension = lossless ? "png" : "jpg";
+  test(`creates complete ${extension} lyric motion review artifacts`, async (context) => {
+    await mkdir(scratchRoot, { recursive: true });
+    const sessionDirectory = await mkdtemp(
+      path.join(scratchRoot, "task.lyric-capture-test."),
+    );
+    context.after(() => rm(sessionDirectory, { force: true, recursive: true }));
+    await executeFile("ffmpeg", [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc=size=1280x720:rate=20:duration=0.5",
+      "-c:v",
+      "ffv1",
+      "-level",
+      "3",
+      "-g",
+      "1",
+      "-y",
+      path.join(sessionDirectory, "capture.mkv"),
+    ]);
+    await writeFile(
+      path.join(sessionDirectory, "session.json"),
+      `${JSON.stringify({
+        status: "recorded",
+        durationSeconds: 0.5,
+        framesPerSecond: 20,
+        resolution: { width: 1280, height: 720 },
+      })}\n`,
+    );
+    const plan = {
+      example: "artifact-test",
+      lossless,
+      resolution: { width: 1280, height: 720 },
+      durationSeconds: 0.5,
+      initialFixture: "initial.json",
+      publications: [],
+      reviewFrames: [
+        reviewFrame(0, "before", "Initial test frame."),
+        reviewFrame(0.2, "during", "Middle test frame."),
+        reviewFrame(0.45, "after", "Final test frame."),
+      ],
+    };
+
+    const artifacts = await createLyricMotionReviewArtifacts(
+      sessionDirectory,
+      plan,
+    );
+
+    assert.equal(artifacts.frames.length, 3);
+    await readFile(path.join(sessionDirectory, `overview.${extension}`));
+    await readFile(
+      path.join(sessionDirectory, "review", `full-rate-page-001.${extension}`),
+    );
+    await assert.rejects(access(path.join(sessionDirectory, "candidates")), {
+      code: "ENOENT",
+    });
+    const readme = await readFile(
+      path.join(sessionDirectory, "README.md"),
+      "utf8",
+    );
+    assert.match(readme, /Fixture Mode/);
+    const manifest = JSON.parse(
+      await readFile(path.join(sessionDirectory, "manifest.json"), "utf8"),
+    );
+    assert.equal(manifest.example, "artifact-test");
+    assert.equal(manifest.lossless, lossless);
+    assert.match(readme, lossless ? /lossless PNG/ : /lossy JPEG/);
+    const { stdout } = await executeFile("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "stream=codec_name,width,height",
+      "-of",
+      "json",
+      path.join(sessionDirectory, `01-during.${extension}`),
+    ]);
+    assert.deepEqual(JSON.parse(stdout).streams[0], {
+      codec_name: lossless ? "png" : "mjpeg",
+      width: 1280,
+      height: 720,
+    });
+    assert.deepEqual(
+      manifest.frames.map(({ fileName }) => fileName),
+      [
+        `00-before.${extension}`,
+        `01-during.${extension}`,
+        `02-after.${extension}`,
+      ],
+    );
+  });
+}
+
+test("review artifacts preserve ticks across page boundaries and unordered requests", async (context) => {
   await mkdir(scratchRoot, { recursive: true });
-  const sessionDirectory = await mkdtemp(
-    path.join(scratchRoot, "task.lyric-capture-test."),
-  );
-  context.after(() => rm(sessionDirectory, { force: true, recursive: true }));
+  const directory = await mkdtemp(path.join(scratchRoot, "task."));
+  context.after(() => rm(directory, { force: true, recursive: true }));
+  const videoPath = path.join(directory, "capture.mkv");
   await executeFile("ffmpeg", [
     "-hide_banner",
     "-loglevel",
@@ -551,64 +657,125 @@ test("creates complete lyric motion review artifacts", async (context) => {
     "-f",
     "lavfi",
     "-i",
-    "testsrc=size=1280x720:rate=20:duration=0.5",
+    "color=c=red:size=1280x720:rate=20:duration=5.15,drawbox=color=lime:t=fill:enable='eq(n,99)',drawbox=color=blue:t=fill:enable='eq(n,100)',drawbox=color=yellow:t=fill:enable='eq(n,102)'",
     "-c:v",
     "ffv1",
     "-level",
     "3",
     "-g",
     "1",
-    "-y",
-    path.join(sessionDirectory, "capture.mkv"),
+    videoPath,
   ]);
   await writeFile(
-    path.join(sessionDirectory, "session.json"),
-    `${JSON.stringify({
-      status: "recorded",
-      durationSeconds: 0.5,
+    path.join(directory, "session.json"),
+    JSON.stringify({
+      durationSeconds: 5.15,
       framesPerSecond: 20,
-      resolution: { width: 1280, height: 720 },
-    })}\n`,
+    }),
   );
   const plan = {
-    example: "artifact-test",
+    example: "page-boundary",
+    lossless: true,
     resolution: { width: 1280, height: 720 },
-    durationSeconds: 0.5,
-    initialFixture: "initial.json",
-    publications: [],
     reviewFrames: [
-      reviewFrame(0, "before", "Initial test frame."),
-      reviewFrame(0.2, "during", "Middle test frame."),
-      reviewFrame(0.45, "after", "Final test frame."),
+      reviewFrame(5.1, "last", "Final recorded frame."),
+      reviewFrame(4.901, "before", "Following tick before the page boundary."),
+      reviewFrame(5, "boundary", "First frame on the second page."),
+      reviewFrame(
+        4.951,
+        "same-tick",
+        "The same recorded tick under another name.",
+      ),
     ],
   };
-
-  const artifacts = await createLyricMotionReviewArtifacts(
-    sessionDirectory,
-    plan,
+  await createLyricMotionReviewArtifacts(directory, plan);
+  const index = JSON.parse(
+    await readFile(path.join(directory, "review/review-index.json")),
   );
-
-  assert.equal(artifacts.frames.length, 3);
-  await readFile(path.join(sessionDirectory, "overview.png"));
-  await readFile(
-    path.join(sessionDirectory, "review", "full-rate-page-001.png"),
-  );
-  await assert.rejects(access(path.join(sessionDirectory, "candidates")), {
-    code: "ENOENT",
-  });
-  const readme = await readFile(
-    path.join(sessionDirectory, "README.md"),
-    "utf8",
-  );
-  assert.match(readme, /Fixture Mode/);
-  const manifest = JSON.parse(
-    await readFile(path.join(sessionDirectory, "manifest.json"), "utf8"),
-  );
-  assert.equal(manifest.example, "artifact-test");
   assert.deepEqual(
-    manifest.frames.map(({ fileName }) => fileName),
-    ["00-before.png", "01-during.png", "02-after.png"],
+    index.pages.map(({ firstFrame, count, startSeconds }) => ({
+      firstFrame,
+      count,
+      startSeconds,
+    })),
+    [
+      { firstFrame: 0, count: 100, startSeconds: 0 },
+      { firstFrame: 100, count: 3, startSeconds: 5 },
+    ],
   );
+  for (const [file, seconds] of [
+    ["00-last.png", "5.1"],
+    ["01-before.png", "4.95"],
+    ["02-boundary.png", "5"],
+  ]) {
+    const { stdout: expected } = await executeFile("ffmpeg", [
+      "-v",
+      "error",
+      "-ss",
+      seconds,
+      "-i",
+      videoPath,
+      "-frames:v",
+      "1",
+      "-pix_fmt",
+      "rgb24",
+      "-f",
+      "md5",
+      "-",
+    ]);
+    const { stdout: actual } = await executeFile("ffmpeg", [
+      "-v",
+      "error",
+      "-i",
+      path.join(directory, file),
+      "-frames:v",
+      "1",
+      "-pix_fmt",
+      "rgb24",
+      "-f",
+      "md5",
+      "-",
+    ]);
+    assert.equal(actual, expected, file);
+  }
+  assert.deepEqual(
+    await readFile(path.join(directory, "02-boundary.png")),
+    await readFile(path.join(directory, "03-same-tick.png")),
+  );
+  const pageOne = path.join(directory, "review", index.pages[0].file);
+  const pageTwo = path.join(directory, "review", index.pages[1].file);
+  for (const [file, x, y, color] of [
+    [pageOne, 1817, 1001, [0, 255, 0]],
+    [pageTwo, 80, 20, [0, 0, 255]],
+    [pageTwo, 273, 20, [255, 0, 0]],
+    [pageTwo, 466, 20, [255, 255, 0]],
+    [pageTwo, 659, 20, [0, 0, 0]],
+  ]) {
+    const { stdout } = await executeFile(
+      "ffmpeg",
+      [
+        "-v",
+        "error",
+        "-i",
+        file,
+        "-vf",
+        `format=rgb24,crop=1:1:${x}:${y}`,
+        "-frames:v",
+        "1",
+        "-f",
+        "rawvideo",
+        "-",
+      ],
+      { encoding: "buffer" },
+    );
+    assert.equal(stdout.length, 3);
+    color.forEach((channel, index) =>
+      assert.ok(
+        Math.abs(stdout[index] - channel) <= 3,
+        `${file}: ${[...stdout]}`,
+      ),
+    );
+  }
 });
 
 test("builds an exact dynamic Fixture Mode renderer environment", () => {
