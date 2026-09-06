@@ -43,6 +43,7 @@ pub(crate) struct PresentationView {
     inactivity: InactivityTransform,
     transition_clock: Instant,
     outgoing_text_opacity: f64,
+    retained_layers: Vec<PresentationRevision<RenderedPresentation>>,
     caches: PresentationCaches,
 }
 
@@ -374,6 +375,7 @@ impl PresentationView {
             inactivity: InactivityTransform::default(),
             transition_clock: Instant::now(),
             outgoing_text_opacity: 1.0,
+            retained_layers: Vec::new(),
             caches,
         };
         view.apply_layout();
@@ -413,6 +415,9 @@ impl PresentationView {
         if let Some(outgoing) = self.transition.outgoing() {
             outgoing.value().apply_viewport(layout.content_viewport);
         }
+        for layer in &self.retained_layers {
+            layer.value().apply_viewport(layout.content_viewport);
+        }
         self.layout_viewport = Some(layout.content_viewport);
         self.install_palette_styles();
     }
@@ -437,6 +442,7 @@ impl PresentationView {
             for layer in released {
                 self.remove_layer(layer);
             }
+            self.release_retained_layers();
             self.reveal_current();
             return;
         }
@@ -447,34 +453,24 @@ impl PresentationView {
         } else {
             0.0
         });
-        // Retarget an unrevealed replacement without exposing the superseded target
-        // or restarting the visible outgoing text's fade.
-        if self.transition.is_active()
-            && self.transition.current().value().root.opacity() == 0.0
-            && self.transition.current().value().now_playing.is_some()
-                == rendered.now_playing.is_some()
-        {
-            let released = self.transition.current().value().root.clone();
-            self.transition.update_current(revision, |current| {
-                *current = rendered;
-            });
-            self.layers.remove_overlay(&released);
-            self.layers
-                .add_overlay(&self.transition.current().value().root);
-            self.install_palette_styles();
-            return;
-        }
-        if let Some(discarded) = self.transition.discard_outgoing() {
-            self.remove_layer(discarded);
-        }
-        self.outgoing_text_opacity = self.transition.current().value().text_opacity();
-        let started_at = self.transition_clock.elapsed();
-        // Full-field destinations retain departure, background, and arrival phases.
+        // Both treatments spend the first 225 ms retiring text. A destination
+        // can therefore change kind while invisible without restarting departure.
         let duration = Duration::from_millis(if rendered.now_playing.is_some() {
             450
         } else {
             675
         });
+        if self.transition.is_active() && self.transition.current().value().root.opacity() == 0.0 {
+            let released = self
+                .transition
+                .retarget_current(revision, rendered, duration);
+            self.remove_layer(released);
+            self.reveal_current();
+            return;
+        }
+        self.retain_visible_composite();
+        self.outgoing_text_opacity = self.transition.current().value().text_opacity();
+        let started_at = self.transition_clock.elapsed();
         let discarded = self
             .transition
             .begin_with_duration(revision, rendered, started_at, duration);
@@ -492,9 +488,7 @@ impl PresentationView {
             .value()
             .root
             .add_css_class(PresentationStyleLayer::Outgoing.class_name());
-        self.layers
-            .add_overlay(&self.transition.current().value().root);
-        self.install_palette_styles();
+        self.reveal_current();
     }
 
     pub(crate) fn finish_transition(&mut self) {
@@ -514,8 +508,8 @@ impl PresentationView {
             outgoing.value().set_text_opacity(
                 self.outgoing_text_opacity * (1.0 - motion_phase(progress, 0.0, departure_end)),
             );
-            // Composite the live incoming widget tree over an opaque outgoing
-            // background. Fading both roots would expose the surface underneath.
+            // Composite the live incoming widget tree over the retained opaque
+            // composition. Fading both would expose the surface underneath.
             if current.now_playing.is_some() {
                 current.root.set_opacity(motion_phase(progress, 0.5, 0.5));
             } else {
@@ -530,7 +524,37 @@ impl PresentationView {
         };
 
         self.layers.remove_overlay(&outgoing.value().root);
+        self.release_retained_layers();
         self.install_palette_styles();
+    }
+
+    // Keep the actual compositing stack and each layer's local transforms and
+    // opacity. Promoting only the partially visible target loses the background
+    // beneath it; making that target opaque instead exposes an obsolete track.
+    fn retain_visible_composite(&mut self) {
+        let opaque = self.transition.current().value().root.opacity() == 1.0;
+        if opaque {
+            self.release_retained_layers();
+        }
+        if let Some(outgoing) = self.transition.discard_outgoing() {
+            if opaque {
+                self.remove_layer(outgoing);
+            } else {
+                let root = &outgoing.value().root;
+                root.remove_css_class(PresentationStyleLayer::Outgoing.class_name());
+                root.add_css_class(&format!(
+                    "presentation-retained-{}",
+                    self.retained_layers.len()
+                ));
+                self.retained_layers.push(outgoing);
+            }
+        }
+    }
+
+    fn release_retained_layers(&mut self) {
+        for layer in self.retained_layers.drain(..) {
+            self.layers.remove_overlay(&layer.value().root);
+        }
     }
 
     pub(crate) fn update_in_place(&mut self, revision: u64, presentation: &Presentation) {
@@ -545,6 +569,9 @@ impl PresentationView {
         self.transition.current().value().update_diagnostics(text);
         if let Some(outgoing) = self.transition.outgoing() {
             outgoing.value().update_diagnostics(text);
+        }
+        for layer in &self.retained_layers {
+            layer.value().update_diagnostics(text);
         }
     }
 
@@ -642,8 +669,18 @@ impl PresentationView {
                 .outgoing()
                 .map(|outgoing| outgoing.value().palette),
         );
-        self.palette_provider
-            .load_from_data(&styles.to_css(&layout, &full_field_layout));
+        let mut css = styles.to_css(&layout, &full_field_layout);
+        for (index, layer) in self.retained_layers.iter().enumerate() {
+            css.push_str(
+                &PresentationTransitionStyles::new(layer.value().palette, None)
+                    .to_css(&layout, &full_field_layout)
+                    .replace(
+                        PresentationStyleLayer::Current.class_name(),
+                        &format!("presentation-retained-{index}"),
+                    ),
+            );
+        }
+        self.palette_provider.load_from_data(&css);
     }
 }
 
@@ -2927,6 +2964,8 @@ mod tests {
         composition_transitions_preserve_fitted_cues();
         status_and_timing_replacements_preserve_the_existing_metadata();
         now_playing_artwork_and_text_reveal_together();
+        interrupted_reveal_preserves_the_visible_layers();
+        invisible_destinations_keep_the_original_departure_clock();
         incoming_foreground_updates_during_the_coordinated_reveal();
         full_field_replacement_never_superimposes_messages();
         lyric_masthead_fits_long_metadata();
@@ -3833,6 +3872,158 @@ mod tests {
         }
     }
 
+    fn invisible_destinations_keep_the_original_departure_clock() {
+        use std::time::Duration;
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        gtk::Settings::default()
+            .unwrap()
+            .set_gtk_enable_animations(true);
+        let playing = Presentation::NowPlaying(lyric_presentation("playing.json"));
+        let lyrics = Presentation::NowPlaying(lyric_presentation("lyrics-one-line.json"));
+        let full_field = presentation_from_snapshot(
+            &parse_snapshot(include_str!("../../shared/fixtures/disconnected.json")).unwrap(),
+        )
+        .unwrap();
+        for at_millis in [112, 225] {
+            for (pending, latest) in [
+                (&lyrics, &playing),
+                (&lyrics, &full_field),
+                (&full_field, &lyrics),
+            ] {
+                let mut view = super::PresentationView::new(
+                    0,
+                    &playing,
+                    Viewport::new(1280, 720),
+                    &repository,
+                    super::install_style_providers(typography),
+                    None,
+                    RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
+                );
+                view.replace(1, pending, &repository);
+                let start = view.transition_clock.elapsed();
+                view.advance_transition(start + Duration::from_millis(at_millis));
+                let original = view.transition.outgoing().unwrap().value().root.clone();
+                let opacity = view.transition.outgoing().unwrap().value().text_opacity();
+                let obsolete = view.transition.current().value().root.clone();
+                assert_eq!(obsolete.opacity(), 0.0);
+                view.replace(2, latest, &repository);
+                assert!(
+                    obsolete.parent().is_none(),
+                    "invisible superseded destinations are released immediately"
+                );
+                assert_eq!(view.transition.outgoing().unwrap().value().root, original);
+                assert_eq!(
+                    view.transition.outgoing().unwrap().value().text_opacity(),
+                    opacity
+                );
+                view.advance_transition(start + Duration::from_millis(225));
+                assert_eq!(
+                    view.transition.outgoing().unwrap().value().text_opacity(),
+                    0.0,
+                    "superseding destinations must not restart outgoing text departure"
+                );
+                view.advance_transition(start + Duration::from_millis(337));
+                assert!(view.transition.current().value().root.opacity() > 0.4);
+                assert_eq!(
+                    view.transition.current().value().text_opacity(),
+                    if matches!(latest, Presentation::FullField(_)) {
+                        0.0
+                    } else {
+                        1.0
+                    }
+                );
+                view.advance_transition(start + Duration::from_millis(675));
+                assert!(!view.transition.is_active());
+                assert_eq!(view.transition.current().value().text_opacity(), 1.0);
+            }
+        }
+    }
+
+    fn interrupted_reveal_preserves_the_visible_layers() {
+        use std::time::Duration;
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        let first = Presentation::NowPlaying(lyric_presentation("playing.json"));
+        let second = Presentation::NowPlaying(lyric_presentation("lyrics-one-line.json"));
+        let full_field = presentation_from_snapshot(
+            &parse_snapshot(include_str!("../../shared/fixtures/disconnected.json")).unwrap(),
+        )
+        .unwrap();
+        for latest in [&first, &full_field] {
+            for reduced_animation in [false, true] {
+                gtk::Settings::default()
+                    .unwrap()
+                    .set_gtk_enable_animations(true);
+                let mut view = super::PresentationView::new(
+                    0,
+                    &first,
+                    Viewport::new(1280, 720),
+                    &repository,
+                    super::install_style_providers(typography),
+                    None,
+                    RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
+                );
+                let base = view.transition.current().value().root.clone();
+                let mut contributing = vec![(base, 1.0)];
+                view.replace(1, &second, &repository);
+                for revision in 2..=5 {
+                    let start = view.transition_clock.elapsed();
+                    view.advance_transition(start + Duration::from_millis(337));
+                    let revealed = view.transition.current().value().root.clone();
+                    let opacity = revealed.opacity();
+                    assert!(opacity > 0.4 && opacity < 0.6);
+                    contributing.push((revealed, opacity));
+                    let destination = if revision == 5 { latest } else { &second };
+                    view.replace(revision, destination, &repository);
+                    for (root, opacity) in &contributing {
+                        assert!(
+                            root.parent().is_some(),
+                            "every contributing background survives repeated interruptions"
+                        );
+                        assert_eq!(
+                            root.opacity(),
+                            *opacity,
+                            "retarget from the visible composition without promoting any layer"
+                        );
+                    }
+                    assert_eq!(view.transition.current().value().root.opacity(), 0.0);
+                    let start = view.transition_clock.elapsed();
+                    view.advance_transition(start + Duration::from_millis(112));
+                    assert!(view.transition.outgoing().unwrap().value().text_opacity() < 0.6);
+                    assert_eq!(view.transition.current().value().root.opacity(), 0.0);
+                    view.advance_transition(start + Duration::from_millis(225));
+                    assert_eq!(
+                        view.transition.outgoing().unwrap().value().text_opacity(),
+                        0.0
+                    );
+                }
+                if reduced_animation {
+                    gtk::Settings::default()
+                        .unwrap()
+                        .set_gtk_enable_animations(false);
+                    view.replace(6, &second, &repository);
+                } else {
+                    let start = view.transition_clock.elapsed();
+                    view.advance_transition(start + Duration::from_millis(675));
+                }
+                for (root, _) in contributing {
+                    assert!(
+                        root.parent().is_none(),
+                        "completion releases all obsolete layers"
+                    );
+                }
+                assert!(view.retained_layers.is_empty());
+                assert!(!view.transition.is_active());
+                assert_eq!(view.transition.current().value().root.opacity(), 1.0);
+                assert_eq!(view.transition.current().value().text_opacity(), 1.0);
+            }
+        }
+        gtk::Settings::default()
+            .unwrap()
+            .set_gtk_enable_animations(true);
+    }
+
     fn now_playing_artwork_and_text_reveal_together() {
         use std::time::Duration;
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -3923,53 +4114,82 @@ mod tests {
         use std::time::{Duration, Instant};
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let typography = roonscape_renderer::select_typography(&HashSet::new());
-        let mut incoming = lyric_presentation("lyrics-one-line.json");
-        incoming.status = lyric_presentation("paused.json").status;
-        let mut view = super::PresentationView::new(
-            0,
-            &Presentation::NowPlaying(lyric_presentation("playing.json")),
-            Viewport::new(1280, 720),
-            &repository,
-            super::install_style_providers(typography),
-            None,
-            RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
-        );
-        view.replace(1, &Presentation::NowPlaying(incoming.clone()), &repository);
-        let start = view.transition_clock.elapsed();
-        incoming.status = lyric_presentation("playing.json").status;
-        let mut previous_anchors = None;
-        for millis in [0, 226, 337, 400] {
-            // Drive both transition and in-place updates from the same test clock.
-            let now = start + Duration::from_millis(millis);
-            view.transition_clock = Instant::now() - now;
-            incoming.progress.as_mut().unwrap().elapsed = format!("3:{:02}", millis / 10);
-            if millis >= 226 {
-                incoming.lyrics.as_mut().unwrap().current_index = 2;
-            }
-            view.update_in_place(2, &Presentation::NowPlaying(incoming.clone()));
-            view.advance_transition(now);
-            let current = view.transition.current().value();
-            let metadata = &current.now_playing.as_ref().unwrap().metadata;
-            assert_eq!(
-                metadata.progress.as_ref().unwrap().elapsed.text(),
-                incoming.progress.as_ref().unwrap().elapsed
+        for interrupt in [false, true] {
+            let mut incoming = lyric_presentation("lyrics-one-line.json");
+            incoming.status = lyric_presentation("paused.json").status;
+            let mut view = super::PresentationView::new(
+                0,
+                &Presentation::NowPlaying(lyric_presentation("playing.json")),
+                Viewport::new(1280, 720),
+                &repository,
+                super::install_style_providers(typography),
+                None,
+                RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
             );
-            if millis >= 337 {
-                assert!(current.root.opacity() > 0.0 && current.root.opacity() < 1.0);
-                assert_eq!(metadata.presentation_status.label.text(), "PLAYING");
-                assert!(metadata.presentation_status.root.opacity() > 0.0);
-                let frame = metadata.lyrics.motion.borrow().frame_at(now);
-                assert!(
-                    frame.cue_motion_active,
-                    "Natural Cue Handoff stays live during the reveal"
-                );
-                if let Some(previous) = previous_anchors {
-                    assert_ne!(
-                        frame.anchors, previous,
-                        "the incoming Lyric Reel keeps moving"
-                    );
+            if interrupt {
+                let mut retiring = lyric_presentation("lyrics-one-line.json");
+                retiring.title = Some("Retiring track".into());
+                view.replace(1, &Presentation::NowPlaying(retiring), &repository);
+                let now = view.transition_clock.elapsed() + Duration::from_millis(337);
+                view.advance_transition(now);
+            }
+            view.replace(1, &Presentation::NowPlaying(incoming.clone()), &repository);
+            let retiring_timing = view
+                .transition
+                .outgoing()
+                .unwrap()
+                .value()
+                .now_playing
+                .as_ref()
+                .unwrap()
+                .metadata
+                .progress
+                .as_ref()
+                .unwrap()
+                .elapsed
+                .clone();
+            let retiring_elapsed = retiring_timing.text();
+            let start = view.transition_clock.elapsed();
+            incoming.status = lyric_presentation("playing.json").status;
+            let mut previous_anchors = None;
+            for millis in [0, 226, 337, 400] {
+                // Drive both transition and in-place updates from the same test clock.
+                let now = start + Duration::from_millis(millis);
+                view.transition_clock = Instant::now() - now;
+                incoming.progress.as_mut().unwrap().elapsed = format!("3:{:02}", millis / 10);
+                if millis >= 226 {
+                    incoming.lyrics.as_mut().unwrap().current_index = 2;
                 }
-                previous_anchors = Some(frame.anchors);
+                view.update_in_place(2, &Presentation::NowPlaying(incoming.clone()));
+                view.advance_transition(now);
+                assert_eq!(
+                    retiring_timing.text(),
+                    retiring_elapsed,
+                    "new timing must never be applied to a retiring track"
+                );
+                let current = view.transition.current().value();
+                let metadata = &current.now_playing.as_ref().unwrap().metadata;
+                assert_eq!(
+                    metadata.progress.as_ref().unwrap().elapsed.text(),
+                    incoming.progress.as_ref().unwrap().elapsed
+                );
+                if millis >= 337 {
+                    assert!(current.root.opacity() > 0.0 && current.root.opacity() < 1.0);
+                    assert_eq!(metadata.presentation_status.label.text(), "PLAYING");
+                    assert!(metadata.presentation_status.root.opacity() > 0.0);
+                    let frame = metadata.lyrics.motion.borrow().frame_at(now);
+                    assert!(
+                        frame.cue_motion_active,
+                        "Natural Cue Handoff stays live during the reveal"
+                    );
+                    if let Some(previous) = previous_anchors {
+                        assert_ne!(
+                            frame.anchors, previous,
+                            "the incoming Lyric Reel keeps moving"
+                        );
+                    }
+                    previous_anchors = Some(frame.anchors);
+                }
             }
         }
     }

@@ -137,6 +137,18 @@ impl<T> PresentationTransition<T> {
         discarded
     }
 
+    /// Replaces an invisible destination without restarting the departure clock.
+    /// The caller owns visibility and chooses the latest destination's duration.
+    pub fn retarget_current(
+        &mut self,
+        revision: u64,
+        value: T,
+        duration: Duration,
+    ) -> PresentationRevision<T> {
+        self.duration = duration;
+        mem::replace(&mut self.current, PresentationRevision { revision, value })
+    }
+
     pub fn replace_immediately(&mut self, revision: u64, value: T) -> Vec<PresentationRevision<T>> {
         let mut released = self.outgoing.take().into_iter().collect::<Vec<_>>();
         released.push(mem::replace(
