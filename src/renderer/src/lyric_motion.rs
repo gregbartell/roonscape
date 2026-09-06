@@ -427,17 +427,10 @@ fn stable_cues(lyrics: Option<&LyricPresentation>) -> Vec<LyricCueFrame> {
     };
     let anchor = anchor_index(lyrics);
     let blank = lyrics.current().trim().is_empty();
-    let next_index = lyrics.next_index();
     let mut cues = Vec::new();
     for (index, text) in lyrics.timeline.iter().enumerate() {
         let index = index as i64;
         if text.trim().is_empty() {
-            continue;
-        }
-        if blank
-            && Some(index as usize) != lyrics.previous_index()
-            && Some(index as usize) != next_index
-        {
             continue;
         }
         let role = if index < anchor {

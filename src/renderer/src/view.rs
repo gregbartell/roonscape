@@ -2905,6 +2905,7 @@ mod tests {
         gtk::init().expect("GTK should initialize for native lyric layout coverage");
         super::install_style_providers(roonscape_renderer::select_typography(&HashSet::new()));
         reel_capacity_and_first_line_anchor_follow_available_space();
+        blanks_retain_the_packed_reel_across_peer_viewports();
         complete_cues_fit_below_the_primary_position();
         reel_handoffs_keep_wrapping_and_outgoing_geometry();
         status_and_timing_replacements_preserve_the_existing_metadata();
@@ -3335,6 +3336,138 @@ mod tests {
         for pair in cues.windows(2) {
             assert!(pair[0].index < pair[1].index);
             assert!(pair[0].y + pair[0].height < pair[1].y);
+        }
+    }
+
+    fn blanks_retain_the_packed_reel_across_peer_viewports() {
+        for (width, height) in [
+            (1280, 720),
+            (1600, 900),
+            (1600, 1200),
+            (1920, 1200),
+            (2560, 1080),
+            (3840, 2160),
+            (3840, 2400),
+        ] {
+            let mut presentation = lyric_presentation("lyrics-blank-cue.json");
+            let lyrics = presentation.lyrics.as_mut().unwrap();
+            lyrics.timeline = [
+                "Earlier", "Before", "One\nTwo", "", " ", "", "Returns", "After", "Further",
+                "Last", "Beyond",
+            ]
+            .map(str::to_owned)
+            .to_vec();
+            lyrics.current_index = 3;
+            let rendered = lyric_view(
+                &presentation,
+                presentation.lyrics.as_deref(),
+                PresentationPalette::fallback(),
+                PresentationBehavior::StaticFixture,
+            );
+            let layout =
+                NowPlayingLayout::for_presentation(&presentation, Viewport::new(width, height));
+            allocate_lyrics(&rendered, &layout);
+            let cues = rendered.reel.visible_cues();
+            let primary_y = f64::from(rendered.reel.widget.height()) / 3.0;
+            assert!(
+                cues.len() > 3,
+                "blank must retain space-limited context at {width}x{height}"
+            );
+            assert!(cues.iter().any(|cue| cue.cue.text == "After"));
+            assert!(cues.iter().all(|cue| cue.cue.emphasis == 0.0));
+            assert!(
+                cues.iter()
+                    .all(|cue| cue.y + cue.height <= primary_y || cue.y > primary_y)
+            );
+            for pair in cues.windows(2) {
+                assert!(pair[0].y + pair[0].height < pair[1].y);
+            }
+            let visible_geometry = |reel: &crate::lyric_reel::LyricReel| {
+                reel.visible_cues()
+                    .into_iter()
+                    .map(|cue| (cue.cue.text, cue.y, cue.height, cue.scale))
+                    .collect::<Vec<_>>()
+            };
+            let expected = visible_geometry(&rendered.reel);
+            for index in [4, 5, 3] {
+                let lyrics = presentation.lyrics.as_mut().unwrap();
+                lyrics.current_index = index;
+                rendered.motion.borrow_mut().update(
+                    index as u64,
+                    Some(lyrics),
+                    std::time::Duration::ZERO,
+                    true,
+                );
+                rendered.apply_frame(std::time::Duration::ZERO, &layout);
+                assert_eq!(
+                    visible_geometry(&rendered.reel),
+                    expected,
+                    "seeking within consecutive blanks preserves geometry"
+                );
+            }
+            let lyrics = presentation.lyrics.as_mut().unwrap();
+            lyrics.current_index = 2;
+            rendered
+                .motion
+                .borrow_mut()
+                .update(9, Some(lyrics), std::time::Duration::ZERO, false);
+            lyrics.current_index = 3;
+            rendered
+                .motion
+                .borrow_mut()
+                .update(9, Some(lyrics), std::time::Duration::ZERO, true);
+            assert_reel_motion_remains_ordered(&rendered, &layout, std::time::Duration::ZERO);
+            assert_eq!(visible_geometry(&rendered.reel), expected);
+            for index in [4, 5] {
+                lyrics.current_index = index;
+                let now = std::time::Duration::from_secs(index as u64);
+                rendered
+                    .motion
+                    .borrow_mut()
+                    .update(9, Some(lyrics), now, true);
+                rendered.apply_frame(now, &layout);
+                assert_eq!(
+                    visible_geometry(&rendered.reel),
+                    expected,
+                    "consecutive blanks must hold without another lift"
+                );
+                assert!(!rendered.motion.borrow().frame_at(now).cue_motion_active);
+            }
+            // A short run of blanks can end while its departure is still moving.
+            // Resuming lyrics must continue from exactly the visible geometry.
+            let restarted_at = std::time::Duration::from_secs(10);
+            lyrics.current_index = 2;
+            rendered
+                .motion
+                .borrow_mut()
+                .update(10, Some(lyrics), restarted_at, false);
+            lyrics.current_index = 3;
+            rendered
+                .motion
+                .borrow_mut()
+                .update(10, Some(lyrics), restarted_at, true);
+            let continued_at = restarted_at + std::time::Duration::from_millis(100);
+            rendered.apply_frame(continued_at, &layout);
+            let departing = visible_geometry(&rendered.reel);
+            lyrics.current_index = 4;
+            rendered
+                .motion
+                .borrow_mut()
+                .update(10, Some(lyrics), continued_at, true);
+            rendered.apply_frame(continued_at, &layout);
+            assert_eq!(visible_geometry(&rendered.reel), departing);
+            lyrics.current_index = 6;
+            rendered
+                .motion
+                .borrow_mut()
+                .update(10, Some(lyrics), continued_at, true);
+            rendered.apply_frame(continued_at, &layout);
+            assert_eq!(
+                visible_geometry(&rendered.reel),
+                departing,
+                "resumption must not jump after consecutive blanks"
+            );
+            assert_reel_motion_remains_ordered(&rendered, &layout, continued_at);
         }
     }
 

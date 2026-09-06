@@ -130,6 +130,14 @@ Inspect `wrapping-progression` motion captures in both directions around the
 oversized cue, including reduced animation, for stable wrapping and continuous
 upward departure.
 
+Include `lyrics-blank-cue` at all seven peer viewports. Its consecutive blanks
+follow a multiline cue: confirm an empty Primary Position with packed earlier
+and upcoming context, quiet emphasis, and partial cues at the faded bounds.
+Inspect `blank-lifecycle`, `short-blanks`, and `timeline-edge-cases` motion
+captures for stable consecutive-blank holds, destination-relative context on
+seeks, and continuous promotion when lyrics return during an unfinished
+departure. Compare reduced animation for the same complete destinations.
+
 For lyric entry, Natural Cue Handoffs, Intentional Blanks, seeks, and interrupted
 motion, use the [lyric motion captures](../development.md#lyric-motion-captures)
 against the [Synchronized Lyric Composition](../design/presentation.md#synchronized-lyric-composition).

@@ -22,16 +22,44 @@
   "lyrics": {
     "cues": [
       {
+        "atSeconds": 140,
+        "text": "We trace the distant light"
+      },
+      {
+        "atSeconds": 150,
+        "text": "The stars remember us"
+      },
+      {
         "atSeconds": 160,
         "text": "A quiet orbit fades"
+      },
+      {
+        "atSeconds": 165,
+        "text": "We leave a silver signal\nAcross the sleeping sea"
       },
       {
         "atSeconds": 170,
         "text": ""
       },
       {
+        "atSeconds": 170.5,
+        "text": " "
+      },
+      {
         "atSeconds": 180,
         "text": "Beyond the cobalt tide"
+      },
+      {
+        "atSeconds": 185,
+        "text": "The morning carries on"
+      },
+      {
+        "atSeconds": 190,
+        "text": "Our echoes travel home"
+      },
+      {
+        "atSeconds": 195,
+        "text": "Past every quiet shore"
       }
     ]
   },

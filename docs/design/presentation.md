@@ -105,8 +105,11 @@ gaps keep each Cue distinct. Short fades at the top and bottom allow partial
 cues to enter and leave progressively; cues do not overlap or escape the lyric
 column into the masthead or footer.
 
-A settled Intentional Blank retains the nearest nonblank previous and next
-cues around an empty Primary Position, even after a tall cue. Leading blanks
+A settled Intentional Blank packs available earlier and upcoming nonblank
+cues around an empty Primary Position, even after a tall cue, using the same
+bounds, surrounding emphasis, partial-cue clipping, and edge fades as the
+nonblank Lyric Reel. Consecutive blanks retain that arrangement without
+repeated lifts or additional empty rows, including on direct seeks. Leading blanks
 are ignored and all-blank timelines retain ordinary Now Playing. Short blanks
 preserve advance promotion without a forced empty dwell. The focal size is not
 reduced to retain context. Cues have no rendered-line cap or lyric ellipsis.

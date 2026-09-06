@@ -324,7 +324,7 @@ const examples = {
       reviewFrame(
         3,
         "settled-blank-context",
-        "Both neighbors remain contextual around an empty focal position.",
+        "The packed Lyric Reel surrounds an empty Primary Position.",
       ),
       reviewFrame(
         4.4,
@@ -344,7 +344,7 @@ const examples = {
       reviewFrame(
         12.8,
         "trailing-blank-context",
-        "Trailing blanks retain Previous Cue and no Next Cue.",
+        "Trailing blanks retain packed earlier context with no upcoming cues.",
       ),
       reviewFrame(
         14,

@@ -30,12 +30,36 @@
         "text": "Before the silence"
       },
       {
+        "atSeconds": 2.5,
+        "text": "Across the sleeping sea"
+      },
+      {
+        "atSeconds": 3.5,
+        "text": "We leave a silver signal\nBefore the silence"
+      },
+      {
         "atSeconds": 5,
+        "text": ""
+      },
+      {
+        "atSeconds": 5.2,
+        "text": " "
+      },
+      {
+        "atSeconds": 6,
         "text": ""
       },
       {
         "atSeconds": 95,
         "text": "The signal returns"
+      },
+      {
+        "atSeconds": 96.5,
+        "text": "The morning carries on"
+      },
+      {
+        "atSeconds": 98,
+        "text": "Our echoes travel home"
       },
       {
         "atSeconds": 100,
