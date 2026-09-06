@@ -40,6 +40,21 @@ impl<T: PartialEq> ReplacementFade<T> {
             self.started_at = Some(now);
             self.from_opacity = self.opacity;
         }
+        self.advance(now)
+    }
+
+    /// Uses the latest invisible destination without restarting an existing departure.
+    /// Reveal interruptions still depart from the current visible appearance.
+    pub fn retarget(&mut self, target: T, now: Duration, animated: bool) -> bool {
+        if animated && self.pending.is_some() && target != self.displayed {
+            self.pending = Some(target);
+            self.advance(now)
+        } else {
+            self.update(target, now, animated)
+        }
+    }
+
+    fn advance(&mut self, now: Duration) -> bool {
         let Some(started_at) = self.started_at else {
             return false;
         };
@@ -63,6 +78,10 @@ impl<T: PartialEq> ReplacementFade<T> {
             }
         }
         false
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.started_at.is_some()
     }
 
     pub fn displayed(&self) -> &T {

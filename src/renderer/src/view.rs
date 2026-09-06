@@ -164,6 +164,8 @@ struct RenderedMetadata {
     ordinary_metadata: gtk::Box,
     presentation_status: RenderedPresentationStatus,
     musical_metadata_slot: gtk::ScrolledWindow,
+    metadata_fade: ReplacementFade<MetadataContent>,
+    typography: TypographySelection,
     title: Option<RenderedMetadataLine>,
     artist: Option<RenderedMetadataLine>,
     album: Option<RenderedMetadataLine>,
@@ -174,6 +176,29 @@ struct RenderedMetadata {
     timing_fade: ReplacementFade<TimingContent>,
     footer: gtk::Box,
     identity: RenderedIdentity,
+}
+
+#[derive(PartialEq)]
+struct MetadataContent {
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+}
+
+impl MetadataContent {
+    fn for_presentation(presentation: &NowPlayingPresentation) -> Self {
+        Self {
+            title: presentation.title.clone(),
+            artist: presentation.artist.clone(),
+            album: presentation.album.clone(),
+        }
+    }
+
+    fn apply_to(&self, presentation: &mut NowPlayingPresentation) {
+        presentation.title.clone_from(&self.title);
+        presentation.artist.clone_from(&self.artist);
+        presentation.album.clone_from(&self.album);
+    }
 }
 
 #[derive(PartialEq)]
@@ -198,8 +223,8 @@ impl TimingContent {
 struct RenderedLyrics {
     root: gtk::Box,
     masthead: gtk::Box,
-    masthead_title: Option<gtk::Label>,
-    masthead_artist: Option<gtk::Label>,
+    masthead_title: gtk::Label,
+    masthead_artist: gtk::Label,
     reel_region: gtk::ScrolledWindow,
     reel: Rc<LyricReel>,
     cue_width_px: Cell<i32>,
@@ -589,6 +614,22 @@ impl PresentationView {
         repository_root: &Path,
     ) {
         let now = self.transition_clock.elapsed();
+        if self.artwork_source == artwork_source(presentation)
+            && let Presentation::NowPlaying(incoming) = presentation
+        {
+            let current = self.transition.current().value();
+            let changes_composition = match &current.now_playing {
+                None => incoming.has_usable_metadata(),
+                Some(rendered) => {
+                    !incoming.has_usable_metadata()
+                        && rendered.visuals.current().artwork.source_key.is_none()
+                }
+            };
+            if changes_composition {
+                self.replace(revision, presentation, repository_root);
+                return;
+            }
+        }
         if self.artwork_source != artwork_source(presentation) {
             self.update_artwork(revision, presentation, repository_root);
         }
@@ -893,6 +934,7 @@ impl RenderedPresentation {
         }
         if let Some(now_playing) = self.now_playing.as_ref() {
             return Ok(!now_playing.visuals.transition.is_active()
+                && !now_playing.metadata.metadata_fade.is_active()
                 && now_playing.visuals.current().artwork.capture_ready()?
                 && self.layout_ready());
         }
@@ -916,17 +958,25 @@ impl RenderedPresentation {
                     .metadata
                     .presentation_status
                     .update(&presentation.status, now);
+                rendered
+                    .metadata
+                    .update_metadata(presentation, now, self.root.opacity() > 0.0);
                 rendered.metadata.update_timing(presentation, now);
                 rendered.metadata.update_lyrics(revision, presentation, now);
+                // Keep fitting and composition geometry tied to the visible metadata
+                // until its replacement has reached zero opacity.
+                let mut displayed = presentation.clone();
+                rendered
+                    .metadata
+                    .metadata_fade
+                    .displayed()
+                    .apply_to(&mut displayed);
                 self.layout_source =
-                    PresentationLayoutSource::NowPlaying(Box::new(presentation.clone()));
+                    PresentationLayoutSource::NowPlaying(Box::new(displayed.clone()));
                 if let Some(viewport) = viewport {
                     let progress = rendered.metadata.lyric_composition_progress(now);
-                    let layout = NowPlayingLayout::for_composition_progress(
-                        presentation,
-                        viewport,
-                        progress,
-                    );
+                    let layout =
+                        NowPlayingLayout::for_composition_progress(&displayed, viewport, progress);
                     rendered.apply_foreground_layout(&layout);
                     rendered.metadata.apply_lyric_frame(now, &layout);
                 }
@@ -1543,6 +1593,26 @@ fn artwork(
     }
 }
 
+fn metadata_lines(
+    presentation: &NowPlayingPresentation,
+    typography: TypographySelection,
+) -> [Option<RenderedMetadataLine>; 3] {
+    let layout = metadata_layout(presentation, Viewport::WINDOWED_FIXTURE);
+    let title = layout
+        .title
+        .as_ref()
+        .map(|layout| metadata_line(layout, "title", typography.now_playing_title_family()));
+    let artist = layout
+        .artist
+        .as_ref()
+        .map(|layout| metadata_line(layout, "artist", typography.now_playing_supporting_family()));
+    let album = layout
+        .album
+        .as_ref()
+        .map(|layout| metadata_line(layout, "album", typography.now_playing_supporting_family()));
+    [title, artist, album]
+}
+
 fn metadata(
     presentation: &NowPlayingPresentation,
     now_playing_layout: &NowPlayingLayout,
@@ -1591,28 +1661,7 @@ fn metadata(
     root.add_overlay(&rendered_status.root);
     root.set_measure_overlay(&rendered_status.root, false);
 
-    let layout = metadata_layout(presentation, Viewport::WINDOWED_FIXTURE);
-    let title = layout.title.as_ref().map(|layout| {
-        metadata_line(
-            layout,
-            "title",
-            rendering.typography.now_playing_title_family(),
-        )
-    });
-    let artist = layout.artist.as_ref().map(|layout| {
-        metadata_line(
-            layout,
-            "artist",
-            rendering.typography.now_playing_supporting_family(),
-        )
-    });
-    let album = layout.album.as_ref().map(|layout| {
-        metadata_line(
-            layout,
-            "album",
-            rendering.typography.now_playing_supporting_family(),
-        )
-    });
+    let [title, artist, album] = metadata_lines(presentation, rendering.typography);
     let progress = presentation.progress.as_ref().map(progress_view);
     let activity = presentation
         .activity
@@ -1693,6 +1742,8 @@ fn metadata(
         ordinary_metadata,
         presentation_status: rendered_status,
         musical_metadata_slot,
+        metadata_fade: ReplacementFade::new(MetadataContent::for_presentation(presentation)),
+        typography: rendering.typography,
         title,
         artist,
         album,
@@ -1721,23 +1772,20 @@ fn lyric_view(
     root.set_valign(gtk::Align::Start);
     let masthead = gtk::Box::new(gtk::Orientation::Vertical, 0);
     masthead.add_css_class("lyric-masthead");
-    let masthead_title = presentation.title.as_ref().map(|text| {
-        let label = metadata_label(text, "lyric-masthead-title");
-        label.add_css_class("editorial-text");
-        masthead.append(&label);
-        label
-    });
-    let masthead_artist = presentation.artist.as_ref().map(|text| {
-        let label = metadata_label(text, "lyric-masthead-artist");
-        label.add_css_class("utility-text");
-        masthead.append(&label);
-        label
-    });
-    // The compact masthead must fit its column even while ordinary metadata owns it.
-    for label in [&masthead_title, &masthead_artist].into_iter().flatten() {
+    let masthead_title = metadata_label("", "lyric-masthead-title");
+    masthead_title.add_css_class("editorial-text");
+    let masthead_artist = metadata_label("", "lyric-masthead-artist");
+    masthead_artist.add_css_class("utility-text");
+    for (label, text) in [
+        (&masthead_title, &presentation.title),
+        (&masthead_artist, &presentation.artist),
+    ] {
+        label.set_text(text.as_deref().unwrap_or_default());
+        label.set_visible(text.is_some());
         label.set_ellipsize(pango::EllipsizeMode::End);
         label.set_single_line_mode(true);
         label.set_max_width_chars(1);
+        masthead.append(label);
     }
     root.append(&masthead);
 
@@ -2015,6 +2063,40 @@ impl RenderedFullField {
 }
 
 impl RenderedMetadata {
+    fn update_metadata(
+        &mut self,
+        presentation: &NowPlayingPresentation,
+        now: Duration,
+        visible: bool,
+    ) {
+        if !self.metadata_fade.retarget(
+            MetadataContent::for_presentation(presentation),
+            now,
+            visible && animations_enabled(self.lyrics.behavior),
+        ) {
+            return;
+        }
+        // Both ordinary text and the compact masthead swap as one invisible group.
+        self.apply_composition_ownership(self.rendered_composition_progress());
+        while let Some(child) = self.ordinary_metadata.first_child() {
+            self.ordinary_metadata.remove(&child);
+        }
+        [self.title, self.artist, self.album] = metadata_lines(presentation, self.typography);
+        for line in [&self.title, &self.artist, &self.album]
+            .into_iter()
+            .flatten()
+        {
+            self.ordinary_metadata.append(&line.label);
+        }
+        for (label, text) in [
+            (&self.lyrics.masthead_title, &presentation.title),
+            (&self.lyrics.masthead_artist, &presentation.artist),
+        ] {
+            label.set_text(text.as_deref().unwrap_or_default());
+            label.set_visible(text.is_some());
+        }
+    }
+
     fn update_timing(&mut self, presentation: &NowPlayingPresentation, now: Duration) {
         if self.timing_fade.update(
             TimingContent::for_presentation(presentation),
@@ -2072,7 +2154,8 @@ impl RenderedMetadata {
 
     fn apply_composition_ownership(&self, progress: f64) {
         let (ordinary_opacity, reel_opacity, masthead_opacity) = composition_ownership(progress);
-        self.ordinary_metadata.set_opacity(ordinary_opacity);
+        self.ordinary_metadata
+            .set_opacity(ordinary_opacity * self.metadata_fade.opacity());
         // Preserve the established travel independently of exclusive text ownership.
         let ordinary_retirement = motion_phase(progress, 0.0, 0.62);
         let ordinary_travel_px = f64::from(self.lyrics.typography.get().lyric_current_px) * 1.75;
@@ -2087,7 +2170,9 @@ impl RenderedMetadata {
             ((1.0 - motion_phase(progress, 0.12, 0.46)) * lyric_travel_px).round() as i32,
         );
         self.lyrics.reel_region.set_opacity(reel_opacity);
-        self.lyrics.masthead.set_opacity(masthead_opacity);
+        self.lyrics
+            .masthead
+            .set_opacity(masthead_opacity * self.metadata_fade.opacity());
     }
 
     fn lyric_composition_progress(&self, now: Duration) -> f64 {
@@ -2104,6 +2189,10 @@ impl RenderedMetadata {
 
     fn apply_layout(&self, layout: &NowPlayingLayout) {
         let musical_metadata_width = dimension(layout.information.musical_metadata_width_px);
+        // The unmeasured lyric overlay needs its column even when every ordinary
+        // metadata label is absent; otherwise the overlay's child collapses.
+        self.ordinary_metadata_stage
+            .set_width_request(musical_metadata_width);
         self.musical_metadata_slot.set_min_content_width(-1);
         self.musical_metadata_slot.set_max_content_width(-1);
         self.musical_metadata_slot
@@ -2248,14 +2337,16 @@ impl RenderedLyrics {
         self.masthead.set_spacing(dimension(
             (layout.typography.lyric_masthead_artist_px as f64 * 0.25).round() as u32,
         ));
-        if let Some(title) = self.masthead_title.as_ref() {
-            title.set_width_request(width);
-            set_label_font_size(title, layout.typography.lyric_masthead_title_px);
-        }
-        if let Some(artist) = self.masthead_artist.as_ref() {
-            artist.set_width_request(width);
-            set_label_font_size(artist, layout.typography.lyric_masthead_artist_px);
-        }
+        self.masthead_title.set_width_request(width);
+        set_label_font_size(
+            &self.masthead_title,
+            layout.typography.lyric_masthead_title_px,
+        );
+        self.masthead_artist.set_width_request(width);
+        set_label_font_size(
+            &self.masthead_artist,
+            layout.typography.lyric_masthead_artist_px,
+        );
         let reel_margin_top =
             dimension((layout.typography.lyric_current_px as f64 * 0.52).round() as u32);
         self.reel_region.set_margin_top(reel_margin_top);
@@ -2982,7 +3073,7 @@ mod tests {
                     &metadata.lyrics.masthead_artist,
                 ]
                 .into_iter()
-                .flatten()
+                .filter(|label| label.is_visible())
                 .collect::<Vec<_>>()
             } else {
                 [&metadata.title, &metadata.artist, &metadata.album]
@@ -3271,6 +3362,8 @@ mod tests {
         reel_handoffs_keep_wrapping_and_outgoing_geometry();
         composition_transitions_preserve_fitted_cues();
         status_and_timing_replacements_preserve_the_existing_metadata();
+        compatible_metadata_preserves_live_content_and_refits_invisibly();
+        metadata_availability_preserves_full_field_resolution();
         now_playing_artwork_and_text_reveal_together();
         current_track_artwork_preserves_readable_text();
         artwork_updates_recolor_the_existing_lyric_reel();
@@ -4349,6 +4442,144 @@ mod tests {
         gtk::Settings::default()
             .unwrap()
             .set_gtk_enable_animations(true);
+    }
+
+    fn metadata_availability_preserves_full_field_resolution() {
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut target = lyric_presentation("playing.json");
+        target.artwork_path = Some("missing-artwork.jpg".into());
+        target.title = None;
+        target.artist = None;
+        target.album = None;
+        let mut view = artwork_view(&target, PresentationBehavior::StaticFixture);
+        assert!(view.transition.current().value().full_field.is_some());
+        target.title = Some("Available metadata".into());
+        view.update_in_place(1, &Presentation::NowPlaying(target.clone()), &repository);
+        assert!(view.transition.current().value().now_playing.is_some());
+        target.title = None;
+        view.update_in_place(2, &Presentation::NowPlaying(target.clone()), &repository);
+        assert!(view.transition.current().value().full_field.is_some());
+        let root = view.transition.current().value().root.clone();
+        view.update_in_place(3, &Presentation::NowPlaying(target), &repository);
+        assert_eq!(view.transition.current().value().root, root);
+    }
+
+    fn compatible_metadata_preserves_live_content_and_refits_invisibly() {
+        use std::rc::Rc;
+        use std::time::{Duration, Instant};
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        gtk::Settings::default()
+            .unwrap()
+            .set_gtk_enable_animations(true);
+        for fixture in ["playing.json", "lyrics-one-line.json"] {
+            for behavior in [
+                PresentationBehavior::Dynamic,
+                PresentationBehavior::StaticFixture,
+            ] {
+                let mut target = lyric_presentation(fixture);
+                target.title = None;
+                target.artist = None;
+                target.album = None;
+                let mut view = artwork_view(&target, behavior);
+                let window = gtk::Window::new();
+                window.set_default_size(1280, 720);
+                window.set_child(Some(&view.root()));
+                window.present();
+                while gtk::glib::MainContext::default().iteration(false) {}
+                let current = view.transition.current().value();
+                let root = current.root.clone();
+                let content = current.now_playing.as_ref().unwrap();
+                let artwork = content.visuals.current().root.clone();
+                let lyrics = Rc::clone(&content.metadata.lyrics);
+                let footer = content.metadata.footer.clone();
+                let status = content.metadata.presentation_status.root.clone();
+                assert!(
+                    content.metadata.ordinary_metadata_stage.width() > 0,
+                    "absent metadata must not collapse the lyric overlay's allocation"
+                );
+                let long = lyric_presentation("long-metadata.json");
+                target.title = long.title.clone();
+                let start = Duration::from_secs(1);
+                for (millis, artist, album) in [
+                    (0, false, false),
+                    (100, true, false),
+                    (226, true, false),
+                    (338, true, false),
+                    (338, true, true),
+                    (564, true, true),
+                    (790, true, true),
+                ] {
+                    if artist {
+                        target.artist = long.artist.clone();
+                    }
+                    if album {
+                        target.album = long.album.clone();
+                    }
+                    let now = start + Duration::from_millis(millis);
+                    view.transition_clock = Instant::now() - now;
+                    view.update_in_place(1, &Presentation::NowPlaying(target.clone()), &repository);
+                    let current = view.transition.current().value();
+                    let content = current.now_playing.as_ref().unwrap();
+                    let metadata = &content.metadata;
+                    assert_eq!(current.root, root);
+                    assert_eq!(content.visuals.current().root, artwork);
+                    assert!(Rc::ptr_eq(&metadata.lyrics, &lyrics));
+                    assert_eq!(metadata.footer, footer);
+                    assert_eq!(metadata.presentation_status.root, status);
+                    assert_eq!(footer.opacity(), 1.0);
+                    assert!(!view.transition.is_active());
+                    if behavior == PresentationBehavior::Dynamic && millis < 225 {
+                        assert!(metadata.title.is_none(), "old group stays until invisible");
+                    } else {
+                        assert_eq!(
+                            metadata.title.as_ref().unwrap().layout.text,
+                            *long.title.as_ref().unwrap()
+                        );
+                        assert_eq!(
+                            metadata.lyrics.masthead_title.text(),
+                            *long.title.as_ref().unwrap()
+                        );
+                        if behavior == PresentationBehavior::Dynamic && [226, 564].contains(&millis)
+                        {
+                            assert_eq!(metadata.ordinary_metadata.opacity(), 0.0);
+                            assert_eq!(metadata.lyrics.masthead.opacity(), 0.0);
+                        }
+                    }
+                }
+                let metadata = &view
+                    .transition
+                    .current()
+                    .value()
+                    .now_playing
+                    .as_ref()
+                    .unwrap()
+                    .metadata;
+                assert!(metadata.album.is_some());
+                assert_eq!(metadata.metadata_fade.opacity(), 1.0);
+                assert!(!metadata.metadata_fade.is_active());
+                // A track replacement discards the pending metadata destination.
+                target.album = None;
+                view.update_in_place(2, &Presentation::NowPlaying(target), &repository);
+                let replacement = Presentation::NowPlaying(lyric_presentation("playing.json"));
+                view.replace(3, &replacement, &repository);
+                let original_start = view.transition.started_at();
+                let mut enriched = lyric_presentation("playing.json");
+                enriched.album = None;
+                view.update_in_place(4, &Presentation::NowPlaying(enriched), &repository);
+                assert_eq!(view.transition.started_at(), original_start);
+                let metadata = &view
+                    .transition
+                    .current()
+                    .value()
+                    .now_playing
+                    .as_ref()
+                    .unwrap()
+                    .metadata;
+                assert!(metadata.album.is_none());
+                assert_eq!(metadata.metadata_fade.opacity(), 1.0);
+                window.close();
+            }
+        }
     }
 
     fn artwork_view(

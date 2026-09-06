@@ -149,6 +149,13 @@ blending, readable metadata, and uninterrupted timing and Lyric Reel motion.
 The reduced-animation version should show immediate artwork destinations while
 preserving the same content and fallback behavior.
 
+Use `metadata-updates` to inspect missing-to-known enrichment, long grouped
+fitting, interrupted departure and reveal, and superseding track replacements
+in ordinary and Synchronized Lyric Compositions. Only the ordinary metadata or
+compact masthead should fade; compare artwork, Presentation Status, timing,
+and the Lyric Reel across intermediate frames. The reduced-animation version
+should apply metadata immediately.
+
 Automated checks belong at the shared fixture, layout, typography,
 palette-contrast, transition, and preserved-behavior seams; do not commit PNG goldens or add screenshot
 comparisons to CI.

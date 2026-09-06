@@ -831,6 +831,16 @@ pub fn classify_presentation_update(
     let mut comparable = previous.clone();
     match (&mut comparable, next) {
         (Presentation::NowPlaying(previous), Presentation::NowPlaying(next)) => {
+            let known = |value: &NowPlayingPresentation| KnownNowPlaying {
+                title: value.title.clone(),
+                artist: value.artist.clone(),
+                album: value.album.clone(),
+            };
+            if known(previous).is_compatible_with(&known(next)) {
+                previous.title.clone_from(&next.title);
+                previous.artist.clone_from(&next.artist);
+                previous.album.clone_from(&next.album);
+            }
             previous.status = next.status;
             previous.playback_position_seconds = next.playback_position_seconds;
             previous.progress.clone_from(&next.progress);
@@ -1088,7 +1098,7 @@ fn available_full_field(
 }
 
 impl NowPlayingPresentation {
-    pub(crate) fn has_usable_metadata(&self) -> bool {
+    pub fn has_usable_metadata(&self) -> bool {
         [
             self.title.as_deref(),
             self.artist.as_deref(),

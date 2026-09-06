@@ -51,6 +51,148 @@ const defaultRendererExecutable = path.join(
 );
 
 const examples = {
+  "metadata-updates": {
+    durationSeconds: 8,
+    initialFixture: "src/shared/fixtures/long-metadata.json",
+    publications: [
+      {
+        atSeconds: 0.5,
+        fixture: "src/shared/fixtures/long-metadata.json",
+        positionSeconds: 82,
+        nowPlaying: { title: null, artist: null, album: null },
+      },
+      {
+        atSeconds: 1.5,
+        fixture: "src/shared/fixtures/long-metadata.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title:
+            "An Imaginary Catalogue of Constellations Observed Through the Longest Night of the Turning Year",
+          artist: null,
+          album: null,
+        },
+      },
+      {
+        atSeconds: 1.6,
+        fixture: "src/shared/fixtures/long-metadata.json",
+        positionSeconds: 0.1,
+        nowPlaying: {
+          title:
+            "An Imaginary Catalogue of Constellations Observed Through the Longest Night of the Turning Year",
+          artist:
+            "The Society of Patient Astronomers and the Metropolitan Chamber Orchestra of the Northern Coast",
+          album: null,
+        },
+      },
+      {
+        atSeconds: 1.85,
+        fixture: "src/shared/fixtures/long-metadata.json",
+        positionSeconds: 0.35,
+        nowPlaying: {
+          title:
+            "An Imaginary Catalogue of Constellations Observed Through the Longest Night of the Turning Year",
+          artist:
+            "The Society of Patient Astronomers and the Metropolitan Chamber Orchestra of the Northern Coast",
+          album:
+            "Collected Nocturnes for Temporary Cities, Fading Radio Signals, and the Memory of Unmapped Roads",
+        },
+      },
+      {
+        atSeconds: 3,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 168,
+      },
+      {
+        atSeconds: 3.1,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 168.1,
+        nowPlaying: { title: null, artist: null, album: null },
+      },
+      {
+        atSeconds: 3.35,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 168.35,
+      },
+      {
+        atSeconds: 5,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 170,
+        nowPlaying: { title: null, artist: null, album: null },
+      },
+      {
+        atSeconds: 5.7,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 170.7,
+      },
+      {
+        atSeconds: 5.8,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 170.8,
+        nowPlaying: {
+          title: "Last Light on Phobos",
+          artist: null,
+          album: null,
+        },
+      },
+      {
+        atSeconds: 6,
+        fixture: "src/shared/fixtures/long-metadata.json",
+        positionSeconds: 0,
+      },
+    ],
+    reviewFrames: [
+      reviewFrame(
+        0.6,
+        "ordinary-departure",
+        "Only metadata retires; artwork, status and timing stay visible.",
+      ),
+      reviewFrame(
+        1.7,
+        "latest-invisible-group",
+        "Compatible enrichment keeps the original departure deadline.",
+      ),
+      reviewFrame(
+        1.95,
+        "retargeted-reveal",
+        "New metadata retires from its partially visible appearance.",
+      ),
+      reviewFrame(
+        2.5,
+        "long-metadata-settled",
+        "Long title and credits fit together without clipping.",
+      ),
+      reviewFrame(
+        3.2,
+        "track-departure",
+        "Conflicting metadata uses the Now Playing Transition.",
+      ),
+      reviewFrame(
+        3.6,
+        "track-reveal-enrichment",
+        "Compatible metadata preserves the whole transition clock.",
+      ),
+      reviewFrame(
+        4.5,
+        "lyric-composition",
+        "The compact masthead fits above live lyrics.",
+      ),
+      reviewFrame(
+        5.1,
+        "masthead-departure",
+        "Masthead fades while the Lyric Reel remains visible.",
+      ),
+      reviewFrame(
+        5.95,
+        "masthead-retarget",
+        "Repeated updates preserve lyric motion.",
+      ),
+      reviewFrame(
+        6.6,
+        "superseding-track",
+        "Track replacement wins over pending metadata.",
+      ),
+    ],
+  },
   "artwork-updates": {
     durationSeconds: 10,
     initialFixture: "src/shared/fixtures/missing-artwork.json",
@@ -1134,6 +1276,7 @@ export function reanchorLyricMotionSnapshot(
     playback = fixture.playback,
     durationSeconds = fixture.timing?.durationSeconds,
     artwork = fixture.artwork,
+    nowPlaying = fixture.nowPlaying,
   },
 ) {
   return {
@@ -1141,6 +1284,7 @@ export function reanchorLyricMotionSnapshot(
     revision,
     playback,
     artwork: structuredClone(artwork),
+    nowPlaying: structuredClone(nowPlaying),
     timing:
       fixture.timing === null
         ? null

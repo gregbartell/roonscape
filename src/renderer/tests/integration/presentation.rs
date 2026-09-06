@@ -1025,6 +1025,58 @@ fn simultaneous_playback_and_now_playing_changes_require_a_transition() {
 }
 
 #[test]
+fn compatible_metadata_uses_timing_continuity_for_every_field() {
+    for field in 0..3 {
+        let mut snapshot = parse_snapshot(&support::fixture("playing.json")).unwrap();
+        let metadata = snapshot.now_playing.as_mut().unwrap();
+        let fields = [
+            &mut metadata.title,
+            &mut metadata.artist,
+            &mut metadata.album,
+        ];
+        *fields.into_iter().nth(field).unwrap() = None;
+        let mut state =
+            PresentationState::new(snapshot.clone(), presentation_time(0, PLAYING_SAMPLED_AT))
+                .unwrap();
+        let generation = state.now_playing_generation();
+        for (index, value) in [
+            Some("Known value"),
+            None,
+            Some("Known value"),
+            None,
+            Some("Conflict"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let metadata = snapshot.now_playing.as_mut().unwrap();
+            let fields = [
+                &mut metadata.title,
+                &mut metadata.artist,
+                &mut metadata.album,
+            ];
+            *fields.into_iter().nth(field).unwrap() = value.map(str::to_owned);
+            snapshot.revision += 1;
+            let update = state
+                .update(
+                    snapshot.clone(),
+                    presentation_time(index as u64 + 1, PLAYING_SAMPLED_AT + index as u64 + 1),
+                )
+                .unwrap();
+            assert_eq!(
+                update,
+                if index == 4 {
+                    PresentationUpdate::TransitionRequired
+                } else {
+                    PresentationUpdate::InPlace
+                }
+            );
+            assert_eq!(state.now_playing_generation() == generation, index != 4);
+        }
+    }
+}
+
+#[test]
 fn composition_fields_select_their_intended_update_path() {
     let playing_snapshot = || {
         parse_snapshot(&support::fixture("playing.json")).expect("Playing fixture should be valid")

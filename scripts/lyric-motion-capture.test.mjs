@@ -357,6 +357,31 @@ test("artwork review publications preserve the track and timing while changing a
   assert.deepEqual(fixture.artwork, { revision: 1, path: "supplied.jpg" });
 });
 
+test("metadata review publications preserve live artwork and lyrics", () => {
+  const fixture = {
+    nowPlaying: { title: "Known title", artist: null, album: null },
+    artwork: { revision: 1, path: "supplied.jpg" },
+    lyrics: { cues: [{ text: "Live lyrics" }] },
+    playback: "playing",
+    timing: { durationSeconds: 266 },
+  };
+  const snapshot = reanchorLyricMotionSnapshot(fixture, {
+    revision: 3,
+    positionSeconds: 170,
+    sampledAt: "2026-09-05T00:00:00Z",
+    nowPlaying: {
+      title: "Known title",
+      artist: "Arriving artist",
+      album: null,
+    },
+  });
+  assert.equal(snapshot.nowPlaying.artist, "Arriving artist");
+  assert.equal(fixture.nowPlaying.artist, null);
+  assert.deepEqual(snapshot.artwork, fixture.artwork);
+  assert.deepEqual(snapshot.lyrics, fixture.lyrics);
+  assert.equal(snapshot.timing.position.seconds, 170);
+});
+
 test("schedules publications from the recorder start clock, not delayed progress observations", () => {
   const recordingStartedAtMilliseconds = 10_000;
   assert.equal(

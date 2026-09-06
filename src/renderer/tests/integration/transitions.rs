@@ -22,6 +22,7 @@ fn replacement_text_retires_before_the_latest_target_appears() {
     fade.update("Paused", Duration::from_millis(100), true);
     assert_eq!(fade.opacity(), interrupted_opacity);
     assert_eq!(*fade.displayed(), "Starting");
+    assert!(!fade.update("Paused", Duration::from_millis(225), true));
     assert!(fade.update("Paused", Duration::from_millis(325), true));
     assert_eq!(*fade.displayed(), "Paused");
     assert_eq!(
@@ -60,6 +61,30 @@ fn a_cancelled_text_replacement_restores_the_still_displayed_text() {
         );
     }
     assert_eq!(fade.opacity(), 1.0);
+}
+
+#[test]
+fn metadata_departure_keeps_its_deadline_and_reveal_retargets_without_a_flash() {
+    use roonscape_renderer::ReplacementFade;
+    let mut fade = ReplacementFade::new("title only");
+    fade.retarget("with artist", Duration::ZERO, true);
+    fade.retarget("with album", Duration::from_millis(100), true);
+    assert_eq!(*fade.displayed(), "title only");
+    assert!(fade.retarget("with album", Duration::from_millis(225), true));
+    assert_eq!(*fade.displayed(), "with album");
+    assert_eq!(fade.opacity(), 0.0);
+    fade.retarget("with album", Duration::from_millis(337), true);
+    let visible = fade.opacity();
+    assert!(visible > 0.4 && visible < 0.6);
+    fade.retarget("latest", Duration::from_millis(337), true);
+    assert_eq!(fade.opacity(), visible);
+    assert_eq!(*fade.displayed(), "with album");
+    assert!(fade.retarget("latest", Duration::from_millis(562), true));
+    assert_eq!(fade.opacity(), 0.0);
+    assert_eq!(*fade.displayed(), "latest");
+    fade.retarget("latest", Duration::from_millis(787), true);
+    assert_eq!(fade.opacity(), 1.0);
+    assert!(!fade.is_active());
 }
 
 struct CoordinatedPresentation {
