@@ -1193,7 +1193,7 @@ fn lyric_presentation(
     position_seconds: f64,
 ) -> Option<LyricPresentation> {
     const FINAL_HOLD_SECONDS: f64 = 3.0;
-    const ENTRY_LEAD_SECONDS: f64 = 1.1;
+    const ENTRY_LEAD_SECONDS: f64 = 3.0;
 
     let first_index = lyrics
         .cues

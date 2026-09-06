@@ -386,13 +386,24 @@ test("maps expected lyric paints onto the encoded capture timeline", () => {
       ],
     },
   };
-  assert.equal(
-    expectedLyricPaintAtSeconds(snapshot, {
-      atSeconds: 0.5,
-      positionSeconds: 0,
-    }),
-    0.8999999999999999,
-  );
+  for (const [firstAt, expectedPaint] of [
+    [0, 0.5],
+    [0.1, 0.5],
+    [1.5, 0.5],
+    [3, 0.5],
+    [5, 2.5],
+  ]) {
+    const timeline = structuredClone(snapshot);
+    timeline.lyrics.cues[0].atSeconds = firstAt;
+    assert.equal(
+      expectedLyricPaintAtSeconds(timeline, {
+        atSeconds: 0.5,
+        positionSeconds: 0,
+      }),
+      expectedPaint,
+      `first cue at ${firstAt}s must not schedule a paint before publication`,
+    );
+  }
   assert.equal(
     expectedLyricPaintAtSeconds(snapshot, {
       atSeconds: 0.5,

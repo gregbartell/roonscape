@@ -129,10 +129,12 @@ masthead and reel without duplicating artwork, Presentation Status, or footer.
 Ordinary metadata finishes fading out before the compact masthead and lyric
 reel fade in. Exit reverses this sequence, so departing cues and compact Titles
 never compete with the returning large Title.
-Preparation starts before the first nonblank cue's timestamp; its
-arrival may overlap the geometry movement. Internal gaps and blanks retain one
-continuous composition interval, ending after the hold following the final
-timeline entry, including trailing blanks.
+Preparation starts three seconds before the first nonblank cue's timestamp,
+using only the available time when the track starts or the timeline arrives
+later. A cue at zero activates immediately, and cue arrival may overlap the
+geometry movement. Preparation never delays cue activation. Internal gaps and
+blanks retain one continuous composition interval, ending after the hold
+following the final timeline entry, including trailing blanks.
 
 Natural Cue Handoffs use Reel Lift: the incoming Cue rises into the Primary
 Position while the outgoing cue becomes smaller, quieter context above it.

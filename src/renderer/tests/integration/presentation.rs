@@ -273,8 +273,10 @@ fn ignores_leading_blanks_and_retains_internal_and_trailing_blanks() {
     ];
     let mut snapshot = snapshot_with_lyrics("paused.json", &cues);
     for (seconds, expected) in [
-        (4.3, None),
-        (5.5, None),
+        (3.999, None),
+        (4.0, Some("")),
+        (4.3, Some("")),
+        (5.5, Some("")),
         (20.0, Some("Opening")),
         (41.0, Some("Still current")),
         (42.0, Some(" ")),
@@ -311,8 +313,8 @@ fn prepares_before_first_cue_and_ignores_all_leading_blanks() {
     ] {
         let mut snapshot = snapshot_with_lyrics("paused.json", &cues);
         for (seconds, expected) in [
-            (8.8, None),
-            (9.0, Some("")),
+            (6.999, None),
+            (7.0, Some("")),
             (9.4, Some("")),
             (9.999, Some("")),
             (10.0, Some("Opening")),
@@ -344,6 +346,48 @@ fn prepares_before_first_cue_and_ignores_all_leading_blanks() {
         panic!("Now Playing");
     };
     assert!(presentation.lyrics.is_none());
+}
+
+#[test]
+fn early_first_cues_use_only_the_available_preparation_time() {
+    for first_at in [0.0_f64, 0.1, 1.5, 2.999, 3.0] {
+        let mut cues = vec![(first_at, "Opening"), (6.0, "Final")];
+        if first_at > 0.0 {
+            cues.insert(0, (0.0, ""));
+        }
+        let mut snapshot = snapshot_with_lyrics("playing.json", &cues);
+        snapshot
+            .timing
+            .as_mut()
+            .unwrap()
+            .position
+            .as_mut()
+            .unwrap()
+            .seconds = 0.0;
+        let state =
+            PresentationState::new(snapshot, presentation_time(0, PLAYING_SAMPLED_AT)).unwrap();
+
+        for position in [0.0, (first_at - 0.001).max(0.0), first_at, first_at + 0.1] {
+            let Presentation::NowPlaying(presentation) = state
+                .presentation_at(Duration::from_secs_f64(position))
+                .unwrap()
+            else {
+                panic!("Now Playing");
+            };
+            let lyrics = presentation
+                .lyrics
+                .expect("early cues prepare from track start");
+            assert_eq!(
+                lyrics.preparing,
+                position < first_at,
+                "first cue at {first_at}s, position {position}s"
+            );
+            assert_eq!(
+                lyrics.current(),
+                if position < first_at { "" } else { "Opening" }
+            );
+        }
+    }
 }
 
 #[test]

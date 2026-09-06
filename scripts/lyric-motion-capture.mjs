@@ -33,7 +33,7 @@ import {
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const scratchRoot = "/var/tmp/codex/roonscape";
 const framesPerSecond = 20;
-const lyricEntryLeadSeconds = 1.1;
+const lyricEntryLeadSeconds = 3;
 const lyricFinalHoldSeconds = 3;
 export const lyricMotionReviewViewports = Object.freeze([
   Object.freeze({ width: 1280, height: 720 }),
@@ -150,7 +150,7 @@ const examples = {
       ),
       reviewFrame(8.25, "paused", "Paused retains the same three-line Title."),
       reviewFrame(
-        9.65,
+        9.25,
         "lyric-entry",
         "Artwork yields space as compact metadata takes ownership.",
       ),
@@ -394,18 +394,18 @@ const examples = {
         "Ordinary Now Playing before lyrics enter.",
       ),
       reviewFrame(
-        0.85,
+        0.45,
         "lyrics-entry-before",
         "Last frame expected before lyric entry.",
       ),
-      reviewFrame(0.95, "lyrics-entry-early", "Early lyric composition entry."),
+      reviewFrame(0.55, "lyrics-entry-early", "Early lyric composition entry."),
       reviewFrame(
-        1.19,
+        0.79,
         "lyrics-entry-midpoint",
         "Midpoint of lyric composition entry.",
       ),
       reviewFrame(
-        1.5,
+        1.1,
         "lyrics-entry-settled",
         "Lyric composition settled while the first cue remains upcoming.",
       ),
@@ -587,12 +587,12 @@ const examples = {
     ],
     reviewFrames: [
       reviewFrame(
-        2.5,
+        0.9,
         "leading-intentional-blank-settled",
         "Leading blanks retain ordinary Now Playing until preparation for the first nonblank cue.",
       ),
       reviewFrame(
-        3,
+        1.4,
         "consecutive-intentional-blank-settled",
         "Consecutive leading blanks do not advance composition entry.",
       ),
