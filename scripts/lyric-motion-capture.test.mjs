@@ -125,11 +125,7 @@ test("plans wrapping progression and external seek examples", () => {
     "src/shared/fixtures/lyrics-wrapping-progression.json",
   );
   assert.ok(
-    wrapping.reviewFrames.some(({ name }) => name === "capped-cue-settled"),
-  );
-  assert.match(
-    wrapping.lineCountEvidence,
-    /source 3 lines; destination 4 lines/,
+    wrapping.reviewFrames.some(({ name }) => name === "oversized-cue-settled"),
   );
 
   const seek = buildLyricMotionCapturePlan(

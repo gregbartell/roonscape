@@ -109,8 +109,13 @@ A settled Intentional Blank retains the nearest nonblank previous and next
 cues around an empty Primary Position, even after a tall cue. Leading blanks
 are ignored and all-blank timelines retain ordinary Now Playing. Short blanks
 preserve advance promotion without a forced empty dwell. The focal size is not
-reduced to retain context. Defensive overflow remains limited to four lines
-with an end ellipsis.
+reduced to retain context. Cues have no rendered-line cap or lyric ellipsis.
+When complete active text would exceed the area below the Primary Position,
+fit the complete cue using the full column width and the height above the
+bottom edge fade. Establish that wrapping before motion, and scale the whole
+cue together. Otherwise retain the established focal size. Surrounding cues use a smaller scale of
+that same fitted layout, and pack around the displayed active bounds. All lines
+remain active together; fitting never moves the first-line anchor.
 
 Same-identity lyric entry and exit animate persistent artwork and information
 rail geometry in place. Ordinary metadata relinquishes ownership to the compact
@@ -126,10 +131,10 @@ timeline entry, including trailing blanks.
 Natural Cue Handoffs use Reel Lift: the incoming Cue rises into the Primary
 Position while the outgoing cue becomes smaller, quieter context above it.
 Every cue retains its timed identity, including repeated identical text. Cues
-use stable focal-size Pango wrapping throughout the size-changing motion.
+use stable fitted Pango wrapping throughout the size-changing motion.
 Position, scale, and semantic color transfer together without a missing-focus
 interval. Outgoing cues remain visible while their geometry intersects the
-lyric area, including handoffs to and from three- and four-line cues. External seeks and timeline
+lyric area, including handoffs into and out of oversized cues. External seeks and timeline
 revisions install destination-relative cue state directly, while boundary
 crossings still animate composition geometry. Interrupted composition movement
 retargets from its current geometry; interrupted handoffs prioritize the newest

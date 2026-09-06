@@ -2397,6 +2397,9 @@ mod tests {
             "long-metadata.json" => include_str!("../../shared/fixtures/long-metadata.json"),
             "lyrics-one-line.json" => include_str!("../../shared/fixtures/lyrics-one-line.json"),
             "lyrics-two-line.json" => include_str!("../../shared/fixtures/lyrics-two-line.json"),
+            "lyrics-four-lines.json" => {
+                include_str!("../../shared/fixtures/lyrics-four-lines.json")
+            }
             "lyrics-blank-cue.json" => include_str!("../../shared/fixtures/lyrics-blank-cue.json"),
             "lyrics-long-masthead.json" => {
                 include_str!("../../shared/fixtures/lyrics-long-masthead.json")
@@ -2553,8 +2556,15 @@ mod tests {
                 );
             }
             for cue in cues {
-                let lines = cue.layout.line_count();
-                if let Some((last_lines, last_y)) = previous.insert(cue.index, (lines, cue.y)) {
+                let lines: Vec<_> = cue
+                    .layout
+                    .lines_readonly()
+                    .iter()
+                    .map(|line| (line.start_index(), line.length()))
+                    .collect();
+                if let Some((last_lines, last_y)) =
+                    previous.insert(cue.index, (lines.clone(), cue.y))
+                {
                     assert_eq!(lines, last_lines, "wrapping must not change during motion");
                     if cue.cue.role != crate::lyric_motion::LyricColorRole::Next {
                         assert!(
@@ -2895,6 +2905,7 @@ mod tests {
         gtk::init().expect("GTK should initialize for native lyric layout coverage");
         super::install_style_providers(roonscape_renderer::select_typography(&HashSet::new()));
         reel_capacity_and_first_line_anchor_follow_available_space();
+        complete_cues_fit_below_the_primary_position();
         reel_handoffs_keep_wrapping_and_outgoing_geometry();
         status_and_timing_replacements_preserve_the_existing_metadata();
         full_field_replacement_never_superimposes_messages();
@@ -3327,7 +3338,98 @@ mod tests {
         }
     }
 
+    fn assert_complete_focal_cue(
+        rendered: &super::RenderedLyrics,
+        focal: &crate::lyric_reel::PositionedCue,
+    ) {
+        assert!(
+            !focal.layout.is_ellipsized(),
+            "complete active cue: {focal:?}"
+        );
+        let area_height = f64::from(rendered.reel.widget.height());
+        let (ink, _) = focal.layout.pixel_extents();
+        assert!(
+            f64::from(ink.x() + ink.width()) * focal.scale
+                <= f64::from(rendered.reel.widget.width()) + 1.0,
+            "complete active text must fit the column width"
+        );
+        assert!((focal.y - area_height / 3.0).abs() < 1.0);
+        let readable_bottom =
+            area_height - f64::from(rendered.typography.get().lyric_neighbor_px) * 0.65;
+        assert!(
+            focal.y + focal.height <= readable_bottom + 1.0,
+            "complete active text must clear the edge fade: {focal:?}"
+        );
+        assert!(
+            focal.y + f64::from(ink.y() + ink.height()) * focal.scale <= readable_bottom + 1.0,
+            "active glyphs must clear the fade"
+        );
+    }
+
+    fn complete_cues_fit_below_the_primary_position() {
+        let oversized = lyric_presentation("lyrics-four-lines.json");
+        let oversized_text = oversized.lyrics.as_ref().unwrap().current();
+        let unbroken = "W".repeat(512);
+        for (width, height) in [
+            (1280, 720),
+            (1600, 900),
+            (1600, 1200),
+            (1920, 1200),
+            (2560, 1080),
+            (3840, 2160),
+            (3840, 2400),
+        ] {
+            for text in [
+                "One\nTwo\nThree\nFour\nFive",
+                "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve",
+                "We find the signal where the last blue horizon meets the dark and every distant answer turns slowly toward the room while the patient stars remember all the names we carried through the silence",
+                "Short",
+                "One\nTwo",
+                oversized_text,
+                &unbroken,
+            ] {
+                let mut presentation = lyric_presentation("lyrics-one-line.json");
+                let lyrics = presentation.lyrics.as_mut().unwrap();
+                lyrics.timeline = ["Earlier", "Before", text, "After", "Further"]
+                    .map(str::to_owned)
+                    .to_vec();
+                lyrics.current_index = 2;
+                let rendered = lyric_view(
+                    &presentation,
+                    presentation.lyrics.as_deref(),
+                    PresentationPalette::fallback(),
+                    PresentationBehavior::StaticFixture,
+                );
+                let layout =
+                    NowPlayingLayout::for_presentation(&presentation, Viewport::new(width, height));
+                allocate_lyrics(&rendered, &layout);
+                let cues = rendered.reel.visible_cues();
+                let focal = cues.iter().find(|cue| cue.index == 2).unwrap();
+                assert_complete_focal_cue(&rendered, focal);
+                assert_eq!(focal.layout.text(), text);
+                if text == "Short" || text == "One\nTwo" {
+                    assert_eq!(focal.scale, 1.0, "fitting cues retain focal size");
+                }
+                assert!(focal.layout.line_count() >= text.lines().count() as i32);
+                if text == oversized_text || text == unbroken {
+                    let (ink, _) = focal.layout.pixel_extents();
+                    assert!(
+                        f64::from(ink.width()) * focal.scale
+                            > f64::from(rendered.reel.widget.width()) * 0.5,
+                        "long cues must use available width: {width}x{height}, ink={ink:?}, focal={focal:?}, area={}",
+                        rendered.reel.widget.width()
+                    );
+                }
+                for pair in cues.windows(2) {
+                    assert!(pair[0].y + pair[0].height < pair[1].y);
+                }
+            }
+        }
+    }
+
     fn reel_handoffs_keep_wrapping_and_outgoing_geometry() {
+        let oversized = lyric_presentation("lyrics-four-lines.json");
+        let oversized_text = oversized.lyrics.as_ref().unwrap().current();
         for (width, height) in [
             (1280, 720),
             (1600, 900),
@@ -3346,6 +3448,12 @@ mod tests {
                 "One\nTwo\nThree",
                 "Short again",
                 "One\nTwo\nThree\nFour",
+                "Short",
+                "One\nTwo\nThree\nFour\nFive",
+                "Short",
+                oversized_text,
+                "Short",
+                oversized_text,
                 "Last",
                 "Again",
                 "After",
@@ -3364,7 +3472,7 @@ mod tests {
             let layout =
                 NowPlayingLayout::for_presentation(&presentation, Viewport::new(width, height));
             allocate_lyrics(&rendered, &layout);
-            for index in 3..=6 {
+            for index in 3..=12 {
                 let lyrics = presentation.lyrics.as_mut().unwrap();
                 lyrics.current_index = index;
 
@@ -3377,20 +3485,53 @@ mod tests {
                 for offset in [0, 100, 310, 500, 620] {
                     let now = start + std::time::Duration::from_millis(offset);
                     rendered.apply_frame(now, &layout);
-                    let frame = rendered.motion.borrow().frame_at(now);
-                    let outgoing = frame
-                        .cues
+                    let visible = rendered.reel.visible_cues();
+                    let outgoing = visible
                         .iter()
                         .find(|cue| cue.index == index as i64 - 1)
-                        .unwrap();
+                        .expect("the adjacent outgoing cue still intersects the lyric area");
                     assert_eq!(
-                        outgoing.opacity, 1.0,
+                        outgoing.cue.opacity, 1.0,
                         "outgoing retention is geometric at {width}x{height}"
                     );
                 }
                 let cues = rendered.reel.visible_cues();
                 let focal = cues.iter().find(|cue| cue.index == index as i64).unwrap();
-                assert!((focal.y - f64::from(rendered.reel_region.height()) / 3.0).abs() < 1.0);
+                assert_complete_focal_cue(&rendered, focal);
+                // Static Fixture Mode must agree with a completed natural handoff.
+                let direct = lyric_view(
+                    &presentation,
+                    presentation.lyrics.as_deref(),
+                    PresentationPalette::fallback(),
+                    PresentationBehavior::StaticFixture,
+                );
+                allocate_lyrics(&direct, &layout);
+                let settled = direct.reel.visible_cues();
+                let destination = settled
+                    .iter()
+                    .find(|cue| cue.index == index as i64)
+                    .unwrap();
+                assert_eq!(
+                    (focal.y, focal.height, focal.scale),
+                    (destination.y, destination.height, destination.scale)
+                );
+            }
+            // Reduced animation and seeks in either direction settle complete
+            // destination text without replaying intervening cues.
+            for (index, animate, revision) in [(9, false, 0), (11, true, 1), (9, true, 2)] {
+                let lyrics = presentation.lyrics.as_mut().unwrap();
+                lyrics.current_index = index;
+                let now = std::time::Duration::from_secs(20 + revision);
+                rendered
+                    .motion
+                    .borrow_mut()
+                    .update(revision, Some(lyrics), now, animate);
+                rendered.apply_frame(now, &layout);
+                assert!(!rendered.motion.borrow().frame_at(now).cue_motion_active);
+                let cues = rendered.reel.visible_cues();
+                let focal = cues.iter().find(|cue| cue.index == index as i64).unwrap();
+                assert_eq!(focal.layout.text(), oversized_text);
+                assert_complete_focal_cue(&rendered, focal);
             }
         }
     }

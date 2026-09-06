@@ -122,7 +122,13 @@ Compare behavior with [motion and inactivity](../design/presentation.md#motion-a
 
 For settled Lyric Reel context, include `lyrics-reel-capacity` at all seven peer
 viewports. Check the first-line Primary Position, modest inter-cue gaps, and
-partially visible cues at both faded edges.
+partially visible cues at both faded edges. Include `lyrics-four-lines` for
+complete oversized text at every viewport: its final line must clear the bottom
+fade, its first line must retain the Primary Position, and earlier context must
+pack above it. Compare with `lyrics-one-line` for unchanged normal focal size.
+Inspect `wrapping-progression` motion captures in both directions around the
+oversized cue, including reduced animation, for stable wrapping and continuous
+upward departure.
 
 For lyric entry, Natural Cue Handoffs, Intentional Blanks, seeks, and interrupted
 motion, use the [lyric motion captures](../development.md#lyric-motion-captures)

@@ -464,12 +464,6 @@ const examples = {
   },
   "wrapping-progression": {
     durationSeconds: 14,
-    lineCountEvidenceByResolution: {
-      "1600x900":
-        "Native Pango measurement: wrapping source 2 lines; destination 3 lines.",
-      "1600x1200":
-        "Native Pango measurement: wrapping source 3 lines; destination 4 lines.",
-    },
     initialFixture: "src/shared/fixtures/playing.json",
     publications: [
       {
@@ -541,24 +535,24 @@ const examples = {
         "Taller cue shrinking into earlier context during continuous Reel Lift.",
       ),
       reviewFrame(
-        11.41,
-        "short-to-capped-midpoint",
-        "Natural Cue Handoff into the capped-height cue.",
+        11.14,
+        "short-to-oversized-midpoint",
+        "Natural Cue Handoff into the oversized cue.",
       ),
       reviewFrame(
         11.8,
-        "capped-cue-settled",
-        "Capped-height focal cue settled with geometrically visible context.",
+        "oversized-cue-settled",
+        "Oversized focal cue settled with geometrically visible context.",
       ),
       reviewFrame(
-        12.61,
-        "capped-to-short-midpoint",
-        "Capped-height cue shrinking into earlier Lyric Reel context.",
+        12.34,
+        "oversized-to-short-midpoint",
+        "Oversized cue shrinking into earlier Lyric Reel context.",
       ),
       reviewFrame(
         13,
         "final-short-settled",
-        "Short destination cue settled after a capped-height source.",
+        "Short destination cue settled after an oversized source.",
       ),
     ],
   },
@@ -896,10 +890,6 @@ export function buildLyricMotionCapturePlan(
       ...publication,
     })),
     reviewFrames: example.reviewFrames.map((frame) => ({ ...frame })),
-    lineCountEvidence:
-      example.lineCountEvidenceByResolution?.[
-        `${request.resolution.width}x${request.resolution.height}`
-      ],
     outputDirectory:
       request.output === undefined
         ? undefined
@@ -1082,7 +1072,6 @@ export function renderLyricMotionCaptureReadme({
   framesPerSecond,
   durationSeconds,
   reducedAnimation,
-  lineCountEvidence,
   frames,
 }) {
   const lines = [
@@ -1092,7 +1081,6 @@ export function renderLyricMotionCaptureReadme({
     reducedAnimation
       ? "Reduced animation was enabled; semantic updates should appear only at complete endpoints."
       : "Dynamic animation was enabled for full-rate motion review.",
-    ...(lineCountEvidence === undefined ? [] : [lineCountEvidence]),
     "",
     "These are review targets, not automated visual verdicts. Inspect the full-rate sheets for brief states between the selected frames.",
     "",

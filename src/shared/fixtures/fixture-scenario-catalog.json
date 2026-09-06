@@ -39,7 +39,7 @@
     },
     {
       "scenario": "lyrics-four-lines",
-      "label": "Lyrics — four or more lines",
+      "label": "Lyrics — complete oversized cue",
       "fixture": "src/shared/fixtures/lyrics-four-lines.json",
       "palette": "dark"
     },
