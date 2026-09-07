@@ -18,6 +18,8 @@ import {
 } from "./process-harness.mjs";
 
 import { createNativeSession } from "./native-session.mjs";
+import { runControlledRendererSession } from "./presentation-capture-renderer.mjs";
+import { publishPresentationCapture } from "./presentation-capture-publication.mjs";
 
 const executeFile = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -25,6 +27,53 @@ const rendererPath = path.join(
   repositoryRoot,
   "target/debug/roonscape-renderer",
 );
+
+test("artwork retains its pixels across repeated composition changes and source replacements", async () => {
+  const directory = await mkdtemp(
+    path.join(tmpdir(), "roonscape-artwork-reuse-test."),
+  );
+  const fixtures = await Promise.all(
+    ["playing", "lyrics-reel-capacity", "light-artwork"].map(async (name) =>
+      JSON.parse(
+        await readFile(
+          path.join(repositoryRoot, `src/shared/fixtures/${name}.json`),
+          "utf8",
+        ),
+      ),
+    ),
+  );
+  const sequence = [0, 0, 1, 1, 0, 2, 2, 1, 0];
+  const captures = sequence.map((fixture, index) => ({
+    scenario: `artwork-reuse-${index}`,
+    width: 1280,
+    height: 720,
+    viewport: "1280x720",
+    typography: "fallback",
+    diagnostics: false,
+    snapshot: fixtures[fixture],
+    finalCapturePath: path.join(directory, `${index}.png`),
+  }));
+
+  try {
+    await runControlledRendererSession(captures, {
+      publishCapture: publishPresentationCapture,
+    });
+    const images = await Promise.all(
+      captures.map(({ finalCapturePath }) => readFile(finalCapturePath)),
+    );
+    for (const [index, fixture] of sequence.entries()) {
+      assert.deepEqual(
+        images[index],
+        images[sequence.indexOf(fixture)],
+        `capture ${index} must match its first settled destination`,
+      );
+    }
+    assert.notDeepEqual(images[0], images[2]);
+    assert.notDeepEqual(images[0], images[5]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("acknowledges initial and repeated Fixture Scenario revisions only after their exact frame paints", async () => {
   const taskDirectory = await mkdtemp(

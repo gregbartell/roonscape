@@ -305,6 +305,7 @@ struct RenderedArtwork {
     print_plate: gtk::Box,
     decoration: gtk::AspectFrame,
     surface: gtk::Picture,
+    displayed_image_dimensions: Cell<Option<ArtworkDimensions>>,
     source_key: Option<ArtworkCacheKey>,
     artwork_cache: Rc<ArtworkCache>,
     layout: ArtworkLayout,
@@ -1625,6 +1626,7 @@ fn artwork(
         print_plate,
         decoration,
         surface: picture,
+        displayed_image_dimensions: Cell::new(None),
         source_key: source.map(|(key, _)| key),
         artwork_cache,
         layout,
@@ -2050,11 +2052,17 @@ impl RenderedArtwork {
                 .layout
                 .fitted_image_with_border(reservation, now_playing.artwork_border_width_px)
                 .expect("supplied artwork should have fitted image dimensions");
+            // Each artwork layer owns an immutable source. Reinstalling even the
+            // same pixbuf creates a new GDK texture and invalidates its rendering.
+            if self.displayed_image_dimensions.get() == Some(image) {
+                return;
+            }
             let scaled = self
                 .artwork_cache
                 .scaled(source_key, image)
                 .expect("positive artwork dimensions should produce a scaled image");
             self.surface.set_pixbuf(Some(&scaled));
+            self.displayed_image_dimensions.set(Some(image));
             self.readiness.scaled.set(true);
         }
     }
