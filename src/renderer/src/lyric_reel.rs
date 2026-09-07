@@ -7,8 +7,8 @@ use roonscape_renderer::{NowPlayingTypography, PresentationPalette, Rgb};
 
 use crate::lyric_motion::{LyricCueFrame, LyricFrame};
 
-// Pango fits each cue before motion. Painting scales that same layout,
-// so a cue never rewraps as it changes size during a Natural Cue Handoff.
+// Pango fits each complete cue before motion. Its fitted glyph size and
+// wrapping stay unchanged as position and semantic color transfer.
 pub(crate) struct LyricReel {
     pub widget: gtk::DrawingArea,
     frame: RefCell<Option<LyricFrame>>,
@@ -34,7 +34,6 @@ pub(crate) struct PositionedCue {
     pub cue: LyricCueFrame,
     pub color: Rgb,
     pub layout: pango::Layout,
-    fitted_scale: f64,
 }
 
 impl LyricReel {
@@ -74,7 +73,7 @@ impl LyricReel {
         height: i32,
         typography: NowPlayingTypography,
     ) {
-        let metrics = (width, height, typography.lyric_current_px);
+        let metrics = (width, height, typography.lyric_cue_px);
         if self.metrics.get() == Some(metrics)
             && self.typography.get() == typography
             && self.frame.borrow().as_ref() == Some(frame)
@@ -174,9 +173,8 @@ impl LyricReel {
         let (width, fitting_height, font_px) =
             self.metrics
                 .get()
-                .unwrap_or((1, 1, typography.lyric_current_px));
-        let neighbor_scale = f64::from(typography.lyric_neighbor_px) / f64::from(font_px);
-        let gap = f64::from(typography.lyric_neighbor_px) * 0.42;
+                .unwrap_or((1, 1, typography.lyric_cue_px));
+        let gap = f64::from(typography.lyric_spacing_px) * 0.42;
         let area_height = f64::from(self.widget.height());
         let primary_y = area_height / 3.0;
         // Allocation can change during composition travel. Fit against the
@@ -193,7 +191,7 @@ impl LyricReel {
                     .or_insert_with(|| self.fit(&cue.text, width, font_px, available_height))
                     .clone()
             };
-            let scale = fitted.scale * (neighbor_scale + (1.0 - neighbor_scale) * cue.emphasis);
+            let scale = fitted.scale;
             let height = f64::from(fitted.layout.pixel_size().1) * scale * cue.extent;
             cues.push(PositionedCue {
                 color: self.color(cue),
@@ -203,33 +201,25 @@ impl LyricReel {
                 scale,
                 cue: cue.clone(),
                 layout: fitted.layout,
-                fitted_scale: fitted.scale,
             });
         }
-        // Interpolate complete packed endpoints, not an anchor against already
-        // interpolated heights. The latter multiplies the easing curves and can
-        // make shrinking outgoing cues reverse direction near the end of a lift.
+        // Text roles share fitted bounds. Only synthetic blank spacing can
+        // collapse during departure, so all anchors use the same packed tops.
+        let mut y = 0.0;
+        let tops: Vec<_> = cues
+            .iter()
+            .map(|cue| {
+                let top = y;
+                y += cue.height + gap * cue.cue.extent;
+                top
+            })
+            .collect();
         for (anchor, weight) in &frame.anchors {
-            let mut y = 0.0;
-            let tops: Vec<_> = cues
-                .iter()
-                .map(|cue| {
-                    let top = y;
-                    let scale = cue.fitted_scale
-                        * if cue.index == *anchor {
-                            1.0
-                        } else {
-                            neighbor_scale
-                        };
-                    y += (f64::from(cue.layout.pixel_size().1) * scale + gap) * cue.cue.extent;
-                    top
-                })
-                .collect();
             let anchor_y = cues
                 .iter()
                 .position(|cue| cue.index == *anchor)
                 .map_or(0.0, |index| tops[index]);
-            for (cue, top) in cues.iter_mut().zip(tops) {
+            for (cue, top) in cues.iter_mut().zip(&tops) {
                 cue.y += (top - anchor_y) * weight;
             }
         }
@@ -314,13 +304,13 @@ impl LyricReel {
     }
 
     fn fade_height(&self, height: f64) -> f64 {
-        (f64::from(self.typography.get().lyric_neighbor_px) * 0.65).min(height / 4.0)
+        (f64::from(self.typography.get().lyric_spacing_px) * 0.65).min(height / 4.0)
     }
 
     fn color(&self, cue: &LyricCueFrame) -> Rgb {
         let palette = self.palette.get();
         let colors = [
-            palette.muted_text,
+            palette.secondary_text,
             palette.primary_text,
             palette.secondary_text,
         ];

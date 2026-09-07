@@ -2158,14 +2158,14 @@ impl RenderedMetadata {
             .set_opacity(ordinary_opacity * self.metadata_fade.opacity());
         // Preserve the established travel independently of exclusive text ownership.
         let ordinary_retirement = motion_phase(progress, 0.0, 0.62);
-        let ordinary_travel_px = f64::from(self.lyrics.typography.get().lyric_current_px) * 1.75;
+        let ordinary_travel_px = f64::from(self.lyrics.typography.get().lyric_cue_px) * 1.75;
         self.ordinary_metadata_stage.move_(
             &self.ordinary_metadata,
             0.0,
             -ordinary_retirement * ordinary_travel_px,
         );
         self.lyrics.root.set_opacity(1.0);
-        let lyric_travel_px = f64::from(self.lyrics.typography.get().lyric_current_px) * 1.8;
+        let lyric_travel_px = f64::from(self.lyrics.typography.get().lyric_cue_px) * 1.8;
         self.lyrics.root.set_margin_top(
             ((1.0 - motion_phase(progress, 0.12, 0.46)) * lyric_travel_px).round() as i32,
         );
@@ -2348,7 +2348,7 @@ impl RenderedLyrics {
             layout.typography.lyric_masthead_artist_px,
         );
         let reel_margin_top =
-            dimension((layout.typography.lyric_current_px as f64 * 0.52).round() as u32);
+            dimension((layout.typography.lyric_cue_px as f64 * 0.52).round() as u32);
         self.reel_region.set_margin_top(reel_margin_top);
         let (_, masthead_height, _, _) = self.masthead.measure(gtk::Orientation::Vertical, width);
         let reel_height = dimension(layout.metadata_height_budget_px)
@@ -3012,10 +3012,14 @@ mod tests {
                     .iter()
                     .map(|line| (line.start_index(), line.length()))
                     .collect();
-                if let Some((last_lines, last_y)) =
-                    previous.insert(cue.index, (lines.clone(), cue.y))
+                if let Some((last_lines, last_y, last_scale)) =
+                    previous.insert(cue.index, (lines.clone(), cue.y, cue.scale))
                 {
                     assert_eq!(lines, last_lines, "wrapping must not change during motion");
+                    assert_eq!(
+                        cue.scale, last_scale,
+                        "glyph size must not change during motion"
+                    );
                     if cue.cue.role != crate::lyric_motion::LyricColorRole::Upcoming {
                         assert!(
                             cue.y <= last_y + 0.1,
@@ -3479,12 +3483,7 @@ mod tests {
             .root
             .compute_bounds(&rendered.root)
             .expect("entering lyric composition should have bounds");
-        let focal_font_size = now_playing
-            .metadata
-            .lyrics
-            .typography
-            .get()
-            .lyric_current_px as f32;
+        let focal_font_size = now_playing.metadata.lyrics.typography.get().lyric_cue_px as f32;
         assert!(
             ordinary_before.y() - ordinary_midpoint.y() >= focal_font_size * 1.4,
             "ordinary copy should clear the focal lyric region by midpoint: before={ordinary_before:?}, midpoint={ordinary_midpoint:?}, focal_font_size={focal_font_size}"
@@ -3667,8 +3666,14 @@ mod tests {
             Some(viewport),
         );
         let frame = lyric_motion_frame(&complete, std::time::Duration::from_millis(2_100));
-        assert_eq!(frame.cause, LyricMotionCause::InterruptedHandoffDestination);
-        assert!(!frame.cue_motion_active);
+        assert_eq!(frame.cause, LyricMotionCause::NaturalCueHandoff);
+        assert!(frame.cue_motion_active);
+        complete.update_in_place(
+            43,
+            &Presentation::NowPlaying(interrupted.clone()),
+            std::time::Duration::from_millis(2_720),
+            Some(viewport),
+        );
         assert_rendered_lyric_roles(
             &complete,
             interrupted_lyrics.previous(),
@@ -3867,6 +3872,32 @@ mod tests {
             cues.len() > 3,
             "available space must expose additional context: {cues:?}"
         );
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for palette in [
+            PresentationPalette::fallback(),
+            PresentationPalette::from_artwork(
+                &repository.join("src/shared/fixtures/artwork/dark-teal.jpg"),
+            )
+            .unwrap(),
+            PresentationPalette::from_artwork(
+                &repository.join("src/shared/fixtures/artwork/light.jpg"),
+            )
+            .unwrap(),
+        ] {
+            rendered.reel.set_palette(palette);
+            for cue in rendered.reel.visible_cues() {
+                assert_eq!(cue.scale, 1.0, "short context keeps the preferred cue size");
+                assert_eq!(
+                    cue.color,
+                    if cue.index == 3 {
+                        palette.primary_text
+                    } else {
+                        palette.secondary_text
+                    },
+                    "active uses primary text; earlier and upcoming share secondary text"
+                );
+            }
+        }
         let focal = cues.iter().find(|cue| cue.index == 3).unwrap();
         assert!((focal.y - f64::from(rendered.reel_region.height()) / 3.0).abs() < 1.0);
         for pair in cues.windows(2) {
@@ -4024,7 +4055,7 @@ mod tests {
         );
         assert!((focal.y - area_height / 3.0).abs() < 1.0);
         let readable_bottom =
-            area_height - f64::from(rendered.typography.get().lyric_neighbor_px) * 0.65;
+            area_height - f64::from(rendered.typography.get().lyric_spacing_px) * 0.65;
         assert!(
             focal.y + focal.height <= readable_bottom + 1.0,
             "complete active text must clear the edge fade: {focal:?}"
@@ -4209,6 +4240,29 @@ mod tests {
                 for pair in cues.windows(2) {
                     assert!(pair[0].y + pair[0].height < pair[1].y);
                 }
+                // The same complete native layout must survive both context roles,
+                // including exceptional fitting below the preferred-size limits.
+                for current_index in [1, 3] {
+                    let lyrics = presentation.lyrics.as_mut().unwrap();
+                    lyrics.current_index = current_index;
+                    rendered.motion.borrow_mut().update(
+                        current_index as u64,
+                        Some(lyrics),
+                        std::time::Duration::ZERO,
+                        false,
+                    );
+                    rendered.apply_frame(std::time::Duration::ZERO, &layout);
+                    let context = rendered.reel.visible_cues();
+                    let cue = context.iter().find(|cue| cue.index == 2).unwrap();
+                    assert_eq!(cue.layout.text(), text);
+                    assert_eq!(lyric_lines(cue), lyric_lines(focal));
+                    assert_eq!(
+                        cue.layout.font_description(),
+                        focal.layout.font_description()
+                    );
+                    assert_eq!((cue.scale, cue.height), (focal.scale, focal.height));
+                    assert!(!cue.layout.is_ellipsized());
+                }
             }
         }
     }
@@ -4302,6 +4356,53 @@ mod tests {
                     (destination.y, destination.height, destination.scale)
                 );
             }
+            // Interrupt a lift and compare the exact displayed native geometry
+            // and color before continuing toward the newest destination.
+            let start = std::time::Duration::from_secs(16);
+            let lyrics = presentation.lyrics.as_mut().unwrap();
+            lyrics.current_index = 2;
+            rendered
+                .motion
+                .borrow_mut()
+                .update(0, Some(lyrics), start, false);
+            lyrics.current_index = 3;
+            rendered
+                .motion
+                .borrow_mut()
+                .update(0, Some(lyrics), start, true);
+            let interrupted_at = start + std::time::Duration::from_millis(100);
+            rendered.apply_frame(interrupted_at, &layout);
+            let displayed = || {
+                rendered
+                    .reel
+                    .visible_cues()
+                    .iter()
+                    .map(|cue| {
+                        (
+                            cue.index,
+                            cue.y,
+                            cue.height,
+                            cue.scale,
+                            cue.color,
+                            lyric_lines(cue),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let before = displayed();
+            lyrics.current_index = 4;
+            rendered
+                .motion
+                .borrow_mut()
+                .update(0, Some(lyrics), interrupted_at, true);
+            rendered.apply_frame(interrupted_at, &layout);
+            assert_eq!(
+                displayed(),
+                before,
+                "interruption must retarget from the displayed frame"
+            );
+            assert_reel_motion_remains_ordered(&rendered, &layout, interrupted_at);
+
             // Reduced animation and seeks in either direction settle complete
             // destination text without replaying intervening cues.
             for (index, animate, revision) in [(9, false, 0), (11, true, 1), (9, true, 2)] {

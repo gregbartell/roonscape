@@ -13,6 +13,26 @@ use roonscape_renderer::{
 };
 
 #[test]
+fn preferred_cue_size_scales_with_viewport_height() {
+    let presentation = now_playing("lyrics-one-line.json");
+    for (height, expected) in [
+        (720, 42),
+        (900, 42),
+        (1080, 48),
+        (1200, 53),
+        (2160, 96),
+        (2400, 107),
+        (3000, 118),
+    ] {
+        let layout = NowPlayingLayout::for_presentation(
+            &presentation,
+            roonscape_renderer::Viewport::new(height * 2, height),
+        );
+        assert_eq!(layout.typography.lyric_cue_px, expected, "height={height}");
+    }
+}
+
+#[test]
 fn timing_and_status_variants_reserve_identical_composition_geometry() {
     let progress = now_playing("playing.json");
     let activity = now_playing("indeterminate-progress.json");

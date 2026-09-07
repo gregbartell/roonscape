@@ -266,8 +266,9 @@ pub struct NowPlayingTypography {
     pub identity_px: u32,
     pub lyric_masthead_title_px: u32,
     pub lyric_masthead_artist_px: u32,
-    pub lyric_current_px: u32,
-    pub lyric_neighbor_px: u32,
+    pub lyric_cue_px: u32,
+    /// Base unit for inter-cue gaps and reel edge fades, independent of glyph size.
+    pub lyric_spacing_px: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -737,8 +738,8 @@ impl NowPlayingLayout {
             )),
             lyric_masthead_title_px: scaled(viewport.height_px, 0.025, 20, 48),
             lyric_masthead_artist_px: scaled(viewport.height_px, 0.018, 16, 36),
-            lyric_current_px: scaled(viewport.height_px, 0.064, 42, 118),
-            lyric_neighbor_px: scaled(viewport.height_px, 0.024, 19, 48),
+            lyric_cue_px: scaled(viewport.height_px, 96.0 / 2160.0, 42, 118),
+            lyric_spacing_px: scaled(viewport.height_px, 0.024, 19, 48),
         };
         let identity_phrase_gap_px = ((typography.identity_px as f64) * 1.1).round() as u32;
         let identity_label_px = ((typography.identity_px as f64) * 0.885).round() as u32;

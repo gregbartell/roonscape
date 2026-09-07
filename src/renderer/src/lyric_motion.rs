@@ -19,7 +19,6 @@ pub(crate) enum LyricMotionCause {
     IntentionalBlankExit,
     IntentionalBlankContinuation,
     SkippedCueDestination,
-    InterruptedHandoffDestination,
     ExternalSeek,
     TimelineRevision,
     CompositionEntry,
@@ -271,12 +270,6 @@ impl LyricMotion {
             .is_some_and(|motion| motion.is_active_at(now));
         let source_is_blank = source.current().trim().is_empty();
         let target_is_blank = target.current().trim().is_empty();
-        let continuing_blank_departure = active_motion_is_interrupted
-            && !target_is_blank
-            && self
-                .cue_motion
-                .as_ref()
-                .is_some_and(|motion| motion.kind == CueMotionKind::BlankEntry);
         let adjacent = target.current_index == source.current_index.saturating_add(1)
             || (!target_is_blank && target.previous_index() == Some(source.current_index))
             || (source_is_blank
@@ -306,8 +299,6 @@ impl LyricMotion {
             (None, LyricMotionCause::TimelineRevision)
         } else if external_seek {
             (None, LyricMotionCause::ExternalSeek)
-        } else if active_motion_is_interrupted && !continuing_blank_departure {
-            (None, LyricMotionCause::InterruptedHandoffDestination)
         } else if !adjacent {
             (None, LyricMotionCause::SkippedCueDestination)
         } else if target_is_blank {
@@ -327,7 +318,9 @@ impl LyricMotion {
             )
         };
 
-        let interrupted_frame = continuing_blank_departure.then(|| self.frame_at(now));
+        // Adjacent cues retarget the displayed lift; seeks and skipped cues
+        // still install their complete destination without replaying a passage.
+        let interrupted_frame = active_motion_is_interrupted.then(|| self.frame_at(now));
         self.cue_motion = kind.filter(|_| animations_enabled).map(|kind| CueMotion {
             kind,
             source: source.clone(),
@@ -912,7 +905,7 @@ mod tests {
     }
 
     #[test]
-    fn interrupted_natural_cue_handoffs_prioritize_the_newest_complete_endpoint() {
+    fn interrupted_natural_cue_handoffs_retarget_to_the_newest_endpoint() {
         let first = lyrics(0, None, "First", Some("Second"));
         let second = lyrics(1, Some("First"), "Second", Some("Third"));
         let third = lyrics(2, Some("Second"), "Third", Some("Fourth"));
@@ -921,12 +914,12 @@ mod tests {
 
         motion.update(23, Some(&third), Duration::from_millis(160), true);
 
-        for now in [Duration::from_millis(160), Duration::from_secs(2)] {
-            let frame = motion.frame_at(now);
-            assert_eq!(frame.cause, LyricMotionCause::InterruptedHandoffDestination);
-            assert!(!frame.cue_motion_active);
-            assert_eq!(frame.cues[1].text, "Third");
-        }
+        let interrupted = motion.frame_at(Duration::from_millis(160));
+        assert_eq!(interrupted.cause, LyricMotionCause::NaturalCueHandoff);
+        assert!(interrupted.cue_motion_active);
+        let settled = motion.frame_at(Duration::from_millis(780));
+        assert!(!settled.cue_motion_active);
+        assert_eq!(settled.cues[1].text, "Third");
     }
 
     #[test]
