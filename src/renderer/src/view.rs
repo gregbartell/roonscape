@@ -747,6 +747,19 @@ impl PresentationView {
             resolve_for_rendering(presentation, repository_root, self.rendering);
         let rendering = self.rendering;
         let layout_viewport = self.layout_viewport;
+        let now = self.transition_clock.elapsed();
+        let inherit_regular_composition = animations_enabled(rendering.behavior)
+            && self
+                .transition
+                .current()
+                .value()
+                .now_playing
+                .as_ref()
+                .is_some_and(|current| {
+                    let frame = current.metadata.lyrics.motion.borrow().frame_at(now);
+                    frame.composition_progress == 0.0 && !frame.composition_motion_active
+                });
+        let transition_clock = self.transition_clock;
         let root = &self.root;
         rendering
             .cache_scope
@@ -759,6 +772,17 @@ impl PresentationView {
                         caches.clone(),
                         rendering,
                     );
+                    if inherit_regular_composition
+                        && let Some(incoming) = &rendered.now_playing
+                        && let Presentation::NowPlaying(presentation) = &resolved.presentation
+                    {
+                        // The new song owns its cues immediately, but enters from
+                        // the regular composition while its layer is revealed.
+                        let now = transition_clock.elapsed();
+                        *incoming.metadata.lyrics.motion.borrow_mut() = LyricMotion::new(0, None);
+                        incoming.metadata.update_lyrics(0, presentation, now);
+                        incoming.metadata.lyric_composition_progress(now);
+                    }
                     rendered.capture_error.clone_from(&capture_error);
                     rendered
                 };
@@ -3382,6 +3406,7 @@ mod tests {
         compatible_metadata_preserves_live_content_and_refits_invisibly();
         metadata_availability_preserves_full_field_resolution();
         now_playing_artwork_and_text_reveal_together();
+        opening_lyrics_enter_from_regular_composition();
         song_replacement_removes_every_previous_lyric_reel();
         current_track_artwork_preserves_readable_text();
         artwork_updates_recolor_the_existing_lyric_reel();
@@ -5417,6 +5442,150 @@ mod tests {
                     .set_gtk_enable_animations(true);
             }
         }
+    }
+
+    fn opening_lyrics_enter_from_regular_composition() {
+        use std::time::{Duration, Instant};
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        let snapshot =
+            parse_snapshot(include_str!("../../shared/fixtures/lyrics-opening.json")).unwrap();
+        let incoming = |millis: u64, lyrics_available: bool| {
+            let mut snapshot = snapshot.clone();
+            snapshot
+                .timing
+                .as_mut()
+                .unwrap()
+                .position
+                .as_mut()
+                .unwrap()
+                .seconds = millis as f64 / 1_000.0;
+            if !lyrics_available {
+                snapshot.lyrics = None;
+            }
+            presentation_from_snapshot(&snapshot).unwrap()
+        };
+        for (behavior, platform_animations) in [
+            (PresentationBehavior::Dynamic, true),
+            (PresentationBehavior::Dynamic, false),
+            (PresentationBehavior::StaticFixture, true),
+        ] {
+            gtk::Settings::default()
+                .unwrap()
+                .set_gtk_enable_animations(platform_animations);
+            let animated = behavior == PresentationBehavior::Dynamic && platform_animations;
+            for discovery_millis in [0, 100, 300] {
+                let mut view = super::PresentationView::new(
+                    0,
+                    &Presentation::NowPlaying(lyric_presentation("playing.json")),
+                    Viewport::new(1280, 720),
+                    &repository,
+                    super::install_style_providers(typography),
+                    None,
+                    RenderingConfiguration::live(typography, behavior),
+                );
+                view.replace(1, &incoming(0, discovery_millis == 0), &repository);
+                let transition_start = view.transition.started_at();
+                let start = transition_start.unwrap_or_else(|| view.transition_clock.elapsed());
+                let initial = lyric_motion_frame(view.transition.current().value(), start);
+                assert_eq!(
+                    initial.composition_motion_active,
+                    animated && discovery_millis == 0
+                );
+                assert_eq!(view.transition.is_active(), animated);
+                if animated || discovery_millis != 0 {
+                    assert_eq!(
+                        view.transition
+                            .current()
+                            .value()
+                            .now_playing
+                            .as_ref()
+                            .unwrap()
+                            .metadata
+                            .rendered_composition_progress(),
+                        0.0,
+                        "the incoming song inherits regular geometry before its first layout"
+                    );
+                } else {
+                    assert_eq!(initial.composition_progress, 1.0);
+                }
+                for millis in [100, 200, 300, 337, 400, 450, 600, 900] {
+                    let now = start + Duration::from_millis(millis);
+                    view.transition_clock = Instant::now() - now;
+                    let available = millis >= discovery_millis;
+                    let before = view.transition.current().value().root.opacity();
+                    view.update_in_place(2, &incoming(millis, available), &repository);
+                    assert_eq!(
+                        view.transition.started_at(),
+                        transition_start.filter(|_| millis <= 450),
+                        "discovery must not restart the Now Playing Transition"
+                    );
+                    assert_eq!(view.transition.current().value().root.opacity(), before);
+                    view.advance_transition(now);
+                    let current = view.transition.current().value();
+                    let frame = lyric_motion_frame(current, now);
+                    if animated && millis == discovery_millis {
+                        assert_eq!(
+                            current
+                                .now_playing
+                                .as_ref()
+                                .unwrap()
+                                .metadata
+                                .rendered_composition_progress(),
+                            0.0,
+                            "discovery begins at the displayed geometry"
+                        );
+                        assert_rendered_composition_ownership(current, 1.0, 0.0, 0.0);
+                    }
+                    if available {
+                        let expected_index = if millis < 200 {
+                            0
+                        } else if millis < 400 {
+                            1
+                        } else {
+                            2
+                        };
+                        let focal = frame
+                            .cues
+                            .iter()
+                            .find(|cue| cue.role == crate::lyric_motion::LyricColorRole::Focal)
+                            .unwrap();
+                        assert_eq!(
+                            focal.index, expected_index,
+                            "cue selection follows playback even before readability"
+                        );
+                        if !animated {
+                            assert_eq!(frame.composition_progress, 1.0);
+                            assert!(!frame.composition_motion_active);
+                        }
+                    }
+                    if animated && millis == 337 {
+                        assert!(current.root.opacity() > 0.0 && current.root.opacity() < 1.0);
+                        assert!(
+                            frame.composition_progress > 0.0 && frame.composition_progress < 1.0
+                        );
+                        assert!(
+                            frame.composition_motion_active,
+                            "entry overlaps the Now Playing reveal"
+                        );
+                    }
+                    if animated && millis == 450 {
+                        assert!(!view.transition.is_active());
+                        assert!(
+                            frame.composition_motion_active,
+                            "the 580 ms entry continues after the reveal"
+                        );
+                    }
+                    if millis == 900 {
+                        assert_eq!(frame.composition_progress, 1.0);
+                        assert!(!frame.composition_motion_active);
+                    }
+                }
+            }
+        }
+        gtk::Settings::default()
+            .unwrap()
+            .set_gtk_enable_animations(true);
     }
 
     fn song_replacement_removes_every_previous_lyric_reel() {

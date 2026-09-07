@@ -159,6 +159,13 @@ compact masthead should fade; compare artwork, Presentation Status, timing,
 and the Lyric Reel across intermediate frames. The reduced-animation version
 should apply metadata immediately.
 
+Use `opening-lyrics` to inspect song replacement from the regular composition
+with lyrics present immediately and discovered during the incoming reveal.
+Compare full-rate frames for continuous artwork and metadata geometry, overlapping
+Now Playing and Lyric Composition Transitions, and live cue selection after the
+short opening cues have passed. The reduced-animation version should show the
+same current cue destinations with settled geometry.
+
 Automated checks belong at the shared fixture, layout, typography,
 palette-contrast, transition, and preserved-behavior seams; do not commit PNG goldens or add screenshot
 comparisons to CI.

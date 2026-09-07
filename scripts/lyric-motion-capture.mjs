@@ -57,6 +57,75 @@ const defaultRendererExecutable = path.join(
 );
 
 const examples = {
+  "opening-lyrics": {
+    durationSeconds: 6,
+    initialFixture: "src/shared/fixtures/playing.json",
+    publications: [
+      {
+        atSeconds: 0.5,
+        fixture: "src/shared/fixtures/lyrics-opening.json",
+        positionSeconds: 0,
+      },
+      {
+        atSeconds: 2,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 171,
+      },
+      {
+        atSeconds: 3,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "Signals at Sunrise",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 3.3,
+        fixture: "src/shared/fixtures/lyrics-opening.json",
+        positionSeconds: 0.3,
+      },
+    ],
+    reviewFrames: [
+      reviewFrame(0.45, "regular-source", "Outgoing regular composition."),
+      reviewFrame(
+        0.8,
+        "immediate-entry-overlap",
+        "Incoming reveal overlaps lyric geometry movement; the short opening cue has already passed.",
+      ),
+      reviewFrame(
+        0.95,
+        "immediate-reveal-end",
+        "Now Playing reveal completes while lyric entry continues.",
+      ),
+      reviewFrame(
+        1.15,
+        "immediate-entry-settled",
+        "Current lyrics settle without replaying the opening cues.",
+      ),
+      reviewFrame(
+        3.25,
+        "discovery-before",
+        "Incoming regular composition is already revealing.",
+      ),
+      reviewFrame(
+        3.4,
+        "discovery-overlap",
+        "Discovered lyrics enter from current regular geometry during the reveal.",
+      ),
+      reviewFrame(
+        3.6,
+        "discovery-midpoint",
+        "Geometry and metadata/reel fades continue after the Now Playing reveal.",
+      ),
+      reviewFrame(
+        3.95,
+        "discovery-settled",
+        "The live cue destination settles without restarting the song reveal.",
+      ),
+    ],
+  },
   "metadata-updates": {
     durationSeconds: 8,
     initialFixture: "src/shared/fixtures/long-metadata.json",

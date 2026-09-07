@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 4,
+  "revision": 7,
+  "availability": "available",
+  "playback": "playing",
+  "trackedOutput": {
+    "name": "Speaker System"
+  },
+  "trackedZone": {
+    "id": "zone-living-room",
+    "name": "Living Room"
+  },
+  "nowPlaying": {
+    "title": "Signals at Sunrise",
+    "artist": "Evelyn Lark & The Orbital Choir",
+    "album": "Signals from the Quiet Sea"
+  },
+  "artwork": {
+    "revision": 3,
+    "path": "src/shared/fixtures/artwork/playing.jpg"
+  },
+  "lyrics": {
+    "cues": [
+      {
+        "atSeconds": 0,
+        "text": "First light"
+      },
+      {
+        "atSeconds": 0.2,
+        "text": "The signal finds us"
+      },
+      {
+        "atSeconds": 0.4,
+        "text": "Across the waking sky"
+      },
+      {
+        "atSeconds": 3,
+        "text": "We follow the morning home"
+      }
+    ]
+  },
+  "timing": {
+    "position": {
+      "seconds": 0,
+      "sampledAt": "2026-08-15T19:20:00Z"
+    },
+    "durationSeconds": 20
+  }
+}
