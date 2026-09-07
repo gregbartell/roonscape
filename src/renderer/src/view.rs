@@ -235,6 +235,10 @@ struct RenderedLyrics {
     reel: Rc<LyricReel>,
     cue_width_px: Cell<i32>,
     cue_height_px: Cell<i32>,
+    primary_y_px: Cell<f64>,
+    composition_top_px: Cell<i32>,
+    composition_height_px: Cell<i32>,
+    travel_px: Cell<i32>,
     typography: Cell<roonscape_renderer::NowPlayingTypography>,
     motion: RefCell<LyricMotion>,
     rendered_at: Cell<Duration>,
@@ -1747,9 +1751,9 @@ fn metadata(
     ordinary_metadata_stage.set_vexpand(true);
     ordinary_metadata_stage.put(&ordinary_metadata, 0.0, 0.0);
     musical_metadata.set_child(Some(&ordinary_metadata_stage));
-    musical_metadata.add_overlay(&lyrics.root);
-    musical_metadata.set_clip_overlay(&lyrics.root, true);
-    musical_metadata.set_measure_overlay(&lyrics.root, false);
+    // The travelling reel owns its fade outside the ordinary metadata clip.
+    root.add_overlay(&lyrics.root);
+    root.set_measure_overlay(&lyrics.root, false);
 
     let timing_slot = gtk::Overlay::new();
     timing_slot.set_hexpand(true);
@@ -1820,6 +1824,7 @@ fn lyric_view(
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("lyric-composition");
     root.set_hexpand(true);
+    root.set_halign(gtk::Align::Start);
     root.set_valign(gtk::Align::Start);
     let masthead = gtk::Box::new(gtk::Orientation::Vertical, 0);
     masthead.add_css_class("lyric-masthead");
@@ -1864,6 +1869,10 @@ fn lyric_view(
         reel,
         cue_width_px: Cell::new(1),
         cue_height_px: Cell::new(1),
+        primary_y_px: Cell::new(0.0),
+        composition_top_px: Cell::new(0),
+        composition_height_px: Cell::new(1),
+        travel_px: Cell::new(0),
         typography: Cell::new(
             NowPlayingLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE).typography,
         ),
@@ -2240,7 +2249,7 @@ impl RenderedMetadata {
         }
         self.lyrics.root.set_opacity(1.0);
         let lyric_travel_px = f64::from(self.lyrics.typography.get().lyric_cue_px) * 1.8;
-        self.lyrics.root.set_margin_top(
+        self.lyrics.apply_travel(
             ((1.0 - motion_phase(progress, 0.12, 0.46)) * lyric_travel_px).round() as i32,
         );
         self.lyrics.reel_region.set_opacity(reel_opacity);
@@ -2431,11 +2440,9 @@ impl RenderedMetadata {
 impl RenderedLyrics {
     fn apply_layout(&self, layout: &NowPlayingLayout) {
         let width = dimension(layout.information.musical_metadata_width_px);
-        let height = dimension(layout.metadata_height_budget_px);
         self.cue_width_px.set(dimension(layout.lyric_width_px));
         self.typography.set(layout.typography);
         self.root.set_width_request(width);
-        self.root.set_height_request(height);
         self.masthead.set_spacing(dimension(
             (layout.typography.lyric_masthead_artist_px as f64 * 0.25).round() as u32,
         ));
@@ -2453,12 +2460,50 @@ impl RenderedLyrics {
             dimension((layout.typography.lyric_cue_px as f64 * 0.52).round() as u32);
         self.reel_region.set_margin_top(reel_margin_top);
         let (_, masthead_height, _, _) = self.masthead.measure(gtk::Orientation::Vertical, width);
-        let reel_height = dimension(layout.metadata_height_budget_px)
-            .saturating_sub(masthead_height)
-            .saturating_sub(reel_margin_top);
-        self.cue_height_px.set(reel_height.max(1));
-        self.reel_region.set_height_request(reel_height);
+        let upper_extent = masthead_height + reel_margin_top;
+        // Preserve the original focal anchor independently of the lower extent.
+        self.primary_y_px.set(
+            f64::from(dimension(layout.metadata_height_budget_px).saturating_sub(upper_extent))
+                / 3.0,
+        );
+        // Reserve the same native line heights as the footer even when its
+        // determinate labels are absent. Font metrics differ from fitting budgets.
+        let line_height = |font_px| {
+            let measurement = self.masthead_artist.layout().copy();
+            measurement.set_text("00:00");
+            measurement.set_width(-1);
+            measurement.set_attributes(Some(&font_size_attributes(font_px)));
+            measurement.pixel_size().1
+        };
+        let progress_height = dimension(layout.progress_fill_height_px + layout.time_spacing_px)
+            + line_height(layout.typography.time_px);
+        let timing_height = dimension(layout.timing_height_px());
+        let footer_top = dimension(layout.footer_anchor.bottom_viewport_y_px)
+            - timing_height
+            - dimension(layout.footer_gap_px)
+            - line_height(layout.typography.identity_px);
+        let reserved_progress_top = footer_top + (timing_height - progress_height) / 2;
+        let height = reserved_progress_top
+            - dimension(layout.metadata_region_top_viewport_y_px)
+            - reel_margin_top;
+        self.composition_top_px
+            .set(dimension(layout.metadata_region_top_viewport_y_px));
+        self.composition_height_px.set(height);
+        self.cue_height_px.set((height - upper_extent).max(1));
+        self.apply_travel(self.travel_px.get());
         self.apply_frame(self.rendered_at.get(), layout);
+    }
+
+    fn apply_travel(&self, travel_px: i32) {
+        self.travel_px.set(travel_px);
+        self.root
+            .set_margin_top(self.composition_top_px.get() + travel_px);
+        // The upper edge travels with the masthead; the lower fade stays clear
+        // of all footer activity. Fitting still uses the settled destination.
+        self.root
+            .set_height_request((self.composition_height_px.get() - travel_px).max(1));
+        self.reel_region
+            .set_height_request((self.cue_height_px.get() - travel_px).max(1));
     }
 
     fn composition_timeline_progress(&self, now: Duration) -> f64 {
@@ -2488,6 +2533,7 @@ impl RenderedLyrics {
             frame,
             self.cue_width_px.get(),
             self.cue_height_px.get(),
+            self.primary_y_px.get(),
             layout.typography,
         );
     }
@@ -2976,7 +3022,7 @@ mod tests {
         lyrics.apply_layout(layout);
         lyrics.root.allocate(
             layout.information.musical_metadata_width_px as i32,
-            layout.metadata_height_budget_px as i32,
+            lyrics.root.height_request() + lyrics.root.margin_top(),
             -1,
             None,
         );
@@ -2984,7 +3030,7 @@ mod tests {
         lyrics.apply_frame(std::time::Duration::ZERO, layout);
         lyrics.root.allocate(
             layout.information.musical_metadata_width_px as i32,
-            layout.metadata_height_budget_px as i32,
+            lyrics.root.height_request() + lyrics.root.margin_top(),
             -1,
             None,
         );
@@ -3175,6 +3221,17 @@ mod tests {
                     0,
                 ),
             ];
+            if metadata.lyrics.masthead.opacity() > 0.0 {
+                bounds.push((
+                    metadata
+                        .lyrics
+                        .reel
+                        .widget
+                        .compute_bounds(&rendered.root)
+                        .unwrap(),
+                    0,
+                ));
+            }
             let labels = if metadata.lyrics.masthead.opacity() > 0.0 {
                 [
                     &metadata.lyrics.masthead_title,
@@ -3501,6 +3558,7 @@ mod tests {
             .unwrap();
         gtk::init().expect("GTK should initialize for native lyric layout coverage");
         super::install_style_providers(roonscape_renderer::select_typography(&HashSet::new()));
+        lyric_fade_clearances_match();
         reel_capacity_and_primary_position_follow_available_space();
         blanks_retain_the_packed_reel_across_peer_viewports();
         hyphenated_lyric_words_move_intact_to_the_next_line();
@@ -3985,12 +4043,139 @@ mod tests {
                     );
                 }
                 // Allocation changes during travel must not trigger height fitting.
-                rendered.reel.widget.allocate(width as i32, 120, -1, None);
+                rendered.reel.widget.allocate(
+                    width as i32,
+                    rendered.primary_y_px.get() as i32 + 120,
+                    -1,
+                    None,
+                );
                 let allocated = fitted();
                 assert!(!allocated.is_empty());
                 for cue in allocated {
                     assert_eq!(&cue, expected.iter().find(|item| item.0 == cue.0).unwrap());
                 }
+            }
+        }
+    }
+
+    fn lyric_fade_clearances_match() {
+        for (width, height, upper, primary) in [
+            (1280, 720, 169.0, 268.6667),
+            (1600, 900, 194.0, 333.3333),
+            (1600, 1200, 314.0, 466.6667),
+            (1920, 1200, 258.0, 446.0),
+            (2560, 1080, 230.0, 399.3333),
+            (3840, 2160, 449.0, 791.3333),
+            (3840, 2400, 477.0, 878.3333),
+        ] {
+            let presentation = lyric_presentation("lyrics-one-line.json");
+            let rendered = rendered_now_playing(&presentation, PresentationBehavior::StaticFixture);
+            rendered.apply_viewport(Viewport::new(width, height));
+            for _ in 0..3 {
+                rendered
+                    .root
+                    .allocate(width as i32, height as i32, -1, None);
+                while gtk::glib::MainContext::default().iteration(false) {}
+            }
+            let metadata = &rendered.now_playing.as_ref().unwrap().metadata;
+            let reel = metadata
+                .lyrics
+                .reel
+                .widget
+                .compute_bounds(&rendered.root)
+                .unwrap();
+            let masthead = metadata
+                .lyrics
+                .masthead
+                .compute_bounds(&rendered.root)
+                .unwrap();
+            let rail = metadata
+                .progress
+                .as_ref()
+                .unwrap()
+                .rail
+                .compute_bounds(&rendered.root)
+                .unwrap();
+            // Recorded native geometry before extending the lower boundary.
+            let focal = metadata
+                .lyrics
+                .reel
+                .visible_cues()
+                .into_iter()
+                .find(|cue| cue.cue.role == crate::lyric_motion::LyricColorRole::Focal)
+                .unwrap();
+            assert!(
+                (reel.y() - upper).abs() < 1.0,
+                "upper edge at {width}x{height}: {reel:?}"
+            );
+            assert!(
+                (f64::from(reel.y()) + focal.y - primary).abs() < 1.0,
+                "Primary Position at {width}x{height}: {}",
+                f64::from(reel.y()) + focal.y
+            );
+            let upper_gap = reel.y() - (masthead.y() + masthead.height());
+            let lower_gap = rail.y() - (reel.y() + reel.height());
+            assert!(
+                (upper_gap - lower_gap).abs() <= 2.0,
+                "{width}x{height}: upper={upper_gap}, lower={lower_gap}"
+            );
+            let lower_edge = reel.y() + reel.height();
+            // Both directions and reversals must finish the fade before any
+            // parent clips it, including the partially visible travel interval.
+            for step in (0..=100).chain((0..100).rev()).chain(35..=100) {
+                let progress = f64::from(step) / 100.0;
+                metadata.apply_composition_ownership(progress);
+                let layout = NowPlayingLayout::for_composition_progress(
+                    &presentation,
+                    Viewport::new(width, height),
+                    super::composition_geometry(progress),
+                );
+                metadata.apply_layout(&layout);
+                for _ in 0..2 {
+                    rendered
+                        .root
+                        .allocate(width as i32, height as i32, -1, None);
+                    while gtk::glib::MainContext::default().iteration(false) {}
+                }
+                let region = metadata
+                    .lyrics
+                    .reel
+                    .widget
+                    .compute_bounds(&rendered.root)
+                    .unwrap();
+                assert_eq!(
+                    metadata.lyrics.root.width(),
+                    layout.information.musical_metadata_width_px as i32,
+                    "travelling masthead retains the musical metadata column width"
+                );
+                assert!(
+                    (region.y() + region.height() - lower_edge).abs() <= 1.0,
+                    "lower fade must stay fixed during travel at {width}x{height}, {progress}: {region:?}"
+                );
+                let focal_now = metadata
+                    .lyrics
+                    .reel
+                    .visible_cues()
+                    .into_iter()
+                    .find(|cue| cue.cue.role == crate::lyric_motion::LyricColorRole::Focal)
+                    .unwrap();
+                assert!((focal_now.y - focal.y).abs() < 1.0);
+                let mut ancestor = metadata.lyrics.reel.widget.parent();
+                while let Some(widget) = ancestor {
+                    if widget.overflow() == gtk::Overflow::Hidden {
+                        let bounds = widget.compute_bounds(&rendered.root).unwrap();
+                        assert!(
+                            bounds.y() <= region.y() && bounds.y() + bounds.height() >= lower_edge,
+                            "parent must contain the complete fade: {bounds:?}, {region:?}"
+                        );
+                    }
+                    ancestor = widget.parent();
+                }
+                let footer = metadata.footer.compute_bounds(&rendered.root).unwrap();
+                assert!(
+                    lower_edge < footer.y(),
+                    "all footer activity must clear the fade"
+                );
             }
         }
     }
@@ -4045,7 +4230,7 @@ mod tests {
             }
         }
         let focal = cues.iter().find(|cue| cue.index == 3).unwrap();
-        assert!((focal.y - f64::from(rendered.reel_region.height()) / 3.0).abs() < 1.0);
+        assert!((focal.y - rendered.primary_y_px.get()).abs() < 1.0);
         for pair in cues.windows(2) {
             assert!(pair[0].index < pair[1].index);
             assert!(pair[0].y + pair[0].height < pair[1].y);
@@ -4081,7 +4266,7 @@ mod tests {
                 NowPlayingLayout::for_presentation(&presentation, Viewport::new(width, height));
             allocate_lyrics(&rendered, &layout);
             let cues = rendered.reel.visible_cues();
-            let primary_y = f64::from(rendered.reel.widget.height()) / 3.0;
+            let primary_y = rendered.primary_y_px.get();
             assert!(
                 cues.len() > 3,
                 "blank must retain space-limited context at {width}x{height}"
@@ -4199,7 +4384,7 @@ mod tests {
                 <= f64::from(rendered.reel.widget.width()) + 1.0,
             "complete active text must fit the column width"
         );
-        assert!((focal.y - area_height / 3.0).abs() < 1.0);
+        assert!((focal.y - rendered.primary_y_px.get()).abs() < 1.0);
         let readable_bottom =
             area_height - f64::from(rendered.typography.get().lyric_spacing_px) * 0.65;
         assert!(
@@ -4228,7 +4413,7 @@ mod tests {
         let frame = rendered.motion.borrow().frame_at(std::time::Duration::ZERO);
         rendered
             .reel
-            .update(&frame, width, 1400, rendered.typography.get());
+            .update(&frame, width, 1400, 1400.0 / 3.0, rendered.typography.get());
         rendered.reel.widget.allocate(width, 1400, -1, None);
         rendered.reel.visible_cues().remove(0)
     }

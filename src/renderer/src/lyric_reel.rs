@@ -12,7 +12,7 @@ use crate::lyric_motion::{LyricCueFrame, LyricFrame};
 pub(crate) struct LyricReel {
     pub widget: gtk::DrawingArea,
     frame: RefCell<Option<LyricFrame>>,
-    metrics: Cell<Option<(i32, i32, u32)>>,
+    metrics: Cell<Option<(i32, i32, f64, u32)>>,
     layouts: RefCell<HashMap<String, FittedCue>>,
     typography: Cell<NowPlayingTypography>,
     palette: Cell<PresentationPalette>,
@@ -71,9 +71,10 @@ impl LyricReel {
         frame: &LyricFrame,
         width: i32,
         height: i32,
+        primary_y: f64,
         typography: NowPlayingTypography,
     ) {
-        let metrics = (width, height, typography.lyric_cue_px);
+        let metrics = (width, height, primary_y, typography.lyric_cue_px);
         if self.metrics.get() == Some(metrics)
             && self.typography.get() == typography
             && self.frame.borrow().as_ref() == Some(frame)
@@ -170,18 +171,16 @@ impl LyricReel {
             return Vec::new();
         };
         let typography = self.typography.get();
-        let (width, fitting_height, font_px) =
+        let (width, fitting_height, primary_y, font_px) =
             self.metrics
                 .get()
-                .unwrap_or((1, 1, typography.lyric_cue_px));
+                .unwrap_or((1, 1, 0.0, typography.lyric_cue_px));
         let gap = f64::from(typography.lyric_spacing_px) * 0.42;
-        let area_height = f64::from(self.widget.height());
-        let primary_y = area_height / 3.0;
         // Allocation can change during composition travel. Fit against the
         // destination budget while placement and clipping follow the allocation.
         let fitting_height = f64::from(fitting_height);
         let available_height =
-            (fitting_height * 2.0 / 3.0 - self.fade_height(fitting_height)).max(0.0);
+            (fitting_height - primary_y - self.fade_height(fitting_height)).max(0.0);
         let mut cues = Vec::with_capacity(frame.cues.len());
         for cue in &frame.cues {
             let fitted = {

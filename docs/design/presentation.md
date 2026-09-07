@@ -96,14 +96,19 @@ masthead replaces the ordinary Title/Artist/Album group; Album is omitted in
 this composition.
 
 The active Cue is the room-scale focal point on the information rail. Its first
-line lands at the fixed Primary Position, approximately one-third down the
-available lyric area; subsequent lines extend below it. The Lyric Reel packs
+line lands at the fixed viewport-specific Primary Position, independently of
+the reel's lower extent; subsequent lines extend below it. The Lyric Reel packs
 earlier cues above and upcoming cues below, using the available space rather
 than a fixed cue count. Earlier cues use smaller muted text and upcoming cues
 use smaller secondary text. Normal internal line spacing and modest inter-cue
 gaps keep each Cue distinct. Short fades at the top and bottom allow partial
 cues to enter and leave progressively; cues do not overlap or escape the lyric
-column into the masthead or footer.
+column into the masthead or footer. The clearance from the lower fully transparent
+edge to the reserved progress-bar top matches the clearance from the compact
+Title/Artist block to the upper fully transparent edge. Timing availability does
+not change that lower boundary. During composition travel, the upper edge follows
+the masthead while the lower fade remains above all footer activity; parent
+clipping must not truncate the fade.
 
 A settled Intentional Blank packs available earlier and upcoming nonblank
 cues around an empty Primary Position, even after a tall cue, using the same
