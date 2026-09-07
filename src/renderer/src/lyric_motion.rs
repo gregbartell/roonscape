@@ -239,8 +239,16 @@ impl LyricMotion {
             self.cue_motion = None;
             self.composition
                 .retarget(f64::from(next.is_some()), now, animations_enabled);
-            self.cause = if next.is_some() {
+            // A timing relocation owns its lyric destination immediately, even
+            // while artwork and metadata finish the composition transition.
+            // Only continuous exits retain the old reel for its normal fade.
+            if next.is_some()
+                || (revision_changed && self.timing_discontinuity)
+                || !animations_enabled
+            {
                 self.displayed.clone_from(&next);
+            }
+            self.cause = if next.is_some() {
                 LyricMotionCause::CompositionEntry
             } else {
                 LyricMotionCause::CompositionExit
@@ -755,6 +763,108 @@ mod tests {
         let settled = motion.frame_at(BLANK_TRANSITION_DURATION);
         assert!(!settled.cue_motion_active);
         assert!(settled.cues.iter().all(|cue| cue.opacity == 0.0));
+    }
+
+    #[test]
+    fn authoritative_restart_clears_the_reel_without_cutting_composition_motion() {
+        let current = lyrics(1, Some("Earlier"), "Later passage", Some("Upcoming"));
+        let mut motion = LyricMotion::new(1, Some(&current));
+        motion.observe_playback(1, Some(30.0), true, Duration::ZERO);
+        let reset_at = Duration::from_millis(100);
+        motion.observe_playback(2, Some(0.0), true, reset_at);
+        motion.update(2, None, reset_at, true);
+
+        for offset in [0, 100, 290, 579, 580] {
+            let frame = motion.frame_at(reset_at + Duration::from_millis(offset));
+            assert!(
+                frame.cues.is_empty(),
+                "the entire old reel must clear at reset"
+            );
+            assert!(frame.anchors.is_empty());
+            assert!(!frame.cue_motion_active);
+            assert_eq!(frame.composition_motion_active, offset < 580);
+        }
+        assert_eq!(motion.frame_at(reset_at).composition_progress, 1.0);
+        assert_eq!(
+            motion
+                .frame_at(reset_at + Duration::from_millis(290))
+                .composition_progress,
+            0.5
+        );
+        assert_eq!(
+            motion
+                .frame_at(reset_at + Duration::from_millis(580))
+                .composition_progress,
+            0.0
+        );
+    }
+
+    #[test]
+    fn relocation_interrupts_handoffs_and_retargets_composition_from_current_geometry() {
+        let first = lyrics(0, None, "Opening", Some("Later"));
+        let mut later = first.clone();
+        later.current_index = 1;
+        let mut motion = LyricMotion::new(1, Some(&first));
+        motion.observe_playback(1, Some(10.0), true, Duration::ZERO);
+        motion.update(1, Some(&later), Duration::ZERO, true);
+        let reset_at = Duration::from_millis(100);
+        assert!(motion.frame_at(reset_at).cue_motion_active);
+        motion.observe_playback(2, Some(0.0), true, reset_at);
+        motion.update(2, None, reset_at, true);
+        assert!(motion.frame_at(reset_at).cues.is_empty());
+        assert!(!motion.frame_at(reset_at).cue_motion_active);
+
+        let reversed_at = reset_at + Duration::from_millis(290);
+        motion.observe_playback(3, Some(10.0), true, reversed_at);
+        motion.update(3, Some(&later), reversed_at, true);
+        let reversed = motion.frame_at(reversed_at);
+        assert_eq!(reversed.composition_progress, 0.5);
+        assert_eq!(reversed.anchors, vec![(1, 1.0)]);
+        assert_eq!(reversed.cues[1].emphasis, 1.0);
+        assert!(!reversed.cue_motion_active);
+
+        let interrupted_at = reversed_at + Duration::from_millis(100);
+        let before = motion.frame_at(interrupted_at).composition_progress;
+        motion.observe_playback(4, Some(0.0), true, interrupted_at);
+        motion.update(4, None, interrupted_at, true);
+        assert_eq!(motion.frame_at(interrupted_at).composition_progress, before);
+        assert!(motion.frame_at(interrupted_at).cues.is_empty());
+        // A second relocation while the semantic destination remains absent
+        // must neither resurrect lyrics nor restart the geometry clock.
+        let absent_seek_at = interrupted_at + Duration::from_millis(100);
+        motion.observe_playback(5, Some(50.0), true, absent_seek_at);
+        motion.update(5, None, absent_seek_at, true);
+        let settled = motion.frame_at(interrupted_at + COMPOSITION_TRANSITION_DURATION);
+        assert!(settled.cues.is_empty());
+        assert_eq!(settled.composition_progress, 0.0);
+        assert!(!settled.composition_motion_active);
+    }
+
+    #[test]
+    fn continuous_exit_and_unavailable_inputs_preserve_the_normal_reel_fade() {
+        let current = lyrics(1, Some("Earlier"), "Final", None);
+        for (before, after) in [
+            (Some(30.0), Some(30.1)),
+            (Some(30.0), None),
+            (None, Some(0.0)),
+        ] {
+            let mut motion = LyricMotion::new(1, Some(&current));
+            motion.observe_playback(1, before, true, Duration::ZERO);
+            let exit_at = Duration::from_millis(100);
+            motion.observe_playback(2, after, true, exit_at);
+            motion.update(2, None, exit_at, true);
+            let frame = motion.frame_at(exit_at);
+            assert_eq!(frame.cues[1].text, "Final");
+            assert_eq!(frame.cues[1].emphasis, 1.0);
+            assert!(frame.composition_motion_active);
+            assert_eq!(frame.composition_progress, 1.0);
+            assert_eq!(
+                motion
+                    .frame_at(exit_at + COMPOSITION_TRANSITION_DURATION)
+                    .composition_progress,
+                0.0
+            );
+        }
     }
 
     #[test]

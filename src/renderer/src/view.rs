@@ -3381,6 +3381,7 @@ mod tests {
         short_blanks_return_during_their_departure();
         continuous_snapshot_at_a_cue_boundary_animates();
         a_seek_within_the_incoming_cue_settles_its_handoff();
+        authoritative_relocations_render_destination_content_with_timing();
 
         blank_promotion_preserves_context_and_an_interrupted_departure();
 
@@ -5629,6 +5630,195 @@ mod tests {
             "same-cue seeks install a complete endpoint"
         );
         assert_eq!(frame.cause, LyricMotionCause::ExternalSeek);
+    }
+
+    fn authoritative_relocations_render_destination_content_with_timing() {
+        use roonscape_renderer::{LyricCue, Playback, SynchronizedLyrics};
+        use std::time::Duration;
+
+        for behavior in [
+            PresentationBehavior::Dynamic,
+            PresentationBehavior::StaticFixture,
+        ] {
+            for (first_at, destination, expected_index, preparing) in [
+                (8.0, 0.0, None, false),
+                (2.0, 0.0, Some(0), true),
+                (0.0, 0.0, Some(0), false),
+                (8.0, 12.0, Some(1), false),
+                (8.0, 8.0, Some(0), false),
+                (8.0, 30.0, None, false),
+            ] {
+                let mut snapshot =
+                    parse_snapshot(include_str!("../../shared/fixtures/lyrics-one-line.json"))
+                        .unwrap();
+                snapshot.lyrics = Some(SynchronizedLyrics {
+                    cues: [
+                        (first_at, "Opening"),
+                        (12.0, ""),
+                        (16.0, "Later passage"),
+                        (20.0, "Upcoming"),
+                    ]
+                    .map(|(at_seconds, text)| LyricCue {
+                        at_seconds,
+                        text: text.into(),
+                    })
+                    .to_vec(),
+                });
+                snapshot
+                    .timing
+                    .as_mut()
+                    .unwrap()
+                    .position
+                    .as_mut()
+                    .unwrap()
+                    .seconds = 18.0;
+                let Presentation::NowPlaying(before) =
+                    presentation_from_snapshot(&snapshot).unwrap()
+                else {
+                    panic!("Now Playing");
+                };
+                let viewport = Viewport::new(1280, 720);
+                let mut rendered = rendered_now_playing(&before, behavior);
+                rendered.apply_viewport(viewport);
+                rendered.update_in_place(
+                    1,
+                    &Presentation::NowPlaying(before),
+                    Duration::ZERO,
+                    Some(viewport),
+                );
+
+                // STARTING preserves the passage until Authoritative Timing resets.
+                snapshot.playback = Some(Playback::Loading);
+                rendered.update_in_place(
+                    2,
+                    &presentation_from_snapshot(&snapshot).unwrap(),
+                    Duration::from_millis(100),
+                    Some(viewport),
+                );
+                assert_rendered_lyric_roles(
+                    &rendered,
+                    Some("Opening"),
+                    Some("Later passage"),
+                    Some("Upcoming"),
+                );
+
+                snapshot.playback = Some(Playback::Playing);
+                snapshot
+                    .timing
+                    .as_mut()
+                    .unwrap()
+                    .position
+                    .as_mut()
+                    .unwrap()
+                    .seconds = destination;
+                let after = presentation_from_snapshot(&snapshot).unwrap();
+                let Presentation::NowPlaying(destination_presentation) = &after else {
+                    panic!("Now Playing")
+                };
+                assert_eq!(
+                    destination_presentation
+                        .lyrics
+                        .as_ref()
+                        .map(|lyrics| lyrics.current_index),
+                    expected_index
+                );
+                assert_eq!(
+                    destination_presentation
+                        .lyrics
+                        .as_ref()
+                        .is_some_and(|lyrics| lyrics.preparing),
+                    preparing
+                );
+                let reset_at = Duration::from_millis(200);
+                rendered.update_in_place(3, &after, reset_at, Some(viewport));
+                let frame = lyric_motion_frame(&rendered, reset_at);
+                assert!(!frame.cue_motion_active);
+                let metadata = &rendered.now_playing.as_ref().unwrap().metadata;
+                assert_eq!(
+                    metadata.progress.as_ref().unwrap().elapsed.text(),
+                    destination_presentation.progress.as_ref().unwrap().elapsed
+                );
+                if expected_index.is_none() {
+                    assert!(frame.cues.is_empty());
+                    assert_rendered_lyric_roles(&rendered, None, None, None);
+                } else {
+                    let focal = frame.cues.iter().find(|cue| cue.emphasis == 1.0).unwrap();
+                    assert_eq!(
+                        focal.text,
+                        if preparing || expected_index == Some(1) {
+                            ""
+                        } else {
+                            "Opening"
+                        }
+                    );
+                    assert_eq!(frame.anchors.len(), 1);
+                    assert_rendered_lyric_roles(
+                        &rendered,
+                        if expected_index == Some(1) {
+                            Some("Opening")
+                        } else {
+                            None
+                        },
+                        if preparing || expected_index == Some(1) {
+                            None
+                        } else {
+                            Some("Opening")
+                        },
+                        Some(if preparing {
+                            "Opening"
+                        } else {
+                            "Later passage"
+                        }),
+                    );
+                }
+                let exits = expected_index.is_none();
+                let animated_exit = exits && behavior == PresentationBehavior::Dynamic;
+                assert_eq!(frame.composition_motion_active, animated_exit);
+                assert_eq!(
+                    frame.composition_progress,
+                    if exits && !animated_exit { 0.0 } else { 1.0 }
+                );
+                if animated_exit {
+                    assert_rendered_composition_ownership(&rendered, 0.0, 1.0, 1.0);
+                    let artwork_start = rendered
+                        .now_playing
+                        .as_ref()
+                        .unwrap()
+                        .metadata
+                        .rendered_composition_progress();
+                    assert_eq!(artwork_start, 1.0);
+                    rendered.update_in_place(
+                        3,
+                        &after,
+                        reset_at + Duration::from_millis(290),
+                        Some(viewport),
+                    );
+                    let metadata = &rendered.now_playing.as_ref().unwrap().metadata;
+                    assert!(
+                        metadata.rendered_composition_progress() > 0.0
+                            && metadata.rendered_composition_progress() < 1.0
+                    );
+                    assert_eq!(metadata.ordinary_metadata.opacity(), 0.0);
+                    assert!(
+                        metadata.lyrics.masthead.opacity() > 0.0
+                            && metadata.lyrics.masthead.opacity() < 1.0
+                    );
+                    assert_rendered_lyric_roles(&rendered, None, None, None);
+                    rendered.update_in_place(
+                        3,
+                        &after,
+                        reset_at + Duration::from_millis(580),
+                        Some(viewport),
+                    );
+                }
+                assert_rendered_composition_ownership(
+                    &rendered,
+                    if exits { 1.0 } else { 0.0 },
+                    if exits { 0.0 } else { 1.0 },
+                    if exits { 0.0 } else { 1.0 },
+                );
+            }
+        }
     }
 
     fn short_blanks_return_during_their_departure() {
