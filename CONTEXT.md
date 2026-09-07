@@ -22,6 +22,13 @@ Playback position or duration observed directly from Roon, independently of
 whether both are currently available.
 _Avoid_: Reported timing, real timing
 
+**Bridge Diagnostic Capture**:
+A retained chronology of decoded Roon messages received by the RoonScape
+Bridge and the resulting Presentation Snapshots, used for debugging and
+verification. Secrets are redacted, and artwork is represented by its image
+keys and response details.
+_Avoid_: Live Capture Session, Presentation Capture, replay
+
 **Cue**:
 A timed lyric entry whose lines become active together. A cue may contain
 multiple lines or be an Intentional Blank.

@@ -87,3 +87,12 @@ exec /home/roon/roonscape/roonscape
 
 This line launches RoonScape when that X session starts. It does not configure
 tty login, automatic login, or starting X during boot.
+
+
+## Collect Bridge diagnostics
+
+For unattended debugging, add `--capture-bridge /path/to/bridge-capture` to a
+Live Mode launch. Capture is off by default and retains up to 100 MiB of private
+JSONL. `--capture-budget-mib INTEGER` selects a different total budget.
+See [Bridge Diagnostic Capture](bridge-diagnostic-capture.md) for output,
+redaction, artwork metadata, rotation, and best-effort failure behavior.

@@ -1,3 +1,4 @@
+import type { DiagnosticCapture } from "./diagnostic-capture.js";
 import type { Availability, PresentationSnapshot } from "./snapshot.js";
 import type { ArtworkFiles } from "./artwork-file-store.js";
 import { attemptAllCleanup } from "./cleanup.js";
@@ -168,9 +169,11 @@ export interface RoonBridge {
 
 export type CreateRoonServices = (
   options: RoonExtensionOptions,
+  diagnosticCapture?: DiagnosticCapture,
 ) => RoonServices;
 
 interface StartRoonBridgeOptions {
+  diagnosticCapture?: DiagnosticCapture;
   authorizationStore: AuthorizationStore;
   artworkFiles: ArtworkFiles;
   displayConfigurationStore: DisplayConfigurationStore;
@@ -193,6 +196,7 @@ interface TrackedZoneState extends RetainedZone {
 }
 
 export function startRoonBridge({
+  diagnosticCapture,
   authorizationStore,
   artworkFiles,
   displayConfigurationStore,
@@ -202,7 +206,8 @@ export function startRoonBridge({
   reportPublicationFailure = reportSnapshotPublicationFailure,
   scheduleArtworkRetry = scheduleRetryWithTimeout,
   now = () => new Date(),
-  createLyricFeedConnection = createPrivateLyricFeedConnection,
+  createLyricFeedConnection = (options) =>
+    createPrivateLyricFeedConnection(options, undefined, diagnosticCapture),
 }: StartRoonBridgeOptions): RoonBridge {
   const lyricsEnabled =
     displayConfigurationStore.load()?.lyricsEnabled === true;
@@ -276,6 +281,7 @@ export function startRoonBridge({
         : publishState(recoveredState);
     }
 
+    diagnosticCapture?.record("snapshot", candidate);
     revision = candidate.revision;
     currentSnapshot = candidate;
     lastPublicationFailureCode = undefined;
@@ -339,7 +345,8 @@ export function startRoonBridge({
 
   const services = initializeRoonExtension({
     authorizationStore,
-    createRoonServices,
+    createRoonServices: (options) =>
+      createRoonServices(options, diagnosticCapture),
     corePaired: (core) => {
       activeLyricFeed?.stop();
       activeLyricFeed = undefined;
@@ -468,11 +475,16 @@ export function startRoonBridge({
   updatePublicationFailureStatus = (reason) =>
     status.set_status(`Publication failed: ${reason}`, true);
   publish(currentSnapshot);
+  diagnosticCapture?.record("snapshot", currentSnapshot);
   setExtensionStatus(status, currentSnapshot.availability);
   const directedConnection =
     roonServerHost === undefined
       ? undefined
-      : connectRoonExtension(services.extension, roonServerHost);
+      : connectRoonExtension(
+          services.extension,
+          roonServerHost,
+          diagnosticCapture,
+        );
   if (directedConnection === undefined) {
     services.extension.start_discovery();
   }

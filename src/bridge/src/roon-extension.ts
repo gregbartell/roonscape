@@ -1,3 +1,4 @@
+import type { DiagnosticCapture } from "./diagnostic-capture.js";
 import type {
   AuthorizationStore,
   CreateRoonServices,
@@ -47,6 +48,7 @@ export function initializeRoonExtension({
 export function connectRoonExtension(
   extension: RoonServices["extension"],
   roonServerHost?: RoonServerHost,
+  diagnosticCapture?: DiagnosticCapture,
 ): { stop(): void } {
   if (roonServerHost === undefined) {
     extension.start_discovery();
@@ -59,6 +61,11 @@ export function connectRoonExtension(
   if (extension.ws_connect === undefined) {
     throw new Error("This Roon API does not support direct connections");
   }
+  diagnosticCapture?.record("discovery", {
+    role: "ordinary",
+    state: "started",
+    roonServerHost,
+  });
   const connect = extension.ws_connect.bind(extension);
   const cancellation = new AbortController();
   let connection: ReturnType<typeof connect> | undefined;
@@ -67,12 +74,24 @@ export function connectRoonExtension(
       if (cancellation.signal.aborted) {
         return;
       }
+      diagnosticCapture?.record("discovery", {
+        role: "ordinary",
+        state: "resolved",
+        roonServerHost,
+        endpoint,
+      });
       connection = connect({
         ...endpoint,
         onclose: () => undefined,
       });
     })
-    .catch(() => undefined);
+    .catch(() => {
+      diagnosticCapture?.record("discovery", {
+        role: "ordinary",
+        state: cancellation.signal.aborted ? "cancelled" : "failed",
+        roonServerHost,
+      });
+    });
   return onceStopped(() => {
     cancellation.abort();
     connection?.transport.close();

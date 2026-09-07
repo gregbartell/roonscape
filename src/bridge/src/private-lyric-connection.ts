@@ -10,6 +10,8 @@ import type {
   PrivateLyricEvent,
 } from "./lyric-feed.js";
 import { trackedNowPlaying } from "./lyric-feed.js";
+import type { DiagnosticCapture } from "./diagnostic-capture.js";
+import { observeRoonSdk } from "./roon-diagnostic-observer.js";
 import type { RoonExtensionOptions } from "./roon-bridge.js";
 
 export const lyricFeedIdentity = {
@@ -96,6 +98,7 @@ export function createPrivateLyricFeedConnection(
     onDisconnect,
   }: Parameters<LyricFeedConnectionFactory>[0],
   createServices: CreatePrivateRoonServices = createPrivateRoonServices,
+  diagnosticCapture?: DiagnosticCapture,
 ): LyricFeedConnection {
   let registrationState: unknown = {};
   let core: PrivateRoonCore | undefined;
@@ -171,6 +174,7 @@ export function createPrivateLyricFeedConnection(
       }
     },
   });
+  observeRoonSdk(services.extension, diagnosticCapture, "lyricFeed");
   const zoneDisplay = services.extension.register_service(
     "com.roonlabs.zonedisplay:1",
     inertZoneDisplaySpecification(),

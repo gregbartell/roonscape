@@ -1,5 +1,10 @@
 import path from "node:path";
 
+import {
+  defaultCaptureBudgetBytes,
+  type DiagnosticCaptureOptions,
+} from "./diagnostic-capture.js";
+
 import type { DisplayConfiguration } from "./display-configuration.js";
 import { runSetup, type SetupDependencies } from "./first-time-setup.js";
 import {
@@ -25,6 +30,7 @@ export interface OwnedRuntime {
 }
 
 export interface BridgeLaunchOptions {
+  diagnosticCapture?: DiagnosticCaptureOptions;
   authorizationFile: string;
   configurationFile: string;
   roonServerHost?: RoonServerHost;
@@ -61,6 +67,11 @@ Options:
   --config PATH  Use this Display Configuration
   --roon-server HOST
                  Discover this Roon Server Host directly
+  --capture-bridge DIRECTORY
+                 Retain private Bridge Diagnostic Capture JSONL (off by default)
+  --capture-budget-mib INTEGER
+                 Total capture retention in MiB (default 100); oldest files rotate
+                 Capture failures are logged; playback continues, gaps are marked
   --help         Show this help
   --version      Show the RoonScape version`;
 
@@ -140,6 +151,16 @@ export async function runRoonScapeCommand(
       configurationFile,
       dependencies,
       options.roonServerHost,
+      options.captureDirectory === undefined
+        ? undefined
+        : {
+            directory: path.resolve(
+              dependencies.currentDirectory,
+              options.captureDirectory,
+            ),
+            budgetBytes:
+              options.captureBudgetBytes ?? defaultCaptureBudgetBytes,
+          },
     );
   } catch (error) {
     dependencies.writeError(
@@ -154,16 +175,38 @@ function isAbortError(error: unknown): boolean {
 }
 
 interface LaunchOptions {
+  captureDirectory?: string;
+  captureBudgetBytes?: number;
   configurationPath?: string;
   roonServerHost?: RoonServerHost;
   setupRequested: boolean;
 }
 
-function parseLaunchOptions(arguments_: string[]): LaunchOptions | null {
+export function parseLaunchOptions(arguments_: string[]): LaunchOptions | null {
   const options: LaunchOptions = { setupRequested: false };
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
+    if (
+      argument === "--capture-bridge" &&
+      options.captureDirectory === undefined
+    ) {
+      const directory = arguments_[++index];
+      if (!directory || directory.startsWith("--")) return null;
+      options.captureDirectory = directory;
+      continue;
+    }
+    if (
+      argument === "--capture-budget-mib" &&
+      options.captureBudgetBytes === undefined
+    ) {
+      const budget = arguments_[++index] ?? "";
+      const bytes = Number(budget) * 1024 * 1024;
+      if (!/^[1-9][0-9]*$/.test(budget) || !Number.isSafeInteger(bytes))
+        return null;
+      options.captureBudgetBytes = bytes;
+      continue;
+    }
     if (argument === "--setup" && !options.setupRequested) {
       options.setupRequested = true;
       continue;
@@ -189,6 +232,12 @@ function parseLaunchOptions(arguments_: string[]): LaunchOptions | null {
     return null;
   }
 
+  if (
+    (options.captureBudgetBytes !== undefined &&
+      options.captureDirectory === undefined) ||
+    (options.setupRequested && options.captureDirectory !== undefined)
+  )
+    return null;
   return options;
 }
 
@@ -211,6 +260,7 @@ async function runConfiguredSession(
   configurationFile: string,
   dependencies: RoonScapeCommandDependencies,
   roonServerHost?: RoonServerHost,
+  diagnosticCapture?: DiagnosticCaptureOptions,
 ): Promise<number> {
   const runtime = await dependencies.openRuntime();
   let bridge: MonitoredChild | undefined;
@@ -229,6 +279,7 @@ async function runConfiguredSession(
     });
     bridge = monitorChild(
       dependencies.launchBridge({
+        ...(diagnosticCapture === undefined ? {} : { diagnosticCapture }),
         authorizationFile: dependencies.authorizationFile(),
         configurationFile,
         roonServerHost,

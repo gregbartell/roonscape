@@ -78,6 +78,7 @@ process.exitCode = await runRoonScapeCommand(process.argv.slice(2), {
       userId: getUserId(),
     }),
   launchBridge: ({
+    diagnosticCapture,
     authorizationFile,
     configurationFile,
     roonServerHost,
@@ -92,6 +93,14 @@ process.exitCode = await runRoonScapeCommand(process.argv.slice(2), {
     ];
     if (roonServerHost !== undefined) {
       arguments_.push("--roon-server", roonServerHost);
+    }
+    if (diagnosticCapture !== undefined) {
+      arguments_.push(
+        "--capture-bridge",
+        diagnosticCapture.directory,
+        "--capture-budget-mib",
+        String(diagnosticCapture.budgetBytes! / (1024 * 1024)),
+      );
     }
     return launchChildProcess(
       process.execPath,

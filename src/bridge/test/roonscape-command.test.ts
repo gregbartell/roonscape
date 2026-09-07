@@ -1836,3 +1836,69 @@ for (const savedChoice of [null, true, false]) {
     });
   }
 }
+
+for (const [arguments_, expected] of [
+  [[], undefined],
+  [
+    ["--capture-bridge", "evidence"],
+    { directory: "/worktree/evidence", budgetBytes: 104857600 },
+  ],
+  [
+    ["--capture-budget-mib", "8", "--capture-bridge", "/evidence"],
+    { directory: "/evidence", budgetBytes: 8388608 },
+  ],
+] as const) {
+  test(`Bridge Diagnostic Capture launch options: ${JSON.stringify(arguments_)}`, async () => {
+    let launched: unknown;
+    const result = await runRoonScapeCommand(
+      [...arguments_],
+      commandDependencies({
+        currentDirectory: "/worktree",
+        loadConfiguration: () => ({
+          trackedOutputId: "speaker",
+          trackedOutputName: "Speaker",
+          lyricsEnabled: false,
+        }),
+        openRuntime: async () => ({
+          socketPath: "/runtime/socket",
+          cleanup: async () => undefined,
+        }),
+        launchBridge: (options) => {
+          launched = options;
+          return pendingChild(() => undefined);
+        },
+        launchRenderer: () => completedChild({ exitCode: 0, signal: null }),
+      }),
+    );
+    assert.equal(result, 0);
+    assert.deepEqual(
+      (launched as { diagnosticCapture?: unknown }).diagnosticCapture,
+      expected,
+    );
+  });
+}
+
+for (const arguments_ of [
+  ["--capture-bridge"],
+  ["--capture-bridge", ""],
+  ["--capture-bridge", "--setup"],
+  ["--capture-budget-mib", "8"],
+  ["--capture-bridge", "/evidence", "--capture-budget-mib", "0"],
+  ["--capture-bridge", "/evidence", "--capture-budget-mib", "NaN"],
+  ["--capture-bridge", "/evidence", "--capture-budget-mib", "1.5"],
+  [
+    "--capture-bridge",
+    "/evidence",
+    "--capture-budget-mib",
+    "99999999999999999",
+  ],
+  ["--capture-bridge", "/a", "--capture-bridge", "/b"],
+  ["--setup", "--capture-bridge", "/evidence"],
+]) {
+  test(`rejects invalid capture launch: ${JSON.stringify(arguments_)}`, async () => {
+    assert.equal(
+      await runRoonScapeCommand(arguments_, commandDependencies()),
+      2,
+    );
+  });
+}
