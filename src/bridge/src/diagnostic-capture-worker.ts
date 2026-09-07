@@ -28,6 +28,7 @@ let segment = 0;
 let descriptor: number | undefined;
 let current: { file: string; size: number } | undefined;
 let lock: number | undefined;
+let checkpoint = "";
 const lockFile = path.join(directory, ".bridge-capture.lock");
 
 function initialize(): void {
@@ -82,7 +83,18 @@ function append(line: string): void {
   const bytes = Buffer.byteLength(line);
   if (bytes > segmentLimit) throw new Error("oversized");
   if (current && current.size + bytes > segmentLimit) finishSegment();
-  prune(bytes);
+  if (!current && bytes + Buffer.byteLength(checkpoint) > segmentLimit) {
+    const envelope = JSON.parse(checkpoint) as Envelope;
+    checkpoint =
+      JSON.stringify({
+        ...envelope,
+        data: {
+          kind: "retained state",
+          unavailable: "checkpoint exceeds segment limit",
+        },
+      }) + "\n";
+  }
+  prune(bytes + (current ? 0 : Buffer.byteLength(checkpoint)));
   if (!current) {
     const file = path.join(
       directory,
@@ -98,7 +110,14 @@ function append(line: string): void {
     );
     current = { file, size: 0 };
     retained.push(current);
+    writeLine(checkpoint);
   }
+  writeLine(line);
+}
+
+function writeLine(line: string): void {
+  const bytes = Buffer.byteLength(line);
+  if (!current) throw new Error("no segment");
   const before = current.size;
   try {
     const buffer = Buffer.from(line);
@@ -142,6 +161,7 @@ let gap:
     }
   | undefined;
 let lastEnvelope: Envelope | undefined;
+let hadWriteGap = false;
 
 function tryAppend(line: string, force = false): boolean {
   if (!force && Date.now() < retryAt) return false;
@@ -171,40 +191,60 @@ function gapLine(envelope: Envelope): string {
   );
 }
 
-parentPort!.on("message", (line: string | null) => {
-  if (line === null) {
-    if (gap && lastEnvelope) tryAppend(gapLine(lastEnvelope), true);
-    try {
-      finishSegment();
-    } catch {
-      parentPort!.postMessage("failure");
-    }
-    try {
-      if (lock !== undefined) {
-        closeSync(lock);
-        unlinkSync(lockFile);
+parentPort!.on(
+  "message",
+  (record: { line: string; checkpoint: string } | null) => {
+    if (record === null) {
+      if (gap && lastEnvelope) tryAppend(gapLine(lastEnvelope), true);
+      try {
+        finishSegment();
+      } catch {
+        parentPort!.postMessage("failure");
       }
-    } catch {
-      parentPort!.postMessage("failure");
+      try {
+        if (lock !== undefined) {
+          closeSync(lock);
+          unlinkSync(lockFile);
+        }
+      } catch {
+        parentPort!.postMessage("failure");
+      }
+      parentPort!.close();
+      return;
     }
-    parentPort!.close();
-    return;
-  }
-  const envelope = JSON.parse(line) as Envelope;
-  lastEnvelope = envelope;
-  if (gap) {
-    // On recovery, replace this attempted record with an explicit gap. This
-    // preserves the parent's sequence order without inventing causal links.
-    gap.lastSequence = envelope.sequence;
-    gap.count += 1;
-    if (tryAppend(gapLine(envelope))) gap = undefined;
-  } else if (!tryAppend(line)) {
-    gap = {
-      firstSequence: envelope.sequence,
-      lastSequence: envelope.sequence,
-      count: 1,
-      reason: "write failure",
-    };
-  }
-  parentPort!.postMessage(Buffer.byteLength(line));
-});
+    const { line } = record;
+    const envelope = JSON.parse(line) as Envelope;
+    checkpoint =
+      JSON.stringify({
+        ...envelope,
+        type: "checkpoint",
+        data: {
+          ...JSON.parse(record.checkpoint),
+          beforeSequence: envelope.sequence,
+          earlierWriteGap: hadWriteGap,
+          ...(gap ? { recordingGap: gap } : {}),
+        },
+      }) + "\n";
+    lastEnvelope = envelope;
+    if (envelope.type === "gap") finishSegment();
+    if (gap) {
+      // On recovery, replace this attempted record with an explicit gap. This
+      // preserves the parent's sequence order without inventing causal links.
+      gap.lastSequence = envelope.sequence;
+      gap.count += 1;
+      finishSegment();
+      if (tryAppend(gapLine(envelope))) gap = undefined;
+    } else if (!tryAppend(line)) {
+      hadWriteGap = true;
+      gap = {
+        firstSequence: envelope.sequence,
+        lastSequence: envelope.sequence,
+        count: 1,
+        reason: "write failure",
+      };
+    }
+    parentPort!.postMessage(
+      Buffer.byteLength(line) + Buffer.byteLength(record.checkpoint),
+    );
+  },
+);

@@ -105,7 +105,7 @@ export function observeRoonSdk(
         request !== undefined ||
         message.content_type?.startsWith("image/") === true ||
         (incompleteArtworkCorrelation && Buffer.isBuffer(body));
-      capture.record("inbound", {
+      const data = {
         ...context(),
         message:
           isArtwork && Buffer.isBuffer(body)
@@ -124,12 +124,14 @@ export function observeRoonSdk(
               },
             }
           : {}),
-      });
+      };
       if (message.verb === "COMPLETE") {
         requests.delete(message.request_id);
         registryRequests.delete(message.request_id);
       }
-      return receive.call(this, message);
+      return capture.received("inbound", data, () =>
+        receive.call(this, message),
+      );
     };
     for (const [callback, state] of [
       ["onopen", "open"],
@@ -138,12 +140,13 @@ export function observeRoonSdk(
     ] as const) {
       const handle = connection.transport[callback];
       connection.transport[callback] = function (...arguments_: unknown[]) {
-        capture.record("connection", { ...context(), state });
         if (state === "closed") {
           requests.clear();
           registryRequests.clear();
         }
-        return handle.apply(this, arguments_);
+        return capture.received("connection", { ...context(), state }, () =>
+          handle.apply(this, arguments_),
+        );
       };
     }
     return connection;

@@ -44,13 +44,13 @@ test("retains ordered private JSONL with nested credentials redacted", async () 
       .map((line) => JSON.parse(line));
     assert.deepEqual(
       records.map((record) => record.type),
-      ["session", "inbound", "snapshot"],
+      ["checkpoint", "session", "inbound", "snapshot"],
     );
     assert.deepEqual(
       records.map((record) => record.sequence),
-      [1, 2, 3],
+      [1, 1, 2, 3],
     );
-    assert.equal(records[1].data.body.nested[0].image_key, "retained-image");
+    assert.equal(records[2].data.body.nested[0].image_key, "retained-image");
     assert.equal(new Set(records.map((record) => record.sessionId)).size, 1);
     assert.ok(
       records.every((record) => Number.isFinite(Date.parse(record.timestamp))),
@@ -68,7 +68,7 @@ test("retention includes previous launches and never removes unrelated files", a
     for (let launch = 0; launch < 3; launch += 1) {
       const capture = new DiagnosticCapture({ directory, budgetBytes: 8192 });
       for (let index = 0; index < 20; index += 1) {
-        capture.record("inbound", { index, text: "x".repeat(500) });
+        capture.record("inbound", { index, text: "x".repeat(200) });
       }
       await capture.close();
       const files = (await readdir(directory)).filter((name) =>
@@ -128,9 +128,14 @@ test("a recovered destination records a write gap and resumes without leaking er
     const moved = path.join(directory, "moved");
     const logs: string[] = [];
     const capture = new DiagnosticCapture(
-      { directory: destination, budgetBytes: 8192 },
+      { directory: destination, budgetBytes: 32768 },
       (line) => logs.push(line),
     );
+    let observed = {
+      status: "observed",
+      zones: [] as Array<{ zone_id: string }>,
+    };
+    capture.setCheckpointProvider(() => ({ roonState: observed }));
     try {
       for (let attempt = 0; attempt < 100; attempt += 1) {
         if (
@@ -143,8 +148,13 @@ test("a recovered destination records a write gap and resumes without leaking er
       }
       await rename(destination, moved);
       await writeFile(destination, "synthetic-secret");
-      for (let index = 0; index < 30; index += 1)
-        capture.record("inbound", { index, text: "x".repeat(500) });
+      for (let index = 0; index < 80; index += 1)
+        capture.record("inbound", { index, text: "x".repeat(200) });
+      observed = { status: "observed", zones: [{ zone_id: "during-gap" }] };
+      capture.record("snapshot", {
+        snapshot: { revision: 8 },
+        contributors: {},
+      });
       await delay(100);
       await unlink(destination);
       await rename(moved, destination);
@@ -166,6 +176,11 @@ test("a recovered destination records a write gap and resumes without leaking er
       ),
     );
     assert.ok(records.some((record) => record.data.marker === "resumed"));
+    const recovered = records.find(
+      (record) => record.type === "checkpoint" && record.data.recordingGap,
+    );
+    assert.deepEqual(recovered.data.roonState, observed);
+    assert.equal(recovered.data.snapshot.snapshot.revision, 8);
     assert.ok(logs.length > 0);
     assert.doesNotMatch(logs.join("\n"), /synthetic-secret|ENOTDIR|moved/);
   });
@@ -229,5 +244,30 @@ test("capture failure and a throwing diagnostic logger keep shutdown bounded", a
     await capture.close();
     assert.ok(performance.now() - started < 1500);
     assert.equal(await readFile(destination, "utf8"), "preserve");
+  });
+});
+
+test("every rotated file begins with retained state and source context", async () => {
+  await withTaskDirectory(async (directory) => {
+    const capture = new DiagnosticCapture({ directory, budgetBytes: 32768 });
+    capture.record("snapshot", { snapshot: { revision: 1 }, contributors: {} });
+    for (let index = 0; index < 100; index += 1) {
+      capture.record("inbound", { index, text: "x".repeat(200) });
+      await delay(2);
+    }
+    await capture.close();
+    const files = (await readdir(directory))
+      .filter((name) => name.endsWith(".jsonl"))
+      .sort();
+    assert.ok(files.length > 1);
+    assert.ok(!files[0]!.endsWith("0000000000.jsonl"));
+    for (const file of files) {
+      const first = JSON.parse(
+        (await readFile(path.join(directory, file), "utf8")).split("\n")[0]!,
+      );
+      assert.equal(first.type, "checkpoint");
+      assert.equal(first.data.kind, "retained state");
+      assert.deepEqual(first.data.snapshot.snapshot, { revision: 1 });
+    }
   });
 });

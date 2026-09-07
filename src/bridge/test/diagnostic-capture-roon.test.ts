@@ -52,11 +52,19 @@ async function observeSyntheticRoonSession(
     lyricsEnabled = true,
     ending,
     pressure = false,
+    provenance = false,
+    rotate = false,
+    emptyLyrics = false,
+    largeLyrics = false,
   }: {
     reconnect?: boolean;
     lyricsEnabled?: boolean;
     ending?: "unknown" | "malformed";
     pressure?: boolean;
+    provenance?: boolean;
+    rotate?: boolean;
+    emptyLyrics?: boolean;
+    largeLyrics?: boolean;
   } = {},
 ) {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
@@ -67,9 +75,14 @@ async function observeSyntheticRoonSession(
   const capture =
     directory === undefined
       ? undefined
-      : new DiagnosticCapture({ directory }, (line) => logs.push(line));
+      : new DiagnosticCapture(
+          { directory, budgetBytes: provenance ? 1024 * 1024 : undefined },
+          (line) => logs.push(line),
+        );
   let connections = 0;
   const subscribed = new Set<string>();
+  const subscriptions = new Map<string, string>();
+  const images: Array<{ socket: PeerSocket; id: string }> = [];
   const peers = new Map<string, PeerSocket>();
   const zone = {
     zone_id: "zone-1",
@@ -148,7 +161,12 @@ async function observeSyntheticRoonSession(
             }),
           );
         subscribed.add(role);
+        subscriptions.set(role, id);
       } else if (first.endsWith("image:1/get_image")) {
+        if (provenance) {
+          images.push({ socket, id });
+          return;
+        }
         socket.send(
           message(
             "COMPLETE",
@@ -203,12 +221,121 @@ async function observeSyntheticRoonSession(
       let attempt = 0;
       attempt < 200 &&
       (subscribed.size < (lyricsEnabled ? 2 : 1) ||
-        !snapshots.some((snapshot) => snapshot.artwork !== null));
+        (provenance
+          ? images.length === 0
+          : !snapshots.some((snapshot) => snapshot.artwork !== null)));
       attempt += 1
     )
       await delay(10);
     assert.equal(subscribed.size, lyricsEnabled ? 2 : 1);
     await delay(30);
+    if (provenance) {
+      const ordinary = peers.get("io.roonscape.bridge")!;
+      const lyrics = peers.get("com.roonlabs.display_zone")!;
+      lyrics.send(
+        message(
+          "CONTINUE",
+          "LyricsChanged",
+          subscriptions.get("com.roonlabs.display_zone")!,
+          {
+            zone_id: "zone-1",
+            key: emptyLyrics ? null : "lyrics-1",
+            lrc: emptyLyrics
+              ? null
+              : largeLyrics
+                ? Array.from(
+                    { length: 256 },
+                    (_, index) =>
+                      `[${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.00]${"🎵".repeat(60)}`,
+                  ).join("\n")
+                : "[00:01.00]Accepted lyrics",
+          },
+        ),
+      );
+      await delay(20);
+      ordinary.send(
+        message(
+          "CONTINUE",
+          "Changed",
+          subscriptions.get("io.roonscape.bridge")!,
+          {
+            zones_seek_changed: [{ zone_id: "zone-1", seek_position: 24 }],
+          },
+        ),
+      );
+      lyrics.send(
+        message(
+          "CONTINUE",
+          "LyricsChanged",
+          subscriptions.get("com.roonlabs.display_zone")!,
+          {
+            zone_id: "stale-zone",
+            key: "stale-key",
+            lrc: "[00:01.00]Rejected lyrics",
+          },
+        ),
+      );
+      await delay(20);
+      images[0]!.socket.send(
+        message(
+          "COMPLETE",
+          "Success",
+          images[0]!.id,
+          Buffer.from("synthetic-artwork-bytes"),
+        ),
+      );
+      await delay(30);
+      assert.equal(snapshots.at(-1)?.timing?.position?.seconds, 24);
+      assert.equal(
+        snapshots.at(-1)?.lyrics?.cues[0]?.text,
+        emptyLyrics || largeLyrics ? undefined : "Accepted lyrics",
+      );
+      if (rotate && capture) {
+        for (let index = 0; index < 1200; index += 1) {
+          capture.record("inbound", {
+            marker: "rotation filler",
+            text: "x".repeat(1500),
+          });
+          await delay(1);
+        }
+      }
+      for (const imageKey of ["image-2", "image-3"]) {
+        ordinary.send(
+          message(
+            "CONTINUE",
+            "Changed",
+            subscriptions.get("io.roonscape.bridge")!,
+            {
+              zones_changed: [
+                {
+                  ...zone,
+                  now_playing: { ...zone.now_playing, image_key: imageKey },
+                },
+              ],
+            },
+          ),
+        );
+        await delay(20);
+      }
+      assert.equal(images.length, 3);
+      images[1]!.socket.send(
+        message(
+          "COMPLETE",
+          "Success",
+          images[1]!.id,
+          Buffer.from("stale-artwork"),
+        ),
+      );
+      images[2]!.socket.send(
+        message(
+          "COMPLETE",
+          "Success",
+          images[2]!.id,
+          Buffer.from("accepted-artwork"),
+        ),
+      );
+      await delay(30);
+    }
     if (reconnect) {
       sockets[0]!.transport.close();
       await delay(10);
@@ -292,8 +419,23 @@ test(
       assert.deepEqual(
         records
           .filter((record) => record.type === "snapshot")
-          .map((record) => record.data),
+          .map((record) => record.data.snapshot),
         enabled.snapshots,
+      );
+      const published = records.find(
+        (record) => record.type === "snapshot" && record.data.snapshot.artwork,
+      );
+      assert.equal(
+        published.data.contributors.zone.context.message.name,
+        "Changed",
+      );
+      assert.equal(
+        published.data.contributors.artwork.context.artwork.request.image_key,
+        "image-1",
+      );
+      assert.equal(
+        published.data.contributors.artwork.sequence,
+        inbound.find((record) => record.data.artwork).sequence,
       );
       const image = inbound.find((record) => record.data.artwork);
       assert.deepEqual(image.data.message.body, { artworkOmitted: true });
@@ -364,6 +506,31 @@ test(
         ).length,
         2,
       );
+      const artworkPublications = records.filter(
+        (record) => record.type === "snapshot" && record.data.snapshot.artwork,
+      );
+      assert.equal(artworkPublications.length, 2);
+      assert.notEqual(
+        artworkPublications[0].data.contributors.zone.context.connectionId,
+        artworkPublications[1].data.contributors.zone.context.connectionId,
+      );
+      for (const publication of artworkPublications) {
+        assert.equal(
+          publication.data.contributors.zone.context.connectionId,
+          publication.data.contributors.artwork.context.connectionId,
+        );
+      }
+      for (const disconnected of records.filter(
+        (record) =>
+          record.type === "snapshot" &&
+          record.data.snapshot.availability === "disconnected",
+      )) {
+        assert.equal(
+          disconnected.data.contributors.availability.type,
+          "connection",
+        );
+        assert.equal(disconnected.data.contributors.zone, undefined);
+      }
     });
   },
 );
@@ -441,6 +608,206 @@ test(
       assert.ok(
         (await readRecords(directory)).some((record) => record.type === "gap"),
       );
+    });
+  },
+);
+
+test(
+  "pending snapshots retain zone, lyric, seek and accepted artwork contributors",
+  { timeout: 10000 },
+  async () => {
+    await withTaskDirectory(async (directory) => {
+      const disabled = await observeSyntheticRoonSession(undefined, {
+        provenance: true,
+      });
+      const enabled = await observeSyntheticRoonSession(directory, {
+        provenance: true,
+      });
+      assert.deepEqual(enabled.traffic, disabled.traffic);
+      assert.deepEqual(enabled.snapshots, disabled.snapshots);
+      const records = await readRecords(directory);
+      const combined = records.find(
+        (record) =>
+          record.type === "snapshot" && record.data.snapshot.lyrics !== null,
+      );
+      assert.ok(combined);
+      const { zone, timing, lyrics, artwork } = combined.data.contributors;
+      assert.equal(
+        zone.context.message.body.zones_changed[0].now_playing.three_line.line1,
+        "Title",
+      );
+      assert.equal(
+        timing.context.message.body.zones_seek_changed[0].seek_position,
+        24,
+      );
+      assert.equal(
+        lyrics.context.message.body.lrc,
+        "[00:01.00]Accepted lyrics",
+      );
+      assert.equal(artwork.context.artwork.request.image_key, "image-1");
+      assert.ok(
+        zone.sequence < lyrics.sequence &&
+          lyrics.sequence < timing.sequence &&
+          timing.sequence < artwork.sequence,
+      );
+      const publications = records.filter(
+        (record) => record.type === "snapshot",
+      );
+      assert.ok(
+        publications.some(
+          (record) =>
+            record.data.contributors.artwork?.context.artwork.request
+              .image_key === "image-3",
+        ),
+      );
+      assert.ok(
+        publications.every(
+          (record) =>
+            record.data.contributors.artwork?.context.artwork.request
+              .image_key !== "image-2",
+        ),
+      );
+      assert.ok(
+        records.some(
+          (record) =>
+            record.type === "inbound" &&
+            record.data.artwork?.request.image_key === "image-2",
+        ),
+      );
+      const destination = path.join(directory, "failure");
+      await writeFile(destination, "unavailable");
+      const failing = await observeSyntheticRoonSession(destination, {
+        provenance: true,
+      });
+      assert.deepEqual(failing.traffic, disabled.traffic);
+      assert.deepEqual(failing.snapshots, disabled.snapshots);
+    });
+  },
+);
+
+test(
+  "rotation checkpoints preserve accumulated state and deleted contributing inputs",
+  { timeout: 10000 },
+  async () => {
+    await withTaskDirectory(async (directory) => {
+      await observeSyntheticRoonSession(directory, {
+        provenance: true,
+        rotate: true,
+      });
+      const records = await readRecords(directory);
+      const checkpoint = records.find(
+        (record) =>
+          record.type === "checkpoint" &&
+          record.data.snapshot?.snapshot?.lyrics !== null,
+      );
+      assert.ok(checkpoint?.data.snapshot?.snapshot?.lyrics);
+      assert.equal(checkpoint.data.kind, "retained state");
+      assert.equal(checkpoint.data.roonState.status, "observed");
+      assert.equal(
+        checkpoint.data.roonState.zones.find(
+          (retained: { zone: { zone_id: string } }) =>
+            retained.zone.zone_id === "zone-1",
+        ).zone.now_playing.seek_position,
+        24,
+      );
+      assert.equal(
+        checkpoint.data.snapshot.snapshot.timing.position.seconds,
+        24,
+      );
+      assert.equal(
+        checkpoint.data.snapshot.contributors.lyrics.context.message.body.lrc,
+        "[00:01.00]Accepted lyrics",
+      );
+      assert.equal(
+        checkpoint.data.snapshot.contributors.artwork.context.artwork.request
+          .image_key,
+        "image-1",
+      );
+      for (const source of Object.values(
+        checkpoint.data.snapshot.contributors,
+      ) as Array<{ sequence: number }>) {
+        assert.ok(
+          !records.some(
+            (record) =>
+              record.type === "inbound" && record.sequence === source.sequence,
+          ),
+        );
+      }
+      assert.doesNotMatch(
+        JSON.stringify(records),
+        /synthetic-private-token|synthetic-artwork-bytes/,
+      );
+      for (const file of (await readdir(directory)).filter((name) =>
+        name.endsWith(".jsonl"),
+      )) {
+        assert.equal(
+          JSON.parse(
+            (await readFile(path.join(directory, file), "utf8")).split(
+              "\n",
+            )[0]!,
+          ).type,
+          "checkpoint",
+        );
+      }
+    });
+  },
+);
+
+test(
+  "retained Lyric Feed state distinguishes an observed empty response",
+  { timeout: 10000 },
+  async () => {
+    await withTaskDirectory(async (directory) => {
+      await observeSyntheticRoonSession(directory, {
+        provenance: true,
+        rotate: true,
+        emptyLyrics: true,
+      });
+      const records = await readRecords(directory);
+      const checkpoint = records.find(
+        (record) =>
+          record.type === "checkpoint" &&
+          record.data.lyricFeed?.state?.observation?.status ===
+            "observed empty",
+      );
+      assert.ok(checkpoint);
+      assert.equal(
+        checkpoint.data.lyricFeed.state.observation.source.context.message.body
+          .lrc,
+        null,
+      );
+      assert.ok(
+        !records.some(
+          (record) =>
+            record.type === "inbound" &&
+            record.sequence ===
+              checkpoint.data.lyricFeed.state.observation.source.sequence,
+        ),
+      );
+    });
+  },
+);
+
+test(
+  "capture identifies local oversized-lyric recovery while artwork is pending",
+  { timeout: 10000 },
+  async () => {
+    await withTaskDirectory(async (directory) => {
+      const disabled = await observeSyntheticRoonSession(undefined, {
+        provenance: true,
+        largeLyrics: true,
+      });
+      const enabled = await observeSyntheticRoonSession(directory, {
+        provenance: true,
+        largeLyrics: true,
+      });
+      assert.deepEqual(enabled.traffic, disabled.traffic);
+      assert.deepEqual(enabled.snapshots, disabled.snapshots);
+      const publication = (await readRecords(directory)).find(
+        (record) => record.type === "snapshot" && record.data.snapshot.artwork,
+      );
+      assert.match(publication.data.trigger, /lyrics omitted.*size/);
+      assert.equal(publication.data.snapshot.lyrics, null);
     });
   },
 );

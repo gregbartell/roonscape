@@ -42,14 +42,53 @@ its `sessionId`, a `type`, and `data`. Record types are:
   available Roon server identity, and lifecycle state.
 - `inbound`: the same connection context and the complete SDK-decoded `message`,
   subject to secret redaction, artwork omission, and bounded recording limits.
-- `snapshot`: the Presentation Snapshot actually published by the Bridge.
+- `snapshot`: `snapshot` is the Presentation Snapshot actually published by
+  the Bridge; `contributors` and `trigger` explain its diagnostic provenance.
+- `checkpoint`: retained local state and the latest previously captured
+  publication, placed at the start of every file. This is not received Roon
+  data and does not query Roon for a baseline.
 - `gap`: omitted record sequence bounds/count, or a specific metadata omission.
 
-Connection UUIDs distinguish reconnects. Snapshot records do not claim that the
-most recent inbound message caused their publication. Input references and
-rotation checkpoints are not part of this format. Rotation may leave a file
-starting in the middle of a connection or session; retained history is a
-bounded window, not a complete account of everything since launch.
+Connection UUIDs distinguish reconnects. Format version 2 identifies contributing
+inputs separately for `zone`, `timing`, `lyrics`, `artwork`, and `availability`.
+Each available source has a `sessionId`, `sequence`, record `type`, and bounded,
+redacted `context` copied from that input. Multiple fields may reference the
+same input. A seek update can supply position while an earlier zone input
+still supplies duration and Now Playing. Accepted lyric inputs survive pending
+compositions, and artwork references follow the accepted asynchronous response.
+Received inputs that are stale or rejected remain `inbound` records but do not
+become contributors merely because they arrived recently.
+
+`trigger` describes the publication path, including startup, received input,
+artwork completion, and local error recovery. `localInterpretation` preserves
+the reason and available input reference when the Bridge omits oversized lyrics,
+including while artwork is pending. It is separate from the received
+sources: a local failure may publish a snapshot using earlier Roon observations.
+A missing contributor means no received source reference is retained for that
+part of the publication; it does not prove that Roon reported an empty value.
+These are Bridge interpretations of accepted inputs, not claims that Roon sent
+the normalized snapshot or that the most recent message caused it.
+
+Checkpoints include accumulated ordinary zone state with its sources, the
+private Lyric Feed's accepted and pending context when active, any pending
+Presentation Snapshot, and the latest published snapshot with its contributors.
+The startup and disconnected states explicitly identify unavailable information;
+an observed subscription with `zones: []` means an observed empty baseline.
+The Lyric Feed similarly distinguishes no accepted lyric input, an observed
+empty response, and an input that produced no usable timeline.
+Incremental state received before a baseline is marked partial. Sources retain
+bounded message context, including connection identity and artwork metadata, so
+references remain interpretable after their original files have been deleted.
+An `unavailable` marker identifies context that could not fit or be serialized.
+
+A checkpoint's `beforeSequence` places it immediately before the accompanying
+ordinary record. It shares that record's envelope sequence; it is not another
+received input or another publication. Its contents describe retained local
+observations at recording time, including observations made during a recording
+gap. `earlierRecordingGap`, `earlierWriteGap`, and available `recordingGap` bounds
+mark missing evidence. Retained context cannot reconstruct discarded history,
+intermediate states never retained, or all messages lost during a gap. A new
+launch does not reconstruct the previous launch's local state.
 
 Read files with ordinary text tools. For example, inspect decoded inbound
 messages with `jq`:
@@ -102,23 +141,30 @@ for capture. The Bridge's progress and timely shutdown do not depend on the
 writer or destination being responsive.
 
 Recording admission is bounded to 1 MiB of queued JSONL and 1,024 records, with
-small reserved space for gap metadata. Individual records are limited to
-256 KiB or one quarter of the budget, whichever is smaller. Serialization also
+small reserved space for gap metadata. Queued checkpoint context counts toward
+that byte bound, and checkpoint bytes count toward both segment and total disk
+limits. Each checkpoint section has a share of the bounded context allowance;
+large sections are explicitly omitted while other sections can survive.
+Individual records are limited to 256 KiB or one eighth of the budget, whichever is smaller. Serialization also
 bounds traversal depth and input size; oversized, cyclic, or otherwise
 unserializable input is omitted rather than truncated into apparently complete
 evidence. Artwork request metadata is bounded to 128 outstanding requests and
-8 KiB per request. Exceeding these limits emits an omission notice. If artwork correlation is
-incomplete, subsequent uncorrelated binary bodies on that connection are
+8 KiB per request. Retained source context uses a 16 KiB traversal allowance
+per input; checkpoint limits apply again before writing. Exceeding these limits
+emits an omission notice or an explicit unavailable
+context marker. If artwork correlation is incomplete, subsequent uncorrelated binary bodies on that connection are
 omitted conservatively as well.
 
 Destination/write failures and write pressure are logged through operational
 stderr, with repeated notices rate-limited. Input omitted before admission is
 summarized in a gap record when queue space is available. After a write failure,
 the worker retries no more than once per second while receiving input. On
-recovery it uses the first subsequent record slot to write a gap identifying
-omitted sequence bounds/count; that slot's original input is also omitted.
-Shutdown makes one final best-effort gap write. A partial append is truncated
-back when possible; a final incomplete JSONL line can remain after an
+recovery it starts a new segment with a checkpoint and uses the first subsequent
+record slot to write a gap identifying omitted sequence bounds/count; that
+slot's original input is also omitted.
+Admission-gap recovery also starts a new segment. Shutdown makes one final
+best-effort gap write, with explicitly omitted checkpoint context when needed
+to preserve the queue bound. A partial append is truncated back when possible; a final incomplete JSONL line can remain after an
 unrecoverable write failure or abrupt exit. Sequence discontinuities and gap
 records identify missing evidence, but gaps themselves may be lost when storage
 is unavailable or older files rotate away. Operational failure logs remain

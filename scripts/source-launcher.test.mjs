@@ -163,7 +163,7 @@ exit 1
           1048576,
         );
         assert.equal(
-          records.find((record) => record.type === "snapshot").data
+          records.find((record) => record.type === "snapshot").data.snapshot
             .availability,
           "pairingRequired",
         );

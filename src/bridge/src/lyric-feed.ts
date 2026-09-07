@@ -1,3 +1,7 @@
+import type {
+  DiagnosticCapture,
+  DiagnosticSource,
+} from "./diagnostic-capture.js";
 import { createHash } from "node:crypto";
 
 import {
@@ -28,6 +32,7 @@ interface ValidPrivateLyricEvent {
 interface PendingPrivateLyricEvent {
   event: ValidPrivateLyricEvent;
   nowPlayingIdentity: string | null;
+  source?: DiagnosticSource;
 }
 
 export interface LyricFeedConnection {
@@ -69,6 +74,7 @@ export interface LyricNowPlayingZone {
 }
 
 export interface LyricFeed {
+  diagnosticState(): unknown;
   track(
     nowPlaying: TrackedNowPlaying | null,
     knownNowPlaying?: readonly TrackedNowPlaying[],
@@ -81,7 +87,11 @@ interface StartLyricFeedOptions {
   endpoint: LyricFeedEndpoint;
   expectedCoreId: string;
   connect: LyricFeedConnectionFactory;
-  onTimeline(timeline: SynchronizedLyrics | null): void;
+  diagnosticCapture?: DiagnosticCapture;
+  onTimeline(
+    timeline: SynchronizedLyrics | null,
+    source?: DiagnosticSource,
+  ): void;
   scheduleReconnect?: (reconnect: () => void) => () => void;
 }
 
@@ -90,6 +100,7 @@ export function startLyricFeed({
   expectedCoreId,
   connect,
   onTimeline,
+  diagnosticCapture,
   scheduleReconnect = scheduleReconnectWithTimeout,
 }: StartLyricFeedOptions): LyricFeed {
   let tracked: TrackedNowPlaying | null = null;
@@ -100,6 +111,7 @@ export function startLyricFeed({
   let acceptedKey: string | null = null;
   let acceptedTimeline: SynchronizedLyrics | null = null;
   let hasTimeline = false;
+  let observation: { status: string; source?: DiagnosticSource } | undefined;
   const keyTrackIdentities = new Map<string, string>();
   const knownTrackIdentitiesByZone = new Map<string, string>();
   const pendingEventsByZone = new Map<string, PendingPrivateLyricEvent>();
@@ -112,6 +124,7 @@ export function startLyricFeed({
     pendingEventsByZone.set(event.zone_id, {
       event,
       nowPlayingIdentity,
+      source: diagnosticCapture?.input,
     });
     if (pendingEventsByZone.size > MAX_PENDING_ZONES) {
       const oldestZone = pendingEventsByZone.keys().next().value;
@@ -121,17 +134,21 @@ export function startLyricFeed({
     }
   };
 
-  const clear = (): void => {
+  const clear = (source = diagnosticCapture?.input): void => {
+    observation = undefined;
     acceptedKey = null;
     acceptedTimeline = null;
     timelineVisible = false;
     if (hasTimeline) {
       hasTimeline = false;
-      onTimeline(null);
+      onTimeline(null, source);
     }
   };
 
-  const acceptEvent = (event: ValidPrivateLyricEvent): void => {
+  const acceptEvent = (
+    event: ValidPrivateLyricEvent,
+    source = diagnosticCapture?.input,
+  ): void => {
     if (tracked === null || event.zone_id !== tracked.zoneId) {
       return;
     }
@@ -148,12 +165,17 @@ export function startLyricFeed({
     }
     const timeline = parseSynchronizedLyrics(event.lrc);
     if (timeline === null) {
-      clear();
+      clear(source);
+      observation = {
+        status: event.lrc === null ? "observed empty" : "no usable timeline",
+        source,
+      };
       return;
     }
     if (key === acceptedKey && sameTimeline(timeline, acceptedTimeline)) {
       return;
     }
+    observation = { status: "observed", source };
     acceptedKey = key;
     acceptedTimeline = timeline;
     if (keyFingerprint !== null) {
@@ -168,7 +190,7 @@ export function startLyricFeed({
     }
     timelineVisible = false;
     hasTimeline = true;
-    onTimeline(timeline);
+    onTimeline(timeline, source);
   };
 
   const scheduleOpen = (): void => {
@@ -252,6 +274,13 @@ export function startLyricFeed({
   open();
 
   return {
+    diagnosticState: () => ({
+      connection: connection === undefined ? "unavailable" : "connected",
+      tracked,
+      timeline: acceptedTimeline,
+      observation: observation ?? { unavailable: "no accepted lyric input" },
+      pending: [...pendingEventsByZone.values()],
+    }),
     track: (next, knownNowPlaying = next === null ? [] : [next]) => {
       knownTrackIdentitiesByZone.clear();
       for (const known of knownNowPlaying) {
@@ -272,7 +301,7 @@ export function startLyricFeed({
           (pendingEvent.nowPlayingIdentity === null ||
             pendingEvent.nowPlayingIdentity === next.nowPlayingIdentity)
         ) {
-          acceptEvent(pendingEvent.event);
+          acceptEvent(pendingEvent.event, pendingEvent.source);
         }
       }
     },
