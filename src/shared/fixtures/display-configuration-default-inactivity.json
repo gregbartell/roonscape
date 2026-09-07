@@ -1,4 +1,5 @@
 {
   "trackedOutputId": "output-speaker-system",
-  "trackedOutputName": "Speaker System"
+  "trackedOutputName": "Speaker System",
+  "lyricsEnabled": true
 }

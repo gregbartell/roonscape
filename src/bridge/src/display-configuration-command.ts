@@ -45,6 +45,7 @@ export async function runDisplayConfigurationCommand(
     dependencies.configurationStore.save({
       trackedOutputId,
       trackedOutputName: trackedOutput.trackedOutputName,
+      lyricsEnabled: existing?.lyricsEnabled ?? true,
       ...(existing?.inactivity === undefined
         ? {}
         : { inactivity: existing.inactivity }),

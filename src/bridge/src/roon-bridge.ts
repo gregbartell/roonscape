@@ -204,6 +204,8 @@ export function startRoonBridge({
   now = () => new Date(),
   createLyricFeedConnection = createPrivateLyricFeedConnection,
 }: StartRoonBridgeOptions): RoonBridge {
+  const lyricsEnabled =
+    displayConfigurationStore.load()?.lyricsEnabled === true;
   let revision = 0;
   const initialAvailability: Unavailable = hasAuthorization(
     authorizationStore.load(),
@@ -351,7 +353,7 @@ export function startRoonBridge({
         name: configuration.trackedOutputName,
       });
       const selectedEndpoint = lyricFeedEndpointForCore(core);
-      if (selectedEndpoint !== null) {
+      if (lyricsEnabled && selectedEndpoint !== null) {
         try {
           activeLyricFeed = startLyricFeed({
             endpoint: selectedEndpoint,

@@ -77,6 +77,7 @@ export async function createNativeSession({
       JSON.stringify({
         trackedOutputId: "native-verification",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
         inactivity: {
           gracePeriodSeconds: 3600,
           dimmedOpacity: 0.35,

@@ -36,7 +36,7 @@ tar --extract --gzip --file roonscape-linux-x64.tar.gz
 ./roonscape/roonscape
 ```
 
-RoonScape will walk you through choosing the audio output to display and enabling OLED protection. For first-time setup and automatic launch guidance, see [Getting Started](docs/getting-started.md). For help with a problem, search or open an issue in [GitHub Issues](https://github.com/gregbartell/roonscape/issues).
+RoonScape will walk you through choosing the audio output to display, whether to show synchronized lyrics, and configuring OLED protection. For first-time setup and automatic launch guidance, see [Getting Started](docs/getting-started.md). For help with a problem, search or open an issue in [GitHub Issues](https://github.com/gregbartell/roonscape/issues).
 
 ## Development
 

@@ -94,6 +94,7 @@ test("configured start launches bridge then renderer as one session", async () =
       return {
         trackedOutputId: "output-speaker-system",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
       };
     },
     openRuntime: async () => ({
@@ -139,6 +140,7 @@ for (const [description, roonServerHost] of [
         loadConfiguration: () => ({
           trackedOutputId: "output-studio",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
         openRuntime: async () => ({
           socketPath: "/runtime/roonscape/roonscape.sock",
@@ -217,6 +219,7 @@ test("Roon Server Host remains absent from Display Configuration", async () => {
   assert.deepEqual(savedConfiguration, {
     trackedOutputId: "output-studio",
     trackedOutputName: "Studio DAC",
+    lyricsEnabled: true,
     inactivity: {
       gracePeriodSeconds: 300,
       dimmedOpacity: 0.35,
@@ -237,6 +240,7 @@ test("--config takes precedence over the standard XDG path", async () => {
       return {
         trackedOutputId: "output-speaker-system",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
       };
     },
     openRuntime: async () => ({
@@ -266,7 +270,7 @@ test(
       const socketPath = path.join(taskDirectory, "roonscape.sock");
       await writeFile(
         configurationFile,
-        '{"trackedOutputId":"output-speaker-system","trackedOutputName":"Speaker System"}\n',
+        '{"trackedOutputId":"output-speaker-system","lyricsEnabled":true,"trackedOutputName":"Speaker System"}\n',
       );
       let finishRenderer: ((result: ChildResult) => void) | undefined;
       const renderer: RunningChild = {
@@ -398,6 +402,7 @@ test("first-time setup saves OLED defaults and continues into the presentation",
   assert.deepEqual(savedConfiguration, {
     trackedOutputId: "output-speaker-system",
     trackedOutputName: "Speaker System",
+    lyricsEnabled: true,
     inactivity: {
       gracePeriodSeconds: 300,
       dimmedOpacity: 0.35,
@@ -418,6 +423,7 @@ test("--setup preserves the saved choices and exits without launching", async ()
   const savedConfiguration = {
     trackedOutputId: "output-study",
     trackedOutputName: "USB DAC",
+    lyricsEnabled: false,
     inactivity: {
       gracePeriodSeconds: 240,
       dimmedOpacity: 0.3,
@@ -444,6 +450,11 @@ test("--setup preserves the saved choices and exits without launching", async ()
         },
       ],
       readSetupKey: scriptedSetupKeys("enter", "enter"),
+      readSetupValue: async (prompt, initialValue) => {
+        assert.equal(prompt, "Show synchronized lyrics (y/n):");
+        assert.equal(initialValue, "n");
+        return initialValue;
+      },
       saveConfiguration: (_configurationFile, configuration) => {
         saved = configuration as typeof savedConfiguration;
       },
@@ -472,6 +483,7 @@ for (const roonServerHost of ["roon-server.example", "192.0.2.72"]) {
         loadConfiguration: () => ({
           trackedOutputId: "output-studio",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
         configurationFileExists: () => true,
         discoverTrackedOutputs: async (_authorizationFile, _signal, host) => {
@@ -503,6 +515,7 @@ test("--setup refuses to wait for input without an interactive terminal", async 
       loadConfiguration: () => ({
         trackedOutputId: "output-study",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
       }),
       readSetupKey: async () => {
         inputRead = true;
@@ -520,7 +533,7 @@ test("--setup refuses to wait for input without an interactive terminal", async 
 test("--setup prefills OLED values and corrects invalid custom entries", async () => {
   const errors: string[] = [];
   const prompts: Array<{ prompt: string; initialValue: string }> = [];
-  const answers = ["0", "6.5", "100", "25", "1.5", "90"];
+  const answers = ["y", "0", "6.5", "100", "25", "1.5", "90"];
   let savedConfiguration:
     | Parameters<RoonScapeCommandDependencies["saveConfiguration"]>[1]
     | undefined;
@@ -531,6 +544,7 @@ test("--setup prefills OLED values and corrects invalid custom entries", async (
       loadConfiguration: () => ({
         trackedOutputId: "output-study",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
         inactivity: {
           gracePeriodSeconds: 240,
           dimmedOpacity: 0.3,
@@ -563,6 +577,7 @@ test("--setup prefills OLED values and corrects invalid custom entries", async (
 
   assert.equal(result, 0);
   assert.deepEqual(prompts, [
+    { prompt: "Show synchronized lyrics (y/n):", initialValue: "y" },
     { prompt: "Grace period in minutes:", initialValue: "4" },
     { prompt: "Grace period in minutes:", initialValue: "4" },
     { prompt: "Dimmed opacity in percent:", initialValue: "30" },
@@ -576,6 +591,7 @@ test("--setup prefills OLED values and corrects invalid custom entries", async (
   assert.deepEqual(savedConfiguration, {
     trackedOutputId: "output-study",
     trackedOutputName: "USB DAC",
+    lyricsEnabled: true,
     inactivity: {
       gracePeriodSeconds: 390,
       dimmedOpacity: 0.25,
@@ -594,6 +610,7 @@ test("--setup presents saved opacity in familiar percentage units", async () => 
       loadConfiguration: () => ({
         trackedOutputId: "output-study",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
         inactivity: {
           gracePeriodSeconds: 240,
           dimmedOpacity: 0.29,
@@ -631,7 +648,7 @@ test("--setup --config changes only the Tracked Output with a private atomic rep
     await mkdir(path.dirname(configurationFile), { recursive: true });
     await writeFile(
       configurationFile,
-      '{"trackedOutputId":"output-speaker-system","trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n',
+      '{"trackedOutputId":"output-speaker-system","lyricsEnabled":true,"trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n',
       { mode: 0o644 },
     );
     const configurationStore = new FileDisplayConfigurationStore(
@@ -675,6 +692,7 @@ test("--setup --config changes only the Tracked Output with a private atomic rep
     assert.deepEqual(configurationStore.load(), {
       trackedOutputId: "output-study",
       trackedOutputName: "USB DAC",
+      lyricsEnabled: true,
       inactivity: {
         gracePeriodSeconds: 240,
         dimmedOpacity: 0.3,
@@ -689,12 +707,14 @@ test("--setup --config changes only the Tracked Output with a private atomic rep
   });
 });
 
-test("cancelling reconfiguration leaves the Display Configuration byte-for-byte intact", async () => {
-  await withTaskDirectory(async (taskDirectory) => {
-    const configurationFile = path.join(taskDirectory, "display.json");
-    const original = `{
+for (const cancelAt of ["lyrics", "OLED"]) {
+  test(`cancelling ${cancelAt} reconfiguration leaves the Display Configuration byte-for-byte intact`, async () => {
+    await withTaskDirectory(async (taskDirectory) => {
+      const configurationFile = path.join(taskDirectory, "display.json");
+      const original = `{
   "trackedOutputId": "output-study",
   "trackedOutputName": "USB DAC",
+  "lyricsEnabled": false,
   "inactivity": {
     "gracePeriodSeconds": 240,
     "dimmedOpacity": 0.3,
@@ -702,42 +722,48 @@ test("cancelling reconfiguration leaves the Display Configuration byte-for-byte 
   }
 }
 `;
-    await writeFile(configurationFile, original, { mode: 0o600 });
-    const configurationStore = new FileDisplayConfigurationStore(
-      configurationFile,
-    );
-    const result = await runRoonScapeCommand(
-      ["--setup", "--config", configurationFile],
-      commandDependencies({
-        terminalIsInteractive: () => true,
-        loadConfiguration: () => configurationStore.load(),
-        configurationFileExists: () => true,
-        discoverTrackedOutputs: async () => [
-          {
-            trackedOutputId: "output-study",
-            trackedOutputName: "USB DAC",
-            trackedZoneName: "Study",
+      await writeFile(configurationFile, original, { mode: 0o600 });
+      const configurationStore = new FileDisplayConfigurationStore(
+        configurationFile,
+      );
+      const result = await runRoonScapeCommand(
+        ["--setup", "--config", configurationFile],
+        commandDependencies({
+          terminalIsInteractive: () => true,
+          loadConfiguration: () => configurationStore.load(),
+          configurationFileExists: () => true,
+          discoverTrackedOutputs: async () => [
+            {
+              trackedOutputId: "output-study",
+              trackedOutputName: "USB DAC",
+              trackedZoneName: "Study",
+            },
+          ],
+          readSetupKey: scriptedSetupKeys("enter", "customize"),
+          readSetupValue: async (prompt) => {
+            if (
+              cancelAt === "OLED" &&
+              prompt === "Show synchronized lyrics (y/n):"
+            )
+              return "y";
+            throw new DOMException("cancelled", "AbortError");
           },
-        ],
-        readSetupKey: scriptedSetupKeys("enter", "customize"),
-        readSetupValue: async () => {
-          throw new DOMException("cancelled", "AbortError");
-        },
-        saveConfiguration: (_selectedFile, configuration) =>
-          configurationStore.save(configuration),
-      }),
-    );
+          saveConfiguration: (_selectedFile, configuration) =>
+            configurationStore.save(configuration),
+        }),
+      );
 
-    assert.equal(result, 130);
-    assert.equal(await readFile(configurationFile, "utf8"), original);
+      assert.equal(result, 130);
+      assert.equal(await readFile(configurationFile, "utf8"), original);
+    });
   });
-});
+}
 
 test("failed reconfiguration leaves the Display Configuration byte-for-byte intact", async () => {
   await withTaskDirectory(async (taskDirectory) => {
     const configurationFile = path.join(taskDirectory, "config/display.json");
     const original =
-      '{"trackedOutputId":"output-study","trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n';
+      '{"trackedOutputId":"output-study","lyricsEnabled":true,"trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}\n';
     await mkdir(path.dirname(configurationFile), { recursive: true });
     await writeFile(configurationFile, original, { mode: 0o600 });
     const configurationStore = new FileDisplayConfigurationStore(
@@ -1117,6 +1143,7 @@ test("configured start owns private XDG runtime state and removes it on exit", a
       loadConfiguration: () => ({
         trackedOutputId: "output-speaker-system",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
       }),
       openRuntime: async () =>
         openRuntimeSession({
@@ -1157,6 +1184,7 @@ test("uses a validated per-user runtime directory when XDG_RUNTIME_DIR is absent
         loadConfiguration: () => ({
           trackedOutputId: "output-speaker-system",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
         openRuntime: async () =>
           openRuntimeSession({
@@ -1193,6 +1221,7 @@ test("fails with remediation when no safe runtime directory is available", async
         loadConfiguration: () => ({
           trackedOutputId: "output-speaker-system",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
         openRuntime: async () =>
           openRuntimeSession({
@@ -1234,6 +1263,7 @@ test("a live RoonScape session excludes a second invocation", async () => {
           loadConfiguration: () => ({
             trackedOutputId: "output-speaker-system",
             trackedOutputName: "Speaker System",
+            lyricsEnabled: true,
           }),
           openRuntime: async () => openRuntimeSession(runtimeOptions),
           writeError: (line) => errors.push(line),
@@ -1274,6 +1304,7 @@ test("stale runtime artifacts are reclaimed only after their owner is gone", asy
         loadConfiguration: () => ({
           trackedOutputId: "output-speaker-system",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
         openRuntime: async () =>
           openRuntimeSession({
@@ -1326,6 +1357,7 @@ test("runtime artifacts without verifiable ownership are preserved", async () =>
         loadConfiguration: () => ({
           trackedOutputId: "output-speaker-system",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
         openRuntime: async () =>
           openRuntimeSession({
@@ -1361,6 +1393,7 @@ test("an ownership directory without a record fails without spinning", async () 
         loadConfiguration: () => ({
           trackedOutputId: "output-speaker-system",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
         openRuntime: async () =>
           openRuntimeSession({
@@ -1405,6 +1438,7 @@ test("an interrupted runtime recovery is reclaimed after its owner is gone", asy
         loadConfiguration: () => ({
           trackedOutputId: "output-speaker-system",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
         openRuntime: async () =>
           openRuntimeSession({
@@ -1441,6 +1475,7 @@ test("a child failure determines the session result and stops its peer", async (
       loadConfiguration: () => ({
         trackedOutputId: "output-speaker-system",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
       }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
@@ -1466,6 +1501,7 @@ test("a child signal remains observable as a launcher failure", async () => {
       loadConfiguration: () => ({
         trackedOutputId: "output-speaker-system",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
       }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
@@ -1492,6 +1528,7 @@ test("launcher termination stops both children and cleans runtime state", async 
       loadConfiguration: () => ({
         trackedOutputId: "output-speaker-system",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
       }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
@@ -1526,6 +1563,7 @@ test("a child still running after five seconds is forcibly terminated", async ()
       loadConfiguration: () => ({
         trackedOutputId: "output-speaker-system",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
       }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
@@ -1552,6 +1590,7 @@ test("shutdown remains bounded when a child never reports exit", async () => {
       loadConfiguration: () => ({
         trackedOutputId: "output-speaker-system",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
       }),
       openRuntime: async () => ({
         socketPath: "/runtime/roonscape/roonscape.sock",
@@ -1599,9 +1638,7 @@ function commandDependencies(
     readSetupKey: async () => {
       throw new Error("setup input should not be read");
     },
-    readSetupValue: async () => {
-      throw new Error("setup value should not be read");
-    },
+    readSetupValue: async (_prompt, initialValue) => initialValue,
     saveConfiguration: () => {
       throw new Error("Display Configuration should not be saved");
     },
@@ -1738,4 +1775,64 @@ function unresponsiveChild(
     result: new Promise(() => undefined),
     sendSignal: observeSignal,
   };
+}
+
+for (const savedChoice of [null, true, false]) {
+  for (const answer of [" Y ", " n "]) {
+    test(`setup lyrics choice ${savedChoice} accepts ${JSON.stringify(answer)} after invalid input`, async () => {
+      const errors: string[] = [];
+      const prompts: string[] = [];
+      const answers = ["", "yes", "1", answer];
+      let saved:
+        | Parameters<RoonScapeCommandDependencies["saveConfiguration"]>[1]
+        | undefined;
+      const result = await runRoonScapeCommand(
+        ["--setup"],
+        commandDependencies({
+          terminalIsInteractive: () => true,
+          loadConfiguration: () =>
+            savedChoice === null
+              ? null
+              : {
+                  trackedOutputId: "output-old",
+                  trackedOutputName: "Old Speaker",
+                  lyricsEnabled: savedChoice,
+                },
+          discoverTrackedOutputs: async () => [
+            {
+              trackedOutputId: "output-new",
+              trackedOutputName: "New Speaker",
+              trackedZoneName: "Study",
+            },
+          ],
+          readSetupKey: async () => {
+            prompts.push("key");
+            return "enter";
+          },
+          readSetupValue: async (prompt, initialValue) => {
+            assert.equal(prompt, "Show synchronized lyrics (y/n):");
+            assert.equal(initialValue, savedChoice === false ? "n" : "y");
+            prompts.push("lyrics");
+            return answers.shift()!;
+          },
+          saveConfiguration: (_file, configuration) => {
+            saved = configuration;
+          },
+          writeError: (line) => errors.push(line),
+        }),
+      );
+      assert.equal(result, 0);
+      assert.equal(saved?.lyricsEnabled, answer.trim().toLowerCase() === "y");
+      assert.equal(saved?.trackedOutputId, "output-new");
+      assert.deepEqual(prompts, [
+        "key",
+        "lyrics",
+        "lyrics",
+        "lyrics",
+        "lyrics",
+        "key",
+      ]);
+      assert.deepEqual(errors, Array(3).fill("Enter y for yes or n for no."));
+    });
+  }
 }

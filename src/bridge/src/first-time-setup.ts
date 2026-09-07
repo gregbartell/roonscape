@@ -81,6 +81,18 @@ export async function runSetup(
     existingConfiguration?.trackedOutputId,
   );
 
+  const lyricsEnabled = await readValidatedSetupValue(
+    dependencies,
+    "Show synchronized lyrics (y/n):",
+    (existingConfiguration?.lyricsEnabled ?? true) ? "y" : "n",
+    (value) => {
+      const answer = value.trim().toLowerCase();
+      return answer === "y" ? true : answer === "n" ? false : null;
+    },
+    "Enter y for yes or n for no.",
+    signal,
+  );
+
   const inactivity = existingConfiguration?.inactivity ?? defaultInactivity;
   dependencies.writeOutput(
     existingConfiguration === null
@@ -114,6 +126,7 @@ export async function runSetup(
   dependencies.saveConfiguration(configurationFile, {
     trackedOutputId: selected.trackedOutputId,
     trackedOutputName: selected.trackedOutputName,
+    lyricsEnabled,
     inactivity: completedInactivity,
   });
   dependencies.writeOutput(`Display Configuration saved: ${configurationFile}`);
@@ -277,14 +290,14 @@ async function customizeInactivity(
   };
 }
 
-async function readValidatedSetupValue(
+async function readValidatedSetupValue<T>(
   dependencies: SetupDependencies,
   prompt: string,
   initialValue: string,
-  parse: (value: string) => number | null,
+  parse: (value: string) => T | null,
   validationMessage: string,
   signal: AbortSignal,
-): Promise<number> {
+): Promise<T> {
   while (true) {
     const value = await dependencies.readSetupValue(
       prompt,

@@ -20,6 +20,7 @@ test("persists Display Configuration in a private dedicated file", async () => {
     const configuration = {
       trackedOutputId: "output-speaker-system",
       trackedOutputName: "Speaker System",
+      lyricsEnabled: true,
     };
 
     assert.equal(store.load(), null);
@@ -51,6 +52,7 @@ test("loads Display Configuration with default inactivity", async () => {
   assert.deepEqual(store.load(), {
     trackedOutputId: "output-speaker-system",
     trackedOutputName: "Speaker System",
+    lyricsEnabled: true,
   });
 });
 
@@ -61,6 +63,7 @@ test("persists inactivity calibration with Tracked Output selection", async () =
     const configuration = {
       trackedOutputId: "output-speaker-system",
       trackedOutputName: "Speaker System",
+      lyricsEnabled: true,
       inactivity: {
         gracePeriodSeconds: 240,
         dimmedOpacity: 0.3,
@@ -84,6 +87,7 @@ test("rejects invalid Display Configuration before creating a file", async () =>
         store.save({
           trackedOutputId: "",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
       /Display Configuration is invalid/,
     );
@@ -102,6 +106,7 @@ test("loads shared inactivity Display Configuration", () => {
   assert.deepEqual(store.load(), {
     trackedOutputId: "output-speaker-system",
     trackedOutputName: "Speaker System",
+    lyricsEnabled: true,
     inactivity: {
       gracePeriodSeconds: 240,
       dimmedOpacity: 0.3,
@@ -131,10 +136,12 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
       JSON.stringify({
         trackedOutputId: "",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
       }),
       JSON.stringify({
         trackedOutputId: "output-1",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
         inactivity: {
           gracePeriodSeconds: 0,
           dimmedOpacity: 0.3,
@@ -144,6 +151,7 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
       JSON.stringify({
         trackedOutputId: "output-1",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
         inactivity: {
           gracePeriodSeconds: 240,
           dimmedOpacity: 1,
@@ -153,6 +161,7 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
       JSON.stringify({
         trackedOutputId: "output-1",
         trackedOutputName: "Speaker System",
+        lyricsEnabled: true,
         inactivity: {
           gracePeriodSeconds: 240,
           dimmedOpacity: 1.1,
@@ -162,6 +171,25 @@ test("treats malformed or invalid Display Configuration as unavailable", async (
     ]) {
       await writeFile(configurationFile, contents);
       assert.equal(store.load(), null);
+    }
+  });
+});
+
+test("requires an explicit boolean lyrics preference", async () => {
+  await withTaskDirectory(async (taskDirectory) => {
+    const configurationFile = path.join(taskDirectory, "display.json");
+    const store = new FileDisplayConfigurationStore(configurationFile);
+    for (const lyricsEnabled of [undefined, null, "true", 1, true, false]) {
+      const configuration = {
+        trackedOutputId: "output-speaker-system",
+        trackedOutputName: "Speaker System",
+        lyricsEnabled,
+      };
+      await writeFile(configurationFile, JSON.stringify(configuration));
+      assert.deepEqual(
+        store.load(),
+        typeof lyricsEnabled === "boolean" ? configuration : null,
+      );
     }
   });
 });

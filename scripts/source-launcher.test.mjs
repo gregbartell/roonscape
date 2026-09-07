@@ -66,7 +66,7 @@ test("source launch resolves the relocated bridge and renderer", async () => {
       writeFile(path.join(sourceRoot, "package-lock.json"), "{}\n"),
       writeFile(
         configurationFile,
-        '{"trackedOutputId":"output-test","trackedOutputName":"Test Output"}\n',
+        '{"trackedOutputId":"output-test","lyricsEnabled":true,"trackedOutputName":"Test Output"}\n',
       ),
       writeFile(
         renderer,

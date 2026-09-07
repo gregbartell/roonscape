@@ -48,6 +48,8 @@ struct DisplayConfigurationFile {
     _tracked_output_id: String,
     #[serde(rename = "trackedOutputName")]
     _tracked_output_name: String,
+    #[serde(rename = "lyricsEnabled")]
+    _lyrics_enabled: bool,
     inactivity: Option<InactivityConfigurationFile>,
 }
 

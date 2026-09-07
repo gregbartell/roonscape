@@ -344,6 +344,7 @@ test("a lost directed Live Mode connection stays Disconnected without rediscover
         load: () => ({
           trackedOutputId: "output-studio",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
         save: () => undefined,
       },

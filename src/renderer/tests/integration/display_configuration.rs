@@ -34,11 +34,11 @@ fn reads_host_inactivity_calibration_from_display_configuration() {
 #[test]
 fn rejects_invalid_host_inactivity_calibration() {
     for contents in [
-        r#"{"trackedOutputId":"output-speaker-system","trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":0,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
-        r#"{"trackedOutputId":"output-speaker-system","trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0,"repositionCadenceSeconds":45}}"#,
-        r#"{"trackedOutputId":"output-speaker-system","trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1,"repositionCadenceSeconds":45}}"#,
-        r#"{"trackedOutputId":"output-speaker-system","trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1.1,"repositionCadenceSeconds":45}}"#,
-        r#"{"trackedOutputId":"output-speaker-system","trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":0}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","lyricsEnabled":true,"trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":0,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","lyricsEnabled":true,"trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","lyricsEnabled":true,"trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","lyricsEnabled":true,"trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":1.1,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","lyricsEnabled":true,"trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":0}}"#,
     ] {
         assert!(inactivity_configuration_from_display_configuration(contents).is_err());
     }
@@ -65,7 +65,7 @@ fn loads_inactivity_calibration_from_the_host_file() {
     let configuration_file = task_directory.path().join("display.json");
     fs::write(
         &configuration_file,
-        r#"{"trackedOutputId":"output-speaker-system","trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
+        r#"{"trackedOutputId":"output-speaker-system","lyricsEnabled":true,"trackedOutputName":"Speaker System","inactivity":{"gracePeriodSeconds":240,"dimmedOpacity":0.3,"repositionCadenceSeconds":45}}"#,
     )
     .expect("test Display Configuration should be writable");
 
@@ -83,4 +83,36 @@ fn fixture(name: &str) -> String {
         .join(name);
     fs::read_to_string(fixture_path)
         .expect("shared Display Configuration fixture should be readable")
+}
+
+#[test]
+fn requires_a_boolean_lyrics_preference() {
+    let valid = fixture("display-configuration-inactivity.json");
+    for enabled in [serde_json::json!(true), serde_json::json!(false)] {
+        let mut configuration: serde_json::Value = serde_json::from_str(&valid).unwrap();
+        configuration["lyricsEnabled"] = enabled;
+        assert!(
+            inactivity_configuration_from_display_configuration(&configuration.to_string()).is_ok()
+        );
+    }
+    for invalid in [
+        serde_json::Value::Null,
+        serde_json::json!("true"),
+        serde_json::json!(1),
+    ] {
+        let mut configuration: serde_json::Value = serde_json::from_str(&valid).unwrap();
+        configuration["lyricsEnabled"] = invalid;
+        assert!(
+            inactivity_configuration_from_display_configuration(&configuration.to_string())
+                .is_err()
+        );
+    }
+    let mut configuration: serde_json::Value = serde_json::from_str(&valid).unwrap();
+    configuration
+        .as_object_mut()
+        .unwrap()
+        .remove("lyricsEnabled");
+    assert!(
+        inactivity_configuration_from_display_configuration(&configuration.to_string()).is_err()
+    );
 }

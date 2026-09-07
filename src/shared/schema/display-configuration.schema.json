@@ -4,7 +4,7 @@
   "title": "RoonScape Display Configuration",
   "type": "object",
   "additionalProperties": false,
-  "required": ["trackedOutputId", "trackedOutputName"],
+  "required": ["trackedOutputId", "trackedOutputName", "lyricsEnabled"],
   "properties": {
     "trackedOutputId": {
       "type": "string",
@@ -15,6 +15,7 @@
       "minLength": 1,
       "maxLength": 256
     },
+    "lyricsEnabled": { "type": "boolean" },
     "inactivity": {
       "type": "object",
       "additionalProperties": false,

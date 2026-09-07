@@ -59,6 +59,7 @@ interface RoonBoundary {
   statusUpdates: Array<{ message: string; isError: boolean }>;
   publicationDiagnostics: string[];
   savedConfigurations: DisplayConfiguration[];
+  displayConfigurationStore: DisplayConfigurationStore;
   currentSnapshot(): PresentationSnapshot;
   lyricsVisible(revision: number): void;
   stop(): Promise<void>;
@@ -96,6 +97,7 @@ function createRoonBoundary(
       ? {
           trackedOutputId: configuredOutput,
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }
       : (configuredOutput ?? null);
   const displayConfigurationStore: DisplayConfigurationStore = {
@@ -209,6 +211,7 @@ function createRoonBoundary(
     statusUpdates,
     publicationDiagnostics,
     savedConfigurations,
+    displayConfigurationStore,
     currentSnapshot: () => bridge.currentSnapshot(),
     lyricsVisible: (revision) => bridge.lyricsVisible(revision),
     stop: () => bridge.stop(),
@@ -540,6 +543,7 @@ test("publishes the saved Tracked Output identity only when that output is unava
   const boundary = createRoonBoundary({
     trackedOutputId: "output-speaker-system",
     trackedOutputName: "Speaker System",
+    lyricsEnabled: true,
   });
   const extensionOptions = boundary.extensionOptions();
   const core = boundary.core();
@@ -573,6 +577,7 @@ test("refreshes the persisted Tracked Output name when renamed", () => {
   const boundary = createRoonBoundary({
     trackedOutputId: "output-speaker-system",
     trackedOutputName: "Speaker System",
+    lyricsEnabled: true,
     inactivity,
   });
 
@@ -612,6 +617,7 @@ test("refreshes the persisted Tracked Output name when renamed", () => {
     {
       trackedOutputId: "output-speaker-system",
       trackedOutputName: "Main Speakers",
+      lyricsEnabled: true,
       inactivity,
     },
   ]);
@@ -2529,3 +2535,129 @@ test("republishes the last valid Idle state to recover publication status", () =
     isError: false,
   });
 });
+
+for (const lyricsEnabled of [false, true]) {
+  test(`lyrics preference ${lyricsEnabled} governs the feed across Roon reconnects`, async () => {
+    let connections = 0;
+    let stops = 0;
+    const reports: string[] = [];
+    let emitLyrics:
+      Parameters<LyricFeedConnectionFactory>[0]["onEvent"] | undefined;
+    const boundary = createRoonBoundary(
+      {
+        trackedOutputId: "output-speaker-system",
+        trackedOutputName: "Speaker System",
+        lyricsEnabled,
+      },
+      unusedArtworkFiles(),
+      () => new Date("2026-08-15T19:20:00Z"),
+      (options) => {
+        connections += 1;
+        emitLyrics = options.onEvent;
+        return {
+          reportViewed: (key) => reports.push(key),
+          stop: () => {
+            stops += 1;
+          },
+        };
+      },
+    );
+    const zone: RoonZone = {
+      ...artworkZone("unused", "Track A"),
+      outputs: [
+        { output_id: "output-speaker-system", display_name: "Renamed Speaker" },
+      ],
+      now_playing: {
+        seek_position: 1,
+        length: 120,
+        three_line: { line1: "Track A", line2: "Artist", line3: "Album" },
+      },
+    };
+    try {
+      for (let pairing = 1; pairing <= 2; pairing += 1) {
+        boundary.extensionOptions().core_paired(boundary.core());
+        boundary.emitZones("Subscribed", { zones: [zone] });
+        emitLyrics?.(
+          {
+            zone_id: zone.zone_id,
+            key: `lyrics-${pairing}`,
+            lrc: "[00:01.00]First",
+          },
+          trackedNowPlaying(zone)?.nowPlayingIdentity,
+        );
+        const snapshot = boundary.currentSnapshot();
+        assert.equal(connections, lyricsEnabled ? pairing : 0);
+        assert.deepEqual(snapshot.nowPlaying, {
+          title: "Track A",
+          artist: "Artist",
+          album: "Album",
+        });
+        assert.equal(snapshot.timing?.position?.seconds, 1);
+        assert.equal(snapshot.timing?.durationSeconds, 120);
+        assert.deepEqual(
+          snapshot.lyrics,
+          lyricsEnabled ? { cues: [{ atSeconds: 1, text: "First" }] } : null,
+        );
+        boundary.lyricsVisible(snapshot.revision);
+        assert.equal(reports.length, lyricsEnabled ? pairing : 0);
+        assert.equal(
+          boundary.savedConfigurations.at(-1)?.lyricsEnabled,
+          lyricsEnabled,
+        );
+        boundary.extensionOptions().core_unpaired(boundary.core());
+        assert.equal(boundary.currentSnapshot().lyrics, null);
+        assert.equal(stops, lyricsEnabled ? pairing : 0);
+      }
+      if (!lyricsEnabled)
+        assert.ok(
+          boundary.snapshots.every((snapshot) => snapshot.lyrics === null),
+        );
+    } finally {
+      await boundary.stop();
+    }
+  });
+}
+
+for (const lyricsEnabled of [false, true]) {
+  test(`saved lyrics changes take effect on the next launch from ${lyricsEnabled}`, async () => {
+    let connections = 0;
+    const connect: LyricFeedConnectionFactory = () => {
+      connections += 1;
+      return { reportViewed: () => undefined, stop: () => undefined };
+    };
+    const configuration = {
+      trackedOutputId: "output-speaker-system",
+      trackedOutputName: "Speaker System",
+      lyricsEnabled,
+    };
+    const boundary = createRoonBoundary(
+      configuration,
+      unusedArtworkFiles(),
+      undefined,
+      connect,
+    );
+    const updated = { ...configuration, lyricsEnabled: !lyricsEnabled };
+    try {
+      boundary.extensionOptions().core_paired(boundary.core());
+      boundary.displayConfigurationStore.save(updated);
+      boundary.extensionOptions().core_unpaired(boundary.core());
+      boundary.extensionOptions().core_paired(boundary.core());
+      assert.equal(connections, lyricsEnabled ? 2 : 0);
+    } finally {
+      await boundary.stop();
+    }
+    connections = 0;
+    const relaunched = createRoonBoundary(
+      updated,
+      unusedArtworkFiles(),
+      undefined,
+      connect,
+    );
+    try {
+      relaunched.extensionOptions().core_paired(relaunched.core());
+      assert.equal(connections, lyricsEnabled ? 0 : 1);
+    } finally {
+      await relaunched.stop();
+    }
+  });
+}

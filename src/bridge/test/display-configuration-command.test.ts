@@ -68,11 +68,12 @@ test("saves the selected Tracked Output name without changing Roon", async () =>
   assert.deepEqual(saved, {
     trackedOutputId: "output-speaker-system",
     trackedOutputName: "Speaker System",
+    lyricsEnabled: true,
   });
   assert.deepEqual(lines, ["Selected Tracked Output: output-speaker-system"]);
 });
 
-test("preserves inactivity calibration when changing the Tracked Output", async () => {
+test("preserves lyrics choice and inactivity calibration when changing the Tracked Output", async () => {
   const inactivity = {
     gracePeriodSeconds: 240,
     dimmedOpacity: 0.3,
@@ -87,6 +88,7 @@ test("preserves inactivity calibration when changing the Tracked Output", async 
         load: () => ({
           trackedOutputId: "output-speaker-system",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: false,
           inactivity,
         }),
         save: (configuration) => {
@@ -108,6 +110,7 @@ test("preserves inactivity calibration when changing the Tracked Output", async 
   assert.deepEqual(saved, {
     trackedOutputId: "output-library",
     trackedOutputName: "Library Speaker",
+    lyricsEnabled: false,
     inactivity,
   });
 });
@@ -123,6 +126,7 @@ test("rejects an unresolved Tracked Output without replacing Display Configurati
         load: () => ({
           trackedOutputId: "output-speaker-system",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
         save: () => {
           saved = true;
@@ -149,6 +153,7 @@ test("configures OLED inactivity without changing the Tracked Output", async () 
         load: () => ({
           trackedOutputId: "output-speaker-system",
           trackedOutputName: "Speaker System",
+          lyricsEnabled: true,
         }),
         save: (configuration) => {
           saved = configuration;
@@ -163,6 +168,7 @@ test("configures OLED inactivity without changing the Tracked Output", async () 
   assert.deepEqual(saved, {
     trackedOutputId: "output-speaker-system",
     trackedOutputName: "Speaker System",
+    lyricsEnabled: true,
     inactivity: {
       gracePeriodSeconds: 240,
       dimmedOpacity: 0.3,

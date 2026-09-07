@@ -17,6 +17,11 @@ RoonScape waits for Roon Authorization. In an official Roon client, open
 appear in the terminal, use Up and Down to choose the Tracked Output that the
 RoonScape Host should present, then press Enter.
 
+At **Show synchronized lyrics (y/n):**, press Enter to accept the prefilled
+`y`, or replace it with `n` to keep the ordinary artwork and metadata
+presentation. When disabled, RoonScape does not open the optional Lyric Feed
+connection; ordinary playback observation continues.
+
 RoonScape next shows its OLED protection defaults. Press Enter to accept them,
 or press C and answer the prompts to customize when dimming begins, the dimmed
 opacity, and how often the presentation repositions. After saving the Display
@@ -24,7 +29,7 @@ Configuration, RoonScape continues directly into the presentation.
 
 ## Change setup choices later
 
-To choose a different Tracked Output or change the OLED protection choices,
+To change the Tracked Output, synchronized lyrics, or OLED protection choices,
 open a terminal, return to the extracted release directory, and rerun setup:
 
 ```sh
@@ -32,9 +37,18 @@ cd ~/roonscape
 ./roonscape --setup
 ```
 
-Complete the same Tracked Output and OLED protection choices. RoonScape saves
+The prompts prefill your saved choices, including `y` or `n` for lyrics.
+Complete the choices; Ctrl-C cancels without saving any changes. RoonScape saves
 the updated Display Configuration and exits; start it normally when you are
-ready to return to the presentation.
+ready to return to the presentation. Restart an already running RoonScape
+session to apply the new choices; setup does not change it live.
+
+Display Configuration stores the lyrics choice as the required boolean
+`lyricsEnabled` in `display.json`, alongside `trackedOutputId`,
+`trackedOutputName`, and optional `inactivity` settings. An omitted or
+non-boolean value is invalid and requires setup again. A new configuration
+defaults to lyrics enabled. Fixture Mode always retains its predefined
+Fixture Scenarios regardless of this Live Mode preference.
 
 ## Add an application-menu entry
 

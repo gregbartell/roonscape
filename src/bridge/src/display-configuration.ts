@@ -10,6 +10,7 @@ import { repositoryRoot } from "./repository-root.js";
 export interface DisplayConfiguration {
   trackedOutputId: string;
   trackedOutputName: string;
+  lyricsEnabled: boolean;
   inactivity?: InactivityConfiguration;
 }
 
