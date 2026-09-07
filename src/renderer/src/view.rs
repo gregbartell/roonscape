@@ -1913,7 +1913,14 @@ fn full_field_line(text: &str, class_name: &str) -> (gtk::Box, gtk::Label) {
 }
 
 fn set_label_font_size(label: &gtk::Label, font_size_px: u32) {
-    label.set_attributes(Some(&font_size_attributes(font_size_px)));
+    set_label_attributes(label, &font_size_attributes(font_size_px));
+}
+
+fn set_label_attributes(label: &gtk::Label, attributes: &pango::AttrList) {
+    // GTK discards the shaped layout and queues a resize even for equal attributes.
+    if label.attributes().as_ref() != Some(attributes) {
+        label.set_attributes(Some(attributes));
+    }
 }
 
 fn font_size_attributes(font_size_px: u32) -> pango::AttrList {
@@ -1932,7 +1939,7 @@ fn set_tracked_label_typography(label: &gtk::Label, font_size_px: u32, letter_sp
     attributes.insert(pango::AttrInt::new_letter_spacing(
         letter_spacing_px as i32 * pango::SCALE,
     ));
-    label.set_attributes(Some(&attributes));
+    set_label_attributes(label, &attributes);
 }
 
 impl RenderedNowPlaying {
@@ -3272,12 +3279,12 @@ mod tests {
             while gtk::glib::MainContext::default().iteration(false) {}
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        let heights = || {
+        let layouts = {
             let metadata = &rendered.now_playing.as_ref().unwrap().metadata;
             [&metadata.title, &metadata.artist, &metadata.album]
-                .map(|line| line.as_ref().unwrap().label.layout().pixel_size().1)
+                .map(|line| line.as_ref().unwrap().label.layout())
         };
-        let before = heights();
+        let before = layouts.each_ref().map(|layout| layout.pixel_size().1);
         rendered.update_in_place(
             1,
             &Presentation::NowPlaying(ordinary),
@@ -3289,14 +3296,23 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         let metadata = &rendered.now_playing.as_ref().unwrap().metadata;
-        let after = [&metadata.title, &metadata.artist, &metadata.album]
-            .map(|line| line.as_ref().unwrap().label.layout().pixel_size().1);
+        let updated_layouts = [&metadata.title, &metadata.artist, &metadata.album]
+            .map(|line| line.as_ref().unwrap().label.layout());
+        let after = updated_layouts
+            .each_ref()
+            .map(|layout| layout.pixel_size().1);
         window.destroy();
         super::install_style_providers(roonscape_renderer::select_typography(&HashSet::new()));
         assert_eq!(
             before, after,
             "playback updates must preserve fitted metadata line heights"
         );
+        for (updated, layout) in updated_layouts.into_iter().zip(layouts) {
+            assert_eq!(
+                updated, layout,
+                "unchanged typography must retain its shaped Pango layout"
+            );
+        }
     }
 
     fn composed_lyrics_remain_above_footer() {
