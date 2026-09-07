@@ -99,16 +99,24 @@ The active Cue is the room-scale focal point on the information rail. Its first
 line lands at the fixed viewport-specific Primary Position, independently of
 the reel's lower extent; subsequent lines extend below it. The Lyric Reel packs
 earlier cues above and upcoming cues below, using the available space rather
-than a fixed cue count. Earlier cues use smaller muted text and upcoming cues
-use smaller secondary text. Normal internal line spacing and modest inter-cue
-gaps keep each Cue distinct. Short fades at the top and bottom allow partial
-cues to enter and leave progressively; cues do not overlap or escape the lyric
-column into the masthead or footer. The clearance from the lower fully transparent
-edge to the reserved progress-bar top matches the clearance from the compact
-Title/Artist block to the upper fully transparent edge. Timing availability does
-not change that lower boundary. During composition travel, the upper edge follows
-the masthead while the lower fade remains above all footer activity; parent
-clipping must not truncate the fade.
+than a fixed cue count. Normal internal line spacing and modest inter-cue gaps
+keep each Cue distinct.
+
+Each cue retains its fitted size and wrapping in earlier, active, and upcoming
+roles. The preferred size is 96 px at a viewport height of 2160 px, scaled
+proportionally with viewport height, rounded to whole pixels, and limited to
+42–118 px. The active cue uses the palette's primary-text color; earlier and
+upcoming cues share its readable secondary-text color. Activation changes no
+glyph size, weight, or spacing and adds no accent rule or backdrop.
+
+Short fades at the top and bottom allow partial cues to enter and leave
+progressively; cues do not overlap or escape the lyric column into the masthead
+or footer. The clearance from the lower fully transparent edge to the reserved
+progress-bar top matches the clearance from the compact Title/Artist block to
+the upper fully transparent edge. Timing availability does not change that
+lower boundary. During composition travel, the upper edge follows the masthead
+while the lower fade remains above all footer activity; parent clipping must
+not truncate the fade.
 
 A settled Intentional Blank packs available earlier and upcoming nonblank
 cues around an empty Primary Position, even after a tall cue, using the same
@@ -121,14 +129,16 @@ are ignored and all-blank timelines retain ordinary Now Playing. Every Cue,
 including an Intentional Blank, activates at its source timestamp. Short blanks
 may be interrupted by the next cue before their departure settles; returning
 lyrics continue from the displayed geometry without a forced empty dwell.
-The focal size is not reduced to retain context. Cues have no rendered-line cap
-or lyric ellipsis.
-When complete active text would exceed the area below the Primary Position,
-fit the complete cue using the full column width and the height above the
-bottom edge fade. Establish that wrapping before motion, and scale the whole
-cue together. Otherwise retain the established focal size. Surrounding cues use a smaller scale of
-that same fitted layout, and pack around the displayed active bounds. All lines
-remain active together; fitting never moves the Primary Position.
+
+Cues retain their complete text in every role, with no excerpts, rendered-line
+cap, or lyric ellipsis. When a complete cue would exceed the area below the
+Primary Position and above the bottom fade, fit it using the full column width.
+Establish wrapping before motion and scale the whole cue together; exceptional
+fitting may reduce it below the preferred-size limits. Otherwise retain the
+preferred size. Do not reduce size to retain more context or change fitted size
+and wrapping between roles. Surrounding cues pack around the displayed active
+bounds. All lines remain active together; fitting never moves the Primary
+Position.
 
 Keep a hyphenated word together when it fits on an otherwise empty lyric line.
 If it does not fit at the end of the current line, move the whole word to the
@@ -159,18 +169,28 @@ blanks retain one continuous composition interval, ending after the hold
 following the final timeline entry, including trailing blanks.
 
 Natural Cue Handoffs use Reel Lift: the incoming Cue rises into the Primary
-Position while the outgoing cue becomes smaller, quieter context above it.
-Every cue retains its timed identity, including repeated identical text. Cues
-use stable fitted Pango wrapping throughout the size-changing motion.
-Position, scale, and semantic color transfer together without a missing-focus
-interval. Outgoing cues remain visible while their geometry intersects the
-lyric area, including handoffs into and out of oversized cues. External seeks and timeline
-revisions install destination-relative cue state directly, while boundary
-crossings still animate composition geometry. Interrupted composition movement
-retargets from its current geometry; interrupted handoffs prioritize the newest
-cue and never queue skipped lyrics. The
-platform's reduced-animation preference and deterministic Presentation
-Capture behavior suppress this motion while preserving the complete Lyric Reel.
+Position while the outgoing cue becomes quieter context above it. Every cue
+retains its timed identity, including repeated identical text. Position and
+semantic color transfer together with stable fitted wrapping and glyph size,
+without a missing-focus interval. Outgoing cues remain visible while their
+geometry intersects the lyric area, including handoffs into and out of
+oversized cues. Interrupted handoffs continue from the displayed state toward
+the newest cue without queueing skipped lyrics.
+
+External seeks and timeline revisions install destination-relative cue state
+directly. When Authoritative Timing relocates playback, the first frame showing
+that position also shows its lyric destination: clear the entire old reel
+outside the Synchronized Lyric Composition, or install the destination's active
+cue, Intentional Blank, or preparation state immediately. Starting before the
+timing reset does not itself clear lyrics.
+
+Boundary crossings retain the 580 ms Lyric Composition Transition and metadata
+fade sequence. After a seek or restart, the lyric area may briefly be empty
+while composition geometry settles; the old passage does not linger or fade.
+Natural exit after the final lyric hold retains its normal fade. Interrupted
+composition movement retargets from its current geometry. The platform's
+reduced-animation preference and deterministic Presentation Capture behavior
+suppress motion while preserving the complete Lyric Reel.
 
 ## Artwork and palette
 
