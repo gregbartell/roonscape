@@ -57,6 +57,170 @@ const defaultRendererExecutable = path.join(
 );
 
 const examples = {
+  "composition-inheritance": {
+    durationSeconds: 18,
+    initialFixture: "src/shared/fixtures/lyrics-opening.json",
+    publications: [
+      {
+        atSeconds: 0.5,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 167,
+        nowPlaying: {
+          title: "Incoming Orbit",
+          artist: "Evelyn Lark",
+          album: "Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 2,
+        fixture: "src/shared/fixtures/paused.json",
+        positionSeconds: 0,
+      },
+      {
+        atSeconds: 8,
+        fixture: "src/shared/fixtures/lyrics-opening.json",
+        positionSeconds: 0,
+      },
+      {
+        atSeconds: 8.25,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+      },
+      {
+        atSeconds: 8.4,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 167,
+      },
+      {
+        atSeconds: 9.5,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 0,
+        playback: "paused",
+        nowPlaying: {
+          title: "The Long Opening",
+          artist: "Evelyn Lark",
+          album: "Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 9.75,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+      },
+      {
+        atSeconds: 10.2,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 167,
+      },
+      {
+        atSeconds: 11,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "Waiting",
+          artist: "Evelyn Lark",
+          album: "Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 15.5,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "Renewed",
+          artist: "Evelyn Lark",
+          album: "Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 16.2,
+        fixture: "src/shared/fixtures/lyrics-opening.json",
+        positionSeconds: 0.7,
+        nowPlaying: {
+          title: "Renewed",
+          artist: "Evelyn Lark",
+          album: "Quiet Sea",
+        },
+      },
+    ],
+    reviewFrames: [
+      reviewFrame(
+        0.4,
+        "lyric-source",
+        "Established outgoing lyric composition.",
+      ),
+      reviewFrame(
+        0.85,
+        "lyric-to-lyric",
+        "Incoming cues replace all outgoing cues within inherited geometry.",
+      ),
+      reviewFrame(
+        2.6,
+        "unknown-paused",
+        "Incoming artwork and compact metadata retain an empty lyric area.",
+      ),
+      reviewFrame(
+        6.9,
+        "before-paused-expiry",
+        "Pausing does not restart the five-second discovery deadline.",
+      ),
+      reviewFrame(
+        7.3,
+        "expiry-exit",
+        "Unknown lyrics expire and composition movement returns to regular.",
+      ),
+      reviewFrame(
+        7.8,
+        "expiry-settled",
+        "The paused song settles in regular composition.",
+      ),
+      reviewFrame(
+        8.2,
+        "entry-before-replacement",
+        "Incoming lyrics establish entry.",
+      ),
+      reviewFrame(
+        8.35,
+        "inherited-entry",
+        "A replacement continues the unfinished entry with no old cues.",
+      ),
+      reviewFrame(
+        8.65,
+        "discovery-during-entry",
+        "Incoming information selects live lyrics during movement.",
+      ),
+      reviewFrame(
+        9.7,
+        "known-long-opening",
+        "Known distant lyrics immediately select exit.",
+      ),
+      reviewFrame(
+        9.9,
+        "inherited-exit",
+        "Replacement preserves the intermediate exit geometry.",
+      ),
+      reviewFrame(
+        10.5,
+        "discovery-reverses-exit",
+        "Discovery retargets the current geometry toward lyrics.",
+      ),
+      reviewFrame(
+        15.3,
+        "first-deadline-pending",
+        "Unknown lyrics remain within the current song's grace.",
+      ),
+      reviewFrame(
+        16.1,
+        "new-song-deadline",
+        "A further replacement starts its own independent grace.",
+      ),
+      reviewFrame(
+        16.8,
+        "discovery-before-expiry",
+        "Discovered current lyrics retain the inherited composition.",
+      ),
+    ],
+  },
   "opening-lyrics": {
     durationSeconds: 6,
     initialFixture: "src/shared/fixtures/playing.json",
@@ -68,8 +232,9 @@ const examples = {
       },
       {
         atSeconds: 2,
-        fixture: "src/shared/fixtures/playing.json",
-        positionSeconds: 171,
+        fixture: "src/shared/fixtures/lyrics-one-line.json",
+        positionSeconds: 0,
+        playback: "paused",
       },
       {
         atSeconds: 3,

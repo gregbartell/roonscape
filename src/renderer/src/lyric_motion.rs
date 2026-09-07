@@ -5,6 +5,7 @@ use roonscape_renderer::LyricPresentation;
 const CUE_HANDOFF_DURATION: Duration = Duration::from_millis(620);
 const BLANK_TRANSITION_DURATION: Duration = Duration::from_millis(440);
 const COMPOSITION_TRANSITION_DURATION: Duration = Duration::from_millis(580);
+const LYRIC_DISCOVERY_GRACE: Duration = Duration::from_secs(5);
 // Roon timing is stamped on receipt, so a refreshed anchor can differ from
 // local projection without a user seek. Small same-cue seeks are inherently
 // indistinguishable from those corrections; preserve the lift within this
@@ -147,6 +148,7 @@ pub(crate) struct LyricMotion {
     composition: ScalarMotion,
     playback_sample: Option<PlaybackSample>,
     timing_discontinuity: bool,
+    discovery_started_at: Option<Duration>,
 }
 
 struct PlaybackSample {
@@ -167,7 +169,45 @@ impl LyricMotion {
             composition: ScalarMotion::settled(f64::from(lyrics.is_some())),
             playback_sample: None,
             timing_discontinuity: false,
+            discovery_started_at: None,
         }
+    }
+
+    pub(crate) fn inherit_composition(&self, displayed_at: Duration, now: Duration) -> Self {
+        let mut incoming = Self::new(0, None);
+        incoming.composition = self.composition.clone();
+        // Continue from the last painted sample, preserving the remaining
+        // movement instead of advancing unseen during replacement construction.
+        if let Some(started_at) = incoming.composition.started_at.as_mut() {
+            *started_at += now.saturating_sub(displayed_at);
+        }
+        incoming.discovery_started_at = Some(now);
+        incoming
+    }
+
+    pub(crate) fn update_with_information(
+        &mut self,
+        revision: u64,
+        lyrics: Option<&LyricPresentation>,
+        lyrics_known: bool,
+        now: Duration,
+        animations_enabled: bool,
+    ) {
+        if let Some(started_at) = self.discovery_started_at {
+            if !lyrics_known
+                && lyrics.is_none()
+                && now.saturating_sub(started_at) < LYRIC_DISCOVERY_GRACE
+            {
+                if !animations_enabled {
+                    self.composition = ScalarMotion::settled(self.composition.target);
+                }
+                return;
+            }
+            self.discovery_started_at = None;
+            self.composition
+                .retarget(f64::from(lyrics.is_some()), now, animations_enabled);
+        }
+        self.update(revision, lyrics, now, animations_enabled);
     }
 
     pub(crate) fn observe_playback(
@@ -691,6 +731,113 @@ mod tests {
                     },
                     1.0
                 )]
+            );
+        }
+    }
+
+    #[test]
+    fn reduced_animation_settles_inherited_geometry_and_expires_without_motion() {
+        let cue = lyrics(0, None, "Outgoing", None);
+        let mut source = LyricMotion::new(1, None);
+        source.update(1, Some(&cue), Duration::ZERO, true);
+        let replaced_at = Duration::from_millis(290);
+        let mut incoming = source.inherit_composition(replaced_at, replaced_at);
+        incoming.update_with_information(2, None, false, replaced_at, false);
+        assert_eq!(incoming.frame_at(replaced_at).composition_progress, 1.0);
+        assert!(!incoming.frame_at(replaced_at).composition_motion_active);
+        assert!(incoming.frame_at(replaced_at).cues.is_empty());
+        let expiry = replaced_at + Duration::from_secs(5);
+        incoming.update_with_information(3, None, false, expiry, false);
+        assert_eq!(incoming.frame_at(expiry).composition_progress, 0.0);
+        assert!(!incoming.frame_at(expiry).composition_motion_active);
+    }
+
+    #[test]
+    fn discovery_retargets_current_geometry_and_rapid_songs_get_new_deadlines() {
+        let outgoing = lyrics(0, None, "Outgoing", None);
+        let incoming = lyrics(0, None, "Incoming", None);
+        let source = LyricMotion::new(1, Some(&outgoing));
+        let mut motion = source.inherit_composition(Duration::ZERO, Duration::ZERO);
+        // A known instrumental opening exits before the grace expires.
+        let discovered_at = Duration::from_secs(2);
+        motion.update_with_information(2, None, true, discovered_at, true);
+        let interrupted_at = discovered_at + Duration::from_millis(290);
+        assert_eq!(motion.frame_at(interrupted_at).composition_progress, 0.5);
+        motion.update_with_information(3, Some(&incoming), true, interrupted_at, true);
+        assert_eq!(motion.frame_at(interrupted_at).composition_progress, 0.5);
+        assert!(
+            motion
+                .frame_at(interrupted_at)
+                .cues
+                .iter()
+                .all(|cue| cue.text == "Incoming")
+        );
+        let replaced_at = interrupted_at + Duration::from_millis(100);
+        let before = motion.frame_at(replaced_at).composition_progress;
+        let mut next_song = motion.inherit_composition(replaced_at, replaced_at);
+        next_song.update_with_information(4, None, false, replaced_at, true);
+        assert_eq!(next_song.frame_at(replaced_at).composition_progress, before);
+        assert!(next_song.frame_at(replaced_at).cues.is_empty());
+        // Pauses and authoritative timing updates cannot end or refresh discovery.
+        for millis in [2_500, 4_999, 5_100, 7_389] {
+            let now = Duration::from_millis(millis);
+            next_song.observe_playback(5, Some(0.0), false, now);
+            next_song.update_with_information(5, None, false, now, true);
+            if millis > 4_000 {
+                assert_eq!(next_song.frame_at(now).composition_progress, 1.0);
+            }
+        }
+        let expiry = replaced_at + Duration::from_secs(5);
+        next_song.update_with_information(6, None, false, expiry, true);
+        next_song.update_with_information(
+            7,
+            None,
+            false,
+            expiry + Duration::from_millis(290),
+            true,
+        );
+        assert_eq!(
+            next_song
+                .frame_at(expiry + Duration::from_millis(290))
+                .composition_progress,
+            0.5
+        );
+        assert_eq!(
+            next_song
+                .frame_at(expiry + Duration::from_millis(580))
+                .composition_progress,
+            0.0
+        );
+    }
+
+    #[test]
+    fn inherited_composition_keeps_moving_without_previous_song_cues() {
+        let cue = lyrics(0, None, "Outgoing", None);
+        for entering in [false, true] {
+            let mut source = LyricMotion::new(1, (!entering).then_some(&cue));
+            source.update(1, entering.then_some(&cue), Duration::ZERO, true);
+            let replaced_at = Duration::from_millis(290);
+            let mut incoming = source.inherit_composition(replaced_at, replaced_at);
+            incoming.update_with_information(2, None, false, replaced_at, true);
+            assert_eq!(incoming.frame_at(replaced_at).composition_progress, 0.5);
+            assert!(incoming.frame_at(replaced_at).cues.is_empty());
+            let completed_at = Duration::from_millis(580);
+            incoming.update_with_information(3, None, false, completed_at, true);
+            assert_eq!(
+                incoming.frame_at(completed_at).composition_progress,
+                f64::from(entering)
+            );
+            let expiry = replaced_at + Duration::from_secs(5);
+            incoming.update_with_information(4, None, false, expiry, true);
+            assert_eq!(
+                incoming.frame_at(expiry).composition_progress,
+                f64::from(entering)
+            );
+            assert_eq!(
+                incoming
+                    .frame_at(expiry + Duration::from_millis(580))
+                    .composition_progress,
+                0.0
             );
         }
     }

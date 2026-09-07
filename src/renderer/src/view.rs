@@ -231,6 +231,7 @@ struct RenderedLyrics {
     cue_height_px: Cell<i32>,
     typography: Cell<roonscape_renderer::NowPlayingTypography>,
     motion: RefCell<LyricMotion>,
+    rendered_at: Cell<Duration>,
     rendered_composition_progress: Cell<f64>,
     behavior: PresentationBehavior,
 }
@@ -742,29 +743,35 @@ impl PresentationView {
         presentation: &Presentation,
         repository_root: &Path,
     ) -> RenderedPresentation {
+        let now = self.transition_clock.elapsed();
         let diagnostics_text = self.transition.current().value().diagnostics_text();
         let (resolved, capture_error) =
             resolve_for_rendering(presentation, repository_root, self.rendering);
         let rendering = self.rendering;
         let layout_viewport = self.layout_viewport;
-        let now = self.transition_clock.elapsed();
-        let inherit_regular_composition = animations_enabled(rendering.behavior)
-            && self
-                .transition
-                .current()
-                .value()
-                .now_playing
-                .as_ref()
-                .is_some_and(|current| {
-                    let frame = current.metadata.lyrics.motion.borrow().frame_at(now);
-                    frame.composition_progress == 0.0 && !frame.composition_motion_active
-                });
-        let transition_clock = self.transition_clock;
+        let mut inherited_composition = if rendering.behavior == PresentationBehavior::StaticFixture
+        {
+            None
+        } else {
+            // An unrevealed destination has no visible geometry to hand on.
+            std::iter::once(self.transition.current())
+                .chain(self.transition.outgoing())
+                .chain(self.retained_layers.iter().rev())
+                .find(|layer| layer.value().root.opacity() > 0.0)
+                .and_then(|layer| layer.value().now_playing.as_ref())
+                .map(|current| {
+                    let lyrics = &current.metadata.lyrics;
+                    lyrics
+                        .motion
+                        .borrow()
+                        .inherit_composition(lyrics.rendered_at.get(), now)
+                })
+        };
         let root = &self.root;
         rendering
             .cache_scope
             .render_replacement(&mut self.caches, |caches| {
-                let render = || {
+                let mut render = || {
                     let mut rendered = render_current_from_resolved(
                         &resolved,
                         repository_root,
@@ -772,14 +779,13 @@ impl PresentationView {
                         caches.clone(),
                         rendering,
                     );
-                    if inherit_regular_composition
+                    if let Some(motion) = inherited_composition.take()
                         && let Some(incoming) = &rendered.now_playing
                         && let Presentation::NowPlaying(presentation) = &resolved.presentation
                     {
-                        // The new song owns its cues immediately, but enters from
-                        // the regular composition while its layer is revealed.
-                        let now = transition_clock.elapsed();
-                        *incoming.metadata.lyrics.motion.borrow_mut() = LyricMotion::new(0, None);
+                        // Only geometry crosses the song boundary. The new song
+                        // owns its lyric discovery deadline and every visible cue.
+                        *incoming.metadata.lyrics.motion.borrow_mut() = motion;
                         incoming.metadata.update_lyrics(0, presentation, now);
                         incoming.metadata.lyric_composition_progress(now);
                     }
@@ -1853,6 +1859,7 @@ fn lyric_view(
             NowPlayingLayout::for_presentation(presentation, Viewport::WINDOWED_FIXTURE).typography,
         ),
         motion: RefCell::new(LyricMotion::new(0, lyrics)),
+        rendered_at: Cell::new(Duration::ZERO),
         rendered_composition_progress: Cell::new(f64::from(lyrics.is_some())),
         behavior,
     });
@@ -2178,9 +2185,10 @@ impl RenderedMetadata {
             presentation.status.symbol == roonscape_renderer::PresentationStatusSymbol::Playing,
             now,
         );
-        motion.update(
+        motion.update_with_information(
             revision,
             presentation.lyrics.as_deref(),
+            presentation.lyrics_known,
             now,
             animations_enabled(self.lyrics.behavior),
         );
@@ -2392,7 +2400,7 @@ impl RenderedLyrics {
             .saturating_sub(reel_margin_top);
         self.cue_height_px.set(reel_height.max(1));
         self.reel_region.set_height_request(reel_height);
-        self.apply_frame(Duration::ZERO, layout);
+        self.apply_frame(self.rendered_at.get(), layout);
     }
 
     fn composition_timeline_progress(&self, now: Duration) -> f64 {
@@ -2400,6 +2408,7 @@ impl RenderedLyrics {
     }
 
     fn composition_layout_progress(&self, now: Duration) -> f64 {
+        self.rendered_at.set(now);
         self.update_rendered_composition_progress(self.composition_timeline_progress(now))
     }
 
@@ -2410,6 +2419,7 @@ impl RenderedLyrics {
     }
 
     fn apply_frame(&self, now: Duration, layout: &NowPlayingLayout) {
+        self.rendered_at.set(now);
         let frame = self.motion.borrow().frame_at(now);
         self.apply_frame_state(&frame, layout);
     }
@@ -3407,6 +3417,9 @@ mod tests {
         metadata_availability_preserves_full_field_resolution();
         now_playing_artwork_and_text_reveal_together();
         opening_lyrics_enter_from_regular_composition();
+        unknown_incoming_lyrics_retain_composition_until_expiry();
+        replacement_preserves_rendered_intermediate_composition();
+        rapid_replacement_inherits_the_visible_composition();
         song_replacement_removes_every_previous_lyric_reel();
         current_track_artwork_preserves_readable_text();
         artwork_updates_recolor_the_existing_lyric_reel();
@@ -5586,6 +5599,138 @@ mod tests {
         gtk::Settings::default()
             .unwrap()
             .set_gtk_enable_animations(true);
+    }
+
+    fn unknown_incoming_lyrics_retain_composition_until_expiry() {
+        use std::time::{Duration, Instant};
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        let mut view = super::PresentationView::new(
+            0,
+            &Presentation::NowPlaying(lyric_presentation("lyrics-one-line.json")),
+            Viewport::new(1280, 720),
+            &repository,
+            super::install_style_providers(typography),
+            None,
+            RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
+        );
+        let incoming = Presentation::NowPlaying(lyric_presentation("paused.json"));
+        view.replace(1, &incoming, &repository);
+        let start = view.transition_clock.elapsed();
+        assert_eq!(
+            lyric_motion_frame(view.transition.current().value(), start).composition_progress,
+            1.0
+        );
+        for (millis, expected) in [(450, 1.0), (4_500, 1.0), (5_100, 1.0), (5_700, 0.0)] {
+            let now = start + Duration::from_millis(millis);
+            view.transition_clock = Instant::now() - now;
+            view.update_in_place(2, &incoming, &repository);
+            view.advance_transition(now);
+            let frame = lyric_motion_frame(view.transition.current().value(), now);
+            assert!(frame.cues.is_empty());
+            assert_eq!(frame.composition_progress, expected);
+        }
+    }
+
+    fn rapid_replacement_inherits_the_visible_composition() {
+        use std::time::{Duration, Instant};
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        let mut view = super::PresentationView::new(
+            0,
+            &Presentation::NowPlaying(lyric_presentation("playing.json")),
+            Viewport::new(1280, 720),
+            &repository,
+            super::install_style_providers(typography),
+            None,
+            RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
+        );
+        let hidden = Presentation::NowPlaying(lyric_presentation("lyrics-one-line.json"));
+        view.replace(1, &hidden, &repository);
+        let now = view.transition.started_at().unwrap() + Duration::from_millis(200);
+        view.transition_clock = Instant::now() - now;
+        view.update_in_place(1, &hidden, &repository);
+        view.advance_transition(now);
+        assert_eq!(view.transition.current().value().root.opacity(), 0.0);
+        assert!(
+            lyric_motion_frame(view.transition.current().value(), now).composition_progress > 0.0
+        );
+        view.replace(
+            2,
+            &Presentation::NowPlaying(lyric_presentation("paused.json")),
+            &repository,
+        );
+        let current = view.transition.current().value();
+        assert_eq!(
+            lyric_motion_frame(current, view.transition_clock.elapsed()).composition_progress,
+            0.0
+        );
+        assert_eq!(
+            current
+                .now_playing
+                .as_ref()
+                .unwrap()
+                .metadata
+                .rendered_composition_progress(),
+            0.0
+        );
+    }
+
+    fn replacement_preserves_rendered_intermediate_composition() {
+        use std::time::{Duration, Instant};
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        for entering in [false, true] {
+            let mut source = lyric_presentation("lyrics-one-line.json");
+            let cues = source.lyrics.clone();
+            if entering {
+                source.lyrics = None;
+            }
+            let mut view = super::PresentationView::new(
+                0,
+                &Presentation::NowPlaying(source.clone()),
+                Viewport::new(1280, 720),
+                &repository,
+                super::install_style_providers(typography),
+                None,
+                RenderingConfiguration::live(typography, PresentationBehavior::Dynamic),
+            );
+            source.lyrics = if entering { cues } else { None };
+            let start = Duration::from_secs(1);
+            view.transition_clock = Instant::now() - start;
+            view.update_in_place(1, &Presentation::NowPlaying(source.clone()), &repository);
+            let midpoint = start + Duration::from_millis(290);
+            view.transition_clock = Instant::now() - midpoint;
+            view.update_in_place(1, &Presentation::NowPlaying(source), &repository);
+            let before = view
+                .transition
+                .current()
+                .value()
+                .now_playing
+                .as_ref()
+                .unwrap()
+                .metadata
+                .rendered_composition_progress();
+            assert!(before > 0.1 && before < 0.9);
+            view.replace(
+                2,
+                &Presentation::NowPlaying(lyric_presentation("paused.json")),
+                &repository,
+            );
+            let after = view
+                .transition
+                .current()
+                .value()
+                .now_playing
+                .as_ref()
+                .unwrap()
+                .metadata
+                .rendered_composition_progress();
+            assert!(
+                (before - after).abs() < 0.01,
+                "replacement geometry changed: {before} -> {after}"
+            );
+        }
     }
 
     fn song_replacement_removes_every_previous_lyric_reel() {

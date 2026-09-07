@@ -97,6 +97,8 @@ pub struct NowPlayingPresentation {
     pub artwork_revision: Option<u64>,
     pub artwork_path: Option<String>,
     pub lyrics: Option<Box<LyricPresentation>>,
+    /// A timeline is available even when playback is outside its composition interval.
+    pub lyrics_known: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -846,6 +848,7 @@ pub fn classify_presentation_update(
             previous.progress.clone_from(&next.progress);
             previous.activity.clone_from(&next.activity);
             previous.lyrics.clone_from(&next.lyrics);
+            previous.lyrics_known = next.lyrics_known;
             previous.artwork_path.clone_from(&next.artwork_path);
             previous.artwork_revision = next.artwork_revision;
         }
@@ -1047,6 +1050,7 @@ fn presentation_from_snapshot_with_timing(
             .as_ref()
             .map(|artwork| artwork.path.clone()),
         lyrics: lyric_presentation.map(Box::new),
+        lyrics_known: snapshot.lyrics.is_some(),
     };
     if !now_playing.has_usable_metadata() && now_playing.artwork_path.is_none() {
         return Ok(Presentation::FullField(trackless_full_field(&now_playing)));
