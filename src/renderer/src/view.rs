@@ -157,6 +157,7 @@ impl RenderedProgress {
 }
 
 struct RenderedMetadata {
+    applied_layout: RefCell<Option<AppliedMetadataLayout>>,
     root: gtk::Overlay,
     copy: gtk::Box,
     musical_metadata_alignment: gtk::CenterBox,
@@ -176,6 +177,11 @@ struct RenderedMetadata {
     timing_fade: ReplacementFade<TimingContent>,
     footer: gtk::Box,
     identity: RenderedIdentity,
+}
+
+struct AppliedMetadataLayout {
+    layout: NowPlayingLayout,
+    context_serials: [u32; 5],
 }
 
 #[derive(PartialEq)]
@@ -1779,6 +1785,7 @@ fn metadata(
     root.add_overlay(&footer);
     root.set_measure_overlay(&footer, false);
     let rendered = RenderedMetadata {
+        applied_layout: RefCell::new(None),
         root,
         copy,
         musical_metadata_alignment,
@@ -2135,6 +2142,7 @@ impl RenderedMetadata {
             return;
         }
         // Both ordinary text and the compact masthead swap as one invisible group.
+        self.applied_layout.get_mut().take();
         self.apply_composition_ownership(self.rendered_composition_progress());
         while let Some(child) = self.ordinary_metadata.first_child() {
             self.ordinary_metadata.remove(&child);
@@ -2161,6 +2169,7 @@ impl RenderedMetadata {
             now,
             animations_enabled(self.lyrics.behavior) && presentation.progress.is_none(),
         ) {
+            self.applied_layout.get_mut().take();
             if let Some(progress) = self.progress.take() {
                 self.timing_slot.remove_overlay(&progress.root);
             }
@@ -2218,11 +2227,17 @@ impl RenderedMetadata {
         // Preserve the established travel independently of exclusive text ownership.
         let ordinary_retirement = motion_phase(progress, 0.0, 0.62);
         let ordinary_travel_px = f64::from(self.lyrics.typography.get().lyric_cue_px) * 1.75;
-        self.ordinary_metadata_stage.move_(
-            &self.ordinary_metadata,
-            0.0,
-            -ordinary_retirement * ordinary_travel_px,
-        );
+        let ordinary_y = -ordinary_retirement * ordinary_travel_px;
+        if self
+            .ordinary_metadata_stage
+            .child_transform(&self.ordinary_metadata)
+            .map(|transform| transform.to_translate())
+            .unwrap_or_default()
+            != (0.0, ordinary_y as f32)
+        {
+            self.ordinary_metadata_stage
+                .move_(&self.ordinary_metadata, 0.0, ordinary_y);
+        }
         self.lyrics.root.set_opacity(1.0);
         let lyric_travel_px = f64::from(self.lyrics.typography.get().lyric_cue_px) * 1.8;
         self.lyrics.root.set_margin_top(
@@ -2247,17 +2262,39 @@ impl RenderedMetadata {
     }
 
     fn apply_layout(&self, layout: &NowPlayingLayout) {
+        let context_serials = [
+            self.title.as_ref().map(|line| &line.label),
+            self.artist.as_ref().map(|line| &line.label),
+            self.album.as_ref().map(|line| &line.label),
+            Some(&self.lyrics.masthead_title),
+            Some(&self.lyrics.masthead_artist),
+        ]
+        .map(|label| label.map_or(0, |label| label.pango_context().serial()));
+        if self
+            .applied_layout
+            .borrow()
+            .as_ref()
+            .is_some_and(|applied| {
+                applied.layout == *layout && applied.context_serials == context_serials
+            })
+        {
+            return;
+        }
         let musical_metadata_width = dimension(layout.information.musical_metadata_width_px);
         // The unmeasured lyric overlay needs its column even when every ordinary
         // metadata label is absent; otherwise the overlay's child collapses.
         self.ordinary_metadata_stage
             .set_width_request(musical_metadata_width);
-        self.musical_metadata_slot.set_min_content_width(-1);
-        self.musical_metadata_slot.set_max_content_width(-1);
-        self.musical_metadata_slot
-            .set_min_content_width(musical_metadata_width);
-        self.musical_metadata_slot
-            .set_max_content_width(musical_metadata_width);
+        if self.musical_metadata_slot.min_content_width() != musical_metadata_width
+            || self.musical_metadata_slot.max_content_width() != musical_metadata_width
+        {
+            self.musical_metadata_slot.set_min_content_width(-1);
+            self.musical_metadata_slot.set_max_content_width(-1);
+            self.musical_metadata_slot
+                .set_min_content_width(musical_metadata_width);
+            self.musical_metadata_slot
+                .set_max_content_width(musical_metadata_width);
+        }
         self.presentation_status
             .apply_layout(layout.presentation_status);
         self.presentation_status.root.set_margin_top(dimension(
@@ -2324,6 +2361,12 @@ impl RenderedMetadata {
             .set_margin_bottom(dimension(layout.footer_anchor.margin_bottom_px(0)));
         self.identity
             .apply_now_playing_layout(layout.identity_row, layout.typography.identity_px);
+        // Playback and lyric motion advance separately; only changed geometry,
+        // font contexts, or replacement widgets require another layout pass.
+        self.applied_layout.replace(Some(AppliedMetadataLayout {
+            layout: layout.clone(),
+            context_serials,
+        }));
     }
 
     fn apply_group_fitting(&self, layout: &NowPlayingLayout) {
@@ -3285,6 +3328,24 @@ mod tests {
                 .map(|line| line.as_ref().unwrap().label.layout())
         };
         let before = layouts.each_ref().map(|layout| layout.pixel_size().1);
+        let metadata = &rendered.now_playing.as_ref().unwrap().metadata;
+        let width_changes = std::rc::Rc::new(std::cell::Cell::new(0));
+        metadata
+            .musical_metadata_slot
+            .connect_min_content_width_notify({
+                let width_changes = std::rc::Rc::clone(&width_changes);
+                move |_| width_changes.set(width_changes.get() + 1)
+            });
+        let position_changes = std::rc::Rc::new(std::cell::Cell::new(0));
+        metadata
+            .ordinary_metadata_stage
+            .layout_manager()
+            .unwrap()
+            .layout_child(&metadata.ordinary_metadata)
+            .connect_notify_local(Some("transform"), {
+                let position_changes = std::rc::Rc::clone(&position_changes);
+                move |_, _| position_changes.set(position_changes.get() + 1)
+            });
         rendered.update_in_place(
             1,
             &Presentation::NowPlaying(ordinary),
@@ -3303,6 +3364,16 @@ mod tests {
             .map(|layout| layout.pixel_size().1);
         window.destroy();
         super::install_style_providers(roonscape_renderer::select_typography(&HashSet::new()));
+        assert_eq!(
+            width_changes.get(),
+            0,
+            "unchanged playback must retain width constraints"
+        );
+        assert_eq!(
+            position_changes.get(),
+            0,
+            "settled metadata must retain its position transform"
+        );
         assert_eq!(
             before, after,
             "playback updates must preserve fitted metadata line heights"
