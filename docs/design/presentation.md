@@ -125,6 +125,21 @@ cue together. Otherwise retain the established focal size. Surrounding cues use 
 that same fitted layout, and pack around the displayed active bounds. All lines
 remain active together; fitting never moves the Primary Position.
 
+Keep a hyphenated word together when it fits on an otherwise empty lyric line.
+If it does not fit at the end of the current line, move the whole word to the
+next line, accepting unused space on the preceding line rather than reducing
+the cue's font size just to avoid that break. Preserve supplied text and
+explicit line breaks, the existing whole-cue fitting rules, and the shared
+fitted layout used by focal and context cues.
+
+Protect ordinary hyphens (`-`) and typographic hyphens (`‐`) joining word
+segments. Spaced hyphens and en/em dashes retain their normal wrapping rules.
+If a complete hyphenated word is wider than the lyric column, permit wrapping
+within that word, preferring its existing hyphens as break points. If an
+individual segment is still too wide, allow normal emergency wrapping within
+it. Preserve the complete text and determine these breaks before animation so
+they remain stable throughout composition transitions and cue handoffs.
+
 Same-identity lyric entry and exit animate persistent artwork and information
 rail geometry in place. Ordinary metadata relinquishes ownership to the compact
 masthead and reel without duplicating artwork, Presentation Status, or footer.

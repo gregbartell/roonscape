@@ -128,7 +128,10 @@ fade, its first line must retain the Primary Position, and earlier context must
 pack above it. Compare with `lyrics-one-line` for unchanged normal focal size.
 Inspect `wrapping-progression` motion captures in both directions around the
 oversized cue, including reduced animation, for stable wrapping and continuous
-upward departure.
+upward departure. The wrapping fixtures include ordinary and typographic
+hyphens: inspect intact `D-Rock`, `self-made`, and `mother‐in‐law` in focal
+and context cues, including composition entry and handoffs. Compounds that
+fit an empty line move intact; oversized words still wrap within the column.
 
 Include `lyrics-blank-cue` at all seven peer viewports. Its consecutive blanks
 follow a multiline cue: confirm an empty Primary Position with packed earlier

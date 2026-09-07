@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use gtk::{cairo, pango, prelude::*};
+use gtk::{cairo, glib::Unichar, pango, prelude::*};
 use roonscape_renderer::{NowPlayingTypography, PresentationPalette, Rgb};
 
 use crate::lyric_motion::{LyricCueFrame, LyricFrame};
@@ -115,7 +115,54 @@ impl LyricReel {
         layout.set_width(width.max(1).saturating_mul(pango::SCALE));
         layout.set_wrap(pango::WrapMode::WordChar);
         layout.set_line_spacing(1.04);
+        Self::protect_hyphenated_words(&layout);
         layout
+    }
+
+    fn protect_hyphenated_words(layout: &pango::Layout) {
+        let text = layout.text();
+        let attributes = pango::AttrList::new();
+        let measurement = layout.copy();
+        measurement.set_attributes(None);
+        measurement.set_width(-1);
+        let is_word_character = |ch: char| {
+            ch.is_alphanumeric()
+                || matches!(
+                    ch.unicode_type(),
+                    gtk::glib::UnicodeType::SpacingMark
+                        | gtk::glib::UnicodeType::EnclosingMark
+                        | gtk::glib::UnicodeType::NonSpacingMark
+                )
+        };
+        let mut offset = 0;
+        for token in text.split_inclusive(|ch| !is_word_character(ch) && ch != '-' && ch != '‐') {
+            let word = token.trim_matches(|ch| !is_word_character(ch));
+            let start = offset + token.find(word).unwrap();
+            offset += token.len();
+            if !word.contains(['-', '‐']) || word.split(['-', '‐']).any(str::is_empty) {
+                continue;
+            }
+            measurement.set_text(word);
+            // Oversized compounds retain Pango's hyphen-first WordChar wrapping,
+            // including emergency breaks within an oversized segment.
+            if measurement.size().0 > layout.width() {
+                continue;
+            }
+            for (index, ch) in word
+                .char_indices()
+                .filter(|(_, ch)| matches!(ch, '-' | '‐'))
+            {
+                // Start at the hyphen itself: Pango preserves U+2010 breaks
+                // when a no-break range starts earlier in the word.
+                let following = index + ch.len_utf8();
+                let end = following + word[following..].chars().next().unwrap().len_utf8();
+                let mut attribute = pango::AttrInt::new_allow_breaks(false);
+                attribute.set_start_index((start + index) as u32);
+                attribute.set_end_index((start + end) as u32);
+                attributes.insert(attribute);
+            }
+        }
+        layout.set_attributes(Some(&attributes));
     }
 
     fn positioned_cues(&self) -> Vec<PositionedCue> {
@@ -209,6 +256,7 @@ impl LyricReel {
             candidate.set_width(
                 (f64::from(width.max(1)) * f64::from(pango::SCALE) / candidate_scale) as i32,
             );
+            Self::protect_hyphenated_words(&candidate);
             if f64::from(candidate.pixel_size().1) * candidate_scale <= available_height {
                 fitted = FittedCue {
                     layout: candidate,

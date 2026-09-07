@@ -3358,6 +3358,7 @@ mod tests {
         super::install_style_providers(roonscape_renderer::select_typography(&HashSet::new()));
         reel_capacity_and_primary_position_follow_available_space();
         blanks_retain_the_packed_reel_across_peer_viewports();
+        hyphenated_lyric_words_move_intact_to_the_next_line();
         complete_cues_fit_below_the_primary_position();
         reel_handoffs_keep_wrapping_and_outgoing_geometry();
         composition_transitions_preserve_fitted_cues();
@@ -4033,6 +4034,123 @@ mod tests {
         );
     }
 
+    fn shaped_lyric(text: &str, width: i32) -> crate::lyric_reel::PositionedCue {
+        let mut presentation = lyric_presentation("lyrics-one-line.json");
+        let lyrics = presentation.lyrics.as_mut().unwrap();
+        lyrics.timeline = vec![text.to_owned()];
+        lyrics.current_index = 0;
+        let rendered = lyric_view(
+            &presentation,
+            presentation.lyrics.as_deref(),
+            PresentationPalette::fallback(),
+            PresentationBehavior::StaticFixture,
+        );
+        let layout = NowPlayingLayout::for_presentation(&presentation, Viewport::new(1600, 900));
+        allocate_lyrics(&rendered, &layout);
+        let frame = rendered.motion.borrow().frame_at(std::time::Duration::ZERO);
+        rendered
+            .reel
+            .update(&frame, width, 1400, rendered.typography.get());
+        rendered.reel.widget.allocate(width, 1400, -1, None);
+        rendered.reel.visible_cues().remove(0)
+    }
+
+    fn lyric_lines(cue: &crate::lyric_reel::PositionedCue) -> Vec<String> {
+        let text = cue.layout.text();
+        cue.layout
+            .lines_readonly()
+            .iter()
+            .map(|line| {
+                text[line.start_index() as usize..(line.start_index() + line.length()) as usize]
+                    .trim_end()
+                    .to_owned()
+            })
+            .collect()
+    }
+
+    fn assert_lyric_width(cue: &crate::lyric_reel::PositionedCue, width: i32) {
+        assert!(!cue.layout.is_ellipsized());
+        for line in cue.layout.lines_readonly() {
+            let (ink, logical) = line.pixel_extents();
+            assert!(
+                ink.x() >= -1 && ink.x() + ink.width() <= width + 1,
+                "glyphs must stay inside {width}px: {ink:?}, {:?}",
+                lyric_lines(cue)
+            );
+            assert!(logical.width() <= width, "line must fit: {logical:?}");
+        }
+    }
+
+    fn hyphenated_lyric_words_move_intact_to_the_next_line() {
+        for word in [
+            "D-Rock",
+            "self-made",
+            "mother-in-law",
+            "D‐Rock",
+            "mother‐in‐law",
+            "cafe\u{301}-made",
+        ] {
+            let width = shaped_lyric(word, 2000).layout.pixel_size().0;
+            let exact = shaped_lyric(word, width);
+            assert_eq!(lyric_lines(&exact), [word], "exact fit");
+            assert_lyric_width(&exact, width);
+            for prefix in ["Hi", "É"] {
+                let text = format!("{prefix} {word}");
+                let cue = shaped_lyric(&text, width);
+                assert_eq!(lyric_lines(&cue), [prefix, word]);
+                assert_eq!(cue.scale, 1.0, "moving a word must not shrink the cue");
+                assert_eq!(cue.layout.text(), text);
+                assert_lyric_width(&cue, width);
+            }
+        }
+        let width = shaped_lyric("mother-", 2000).layout.pixel_size().0;
+        let cue = shaped_lyric("mother-in-law", width);
+        assert_eq!(
+            lyric_lines(&cue),
+            ["mother-", "in-law"],
+            "prefer existing hyphens"
+        );
+        assert_lyric_width(&cue, width);
+
+        let text = format!("{}-Rock", "W".repeat(16));
+        let cue = shaped_lyric(&text, width);
+        assert!(cue.layout.line_count() > 2, "oversized segments wrap too");
+        assert_eq!(lyric_lines(&cue).concat(), text);
+        assert_eq!(cue.scale, 1.0);
+        assert_lyric_width(&cue, width);
+
+        for text in [
+            "Hi - Rock",
+            "Hi – Rock",
+            "Hi — Rock",
+            "Hi–Rock",
+            "Hi—Rock",
+            "Hi\nD-Rock",
+            "D-\nRock",
+        ] {
+            let cue = shaped_lyric(text, width);
+            let ordinary = cue.layout.copy();
+            ordinary.set_attributes(None);
+            let expected: Vec<_> = ordinary
+                .lines_readonly()
+                .iter()
+                .map(|line| (line.start_index(), line.length()))
+                .collect();
+            let actual: Vec<_> = cue
+                .layout
+                .lines_readonly()
+                .iter()
+                .map(|line| (line.start_index(), line.length()))
+                .collect();
+            assert_eq!(
+                actual, expected,
+                "normal punctuation and explicit breaks: {text}"
+            );
+            assert_eq!(cue.layout.text(), text);
+            assert_lyric_width(&cue, width);
+        }
+    }
+
     fn complete_cues_fit_below_the_primary_position() {
         let oversized = lyric_presentation("lyrics-four-lines.json");
         let oversized_text = oversized.lyrics.as_ref().unwrap().current();
@@ -4113,7 +4231,7 @@ mod tests {
                 "Again",
                 "Short",
                 "One\nTwo\nThree",
-                "Short again",
+                "Hi D-Rock",
                 "One\nTwo\nThree\nFour",
                 "Short",
                 "One\nTwo\nThree\nFour\nFive",
