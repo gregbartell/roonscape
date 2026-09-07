@@ -479,6 +479,18 @@ impl PresentationView {
         repository_root: &Path,
     ) {
         self.artwork_source = artwork_source(presentation);
+        if matches!(presentation, Presentation::NowPlaying(_)) {
+            // Retiring layers keep their geometry and artwork/metadata fades,
+            // but no previous-song cue may paint in the incoming song's frame.
+            for layer in std::iter::once(self.transition.current())
+                .chain(self.transition.outgoing())
+                .chain(self.retained_layers.iter())
+            {
+                if let Some(rendered) = &layer.value().now_playing {
+                    rendered.metadata.lyrics.reel.widget.set_opacity(0.0);
+                }
+            }
+        }
         if !animations_enabled(self.rendering.behavior) {
             let rendered = self.render_replacement_at_viewport(presentation, repository_root);
             let released = self.transition.replace_immediately(revision, rendered);
@@ -3370,6 +3382,7 @@ mod tests {
         compatible_metadata_preserves_live_content_and_refits_invisibly();
         metadata_availability_preserves_full_field_resolution();
         now_playing_artwork_and_text_reveal_together();
+        song_replacement_removes_every_previous_lyric_reel();
         current_track_artwork_preserves_readable_text();
         artwork_updates_recolor_the_existing_lyric_reel();
         repeated_artwork_updates_preserve_visible_appearance();
@@ -5404,6 +5417,102 @@ mod tests {
                     .set_gtk_enable_animations(true);
             }
         }
+    }
+
+    fn song_replacement_removes_every_previous_lyric_reel() {
+        use std::time::Duration;
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let typography = roonscape_renderer::select_typography(&HashSet::new());
+        for behavior in [
+            PresentationBehavior::Dynamic,
+            PresentationBehavior::StaticFixture,
+        ] {
+            for platform_animations in [true, false] {
+                gtk::Settings::default()
+                    .unwrap()
+                    .set_gtk_enable_animations(platform_animations);
+                for has_incoming_lyrics in [false, true] {
+                    let mut source = lyric_presentation("lyrics-one-line.json");
+                    let mut view = super::PresentationView::new(
+                        0,
+                        &Presentation::NowPlaying(source.clone()),
+                        Viewport::new(1280, 720),
+                        &repository,
+                        super::install_style_providers(typography),
+                        None,
+                        RenderingConfiguration::live(typography, behavior),
+                    );
+                    // Replace during a Natural Cue Handoff, so the old reel
+                    // includes its departure as well as earlier/upcoming cues.
+                    source.lyrics.as_mut().unwrap().current_index = 2;
+                    view.update_in_place(1, &Presentation::NowPlaying(source), &repository);
+                    let mut target = lyric_presentation("lyrics-one-line.json");
+                    if !has_incoming_lyrics {
+                        target.lyrics = None;
+                    }
+                    // Interrupt both the invisible departure and partially
+                    // revealed destinations, building a retained composite.
+                    for (revision, millis) in [(2, 0), (3, 112), (4, 337), (5, 337)] {
+                        if let Some(start) = view.transition.started_at() {
+                            view.advance_transition(start + Duration::from_millis(millis));
+                        }
+                        target.title = Some(format!("Incoming song {revision}"));
+                        view.replace(
+                            revision,
+                            &Presentation::NowPlaying(target.clone()),
+                            &repository,
+                        );
+                        // Assert before advancing the transition or yielding
+                        // to GTK: the very first replacement frame must be clean.
+                        for layer in view
+                            .transition
+                            .outgoing()
+                            .into_iter()
+                            .chain(view.retained_layers.iter())
+                        {
+                            let old = layer.value().now_playing.as_ref().unwrap();
+                            assert_eq!(
+                                old.metadata.lyrics.reel.widget.opacity(),
+                                0.0,
+                                "no previous-song cue may paint in any outgoing or retained layer"
+                            );
+                        }
+                        let current = view.transition.current().value();
+                        let lyrics = &current.now_playing.as_ref().unwrap().metadata.lyrics;
+                        assert_eq!(lyrics.reel.widget.opacity(), 1.0);
+                        assert_eq!(
+                            lyrics
+                                .motion
+                                .borrow()
+                                .frame_at(Duration::ZERO)
+                                .cues
+                                .is_empty(),
+                            !has_incoming_lyrics,
+                            "only the incoming song supplies its lyric destination"
+                        );
+                        // A resize must not restore retired lyrics or remove
+                        // the layout that the artwork/metadata transition uses.
+                        view.apply_viewport(if revision % 2 == 0 {
+                            Viewport::new(1600, 900)
+                        } else {
+                            Viewport::new(1280, 720)
+                        });
+                        for layer in view
+                            .transition
+                            .outgoing()
+                            .into_iter()
+                            .chain(view.retained_layers.iter())
+                        {
+                            let old = layer.value().now_playing.as_ref().unwrap();
+                            assert_eq!(old.metadata.lyrics.reel.widget.opacity(), 0.0);
+                        }
+                    }
+                }
+            }
+        }
+        gtk::Settings::default()
+            .unwrap()
+            .set_gtk_enable_animations(true);
     }
 
     fn incoming_foreground_updates_during_the_coordinated_reveal() {
