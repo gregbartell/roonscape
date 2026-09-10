@@ -310,7 +310,8 @@ struct RsWindow {
     std::unique_ptr<QOpenGLShaderProgram> graphics, sharedGraphics, sprites;
     GLuint vao = 0;
     QByteArray error;
-    std::atomic<bool> captureRequested{false};
+    bool capturePending = false;
+    bool captureRequested = false;
     std::atomic<bool> animationWanted{false};
     std::mutex captureMutex;
     std::vector<uint8_t> captured;
@@ -361,6 +362,12 @@ struct RsWindow {
             renderScale = window->devicePixelRatio();
             renderRate = uint32_t(std::llround(window->screen()->refreshRate()*1000));
             if (pending) current = std::move(pending);
+            // A GUI request belongs to the next synchronized scene, never to
+            // a frame already painting concurrently on the render thread.
+            if (capturePending) {
+                captureRequested = true;
+                capturePending = false;
+            }
         },Qt::DirectConnection);
         QObject::connect(window.get(),&QQuickWindow::beforeRendering,window.get(),[this] {
             try { initialize(); } catch (const std::exception &e) { fail(e.what()); }
@@ -538,7 +545,8 @@ struct RsWindow {
         }
         sprites->release();
         gl->glBindVertexArray(0);
-        if (captureRequested.exchange(false)) {
+        if (captureRequested) {
+            captureRequested = false;
             std::vector<uint8_t> pixels(size_t(physical.width())*physical.height()*4);
             gl->glPixelStorei(GL_PACK_ALIGNMENT,1);
             gl->glReadPixels(0,0,physical.width(),physical.height(),GL_RGBA,GL_UNSIGNED_BYTE,pixels.data());
@@ -701,7 +709,7 @@ bool rs_window_capture(RsWindow *window,uint8_t *output,size_t length) {
     return true;
 }
 void rs_window_request_capture(RsWindow *window) {
-    window->captureRequested=true;
+    window->capturePending=true;
     window->window->update();
 }
 }
