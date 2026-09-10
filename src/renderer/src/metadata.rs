@@ -5,7 +5,7 @@ const TITLE_MAXIMUM_LINES: u32 = 5;
 const ARTIST_MAXIMUM_LINES: u32 = 3;
 const ALBUM_MAXIMUM_LINES: u32 = 3;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MetadataTypography {
     EditorialSerif,
     ArtistSans,

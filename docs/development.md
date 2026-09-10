@@ -1,10 +1,13 @@
 # Development
 
-RoonScape source development requires Node.js and npm, Rust and Cargo,
-`pkg-config`, the GTK 4 development files, and FFmpeg/FFprobe for synthetic
-Live Capture Session helper tests. Use the versions pinned by
-`.node-version`, `package.json`, and `rust-toolchain.toml` rather than versions
-copied into documentation.
+RoonScape runs on Linux with glibc 2.35 or newer, GTK 4.6 or newer, Qt 6.2 or
+newer with the Quick and OpenGL modules, libjpeg, and OpenGL 3.3 support.
+
+Source development also requires Node.js and npm, Rust and Cargo, `pkg-config`,
+a C++17 compiler, and development packages for GTK, Qt, and libjpeg.
+FFmpeg/FFprobe are required for synthetic Live Capture Session helper tests.
+Use the versions pinned by `.node-version`, `package.json`, and
+`rust-toolchain.toml` for Node.js, npm, and Rust.
 
 ## Prepare an existing worktree
 
@@ -164,8 +167,10 @@ together; the existing focused commands remain available. Live Capture Session
 helper tests, Rust tests, and the IPC smoke check follow in `test:built`.
 The design suite remains opt-in. No test coverage is omitted from these suites.
 
-Rust integration tests share one executable to avoid recompiling and linking
-each test file after a Renderer change. Select a module or test by name:
+Pure Rust integration tests share one executable to avoid recompiling and linking
+each test file after a Renderer change. Native graphics and presentation tests
+each own a Qt application and run in separate executables inside the private
+Xvfb/D-Bus session. Select a module or test by name:
 
 ```sh
 cargo test --package roonscape-renderer --test integration snapshot_contract::

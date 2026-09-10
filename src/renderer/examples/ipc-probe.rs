@@ -36,7 +36,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 }
                 report_connection(connection, &presentation, clock.elapsed())?;
             }
-            SnapshotEvent::Snapshot(snapshot) => {
+            SnapshotEvent::Snapshot { snapshot, .. } => {
                 let revision = snapshot.revision;
                 let availability = availability_name(snapshot.availability);
                 presentation.update(

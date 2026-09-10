@@ -3,15 +3,16 @@ mod contract;
 mod diagnostics;
 mod display_configuration;
 mod fixture_navigation;
+mod frame_pacing;
 mod gradient;
 mod ipc;
 mod keyboard;
 mod layout;
 mod metadata;
 mod palette;
+mod pixbuf_pixels;
 mod presentation;
 mod resolution;
-mod style;
 mod transition;
 mod typography;
 
@@ -33,7 +34,8 @@ pub use display_configuration::{
     inactivity_configuration_from_display_configuration, load_inactivity_configuration,
 };
 pub use fixture_navigation::FixtureNavigation;
-pub use gradient::{NowPlayingGradient, NowPlayingGradientCacheKey};
+pub use frame_pacing::FramePacing;
+pub use gradient::{NowPlayingGradient, NowPlayingGradientCacheKey, NowPlayingGradientLookup};
 pub use ipc::{
     ConnectionState, SnapshotEvent, SnapshotReader, SnapshotSocketError, SnapshotSubscription,
     read_snapshot_from_socket,
@@ -52,6 +54,7 @@ pub use metadata::{
     MetadataTypography, metadata_layout,
 };
 pub use palette::{PaletteError, PresentationPalette, Rgb};
+pub use pixbuf_pixels::pixbuf_rgba;
 pub use presentation::{
     FullFieldPresentation, INACTIVE_HORIZONTAL_BOUND, INACTIVE_VERTICAL_BOUND, InactivityTransform,
     LayoutOffset, LyricPresentation, NowPlayingPresentation, Presentation, PresentationActivity,
@@ -63,10 +66,7 @@ pub use presentation::{
 };
 pub use resolution::{
     ArtworkResolutionError, ResolvedPresentation, resolve_capture_presentation,
-    resolve_presentation,
-};
-pub use style::{
-    DiagnosticsStyle, PresentationStyleLayer, PresentationTransitionStyles, TypographyStyles,
+    resolve_presentation, resolve_presentation_with_palette,
 };
 pub use transition::{PresentationRevision, PresentationTransition, ReplacementFade};
 pub use typography::{

@@ -20,6 +20,7 @@ import {
   createLyricMotionReviewArtifacts,
   executeLyricMotionCapturePlan,
   expectedLyricPaintAtSeconds,
+  firstRecordedInputMilliseconds,
   lyricMotionReviewViewports,
   parseLyricMotionCaptureRequest,
   recordingElapsedSeconds,
@@ -29,6 +30,22 @@ import {
 
 const executeFile = promisify(execFile);
 const scratchRoot = "/var/tmp/codex/roonscape";
+
+test("recording origin uses the first input timestamp despite delayed recorder startup", () => {
+  assert.equal(firstRecordedInputMilliseconds("frame=0\n"), undefined);
+  assert.equal(
+    firstRecordedInputMilliseconds(
+      "capture_input=1:1788803250808866:1/1000000\n",
+    ),
+    undefined,
+  );
+  assert.equal(
+    firstRecordedInputMilliseconds(
+      "capture_input=0:1788803250758863:1/1000000\ncapture_input=1:1788803250808866:1/1000000\nframe=1\n",
+    ),
+    1788803250758.863,
+  );
+});
 
 test("review images default to lossy with an explicit lossless option", () => {
   const request = parseLyricMotionCaptureRequest([]);

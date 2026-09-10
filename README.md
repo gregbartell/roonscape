@@ -21,7 +21,7 @@ Optional OLED protections help reduce burn-in risk by dimming and repositioning 
 ## Requirements
 
 - A Roon Server reachable over your local network.
-- A Linux computer with glibc 2.35 or newer and GTK 4.6 or newer to run RoonScape (can be same machine as your Roon Server!).
+- A Linux computer with OpenGL 3.3 support to run RoonScape (can be same machine as your Roon Server!).
 - A device with a Roon client, used once for authorization of the app.
 
 ## Installation

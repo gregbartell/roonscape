@@ -401,6 +401,14 @@ impl LyricMotion {
             composition_motion_active: self.composition.is_active_at(now),
         }
     }
+
+    pub(crate) fn is_active_at(&self, now: Duration) -> bool {
+        self.composition.is_active_at(now)
+            || self
+                .cue_motion
+                .as_ref()
+                .is_some_and(|motion| motion.is_active_at(now))
+    }
 }
 
 // A blank run shares its first entry's identity, including on direct seeks.

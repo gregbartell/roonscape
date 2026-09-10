@@ -336,6 +336,170 @@ pub struct PresentationPalette {
     pub diagnostics_border: Rgb,
 }
 
+fn sample_artwork(pixbuf: &Pixbuf) -> Option<Pixbuf> {
+    let scale = f64::from(SAMPLE_SIZE) / f64::from(pixbuf.width().max(pixbuf.height()));
+    let width = (f64::from(pixbuf.width()) * scale).round().max(1.0) as i32;
+    let height = (f64::from(pixbuf.height()) * scale).round().max(1.0) as i32;
+    if height < 2 || i64::from(pixbuf.width()) * i64::from(pixbuf.height()) <= 512 * 512 {
+        return pixbuf.scale_simple(width, height, gdk_pixbuf::InterpType::Bilinear);
+    }
+    let bytes = pixbuf.read_pixel_bytes();
+    let source_width = pixbuf.width();
+    let source_height = pixbuf.height();
+    let source_stride = pixbuf.rowstride();
+    let alpha = pixbuf.has_alpha();
+    let channels = pixbuf.n_channels();
+    // Each worker owns its Pixbuf objects and reads the same immutable bytes.
+    // Offsets preserve the original filter coordinates across the strips.
+    let strip = |start: i32, rows: i32| {
+        let source = Pixbuf::from_bytes(
+            &bytes,
+            gdk_pixbuf::Colorspace::Rgb,
+            alpha,
+            8,
+            source_width,
+            source_height,
+            source_stride,
+        );
+        if let Some(sample) = sample_integer_strip(&source, width, height, start, rows) {
+            return Some(sample);
+        }
+        let output = Pixbuf::new(gdk_pixbuf::Colorspace::Rgb, alpha, 8, width, rows)?;
+        source.scale(
+            &output,
+            0,
+            0,
+            width,
+            rows,
+            0.0,
+            -f64::from(start),
+            f64::from(width) / f64::from(source_width),
+            f64::from(height) / f64::from(source_height),
+            gdk_pixbuf::InterpType::Bilinear,
+        );
+        Some((output.read_pixel_bytes(), output.rowstride()))
+    };
+    let workers = height.min(4);
+    let ranges: Vec<_> = (0..workers)
+        .map(|index| {
+            let start = index * height / workers;
+            (start, (index + 1) * height / workers - start)
+        })
+        .collect();
+    let samples = std::thread::scope(|scope| {
+        let pending: Vec<_> = ranges
+            .iter()
+            .skip(1)
+            .map(|&(start, rows)| scope.spawn(move || strip(start, rows)))
+            .collect();
+        std::iter::once(strip(ranges[0].0, ranges[0].1))
+            .chain(pending.into_iter().map(|worker| worker.join().unwrap()))
+            .collect::<Option<Vec<_>>>()
+    })?;
+    let stride = (width * channels + 3) & !3;
+    let mut pixels = vec![0; stride as usize * height as usize];
+    for ((start, rows), (bytes, source_stride)) in ranges.into_iter().zip(samples) {
+        for row in 0..rows {
+            let source = (row * source_stride) as usize;
+            let target = ((start + row) * stride) as usize;
+            let count = (width * channels) as usize;
+            pixels[target..target + count].copy_from_slice(&bytes[source..source + count]);
+        }
+    }
+    Some(Pixbuf::from_mut_slice(
+        pixels,
+        gdk_pixbuf::Colorspace::Rgb,
+        alpha,
+        8,
+        width,
+        height,
+        stride,
+    ))
+}
+
+fn sample_integer_strip(
+    source: &Pixbuf,
+    width: i32,
+    height: i32,
+    start: i32,
+    rows: i32,
+) -> Option<(gtk::glib::Bytes, i32)> {
+    let factor = source.width() / width;
+    // Larger reductions use GdkPixbuf's two-stage scaler. Alpha and fractional
+    // reductions also retain its general sampling path.
+    if source.has_alpha()
+        || source.n_channels() != 3
+        || !(2..=30).contains(&factor)
+        || source.width() != width * factor
+        || source.height() != height * factor
+    {
+        return None;
+    }
+    let factor = factor as usize;
+    let count = factor * factor;
+    let unit = ((65_536 + count / 2) / count) as i64;
+    let correction = 65_536 - unit * count as i64;
+    let mut adjustments = Vec::new();
+    // Integer box weights are equal before normalization. Sum their pixels
+    // once, then apply the sparse correction that makes the weights total 2^16.
+    // Match GdkPixbuf's reverse-order correction without building phase tables.
+    if correction > 0 {
+        adjustments.push((factor, factor, correction));
+    } else if correction < 0 {
+        let divisor = (-correction + unit - 1) / unit;
+        let chunk = correction / divisor;
+        let mut remaining = correction;
+        for index in (0..count).rev() {
+            let amount = remaining.max(chunk);
+            adjustments.push((index % factor, index / factor, amount));
+            remaining -= amount;
+            if remaining == 0 {
+                break;
+            }
+        }
+        debug_assert_eq!(remaining, 0);
+    }
+    let source_width = source.width() as usize;
+    let source_height = source.height() as usize;
+    let source_stride = source.rowstride() as usize;
+    let bytes = source.read_pixel_bytes();
+    let stride = (width * 3 + 3) & !3;
+    let mut output = vec![0; (stride * rows) as usize];
+    for row in 0..rows as usize {
+        let y = start as usize + row;
+        for x in 0..width as usize {
+            let mut sums = [0_u32; 3];
+            for dy in 0..factor {
+                let at = (y * factor + dy) * source_stride + x * factor * 3;
+                for pixel in bytes[at..at + factor * 3].chunks_exact(3) {
+                    sums[0] += u32::from(pixel[0]);
+                    sums[1] += u32::from(pixel[1]);
+                    sums[2] += u32::from(pixel[2]);
+                }
+            }
+            let mut weighted = sums.map(|sum| i64::from(sum) * unit);
+            for &(dx, dy, weight) in &adjustments {
+                let at = (y * factor + dy).min(source_height - 1) * source_stride
+                    + (x * factor + dx).min(source_width - 1) * 3;
+                for channel in 0..3 {
+                    weighted[channel] += weight * i64::from(bytes[at + channel]);
+                }
+            }
+            for channel in 0..3 {
+                let value = weighted[channel] as u64;
+                // GdkPixbuf's clamped right-edge path uses an 8-bit opacity
+                // factor; retain that rounding as well as interior rounding.
+                output[row * stride as usize + x * 3 + channel] = if x + 1 == width as usize {
+                    ((value * 255 + 0xff_ffff) >> 24) as u8
+                } else {
+                    ((value + 0xffff) >> 16) as u8
+                };
+            }
+        }
+    }
+    Some((gtk::glib::Bytes::from_owned(output), stride))
+}
+
 impl PresentationPalette {
     /// Blend artwork fields without letting text converge with a dark/light
     /// midpoint. Exact endpoint palettes retain their calibrated role hierarchy.
@@ -416,7 +580,18 @@ impl PresentationPalette {
     pub fn from_artwork(path: &Path) -> Result<Self, PaletteError> {
         let pixbuf = Pixbuf::from_file_at_scale(path, SAMPLE_SIZE, SAMPLE_SIZE, true)
             .map_err(PaletteError::Load)?;
-        let swatches = swatches(&pixbuf);
+        Self::from_sample(&pixbuf)
+    }
+
+    /// Derive the palette from already decoded pixels, using the same sample
+    /// size and resampling as file-backed artwork.
+    pub fn from_pixbuf(pixbuf: &Pixbuf) -> Result<Self, PaletteError> {
+        let sample = sample_artwork(pixbuf).ok_or(PaletteError::NoVisiblePixels)?;
+        Self::from_sample(&sample)
+    }
+
+    fn from_sample(pixbuf: &Pixbuf) -> Result<Self, PaletteError> {
+        let swatches = swatches(pixbuf);
         let families = color_families(&swatches);
         let dominant_family = families
             .iter()
@@ -1215,4 +1390,94 @@ fn readable_tint(mut tint: Hsl, fields: &[Rgb], minimum_contrast: f64, contrast_
         color = tint.rgb();
     }
     color
+}
+
+#[cfg(test)]
+mod sampling_tests {
+    use super::*;
+
+    #[test]
+    fn integer_reductions_preserve_filter_rounding_and_edges() {
+        for factor in [9, 10, 11, 13, 15, 16, 17, 20, 25, 29, 30, 31] {
+            for (width, height) in [(64 * factor, 64 * factor), (47 * factor, 64 * factor)] {
+                let stride = (width * 3 + 3) & !3;
+                let mut seed = 0xa183_7384_u32;
+                let pixels: Vec<u8> = (0..stride * height)
+                    .map(|_| {
+                        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                        (seed >> 24) as u8
+                    })
+                    .collect();
+                let source = Pixbuf::from_mut_slice(
+                    pixels,
+                    gdk_pixbuf::Colorspace::Rgb,
+                    false,
+                    8,
+                    width,
+                    height,
+                    stride,
+                );
+                let actual = sample_artwork(&source).unwrap();
+                let expected = source
+                    .scale_simple(
+                        actual.width(),
+                        actual.height(),
+                        gdk_pixbuf::InterpType::Bilinear,
+                    )
+                    .unwrap();
+                let actual_bytes = actual.read_pixel_bytes();
+                let expected_bytes = expected.read_pixel_bytes();
+                for row in 0..actual.height() {
+                    let a = (row * actual.rowstride()) as usize;
+                    let e = (row * expected.rowstride()) as usize;
+                    let count = (actual.width() * 3) as usize;
+                    assert_eq!(
+                        &actual_bytes[a..a + count],
+                        &expected_bytes[e..e + count],
+                        "factor {factor}, {width}x{height}, row {row}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parallel_sampling_preserves_every_opaque_and_alpha_sample() {
+        for channels in [3, 4] {
+            for (width, height) in [(997, 643), (1600, 1600)] {
+                let stride = (width * channels + 3) & !3;
+                let pixels: Vec<u8> = (0..stride * height)
+                    .map(|index| ((index * 17 + index / 97) % 256) as u8)
+                    .collect();
+                let source = Pixbuf::from_mut_slice(
+                    pixels,
+                    gdk_pixbuf::Colorspace::Rgb,
+                    channels == 4,
+                    8,
+                    width,
+                    height,
+                    stride,
+                );
+                let actual = sample_artwork(&source).unwrap();
+                let expected = source
+                    .scale_simple(
+                        actual.width(),
+                        actual.height(),
+                        gdk_pixbuf::InterpType::Bilinear,
+                    )
+                    .unwrap();
+                let a = actual.read_pixel_bytes();
+                let e = expected.read_pixel_bytes();
+                for row in 0..actual.height() {
+                    let start = (row * actual.rowstride()) as usize;
+                    let count = (actual.width() * channels) as usize;
+                    assert_eq!(
+                        &a[start..start + count],
+                        &e[start..start + count],
+                        "{channels} channels at row {row}"
+                    );
+                }
+            }
+        }
+    }
 }

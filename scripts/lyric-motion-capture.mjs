@@ -1929,6 +1929,7 @@ async function runNativeLyricMotionCapture(
     signal?.throwIfAborted();
     assertProcessRunning(renderer, "lyric motion capture renderer");
 
+    const recordingClockOffset = performance.now() - Date.now();
     recorder = startLosslessRecorder(
       display,
       plan.resolution,
@@ -1938,7 +1939,19 @@ async function runNativeLyricMotionCapture(
     );
     const recorderCompletion = once(recorder, "close");
     await recorder.spawned;
-    recordingStartedAtMilliseconds = performance.now();
+    recordingStartedAtMilliseconds = await waitFor(
+      () => {
+        const inputTime = firstRecordedInputMilliseconds(
+          recorder.capturedStandardOutput,
+        );
+        if (inputTime === undefined)
+          throw new Error("waiting for first input frame");
+        return inputTime + recordingClockOffset;
+      },
+      recorder,
+      "the first recorded input frame",
+      { signal },
+    );
     assertProcessRunning(recorder, "lyric motion capture recorder");
 
     const actualPublications = [];
@@ -2167,6 +2180,16 @@ async function moveCaptureOutput(sessionDirectory, outputDirectory, reserved) {
   }
 }
 
+// x11grab timestamps input frames using the wall clock. Preserve that timestamp
+// in encoder statistics while resetting output timestamps for the review video.
+export function firstRecordedInputMilliseconds(output) {
+  const match = /^capture_input=0:(\d+):(\d+)\/(\d+)$/m.exec(output);
+  if (match === null) return undefined;
+  const milliseconds =
+    (Number(match[1]) * Number(match[2]) * 1_000) / Number(match[3]);
+  return Number.isFinite(milliseconds) ? milliseconds : undefined;
+}
+
 function startLosslessRecorder(
   display,
   resolution,
@@ -2200,6 +2223,11 @@ function startLosslessRecorder(
       `${display}.0+0,0`,
       "-vf",
       "setpts=PTS-STARTPTS",
+      "-copyts",
+      "-stats_enc_pre",
+      "pipe:1",
+      "-stats_enc_pre_fmt",
+      "capture_input={ni}:{ptsi}:{tbi}",
       "-c:v",
       "utvideo",
       "-pix_fmt",

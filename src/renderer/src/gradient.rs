@@ -58,6 +58,55 @@ pub struct NowPlayingGradient {
     rgba8: Vec<u8>,
 }
 
+/// Compact, lossless inputs for evaluating the gradient on a graphics device.
+/// Color entries contain three quantized channel values and a dither flag.
+/// Positions use unsigned 32-bit fixed point; the upper 16 bits select a color.
+pub struct NowPlayingGradientLookup {
+    pub colors: Vec<[i32; 4]>,
+    pub origin: u32,
+    pub step_x: u32,
+    pub step_y: u32,
+}
+
+impl NowPlayingGradientLookup {
+    pub const WIDTH: u32 = 256;
+    pub const HEIGHT: u32 = 257;
+    pub const NOISE_SIDE: u32 = BLUE_NOISE_SIDE;
+    pub const QUANTIZATION_ONE: i32 = BLUE_NOISE_AREA as i32;
+
+    pub fn new(palette: PresentationPalette, viewport: Viewport) -> Self {
+        let geometry = GradientGeometry::new(viewport);
+        let last = geometry.origin
+            + i64::from(viewport.width_px - 1) * geometry.step_x
+            + i64::from(viewport.height_px - 1) * geometry.step_y;
+        assert!(geometry.origin >= 0 && last <= i64::from(u32::MAX));
+        let mut colors: Vec<_> = GradientColors::new(palette)
+            .quantized_lut()
+            .into_iter()
+            .map(|color| {
+                [
+                    color.scaled_steps[0],
+                    color.scaled_steps[1],
+                    color.scaled_steps[2],
+                    i32::from(color.dither),
+                ]
+            })
+            .collect();
+        colors.resize((Self::WIDTH * Self::HEIGHT) as usize, [0; 4]);
+        Self {
+            colors,
+            origin: geometry.origin as u32,
+            step_x: geometry.step_x as u32,
+            step_y: geometry.step_y as u32,
+        }
+    }
+
+    pub fn noise() -> &'static [[i16; 3]] {
+        static NOISE: OnceLock<Vec<[i16; 3]>> = OnceLock::new();
+        NOISE.get_or_init(|| blue_noise_tile().iter().map(|noise| noise.0).collect())
+    }
+}
+
 impl NowPlayingGradient {
     pub fn new(palette: PresentationPalette, viewport: Viewport) -> Self {
         let pixel_count = usize::try_from(viewport.width_px)

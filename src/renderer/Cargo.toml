@@ -8,7 +8,6 @@ repository = "https://github.com/gregbartell/roonscape"
 
 [dependencies]
 gdk-pixbuf = "0.22.0"
-glib-unix = "0.22.8"
 gtk = { package = "gtk4", version = "0.11.4", features = ["v4_6"] }
 jsonschema = { version = "0.52.1", default-features = false }
 pangocairo = "0.22.9"
@@ -16,5 +15,19 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 time = { version = "0.3.55", features = ["parsing"] }
 
+[build-dependencies]
+cc = "1.2.11"
+pkg-config = "0.3.34"
+
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[[test]]
+name = "native_graphics"
+path = "tests/native_graphics.rs"
+harness = false
+
+[[test]]
+name = "native_presentation"
+path = "tests/native_presentation.rs"
+harness = false

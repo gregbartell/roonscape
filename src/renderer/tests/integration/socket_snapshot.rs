@@ -93,7 +93,7 @@ fn reports_a_visible_lyric_revision_to_the_snapshot_publisher() {
         .recv_timeout(Duration::from_secs(1))
         .expect("renderer should receive lyric state")
     {
-        SnapshotEvent::Snapshot(snapshot) => snapshot.revision,
+        SnapshotEvent::Snapshot { snapshot, .. } => snapshot.revision,
         event => panic!("expected a snapshot, got {event:?}"),
     };
     assert!(
@@ -287,10 +287,19 @@ fn deduplicates_stale_revision_reports_until_an_increasing_snapshot_is_accepted(
             )
             .expect("snapshots should be sent");
     });
-    let subscription = SnapshotSubscription::start(socket_path, Duration::from_millis(10));
+    let (observed_send, observed) = std::sync::mpsc::channel();
+    let subscription = SnapshotSubscription::start_with_observer(
+        socket_path,
+        Duration::from_millis(10),
+        move |snapshot| {
+            observed_send.send(snapshot.revision).unwrap();
+        },
+    );
 
     expect_connection(&subscription, ConnectionState::Disconnected);
     expect_connection(&subscription, ConnectionState::Connected);
+    // Preparation observes accepted bytes before the main loop consumes them.
+    assert_eq!(observed.recv_timeout(Duration::from_secs(1)).unwrap(), 10);
     assert_snapshot_event(
         subscription
             .recv_timeout(Duration::from_secs(1))
@@ -324,6 +333,11 @@ fn deduplicates_stale_revision_reports_until_an_increasing_snapshot_is_accepted(
         }
     );
 
+    assert_eq!(observed.recv_timeout(Duration::from_secs(1)).unwrap(), 11);
+    assert!(
+        observed.try_recv().is_err(),
+        "rejected revisions must not start preparation"
+    );
     publisher.join().expect("fixture publisher should finish");
 }
 
@@ -426,7 +440,7 @@ fn snapshot_at_revision(name: &str, revision: u64) -> String {
 }
 
 fn assert_snapshot_event(event: SnapshotEvent, revision: u64, playback: Playback) {
-    let SnapshotEvent::Snapshot(snapshot) = event else {
+    let SnapshotEvent::Snapshot { snapshot, .. } = event else {
         panic!("expected a complete snapshot event, got {event:?}");
     };
     assert_eq!(snapshot.revision, revision);

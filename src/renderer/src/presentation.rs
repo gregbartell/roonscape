@@ -267,6 +267,7 @@ impl PresentationStatusMotion {
     }
 }
 
+#[derive(Clone)]
 pub struct PresentationState {
     snapshot: PresentationSnapshot,
     timing: TimingContinuity,
@@ -277,6 +278,7 @@ pub struct PresentationState {
     behavior: PresentationBehavior,
 }
 
+#[derive(Clone)]
 struct TimingContinuity {
     retained_position: Option<PositionAnchor>,
     retained_duration_seconds: Option<f64>,
@@ -720,6 +722,31 @@ impl PresentationState {
 
     pub fn revision(&self) -> u64 {
         self.snapshot.revision
+    }
+
+    /// Apply same-song playback changes while retaining this timeline and its
+    /// revision until the incoming lyric destination has been prepared.
+    pub fn synchronize_playback(&mut self, incoming: &Self, now: Duration) {
+        if self.now_playing_generation != incoming.now_playing_generation
+            || self.snapshot.playback == incoming.snapshot.playback
+        {
+            return;
+        }
+        self.timing.retained_position =
+            self.timing
+                .retained_position
+                .map(|position| PositionAnchor {
+                    seconds: projected_position(
+                        position,
+                        self.snapshot.playback,
+                        self.timing.retained_duration_seconds,
+                        now,
+                        self.behavior,
+                    ),
+                    anchored_at: now,
+                    ..position
+                });
+        self.snapshot.playback = incoming.snapshot.playback;
     }
 
     /// Changes when the timing continuity rule observes a new track or a break

@@ -1,78 +1,10 @@
-use std::cell::Cell;
-use std::f64::consts::TAU;
-use std::rc::Rc;
-
 use gtk::cairo::{Context, LineCap, LineJoin};
-use gtk::prelude::*;
-use roonscape_renderer::{
-    PresentationBehavior, PresentationStatus, PresentationStatusDecoration,
-    PresentationStatusMotion, PresentationStatusSymbol,
-};
+use roonscape_renderer::PresentationStatusSymbol;
+use std::f64::consts::TAU;
 
 const GLYPH_GRID: f64 = 32.0;
-const CIRCULAR_GLYPH_SCALE: f64 = 0.44;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct DecorationStyle {
-    class_name: &'static str,
-    glyph_scale: f64,
-}
-
-pub(crate) fn presentation_status_symbol(
-    status: &PresentationStatus,
-    decoration: PresentationStatusDecoration,
-    behavior: PresentationBehavior,
-) -> gtk::Box {
-    let decoration = decoration_style(decoration);
-    let container = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    container.add_css_class("status-symbol-container");
-    container.add_css_class(decoration.class_name);
-    container.set_halign(gtk::Align::Center);
-    container.set_valign(gtk::Align::Center);
-
-    let drawing = gtk::DrawingArea::new();
-    drawing.set_hexpand(true);
-    drawing.set_vexpand(true);
-    let rotation = Rc::new(Cell::new(0.0));
-    let draw_rotation = rotation.clone();
-    let symbol = status.symbol;
-    let glyph_scale = decoration.glyph_scale;
-    drawing.set_draw_func(move |drawing, context, width, height| {
-        draw_symbol(
-            drawing,
-            context,
-            width,
-            height,
-            symbol,
-            draw_rotation.get(),
-            glyph_scale,
-        );
-    });
-
-    let motion = status.motion;
-    if let PresentationStatusMotion::ContinuousRotation { .. } = motion {
-        drawing.add_tick_callback(move |drawing, frame_clock| {
-            let system_animations_enabled =
-                gtk::Settings::default().is_none_or(|settings| settings.is_gtk_enable_animations());
-            let animations_enabled = behavior.animations_enabled(system_animations_enabled);
-            let elapsed = std::time::Duration::from_micros(
-                frame_clock.frame_time().try_into().unwrap_or_default(),
-            );
-            let next_rotation = motion.rotation_at(elapsed, animations_enabled);
-            if (rotation.get() - next_rotation).abs() > f64::EPSILON {
-                rotation.set(next_rotation);
-                drawing.queue_draw();
-            }
-            gtk::glib::ControlFlow::Continue
-        });
-    }
-
-    container.append(&drawing);
-    container
-}
-
-fn draw_symbol(
-    drawing: &gtk::DrawingArea,
+pub(crate) fn paint_glyph(
     context: &Context,
     width: i32,
     height: i32,
@@ -80,13 +12,6 @@ fn draw_symbol(
     rotation: f64,
     glyph_scale: f64,
 ) {
-    let color = drawing.style_context().color();
-    context.set_source_rgba(
-        f64::from(color.red()),
-        f64::from(color.green()),
-        f64::from(color.blue()),
-        f64::from(color.alpha()),
-    );
     let extent = f64::from(width.min(height)) * glyph_scale;
     context.translate(
         (f64::from(width) - extent) / 2.0,
@@ -107,20 +32,7 @@ fn draw_symbol(
     }
 }
 
-fn decoration_style(decoration: PresentationStatusDecoration) -> DecorationStyle {
-    match decoration {
-        PresentationStatusDecoration::Circle => DecorationStyle {
-            class_name: "status-symbol-circle",
-            glyph_scale: CIRCULAR_GLYPH_SCALE,
-        },
-        PresentationStatusDecoration::CircleFree => DecorationStyle {
-            class_name: "status-symbol-circle-free",
-            glyph_scale: 1.0,
-        },
-    }
-}
-
-fn symbol_line_cap(symbol: PresentationStatusSymbol) -> LineCap {
+pub(crate) fn symbol_line_cap(symbol: PresentationStatusSymbol) -> LineCap {
     match symbol {
         PresentationStatusSymbol::PairingRequired
         | PresentationStatusSymbol::Disconnected
@@ -243,51 +155,4 @@ fn rounded_rectangle(context: &Context, x: f64, y: f64, width: f64, height: f64,
     );
     context.arc(x + radius, y + radius, radius, TAU / 2.0, TAU * 0.75);
     context.close_path();
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fills_the_circle_free_cell_without_changing_the_circular_glyph_scale() {
-        assert_eq!(
-            decoration_style(PresentationStatusDecoration::CircleFree),
-            DecorationStyle {
-                class_name: "status-symbol-circle-free",
-                glyph_scale: 1.0,
-            }
-        );
-        assert_eq!(
-            decoration_style(PresentationStatusDecoration::Circle),
-            DecorationStyle {
-                class_name: "status-symbol-circle",
-                glyph_scale: CIRCULAR_GLYPH_SCALE,
-            }
-        );
-    }
-
-    #[test]
-    fn uses_butt_caps_for_starting_and_round_caps_only_for_unavailable_symbols() {
-        assert!(matches!(
-            symbol_line_cap(PresentationStatusSymbol::Starting),
-            LineCap::Butt
-        ));
-
-        for symbol in [
-            PresentationStatusSymbol::Playing,
-            PresentationStatusSymbol::Paused,
-            PresentationStatusSymbol::Idle,
-        ] {
-            assert!(matches!(symbol_line_cap(symbol), LineCap::Butt));
-        }
-
-        for symbol in [
-            PresentationStatusSymbol::PairingRequired,
-            PresentationStatusSymbol::Disconnected,
-            PresentationStatusSymbol::OutputUnavailable,
-        ] {
-            assert!(matches!(symbol_line_cap(symbol), LineCap::Round));
-        }
-    }
 }

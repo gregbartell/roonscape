@@ -3,11 +3,9 @@ use std::fs;
 use std::path::Path;
 
 use roonscape_renderer::{
-    FALLBACK_FONT_FILES, FALLBACK_FONT_LICENSES, NowPlayingTitleFace, TypographyStyles,
+    FALLBACK_FONT_FILES, FALLBACK_FONT_LICENSES, NowPlayingTitleFace,
     register_packaged_fallback_fonts, select_capture_typography, select_typography,
 };
-
-const NOW_PLAYING_SUPPORTING_RULE: &str = ".now-playing .artist, .now-playing .album, .now-playing .utility-text, .now-playing .status-label, .now-playing .time, .now-playing .activity-heading, .now-playing .activity-detail, .now-playing .identity-label, .now-playing .identity-name { font-family: \"IBM Plex Sans\", sans-serif; }";
 
 #[test]
 fn selects_now_playing_title_and_supporting_faces_independently() {
@@ -50,50 +48,6 @@ fn selects_now_playing_title_and_supporting_faces_independently() {
             "Full-field typography should preserve its existing pair selection"
         );
     }
-}
-
-#[test]
-fn generated_styles_assign_now_playing_roles_without_changing_full_field_roles() {
-    let selection = select_typography(&available_families(&[
-        "Sitka Display",
-        "Palatino Linotype",
-        "Segoe UI",
-    ]));
-    let styles = TypographyStyles::new(selection).to_css();
-
-    assert!(styles.contains(
-        ".now-playing .title, .now-playing .editorial-text { font-family: \"Sitka Display\", \"Libre Baskerville\", serif; font-style: normal; font-weight: 700; }"
-    ));
-    assert!(styles.contains(NOW_PLAYING_SUPPORTING_RULE));
-    assert!(styles.contains(
-        ".now-playing .status-label, .now-playing .time, .now-playing .identity-label, .now-playing .identity-name { font-variation-settings: \"wdth\" 96; }"
-    ));
-    assert!(styles.contains(".time { font-variant-numeric: tabular-nums; }"));
-    assert!(styles.contains(
-        ".full-field .editorial-text, .full-field-heading { font-family: \"Palatino Linotype\", serif; }"
-    ));
-    assert!(styles.contains(
-        ".full-field .utility-text, .full-field .status-label, .full-field .identity-label, .full-field .identity-name, .full-field .full-field-explanation, .diagnostics { font-family: \"Segoe UI\", sans-serif; }"
-    ));
-}
-
-#[test]
-fn identity_labels_use_a_subordinate_semibold_weight() {
-    let static_styles = include_str!("../../src/style.css");
-
-    assert!(static_styles.contains(".identity-label {\n  font-weight: 600;\n}"));
-    assert!(!static_styles.contains(".identity-label {\n  font-weight: 700;\n}"));
-    assert!(!static_styles.contains(".identity-label {\n  font-weight: 800;\n}"));
-}
-
-#[test]
-fn generated_fallback_title_style_preserves_ordinary_glyph_fallback() {
-    let styles = TypographyStyles::new(select_typography(&available_families(&[]))).to_css();
-
-    assert!(styles.contains(
-        ".now-playing .title, .now-playing .editorial-text { font-family: \"Libre Baskerville\", serif; font-style: normal; font-weight: 700; }"
-    ));
-    assert!(styles.contains(NOW_PLAYING_SUPPORTING_RULE));
 }
 
 #[test]

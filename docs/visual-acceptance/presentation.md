@@ -1,6 +1,6 @@
 # Presentation visual acceptance
 
-Use this workflow to inspect the native GTK 4/Pango presentation across the
+Use this workflow to inspect the native Qt Quick/Pango presentation across the
 maintained Fixture Scenarios and representative landscape viewports. Captures
 are disposable human-review artifacts, not pixel-golden test inputs. Renderer,
 font, and host differences must be judged against the current

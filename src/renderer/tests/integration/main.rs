@@ -12,7 +12,6 @@ mod metadata_layout;
 mod now_playing_gradient;
 mod now_playing_layout;
 mod palette;
-mod palette_styles;
 mod presentation;
 mod resolved_presentation;
 mod snapshot_contract;

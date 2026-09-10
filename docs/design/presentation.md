@@ -341,6 +341,18 @@ staggered phases. The platform's reduced-animation preference leaves Starting
 and the waveform on stable, meaningful frames without removing the activity or
 timing copy.
 
+Animation advances with the display, with a 60 fps ceiling and no frame-rate
+preference. At refresh rates up to 60 Hz, use every refresh. Above 60 Hz, update
+every N refreshes, choosing the smallest integer N that keeps the cadence at or
+below 60 fps: 120 Hz gives 60 fps, 144 Hz gives 48 fps, and 75 Hz gives 37.5 fps.
+Preserve fractional refresh rates and stable spacing through timing-estimate
+jitter. This applies to composition and content transitions, Lyric Reel motion,
+determinate progress while Playing, Starting, and the activity waveform.
+Numeric time labels change only when their displayed values change. Inactivity
+dimming and repositioning are deliberately discrete. Static Fixture Mode shows
+settled transitions and fixed progress. Reduced animation disables animated
+transitions while keeping timing and progress live.
+
 ### Now Playing Transitions and content updates
 
 A Now Playing Transition enters Now Playing from a Full-field Presentation or
@@ -350,10 +362,25 @@ timing, Presentation Status, and lyric motion remain live throughout the reveal.
 The [layered compositing decision](../adr/0004-use-layered-compositing-for-now-playing-transitions.md)
 records the architectural tradeoff supporting this behavior.
 
-The Renderer presents received content with existing fallbacks and adds no wait
-for missing content. The Bridge retains its existing behavior of holding a
-pending presentation during artwork retrieval and publishing it with artwork
-on success or a fallback on failure.
+The Renderer presents received content with fallbacks and adds no wait for
+missing content. The Bridge holds a pending Presentation Snapshot during artwork
+retrieval and publishes it with artwork on success or a fallback on failure.
+
+Measure artwork reveal delay from the point when the Renderer has both artwork
+data and its corresponding Presentation Snapshot to the first displayed frame
+that reveals the artwork:
+
+- An artwork-only update reveals the artwork within 100 ms.
+- A Now Playing Transition has a 225 ms outgoing-text departure and permits at
+  most 100 ms of additional preparation delay before the coordinated reveal.
+  Preparation may overlap departure; the incoming fade duration is separate.
+
+During preparation, lyrics, progress, Presentation Status, and ongoing animations
+continue normally. Superseded artwork must not make its first appearance after
+a newer destination is selected.
+
+Validate the preparation bound and physical-display cadence with newly arriving
+artwork and interrupted transitions, including the ensuing fade.
 
 When another destination arrives during a transition, use the latest
 destination while preserving visual continuity. Replace an invisible

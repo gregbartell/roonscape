@@ -62,7 +62,14 @@ try {
         `${name} ${version} required; incompatible version. Select the repository-pinned toolchain (docs/development.md).`,
       );
   }
-  for (const name of ["rustfmt", "cargo-clippy", "cc", "git", "python3"]) {
+  for (const name of [
+    "rustfmt",
+    "cargo-clippy",
+    "cc",
+    "c++",
+    "git",
+    "python3",
+  ]) {
     const result = probe(name, ["--version"]);
     if (!result.ok) required.push(result.failure);
   }

@@ -37,6 +37,8 @@ if (process.platform !== "linux" || process.arch !== "x64") {
 
 try {
   run("pkg-config", ["--atleast-version=4.6", "gtk4"]);
+  run("pkg-config", ["--atleast-version=6.2", "Qt6Quick", "Qt6OpenGL"]);
+  run("pkg-config", ["--exists", "libjpeg"]);
   rmSync(path.join(repositoryRoot, "src/bridge/dist"), {
     force: true,
     recursive: true,

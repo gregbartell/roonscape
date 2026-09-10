@@ -85,6 +85,21 @@ fn resolve_presentation_with_artwork(
 }
 
 fn resolve_without_artwork_palette(presentation: &Presentation) -> ResolvedPresentation {
+    resolve_presentation_with_palette(presentation, None)
+}
+
+/// Apply a prepared artwork palette to the latest content, retaining the
+/// ordinary missing/unusable-artwork fallback contract.
+pub fn resolve_presentation_with_palette(
+    presentation: &Presentation,
+    palette: Option<PresentationPalette>,
+) -> ResolvedPresentation {
+    if let Some(palette) = palette {
+        return ResolvedPresentation {
+            presentation: presentation.clone(),
+            palette,
+        };
+    }
     let Presentation::NowPlaying(now_playing) = presentation else {
         return ResolvedPresentation {
             presentation: presentation.clone(),

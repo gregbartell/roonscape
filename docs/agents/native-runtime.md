@@ -15,14 +15,18 @@ overrides are cleared before the isolated environment is configured.
 Xvfb allocates and locks its display atomically, then reports readiness through
 `-displayfd`. Concurrent runs never claim a display based on an observed socket.
 [`process-harness.mjs`](../../scripts/process-harness.mjs) starts Xvfb with
-`-noreset` so readiness probes disconnecting before GTK connects do not reset it.
+`-noreset` so readiness probes disconnecting before the Renderer connects do not
+reset it.
 
-GTK application registration is scoped to D-Bus. A private display alone is
-insufficient: the [native-session regression test](../../scripts/native-session.test.mjs)
-confirms that a second RoonScape Renderer sharing a bus redirects activation to
-the first, even on another display. The private bus has no service directories,
-so it cannot activate host desktop services or leave unmonitored activation
-children. Live Mode's application registration is unchanged.
+Renderer processes on separate displays remain independent when sharing a D-Bus
+session, as covered by the
+[native-session regression test](../../scripts/native-session.test.mjs).
+The private bus isolates platform settings and has no service directories, so it
+cannot activate host desktop services or leave unmonitored activation children.
+The Bridge's runtime ownership lock prevents concurrent Live Mode launches using
+the same runtime directory.
+Headless sessions select the X11 backends at unit scale and clear inherited Qt
+plugin, rendering, and per-screen scale overrides.
 
 ## Readiness and process cleanup
 

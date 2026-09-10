@@ -55,7 +55,7 @@ test("concurrent Xvfb allocation owns distinct ready displays", async () => {
   }
 });
 
-test("GTK redirects a second Renderer on the same bus even on a different display", async () => {
+test("Renderers on different displays remain independent when sharing a bus", async () => {
   const sentinel = await createNativeSession({ width: 1280, height: 720 });
   let neighbor;
   try {
@@ -80,15 +80,12 @@ test("GTK redirects a second Renderer on the same bus even on a different displa
       },
     );
     await second.spawned;
-    assert.deepEqual(
-      await waitForProcessExit(second, { timeoutMilliseconds: 5_000 }),
-      [0, null],
-    );
+    await waitForNativeWindow(second, neighbor.environment, 1600, 900);
     assertProcessRunning(first, "sentinel Renderer");
-    const windows = await runMonitoredProcess("xwininfo", ["-root", "-tree"], {
-      environment: neighbor.environment,
-    });
-    assert.doesNotMatch(windows, /"RoonScape"/);
+    await neighbor.close();
+    neighbor = undefined;
+    assertProcessRunning(first, "sentinel Renderer after neighboring shutdown");
+    await waitForNativeWindow(first, sentinel.environment, 1280, 720);
   } finally {
     await neighbor?.close();
     await sentinel.close();
@@ -143,6 +140,10 @@ test(
         HOME: hostConfig,
         XDG_CONFIG_HOME: hostConfig,
         WAYLAND_DISPLAY: "unrelated-wayland",
+        QT_QPA_PLATFORM: "wayland",
+        QT_SCALE_FACTOR: "2",
+        QT_SCREEN_SCALE_FACTORS: "2",
+        QSG_RHI_BACKEND: "vulkan",
         GDK_BACKEND: "wayland",
         GDK_SCALE: "2",
         GDK_DPI_SCALE: "2",

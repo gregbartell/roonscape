@@ -173,7 +173,7 @@ test("fullscreen startup reveals Disconnected only after its layout settles", as
       assert.equal(
         firstFrame.compare(settledFrame),
         0,
-        "the first revealed Disconnected frame changed after GTK settled",
+        "the first revealed Disconnected frame changed after the window settled",
       );
     },
   );

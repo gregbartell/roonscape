@@ -11,8 +11,7 @@ import {
   waitFor,
 } from "./process-harness.mjs";
 
-// Verification owns a bus as well as a display: GTK application registration
-// is scoped to D-Bus, not DISPLAY. Do not change the Live Mode application ID.
+// Verification owns both its display and the bus used by platform settings.
 export async function createNativeSession({
   width,
   height,
@@ -36,6 +35,13 @@ export async function createNativeSession({
     "AT_SPI_BUS_ADDRESS",
     "GTK_MODULES",
     "GTK_PATH",
+    "QT_PLUGIN_PATH",
+    "QT_QPA_PLATFORM_PLUGIN_PATH",
+    "QT_SCREEN_SCALE_FACTORS",
+    "QT_FONT_DPI",
+    "QT_QUICK_BACKEND",
+    "QSG_RHI_BACKEND",
+    "QSG_RENDER_LOOP",
     "ROONSCAPE_CAPTURE_CONTROL",
     "ROONSCAPE_CAPTURE_VIEWPORT",
     "ROONSCAPE_CAPTURE_TYPOGRAPHY",
@@ -64,6 +70,9 @@ export async function createNativeSession({
       await mkdir(isolated[name], { mode: 0o700 });
     }
     Object.assign(isolated, {
+      QT_QPA_PLATFORM: "xcb",
+      QT_SCALE_FACTOR: "1",
+      QT_AUTO_SCREEN_SCALE_FACTOR: "0",
       GDK_BACKEND: "x11",
       GDK_SCALE: "1",
       GDK_DPI_SCALE: "1",

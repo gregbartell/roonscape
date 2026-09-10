@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::contract::{MAX_SNAPSHOT_BYTES, PresentationSnapshot, SnapshotError, parse_snapshot};
 
@@ -24,8 +24,14 @@ pub enum ConnectionState {
 #[derive(Debug, PartialEq)]
 pub enum SnapshotEvent {
     ConnectionChanged(ConnectionState),
-    Snapshot(Box<PresentationSnapshot>),
-    RevisionRejected { incoming: u64, accepted: u64 },
+    Snapshot {
+        snapshot: Box<PresentationSnapshot>,
+        received_at: Instant,
+    },
+    RevisionRejected {
+        incoming: u64,
+        accepted: u64,
+    },
 }
 
 pub struct SnapshotSubscription {
@@ -82,7 +88,7 @@ impl SnapshotReader {
     }
 
     pub fn read_snapshot(&mut self) -> Result<PresentationSnapshot, SnapshotSocketError> {
-        read_snapshot(&mut self.reader)
+        read_snapshot(&mut self.reader).map(|(snapshot, _)| snapshot)
     }
 
     fn try_clone_connection(&self) -> io::Result<UnixStream> {
@@ -92,6 +98,16 @@ impl SnapshotReader {
 
 impl SnapshotSubscription {
     pub fn start(socket_path: PathBuf, retry_delay: Duration) -> Self {
+        Self::start_with_observer(socket_path, retry_delay, |_| {})
+    }
+
+    /// Observe accepted snapshots before main-loop delivery. The observer must
+    /// only enqueue work; blocking here would delay subsequent socket reads.
+    pub fn start_with_observer(
+        socket_path: PathBuf,
+        retry_delay: Duration,
+        mut observe: impl FnMut(&PresentationSnapshot) + Send + 'static,
+    ) -> Self {
         let (sender, events) = sync_channel(1);
         let (wakeup, mut notifier) =
             UnixStream::pair().expect("the renderer should create a local wakeup socket pair");
@@ -137,8 +153,8 @@ impl SnapshotSubscription {
                 let mut last_reported_rejection = None;
 
                 loop {
-                    match reader.read_snapshot() {
-                        Ok(snapshot) => {
+                    match read_snapshot(&mut reader.reader) {
+                        Ok((snapshot, received_at)) => {
                             if let Some(accepted) = accepted_revision
                                 && snapshot.revision <= accepted
                             {
@@ -160,10 +176,14 @@ impl SnapshotSubscription {
                             }
                             accepted_revision = Some(snapshot.revision);
                             last_reported_rejection = None;
+                            observe(&snapshot);
                             if !notify(
                                 &sender,
                                 &mut notifier,
-                                SnapshotEvent::Snapshot(Box::new(snapshot)),
+                                SnapshotEvent::Snapshot {
+                                    snapshot: Box::new(snapshot),
+                                    received_at,
+                                },
                             ) {
                                 return;
                             }
@@ -260,7 +280,7 @@ fn notify(
 
 fn read_snapshot(
     reader: &mut BufReader<UnixStream>,
-) -> Result<PresentationSnapshot, SnapshotSocketError> {
+) -> Result<(PresentationSnapshot, Instant), SnapshotSocketError> {
     let mut limited_reader = reader.take(MAX_SNAPSHOT_BYTES + 1);
     let mut message = String::new();
     let bytes_read = limited_reader
@@ -277,6 +297,8 @@ fn read_snapshot(
         return Err(SnapshotSocketError::IncompleteMessage);
     }
 
+    let received_at = Instant::now();
     parse_snapshot(message.trim_end_matches(['\r', '\n']))
+        .map(|snapshot| (snapshot, received_at))
         .map_err(SnapshotSocketError::InvalidSnapshot)
 }

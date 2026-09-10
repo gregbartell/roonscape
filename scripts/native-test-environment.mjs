@@ -20,12 +20,23 @@ export function nativeTestFailures(environment = process.env) {
     .map((name) => `required executable is unavailable: ${name}`);
   const pkgConfig = findExecutable("pkg-config", environment);
   if (pkgConfig !== undefined) {
-    const gtk = spawnSync(pkgConfig, ["--atleast-version=4.6", "gtk4"], {
-      stdio: "ignore",
-      env: environment,
-    });
-    if (gtk.error !== undefined || gtk.status !== 0)
-      failures.push("GTK 4.6 development files are unavailable");
+    for (const [name, minimum, label] of [
+      ["gtk4", "4.6", "GTK 4.6"],
+      ["Qt6Quick", "6.2", "Qt Quick 6.2"],
+      ["Qt6OpenGL", "6.2", "Qt OpenGL 6.2"],
+      ["libjpeg", undefined, "JPEG"],
+    ]) {
+      const result = spawnSync(
+        pkgConfig,
+        [
+          minimum === undefined ? "--exists" : `--atleast-version=${minimum}`,
+          name,
+        ],
+        { stdio: "ignore", env: environment },
+      );
+      if (result.error !== undefined || result.status !== 0)
+        failures.push(`${label} development files are unavailable`);
+    }
   }
   return failures;
 }

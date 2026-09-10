@@ -171,6 +171,7 @@ function environment(context) {
   command("cargo-clippy", 'console.log("clippy 0.1.97");');
   for (const name of [
     "cc",
+    "c++",
     "git",
     "Xvfb",
     "dbus-daemon",
