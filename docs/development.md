@@ -3,7 +3,7 @@
 RoonScape runs on Linux with glibc 2.35 or newer, GTK 4.6 or newer, Qt 6.2 or
 newer with the Quick and OpenGL modules, libjpeg, and OpenGL 3.3 support.
 
-Source development also requires Node.js and npm, Rust and Cargo, `pkg-config`,
+Source development also requires Node.js and npm, Rust and Cargo, `pkg-config`, `qmake6`,
 a C++17 compiler, and development packages for GTK, Qt, and libjpeg.
 FFmpeg/FFprobe are required for synthetic Live Capture Session helper tests.
 Use the versions pinned by `.node-version`, `package.json`, and

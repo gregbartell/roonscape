@@ -1,4 +1,4 @@
-import { constants, accessSync, statSync } from "node:fs";
+import { constants, accessSync, existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -22,8 +22,6 @@ export function nativeTestFailures(environment = process.env) {
   if (pkgConfig !== undefined) {
     for (const [name, minimum, label] of [
       ["gtk4", "4.6", "GTK 4.6"],
-      ["Qt6Quick", "6.2", "Qt Quick 6.2"],
-      ["Qt6OpenGL", "6.2", "Qt OpenGL 6.2"],
       ["libjpeg", undefined, "JPEG"],
     ]) {
       const result = spawnSync(
@@ -38,7 +36,44 @@ export function nativeTestFailures(environment = process.env) {
         failures.push(`${label} development files are unavailable`);
     }
   }
-  return failures;
+  return [...failures, ...qtDevelopmentFailures(environment)];
+}
+
+export function qtDevelopmentFailures(environment = process.env) {
+  const qmake = findExecutable("qmake6", environment);
+  if (qmake === undefined)
+    return ["required executable is unavailable: qmake6"];
+  const result = spawnSync(qmake, ["-query"], {
+    encoding: "utf8",
+    env: environment,
+  });
+  if (result.error !== undefined || result.status !== 0)
+    return ["Qt installation metadata is unavailable: qmake6 -query failed"];
+  const properties = Object.fromEntries(
+    result.stdout
+      .split("\n")
+      .filter((line) => line.includes(":"))
+      .map((line) => {
+        const separator = line.indexOf(":");
+        return [line.slice(0, separator), line.slice(separator + 1).trim()];
+      }),
+  );
+  const version = /^(\d+)\.(\d+)\.\d+$/.exec(properties.QT_VERSION ?? "");
+  if (version === null || Number(version[1]) !== 6 || Number(version[2]) < 2)
+    return ["Qt 6.2 or newer development files are unavailable"];
+  const headers = properties.QT_INSTALL_HEADERS ?? "";
+  const libraries = properties.QT_INSTALL_LIBS ?? "";
+  if (!path.isAbsolute(headers) || !path.isAbsolute(libraries))
+    return [
+      "Qt installation metadata is missing absolute header/library paths",
+    ];
+  return ["Core", "Gui", "Quick", "OpenGL"]
+    .filter(
+      (module) =>
+        !existsSync(path.join(headers, `Qt${module}`, `Qt${module}`)) ||
+        !existsSync(path.join(libraries, `libQt6${module}.so`)),
+    )
+    .map((module) => `Qt ${module} 6.2 development files are unavailable`);
 }
 
 export function findExecutable(name, environment = process.env) {

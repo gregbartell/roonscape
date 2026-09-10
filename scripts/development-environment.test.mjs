@@ -16,6 +16,7 @@ import path from "node:path";
 import { homedir } from "node:os";
 import test from "node:test";
 import { findExecutable } from "./native-test-environment.mjs";
+import { installQtFixture } from "./qt-environment-fixture.mjs";
 
 const sourceRoot = path.resolve(import.meta.dirname, "..");
 
@@ -192,6 +193,7 @@ function environment(context) {
     'console.log(JSON.stringify({families:["Sitka Display","Palatino Linotype","Segoe UI"],hasMoonGlyph:true}));',
   );
   command("fc-query", 'console.log("valid packaged font");');
+  installQtFixture(path.join(root, "bin"));
   const env = {
     PATH: path.join(root, "bin"),
     HOME: path.join(root, "personal"),

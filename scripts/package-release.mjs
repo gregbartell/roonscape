@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { qtDevelopmentFailures } from "./native-test-environment.mjs";
 
 import {
   assembleReleasePackage,
@@ -37,7 +38,8 @@ if (process.platform !== "linux" || process.arch !== "x64") {
 
 try {
   run("pkg-config", ["--atleast-version=4.6", "gtk4"]);
-  run("pkg-config", ["--atleast-version=6.2", "Qt6Quick", "Qt6OpenGL"]);
+  const qtFailures = qtDevelopmentFailures();
+  if (qtFailures.length > 0) throw new Error(qtFailures.join("\n"));
   run("pkg-config", ["--exists", "libjpeg"]);
   rmSync(path.join(repositoryRoot, "src/bridge/dist"), {
     force: true,
