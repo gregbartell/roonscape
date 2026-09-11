@@ -31,7 +31,8 @@ blue cover; it does not establish that every bright cover should be dark.
 The third study is at <http://localhost:8765/dont-come-to-la.html?variant=B>:
 
 - A: Current crimson, sampled from the capture.
-- B: Crimson + parchment, identical to A except for the parchment backing plate.
+- B: Crimson + parchment, parchment backing plate and progress fill, with
+  a muted parchment Paused status following the existing accent-mixing rule.
 - C: Espresso + copper, warm brown-black fields with ivory text and copper accents.
 - D: Aubergine + lilac, deep purple fields with pale lilac text and accents.
 
@@ -39,9 +40,11 @@ The user rejected the first set of third-study alternatives and requested
 further color options. The subsequent framed variants misunderstood their
 intent: only the backing plate color was in scope, not artwork styling.
 All variants now retain A's fixed geometry, 2 px keyline, shadow, and backing
-plate offset of 24 px right and 16 px down. B changes only the plate color to
-parchment (#e0d2c2), retaining every other color from A. C and D are new
-color-only alternatives. Earlier versions remain in the branch history.
+plate offset of 24 px right and 16 px down. B uses parchment (#e0d2c2) for both the backing plate and progress fill.
+At the user’s request, Paused now follows the existing muted-accent rule:
+45% accent plus 55% muted text, producing #d3b4b0. Title, supporting text,
+footer, track, and gradient retain their existing roles and colors. C and D
+are new color-only alternatives. Earlier versions remain in the branch history.
 Backing plate color remains independent of status and progress accent.
 
 It shows Don't Come To LA, from YG's Still Brazy (Deluxe), paused at 0:01.
