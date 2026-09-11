@@ -526,3 +526,37 @@ test("unready incoming content cannot claim the outgoing preparation's presentat
   assert.notEqual(result.publications[1].outcome, "presented");
   assert.equal(result.publications[1].presentedMicros, null);
 });
+
+test("completion receipt can precede scanout by the measured vertical blank interval", () => {
+  const input = evidence();
+  input.trace[6].observedMicros = input.trace[6].ust - 600;
+  const result = summarizePhysicalPresentation({
+    ...input,
+    verticalBlankMicros: 667,
+  });
+  assert.equal(result.status, "complete");
+  assert.equal(result.publications[1].presentedMicros, input.trace[6].ust);
+});
+
+test("a completion timestamp beyond the measured vertical blank interval stays invalid", () => {
+  const input = evidence();
+  input.trace[6].observedMicros = input.trace[6].ust - 668;
+  const result = summarizePhysicalPresentation({
+    ...input,
+    verticalBlankMicros: 667,
+  });
+  assert.equal(result.status, "invalid-evidence");
+  assert.equal(result.cadence, null);
+});
+
+test("vblank allowance cannot place completion receipt before submission", () => {
+  const input = evidence();
+  input.trace[3].observedMicros = input.trace[6].ust - 100;
+  input.trace[6].observedMicros = input.trace[3].observedMicros - 1;
+  const result = summarizePhysicalPresentation({
+    ...input,
+    verticalBlankMicros: 667,
+  });
+  assert.equal(result.status, "invalid-evidence");
+  assert.equal(result.cadence, null);
+});

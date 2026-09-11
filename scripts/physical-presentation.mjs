@@ -12,6 +12,7 @@ export function summarizePhysicalPresentation({
   publications,
   window,
   maxMissedRefreshes = null,
+  verticalBlankMicros = 0,
 }) {
   const problems = [],
     unavailable = [];
@@ -35,6 +36,7 @@ export function summarizePhysicalPresentation({
     invalid("collector incomplete, overflowed, or missing records");
   const rows = trace.slice(1, -1);
   const integer = (value) => Number.isSafeInteger(value) && value >= 0;
+  if (!integer(verticalBlankMicros)) invalid("invalid vertical blank interval");
   const selected = (time) =>
     time >= window.startMicros && time < window.endMicros;
   for (const row of rows) {
@@ -160,7 +162,10 @@ export function summarizePhysicalPresentation({
       !integer(completion.ust) ||
       !integer(completion.msc) ||
       completion.ust < request.observedMicros ||
-      completion.observedMicros < completion.ust
+      completion.observedMicros < request.observedMicros ||
+      // DRM timestamps reference the end of vblank, which can still be in
+      // the future when the flip event arrives. Bound this by mode timings.
+      completion.observedMicros + verticalBlankMicros < completion.ust
     )
       invalid("invalid presentation clock or request fields");
     if (completion.mode === 1 && !delivered.has(frame.frame))

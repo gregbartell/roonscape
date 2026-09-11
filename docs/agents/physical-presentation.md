@@ -54,7 +54,11 @@ unavailable. Asynchronous presentation is unsupported. The analyzer validates
 increasing MSC/UST and checks their agreement with fixed refresh, allowing at
 most the larger of 1 ms and 5% of one refresh interval for clock quantization.
 Inconsistent timing invalidates cadence instead of interpreting variable refresh
-as missed frames. Capabilities are checked again around each run.
+as missed frames. DRM timestamps reference the end of vertical blanking and may
+slightly follow event receipt. The analyzer permits only the vertical blank
+interval derived from the selected mode, retaining the original timestamps;
+see [DRM timestamp semantics](https://docs.kernel.org/gpu/drm-kms.html#c.drm_crtc_funcs).
+Capabilities are checked again around each run.
 
 ## Identities and evidence
 

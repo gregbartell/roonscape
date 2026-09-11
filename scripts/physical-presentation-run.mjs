@@ -126,6 +126,7 @@ export async function readPhysicalEvidence(output, run, options) {
       publications: run.content.publications,
       window: run.windows.measurement,
       maxMissedRefreshes: options.physical.maxMissedRefreshes,
+      verticalBlankMicros: run.capabilities.verticalBlankMicros ?? 0,
     });
   } catch (error) {
     throw Object.assign(

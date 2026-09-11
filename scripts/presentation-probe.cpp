@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
             throw std::runtime_error(
                 "selected viewport must match the existing full-screen mode at unit scale");
         auto *modes = xcb_randr_get_screen_resources_current_modes(resources.get());
-        double refresh = 0;
+        double refresh = 0, vertical_blank = 0;
         for (int i = 0; i < xcb_randr_get_screen_resources_current_modes_length(resources.get());
              ++i) {
             const auto &mode = modes[i];
@@ -92,15 +92,18 @@ int main(int argc, char **argv) {
                 continue;
             if (mode.mode_flags & (XCB_RANDR_MODE_FLAG_INTERLACE | XCB_RANDR_MODE_FLAG_DOUBLE_SCAN))
                 throw std::runtime_error("interlaced/doublescan modes are unsupported");
-            if (mode.htotal && mode.vtotal)
+            if (mode.htotal && mode.vtotal && mode.dot_clock) {
                 refresh = double(mode.dot_clock) * 1000 / mode.htotal / mode.vtotal;
+                vertical_blank = std::ceil(double(mode.vtotal - mode.height) * mode.htotal *
+                                           1000000 / mode.dot_clock);
+            }
         }
         if (!std::isfinite(refresh) || refresh <= 0)
             throw std::runtime_error("physical refresh timing unavailable");
         std::printf("{\"supported\":true,\"root\":%u,\"outputId\":%u,\"crtc\":%u,\"mode\":%u,"
-                    "\"width\":%u,\"height\":%u,\"refreshMillihertz\":%.0f,\"compositor\":false,"
+                    "\"width\":%u,\"height\":%u,\"refreshMillihertz\":%.0f,\"verticalBlankMicros\":%.0f,\"compositor\":false,"
                     "\"backend\":\"X11 / Qt Quick OpenGL / DRI3 Present\"}\n",
-                    root, selected, crtc, info->mode, info->width, info->height, refresh);
+                    root, selected, crtc, info->mode, info->width, info->height, refresh, vertical_blank);
         xcb_disconnect(connection);
         return 0;
     } catch (const std::exception &error) {
