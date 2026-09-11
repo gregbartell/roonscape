@@ -31,9 +31,16 @@ blue cover; it does not establish that every bright cover should be dark.
 The third study is at <http://localhost:8765/dont-come-to-la.html?variant=B>:
 
 - A: Current crimson, sampled from the capture.
-- B: Charcoal + scarlet, neutral fields and a red accent.
-- C: Oxblood + chalk, restrained red fields and a warm white accent.
-- D: Ink + ice, blue-black fields and an icy accent from the portrait highlight.
+- B: Crimson + oxblood, the same gradient and semantic colors as A with an
+  oxblood four-sided artwork frame and offset plate.
+- C: Lacquer + porcelain, richer red fields, porcelain text, and a garnet frame.
+- D: Parchment + burgundy, light warm fields and dark burgundy type and frame.
+
+The user rejected the first set of third-study alternatives (charcoal +
+scarlet, oxblood + chalk, and ink + ice). Those remain in the previous branch
+commit. The replacement set retains A and explicitly explores the requested
+current-gradient/oxblood-border combination as B. Artwork border and plate
+colors are independent of status and progress accent in this study.
 
 It shows Don't Come To LA, from YG's Still Brazy (Deluxe), paused at 0:01.
 The full artist credit is retained. Paused status has its own muted accent,
