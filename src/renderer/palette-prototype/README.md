@@ -49,7 +49,23 @@ Backing plate color remains independent of status and progress accent.
 
 It shows Don't Come To LA, from YG's Still Brazy (Deluxe), paused at 0:01.
 The full artist credit is retained. Paused status has its own muted accent,
-shown alongside the other color values. No third-study preference is selected.
+shown alongside the other color values. The user selected B (crimson +
+parchment) after coordinating the backing plate, progress fill, and muted
+Paused status. This preserves the current red gradient and text hierarchy.
+
+The fourth study is at <http://localhost:8765/campaign.html?variant=B>:
+
+- A: Current copper, sampled from the capture.
+- B: Navy + parchment, blue fields and warm neutral accents.
+- C: Petrol + cream, teal fields and cream accents.
+- D: Paper + royal blue, light warm fields and blue accents.
+
+It shows Campaign (feat. Future), by Ty Dolla $ign / Future, frozen at 0:16
+in the Synchronized Lyric Composition. The smaller artwork, compact masthead,
+Lyric Reel, active cue, and footer positions are shared across all variants.
+The active cue uses primary text; surrounding cues use secondary text.
+Playing, progress fill, and backing plate share the accent color. Only colors
+vary; no fourth-study preference has been selected.
 
 Use the floating arrows, A–D buttons, or keyboard arrows. H hides the controls;
 H restores them; double-clicking the preview also restores them. R toggles the original capture. The URL records the
