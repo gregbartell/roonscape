@@ -1,0 +1,72 @@
+<!doctype html>
+<!-- THROWAWAY: Which palette best supports this monochrome cover? Four color-only
+     variants at ?variant=A|B|C|D. Layout is intentionally held constant.
+     Browser reconstruction, not a native renderer or a palette algorithm change. -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Miami Ultras · Palette prototype</title>
+<style>
+@font-face{font-family:Plex;src:url(IBMPlexSans.ttf)}
+@font-face{font-family:Sitka;src:local('Sitka Display Bold'),local('SitkaDisplay-Bold');font-weight:700}
+*{box-sizing:border-box}body{margin:0;background:#08090b;color:#efefef;font:14px Plex, sans-serif}button{font:inherit;cursor:pointer;color:inherit;border:1px solid #4b4d53;background:#23252b;border-radius:7px;padding:8px 12px}button:hover{background:#393c45}button:focus-visible{outline:2px solid #fff;outline-offset:3px}button[aria-pressed=true]{background:#e4e6eb;color:#13151a;border-color:#fff}
+header{padding:17px 24px 12px;display:flex;align-items:center;gap:18px;justify-content:space-between}header p{margin:0;color:#aeb1bb;font-size:12px}.eyebrow{font-size:10px;letter-spacing:.16em;color:#aeb1bb}h1{font-size:18px;font-weight:500;margin:3px 0}header .actions{display:flex;gap:7px;flex-wrap:wrap}
+#stage{width:min(calc(100vw - 48px),calc((100vh - 220px)*16/9));aspect-ratio:16/9;margin:0 auto;position:relative;overflow:hidden;box-shadow:0 0 0 1px #313238;background:#171717}
+.scene{position:absolute;width:3840px;height:2160px;transform-origin:top left;background:linear-gradient(112deg,var(--artfield) 21%,var(--background) 57%,var(--metadata) 100%);font-family:Plex,sans-serif;color:var(--secondary)}
+.art{position:absolute;left:160px;top:174px;width:1813px;height:1813px;box-shadow:24px 16px 0 var(--accent),0 9px 25px #0005;overflow:hidden;outline:2px solid #5558}
+.art img{position:absolute;max-width:none;width:3840px;height:2160px;left:-160px;top:-174px}
+.status{position:absolute;left:2135px;top:203px;display:flex;align-items:center;gap:42px;color:var(--accent);font-size:58px;font-weight:600;letter-spacing:7px}.triangle{width:0;height:0;border-top:24px solid transparent;border-bottom:24px solid transparent;border-left:39px solid currentColor;margin-left:25px}
+.title{position:absolute;left:2135px;top:724px;margin:0;color:var(--primary);font-family:Sitka,'Sitka Display',Georgia,serif;font-size:164px;font-weight:700;line-height:1.15;letter-spacing:-2px}
+.artist{position:absolute;left:2135px;top:954px;font-size:68px;font-weight:600}.album{position:absolute;left:2135px;top:1064px;font-size:58px}
+.progress{position:absolute;left:2135px;top:1618px;width:1545px;height:7px;background:var(--track)}.fill{height:12px;width:41.8%;background:var(--accent)}
+.times{position:absolute;left:2135px;top:1661px;width:1545px;display:flex;justify-content:space-between;font-size:58px;font-weight:600;color:var(--muted)}
+.footer{position:absolute;left:2135px;top:1786px;font-size:52px;font-weight:600;color:var(--muted)}
+#original{position:absolute;inset:0;width:100%;height:100%;display:none}#stage.reference #original{display:block}.capture-label{position:absolute;top:12px;right:12px;padding:5px 9px;background:#111d;border:1px solid #777;color:white;font-size:11px;display:none}#stage.reference .capture-label{display:block}
+#details{max-width:1300px;margin:13px auto 85px;padding:0 24px;display:flex;gap:18px;justify-content:space-between;align-items:flex-start}#description{margin:3px 0 0;color:#b9bcc4;max-width:460px;font-size:12px}#swatches{display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end}.swatch{font-size:10px;color:#b9bcc4;display:grid;grid-template-columns:18px auto;column-gap:6px;align-items:center}.chip{grid-row:span 2;width:18px;height:25px;border:1px solid #ffffff40;border-radius:3px}.swatch code{color:#f0f0f0;font-size:10px}
+nav{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px;padding:8px;background:#101217f5;border:1px solid #4b4e57;border-radius:13px;box-shadow:0 6px 25px #0009;align-items:center;white-space:nowrap}#label{min-width:155px;text-align:center}#keys{display:flex;gap:4px}#keys button{padding:8px 11px}.hint{font-size:10px;color:#aeb1bb;text-align:center;margin-top:3px}
+body.clean header,body.clean #details,body.clean nav{display:none}body.clean #stage{width:min(100vw,calc(100vh*16/9));position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+@media(max-width:800px){header{padding:12px;gap:8px}header p{display:none}#stage{width:calc(100vw - 24px)}#details{display:block;padding:0 14px}#swatches{justify-content:flex-start;margin-top:12px}#label{min-width:100px}nav{gap:4px;padding:5px}#keys button{padding:8px}header button{font-size:11px;padding:7px}}
+</style>
+<header><div><div class="eyebrow">ROONSCAPE / THROWAWAY PALETTE STUDY</div><h1>Miami Ultras · Yung Lean</h1><p>Same artwork and layout. Compare color, temperature, and emphasis.</p></div><div class="actions"><button id="reference" aria-pressed="false">Original capture</button><button id="clean">Hide controls (H)</button></div></header>
+<main>
+<div id="stage" aria-label="RoonScape palette preview">
+ <div class="scene" id="scene"><div class="art"><img src="capture.png" alt="Black and white Warlord album artwork from the captured display"></div><div class="status"><span class="triangle"></span>PLAYING</div><h2 class="title">Miami Ultras</h2><div class="artist">Yung Lean</div><div class="album">Warlord</div><div class="progress"><div class="fill"></div></div><div class="times"><span>1:50</span><span>−2:34</span></div><div class="footer">OUTPUT&nbsp; Sprout100 &nbsp; · &nbsp; ZONE&nbsp; Sprout100</div></div>
+ <img id="original" src="capture.png" alt="Original 3840 by 2160 RoonScape display capture"><span class="capture-label">ORIGINAL CAPTURE</span>
+</div>
+<section id="details" aria-live="polite"><div><strong id="name"></strong><p id="description"></p></div><div id="swatches"></div></section>
+</main>
+<nav aria-label="Palette comparison"><button id="previous" aria-label="Previous palette">←</button><div><div id="label"></div><div class="hint">← → switch · H hide · R reference</div></div><button id="next" aria-label="Next palette">→</button><div id="keys"></div></nav>
+<script>
+const variants = {
+ A: {name:'Current rose',description:'Current sampled text and accent colors, with an approximate reconstruction of the native gradient. Use Original capture to check against the actual display.',artfield:'#393939',background:'#101010',metadata:'#1d1d1d',primary:'#e3dede',secondary:'#b7a4a4',muted:'#b7a4a4',accent:'#da9595',track:'#414141'},
+ B: {name:'Neutral silver',description:'Remove the rosy cast. Silver accents and neutral text preserve the cover’s stark, photocopied character; the background stays the same.',artfield:'#393939',background:'#101010',metadata:'#1d1d1d',primary:'#e5e5e3',secondary:'#b8b8b6',muted:'#afafad',accent:'#c9c9c5',track:'#414141'},
+ C: {name:'Warm paper',description:'An aged-paper direction: ivory accents, warm gray text, and brown-black fields. Softer and more tactile, without a pink accent.',artfield:'#393631',background:'#151310',metadata:'#211e19',primary:'#eee7d8',secondary:'#c3bbaa',muted:'#bbb3a4',accent:'#d9c9a6',track:'#484239'},
+ D: {name:'Cool steel',description:'A colder, industrial direction: restrained blue-gray accents and slate fields. Adds intentional color while keeping saturation low.',artfield:'#32383d',background:'#101419',metadata:'#1a2128',primary:'#e3e8ed',secondary:'#b4c0cc',muted:'#aebbc8',accent:'#a4bdce',track:'#3b4853'}
+};
+const keys=Object.keys(variants), stage=document.querySelector('#stage'), scene=document.querySelector('#scene');
+let current=variants[new URLSearchParams(location.search).get('variant')] ? new URLSearchParams(location.search).get('variant') : 'A';
+function fit(){scene.style.transform=`scale(${stage.clientWidth/3840})`}
+function reference(value){stage.classList.toggle('reference',value);document.querySelector('#reference').setAttribute('aria-pressed',String(value))}
+function select(key,updateURL=true){
+ current=key;const v=variants[key];reference(false);
+ for(const [role,value] of Object.entries(v))if(value.startsWith('#'))scene.style.setProperty('--'+role,value);
+ document.querySelector('#label').textContent=key+' · '+v.name;
+ document.querySelector('#name').textContent=key+' / '+v.name;
+ document.querySelector('#description').textContent=v.description;
+ document.querySelector('#swatches').innerHTML=Object.entries(v).filter(([,value])=>value.startsWith('#')).map(([role,value])=>`<span class="swatch"><i class="chip" style="background:${value}"></i><span>${({artfield:'Artwork field',background:'Middle field',metadata:'Right field',primary:'Title',secondary:'Supporting',muted:'Footer',accent:'Accent',track:'Track'})[role]}</span><code>${value}</code></span>`).join('');
+ for(const button of document.querySelectorAll('[data-key]'))button.setAttribute('aria-pressed',String(button.dataset.key===key));
+ if(updateURL){const url=new URL(location.href);url.searchParams.set('variant',key);history.replaceState(null,'',url)}
+ console.info('Palette prototype',key,{...v,artwork:'Unchanged capture crop',layout:'Fixed 3840×2160',playback:'Frozen at 1:50'});fit();
+}
+function cycle(direction){select(keys[(keys.indexOf(current)+direction+keys.length)%keys.length])}
+for(const key of keys){const b=document.createElement('button');b.textContent=key;b.dataset.key=key;b.title=variants[key].name;b.onclick=()=>select(key);document.querySelector('#keys').append(b)}
+document.querySelector('#previous').onclick=()=>cycle(-1);document.querySelector('#next').onclick=()=>cycle(1);
+document.querySelector('#reference').onclick=()=>reference(!stage.classList.contains('reference'));
+function clean(){document.body.classList.toggle('clean');fit()}
+document.querySelector('#clean').onclick=clean;
+stage.ondblclick=()=>{if(document.body.classList.contains('clean'))clean()};
+addEventListener('keydown',e=>{if(e.target.closest('input,textarea,select,[contenteditable="true"]')||e.ctrlKey||e.altKey||e.metaKey)return;if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();cycle(e.key==='ArrowLeft'?-1:1)}if(e.key.toLowerCase()==='h')clean();if(e.key==='Escape'&&document.body.classList.contains('clean'))clean();if(e.key.toLowerCase()==='r')reference(!stage.classList.contains('reference'))});
+addEventListener('popstate',()=>{const key=new URLSearchParams(location.search).get('variant');select(variants[key]?key:'A',false)});
+new ResizeObserver(fit).observe(stage);select(current,false);
+</script>
+</html>
