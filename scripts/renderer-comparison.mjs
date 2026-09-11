@@ -151,16 +151,15 @@ export async function compare(options) {
     };
     report.conditions.instrumentation.differencesBetweenSides =
       "none: both sides use this driver and sampler with identical settings";
+    const buildsSources = [options.baseline, options.candidate].some(
+      (selection) => !selection.startsWith("build:"),
+    );
     report.conditions.executables = {};
     for (const name of [
-      "git",
-      "tar",
-      "cargo",
-      "rustc",
-      "qmake6",
+      ...(buildsSources ? ["git", "tar", "cargo", "rustc", "qmake6"] : []),
       "fc-list",
       "python3",
-      "Xvfb",
+      ...(!options.physical ? ["Xvfb"] : []),
       "xwininfo",
       "dbus-daemon",
     ]) {
@@ -170,14 +169,19 @@ export async function compare(options) {
         sha256: digest(await readFile(executable)),
       };
     }
-    for (const [key, command, args] of [
-      ["cargo", "cargo", ["--version"]],
-      ["rustc", "rustc", ["--version"]],
-      ["qt", "qmake6", ["-query", "QT_VERSION"]],
-    ])
-      report.conditions[key] = (
-        await runMonitoredProcess(command, args, { signal })
-      ).trim();
+    report.conditions.qt = null;
+    report.conditions.qtVersionSource = buildsSources
+      ? "qmake6 build-tool metadata; not a runtime library observation"
+      : "unavailable: retained builds do not require Qt development tools";
+    if (buildsSources)
+      for (const [key, command, args] of [
+        ["cargo", "cargo", ["--version"]],
+        ["rustc", "rustc", ["--version"]],
+        ["qt", "qmake6", ["-query", "QT_VERSION"]],
+      ])
+        report.conditions[key] = (
+          await runMonitoredProcess(command, args, { signal })
+        ).trim();
     report.conditions.affinity =
       (await readFile("/proc/self/status", "utf8")).match(
         /^Cpus_allowed_list:.*$/m,

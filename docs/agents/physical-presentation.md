@@ -24,11 +24,20 @@ been explicitly selected, and headless success cannot replace it.
 
 ## Supported capabilities
 
-Use a prepared development host. In addition to the ordinary Renderer tools,
-the collector needs a C++17 compiler and XCB, X Present, and X RandR development
-files. They are included in the maintained host package list and native
-preflight. The comparison builds its small probe and collector separately and
-retains their source/binary digests and compiler identity.
+Use a prepared development host when selecting source revisions. A display host
+can instead select `build:PATH` for both sides, using retained release builds
+with their manifests and resources. That path requires neither Rust/Cargo,
+Git/tar, nor `qmake6`; physical runs never require Xvfb. Node.js, Python 3,
+Fontconfig, `xwininfo`, D-Bus, and the Renderer runtime libraries must be
+available. The measurement host's Qt version is reported as unavailable for
+retained builds, with the reason recorded explicitly. Original build toolchain
+identities remain in the retained source manifests. Source builds record
+`qmake6` build-tool metadata, which does not establish the loaded runtime version.
+
+The collector needs a C++17 compiler and XCB, X Present, and X RandR development
+files on the measurement host. They are included in the maintained host package
+list and native preflight. The comparison builds its small probe and collector
+separately and retains their source/binary digests and compiler identity.
 
 The supported path is Linux, X11, Qt Quick OpenGL through xcb/GLX, and DRI3
 PresentPixmap or PresentPixmapSynced submissions on the thread that drew the

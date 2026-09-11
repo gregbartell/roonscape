@@ -19,6 +19,7 @@ import {
   rm,
   writeFile,
   utimes,
+  symlink,
 } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -963,6 +964,49 @@ else {
       );
       assert.equal(report.physicalSummaries["fresh-content"].baseline.n, 1);
       assert.equal(report.instrumentationOverhead.length, 2);
+      // A display host can run retained builds without source-build tools or Xvfb.
+      const runtimeBin = path.join(f.directory, "runtime-bin");
+      await mkdir(runtimeBin);
+      for (const name of ["node", "sh", "sleep", "dbus-daemon", "fc-list"])
+        await symlink(
+          name === "node"
+            ? process.execPath
+            : (await execute("which", [name])).stdout.trim(),
+          path.join(runtimeBin, name),
+        );
+      for (const name of ["c++", "xwininfo", "python3"])
+        await symlink(path.join(f.bin, name), path.join(runtimeBin, name));
+      const retainedOutput = path.join(f.directory, "physical-retained-output");
+      await execute(
+        process.execPath,
+        [
+          path.join(root, "scripts/accept-presentation.mjs"),
+          "--display",
+          ":98765",
+          "--physical-output",
+          "EXAMPLE-1",
+          "--baseline",
+          `build:${output}/baseline`,
+          "--candidate",
+          `build:${output}/candidate`,
+          "--profile",
+          "smoke",
+          "--workloads",
+          "fresh-content",
+          "--output",
+          retainedOutput,
+        ],
+        { env: { ...f.env, PATH: runtimeBin } },
+      );
+      const retained = JSON.parse(
+        await readFile(path.join(retainedOutput, "report.json"), "utf8"),
+      );
+      assert.equal(retained.conditions.qt, null);
+      assert.match(retained.conditions.qtVersionSource, /unavailable/);
+      assert.equal(retained.conditions.executables.qmake6, undefined);
+      assert.equal(retained.status, "complete");
+      assert.equal(retained.conditions.executables.cargo, undefined);
+      assert.equal(retained.conditions.executables.Xvfb, undefined);
     } else if (mode === "physical-cancel") {
       assert.equal(report.status, "cancelled");
       assert.equal(observed.status, "cancelled");

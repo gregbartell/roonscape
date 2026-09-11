@@ -18,10 +18,11 @@ rejected. Keep sources stable while snapshotting. Content SHA-256 manifests,
 HEAD revision, and dirty state identify the exact copied input. Output must be
 a new directory; keep evidence outside source trees. Nothing is published.
 
-Use a prepared development host and `npm run dev:prepare` in a fresh worktree.
-The command needs Linux `/proc`, Python 3's standard library, Git, tar, Cargo,
-Rust, Qt/native build prerequisites, Fontconfig, Xvfb, xwininfo, and dbus-daemon.
-It installs no host packages. It builds both snapshots with locked dependencies,
+For source selections, use a prepared development host and `npm run dev:prepare`
+in a fresh worktree. Building needs Git, tar, Cargo, Rust, and Qt/native build
+prerequisites. All routine runs need Linux `/proc`, Python 3's standard library,
+the Renderer runtime libraries, Fontconfig, Xvfb, xwininfo, and dbus-daemon.
+The command installs no host packages. It builds snapshots with locked dependencies,
 Cargo's release profile, and optimization level 3, retaining separate binaries,
 fonts, icons, build logs, and source manifests. Build outputs are task-owned;
 dependency compilation is shared sequentially between the two snapshots.
@@ -29,7 +30,10 @@ Preparation/build durations are separate from resource collection.
 
 A retained build can be selected without recompilation. Its binary and packaged
 resources are checked against the retained digests, and its original compiler
-and source identity remain in the report:
+and source identity remain in the report. When both sides select retained builds,
+Git, tar, Cargo, Rust, and `qmake6` are unnecessary. The measurement host's Qt
+version is then explicitly unavailable; source builds query `qmake6` for
+build-tool metadata, which does not establish the loaded runtime version.
 
 ```sh
 npm run compare:renderer -- \
