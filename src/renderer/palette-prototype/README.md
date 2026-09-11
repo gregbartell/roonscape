@@ -24,7 +24,20 @@ The second study is at <http://localhost:8765/that-kid.html?variant=B>:
 - D: Midnight + cyan, dark blue fields with a cyan accent.
 
 It shows That Kid (feat. Wisely Syndicate), by ytcracker, from Strictly for
-My Streamers, frozen at 1:48. No second-study preference has been selected.
+My Streamers, frozen at 1:48. The user selected D (midnight + cyan).
+This supports exploring dark blue fields with cyan accents for this bright
+blue cover; it does not establish that every bright cover should be dark.
+
+The third study is at <http://localhost:8765/dont-come-to-la.html?variant=B>:
+
+- A: Current crimson, sampled from the capture.
+- B: Charcoal + scarlet, neutral fields and a red accent.
+- C: Oxblood + chalk, restrained red fields and a warm white accent.
+- D: Ink + ice, blue-black fields and an icy accent from the portrait highlight.
+
+It shows Don't Come To LA, from YG's Still Brazy (Deluxe), paused at 0:01.
+The full artist credit is retained. Paused status has its own muted accent,
+shown alongside the other color values. No third-study preference is selected.
 
 Use the floating arrows, A–D buttons, or keyboard arrows. H hides the controls;
 H restores them; double-clicking the preview also restores them. R toggles the original capture. The URL records the
