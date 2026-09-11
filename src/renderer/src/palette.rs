@@ -578,9 +578,10 @@ impl PresentationPalette {
     }
 
     pub fn from_artwork(path: &Path) -> Result<Self, PaletteError> {
-        let pixbuf = Pixbuf::from_file_at_scale(path, SAMPLE_SIZE, SAMPLE_SIZE, true)
-            .map_err(PaletteError::Load)?;
-        Self::from_sample(&pixbuf)
+        // Decoder-side thumbnail scaling can select different colors from
+        // sampling the full artwork already used by native preparation.
+        let pixbuf = Pixbuf::from_file(path).map_err(PaletteError::Load)?;
+        Self::from_pixbuf(&pixbuf)
     }
 
     /// Derive the palette from already decoded pixels, using the same sample

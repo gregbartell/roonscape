@@ -16,6 +16,20 @@ const WHITE: Rgb = Rgb {
 };
 
 #[test]
+fn file_and_decoded_artwork_use_the_same_palette_sample() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork");
+    for name in ["playing.jpg", "light.jpg"] {
+        let path = root.join(name);
+        let decoded = gdk_pixbuf::Pixbuf::from_file(&path).unwrap();
+        assert_eq!(
+            PresentationPalette::from_artwork(&path).unwrap(),
+            PresentationPalette::from_pixbuf(&decoded).unwrap(),
+            "{name}: file loading must preserve the decoded artwork's palette sample"
+        );
+    }
+}
+
+#[test]
 fn artwork_palette_blends_keep_text_distinct_across_dark_and_light_fields() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork");
     let dark = PresentationPalette::from_artwork(&root.join("playing.jpg")).unwrap();
