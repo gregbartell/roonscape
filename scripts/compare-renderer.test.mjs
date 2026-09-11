@@ -18,6 +18,7 @@ import {
   readFile,
   rm,
   writeFile,
+  utimes,
 } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -1077,4 +1078,34 @@ else {const child=spawnSync(${JSON.stringify(compilerPath.trim())},process.argv.
     env: owner.environment,
   });
   assert.match(stdout, /Width: 1280/);
+});
+
+test("release snapshots with old timestamps cannot reuse the other source's executable", async (t) => {
+  const { buildSource } = await import("./renderer-comparison-sources.mjs");
+  const scratch = await mkdtemp("/var/tmp/codex/roonscape/task.");
+  t.after(() => rm(scratch, { recursive: true, force: true }));
+  for (const side of ["baseline", "candidate"]) {
+    const source = path.join(scratch, side);
+    const evidence = path.join(scratch, `${side}-evidence`);
+    await mkdir(evidence);
+    for (const relative of ["src/renderer/assets/fonts", "src/desktop/icons"])
+      await mkdir(path.join(source, relative), { recursive: true });
+    const files = {
+      "Cargo.toml":
+        '[package]\nname="roonscape-renderer"\nversion="0.1.0"\nedition="2021"\n',
+      "Cargo.lock":
+        'version = 4\n[[package]]\nname = "roonscape-renderer"\nversion = "0.1.0"\n',
+      "src/main.rs": `fn main() { println!("${side}"); }\n`,
+    };
+    for (const [relative, content] of Object.entries(files)) {
+      const file = path.join(source, relative);
+      await writeFile(file, content);
+      await utimes(file, 1000000000, 1000000000);
+    }
+    await buildSource(source, evidence, new AbortController().signal);
+    const { stdout } = await execute(
+      path.join(evidence, "target/release/roonscape-renderer"),
+    );
+    assert.equal(stdout.trim(), side);
+  }
 });

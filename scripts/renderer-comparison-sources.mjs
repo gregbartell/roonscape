@@ -183,6 +183,14 @@ export async function buildSource(directory, evidence, signal) {
     "LD_AUDIT",
   ])
     delete environment[name];
+  // Git archives retain old mtimes. Cargo can otherwise reuse this package's
+  // artifacts from the other snapshot, despite different source contents.
+  // Keep the expensive third-party dependencies shared, but rebuild our crate.
+  await runMonitoredProcess(
+    "cargo",
+    ["clean", "--release", "--package", "roonscape-renderer"],
+    { cwd: directory, environment, signal },
+  );
   const command = [
     "rustc",
     "--locked",
