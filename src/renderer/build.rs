@@ -52,7 +52,12 @@ fn main() {
         build.include(path);
     }
     build.compile("roonscape_window");
-    for name in ["roonscape_frame_serial", "roonscape_frame_time_micros"] {
+    for name in [
+        "roonscape_frame_serial",
+        "roonscape_frame_time_micros",
+        "roonscape_submission_frame",
+        "roonscape_submission_scene",
+    ] {
         println!("cargo:rustc-link-arg=-Wl,--export-dynamic-symbol={name}");
     }
     println!("cargo:rerun-if-changed=native");

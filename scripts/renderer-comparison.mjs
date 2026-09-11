@@ -30,6 +30,9 @@ import {
 } from "./renderer-comparison-workloads.mjs";
 import { measureRenderer } from "./renderer-comparison-run.mjs";
 import { writeReport } from "./renderer-comparison-report.mjs";
+import { failureOutcome } from "./renderer-comparison-outcome.mjs";
+
+import { preparePhysical } from "./physical-presentation-run.mjs";
 
 export async function compare(options) {
   const cancellation = processCancellation();
@@ -38,6 +41,7 @@ export async function compare(options) {
   let output, scratch;
   const report = {
     version: 1,
+    executionMode: options.physical ? "physical-display" : "headless-resources",
     status: "preparing",
     profile: {
       name: options.profile,
@@ -56,7 +60,7 @@ export async function compare(options) {
     report.selectedCoverage = selected.map((workload) => workload.name);
     report.omittedCoverage = [
       ...coverage.filter((name) => !report.selectedCoverage.includes(name)),
-      "physical presentation cadence",
+      ...(options.physical ? [] : ["physical presentation cadence"]),
       "GPU resources",
       "correctness/presentation contracts",
     ];
@@ -72,6 +76,11 @@ export async function compare(options) {
     console.log(`Renderer comparison evidence: ${output}`);
     scratch = await mkdtemp("/var/tmp/codex/roonscape/task.");
     await writeReport(output, report);
+    if (options.physical) {
+      report.physicalSelection = options.physical;
+      report.physicalTools = await preparePhysical(options, output, signal);
+      options.physicalTools = report.physicalTools;
+    }
     if (process.platform !== "linux")
       throw new Error("resource comparisons require Linux /proc");
     report.conditions = {
@@ -82,7 +91,9 @@ export async function compare(options) {
       logicalCpus: os.cpus().length,
       memoryBytes: os.totalmem(),
       viewport: `${options.width}x${options.height}`,
-      graphics: "private Xvfb, Qt xcb, LIBGL_ALWAYS_SOFTWARE=1, unit scale",
+      graphics: options.physical
+        ? "explicit physical X11 display, Qt xcb GLX, unit scale"
+        : "private Xvfb, Qt xcb, LIBGL_ALWAYS_SOFTWARE=1, unit scale",
       locale: "C.UTF-8",
       maximumPublicationLatenessMs: 50,
       inactivity: { gracePeriodSeconds: 1, repositionCadenceSeconds: 2 },
@@ -107,7 +118,12 @@ export async function compare(options) {
       "renderer-comparison-workloads.mjs",
       "renderer-comparison-run.mjs",
       "renderer-comparison-report.mjs",
+      "renderer-comparison-outcome.mjs",
       "renderer-comparison-content.mjs",
+      "accept-presentation.mjs",
+      "physical-presentation.mjs",
+      "physical-presentation-run.mjs",
+      "animation-evidence.mjs",
       "native-session.mjs",
       "process-harness.mjs",
     ];
@@ -267,7 +283,9 @@ export async function compare(options) {
     report.timing.preparationAndBuildMs = performance.now() - started;
     const measurementStarted = performance.now();
     report.status = "measuring";
-    for (const kind of ["resources", "content"]) {
+    for (const kind of options.physical
+      ? ["resources", "physical"]
+      : ["resources", "content"]) {
       const selectedRuns =
         kind === "content"
           ? selected.filter((workload) => workload.diagnostic)
@@ -290,7 +308,7 @@ export async function compare(options) {
             };
             report.runs.push(run);
             if (
-              kind === "content" &&
+              ["content", "physical"].includes(kind) &&
               !report.sources[side].manifest.some(
                 (file) => file.path === "src/renderer/src/content_evidence.rs",
               )
@@ -301,10 +319,17 @@ export async function compare(options) {
                 reason:
                   "This Renderer build does not provide content observations",
               };
+              if (options.physical)
+                throw Object.assign(
+                  new Error(
+                    "selected build does not provide required native content observations",
+                  ),
+                  { unsupported: true },
+                );
               continue;
             }
             console.log(
-              `${kind === "content" ? "Diagnostic repeat" : "Repeat"} ${run.repeat}: ${side} / ${workload.name}`,
+              `${kind === "resources" ? "Repeat" : kind === "physical" ? "Physical repeat" : "Diagnostic repeat"} ${run.repeat}: ${side} / ${workload.name}`,
             );
             try {
               await measureRenderer(
@@ -326,22 +351,13 @@ export async function compare(options) {
     report.status = "complete";
     exitCode = 0;
   } catch (error) {
-    report.status = signal.aborted
-      ? "cancelled"
-      : error.invalidEvidence
-        ? "invalid-evidence"
-        : error.behaviorFailure
-          ? "behavior-failed"
-          : "execution-failed";
+    const outcome = failureOutcome(error, signal);
+    report.status = outcome.status;
     report.error = error.message;
+    if (options.physical && !report.physicalTools)
+      report.physicalCapabilities = { supported: false, reason: error.message };
     console.error(error.message);
-    exitCode = signal.aborted
-      ? 130
-      : error.invalidEvidence
-        ? 2
-        : error.behaviorFailure
-          ? 3
-          : 1;
+    exitCode = outcome.exitCode;
   } finally {
     try {
       if (scratch) await rm(scratch, { recursive: true, force: true });

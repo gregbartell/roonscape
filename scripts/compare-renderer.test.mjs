@@ -521,6 +521,11 @@ const mode = ${JSON.stringify(mode)};
 const file = process.env.ROONSCAPE_CONTENT_EVIDENCE;
 const now = () => Number(process.hrtime.bigint()/1000n);
 const rows = [];
+const physical = [], animation = [];
+const physicalFile = process.env.ROONSCAPE_PRESENT_EVIDENCE;
+const animationFile = process.env.ROONSCAPE_ANIMATION_EVIDENCE;
+const subscribed = now();
+let previousMsc=100;
 const emit = (event, fields={}) => rows.push({event,observedMicros:now(),...fields});
 let buffer = '', latest;
 const socket = net.createConnection(process.env.ROONSCAPE_SOCKET);
@@ -542,11 +547,21 @@ socket.on('data',chunk => {
     emit('preparation-completed',{revision,token,success:true,artworkResource:revision});
     if(mode === 'behavior') emit('native-draw',{revision,preparedToken:token,frame:revision,scene:revision,frameTimeMicros:now(),drawing:{ready:false,targetArtwork:revision,artwork:[[revision,0]],progress:0.2}});
     if(mode === 'superseded' || mode === 'behavior') emit('preparation-superseded',{token});
-    if(mode === 'behavior') draw(snapshot);
+    if(mode === 'behavior' || mode.startsWith('physical')) draw(snapshot);
   }
 });
 function draw(snapshot) {
-  emit('native-draw',{revision:snapshot.revision,preparedToken:snapshot.revision,frame:snapshot.revision,scene:snapshot.revision,frameTimeMicros:now(),drawing:{ready:true,targetArtwork:snapshot.revision,artwork:[[snapshot.revision,1]],progress:0.2}});
+  if(physicalFile) {
+    const frame=snapshot.revision, scene=frame, time=now();
+    const msc=Math.max(previousMsc+1,100+Math.ceil((time-subscribed)/ (1000000/60))); previousMsc=msc;
+    const presented=Math.round(subscribed+(msc-100)*(1000000/60));
+    physical.push({event:'submission',frame,scene,window:10,serial:frame,options:0,targetMsc:msc,observedMicros:time});
+    if(mode !== 'physical-missing' || frame===1) physical.push({event:'completion',window:10,serial:frame,mode:1,ust:presented,msc,observedMicros:presented+20});
+    animation.push({event:'state',source:'scheduled-update',frame,frameTimeMicros:time,observedMicros:time,values:{animationActive:mode==='physical-stall'}},
+      {event:'state',source:'composition-painted',frame,frameTimeMicros:time,observedMicros:time,values:{revision:frame}},
+      {event:'after-paint',frame,scene,frameTimeMicros:time,observedMicros:time});
+  }
+  emit('native-draw' ,{revision:snapshot.revision,preparedToken:snapshot.revision,frame:snapshot.revision,scene:snapshot.revision,frameTimeMicros:now(),drawing:{ready:true,targetArtwork:snapshot.revision,artwork:[[snapshot.revision,1]],progress:0.2}});
 }
 if(file) {
   fs.writeFileSync(file,JSON.stringify({event:'start',version:1,clock:'CLOCK_MONOTONIC',physicalDelivery:false})+'\\n');
@@ -557,6 +572,13 @@ if(file) {
     if(mode === 'malformed') rows.push({event:'preparation-completed',observedMicros:now()});
     if(mode === 'malformed-draw') emit('native-draw',{revision:1,preparedToken:1,frame:1,scene:1,frameTimeMicros:now(),drawing:{ready:true,targetArtwork:1,artwork:[null]}});
     fs.appendFileSync(file, rows.map(row=>JSON.stringify(row)+'\\n').join('')+JSON.stringify({event:'end',records:rows.length,lost:mode === 'overflow'?1:0,complete:mode !== 'overflow'})+'\\n');
+    if(physicalFile) {
+      const trace=[{event:'start',version:1,clock:'CLOCK_MONOTONIC',identitySupported:true,capacity:4096},
+        {event:'subscribed',window:10,observedMicros:subscribed},...physical,
+        {event:'end',complete:true,lost:0,records:physical.length+1,observedMicros:now()}];
+      fs.writeFileSync(physicalFile,trace.map(row=>JSON.stringify(row)).join('\\n')+'\\n');
+      fs.writeFileSync(animationFile,[{event:'start',version:1,clock:'CLOCK_MONOTONIC'},{event:'display',monitorRefreshMillihertz:60000,frameTimeSource:'render-start'},...animation,{event:'end',complete:true,lost:0,records:animation.length+1,observedMicros:now()}].map(row=>JSON.stringify(row)).join('\\n')+'\\n');
+    }
     process.exit(0);
   });
 }
@@ -566,7 +588,7 @@ setInterval(()=>{},1000);
     path.join(f.bin, "cargo"),
     `#!/usr/bin/env node\nimport fs from 'node:fs'; if(process.argv.includes('--version')) console.log('controlled'); else {fs.mkdirSync(process.env.CARGO_TARGET_DIR+'/release',{recursive:true});fs.writeFileSync(process.env.CARGO_TARGET_DIR+'/release/roonscape-renderer',${JSON.stringify(renderer)},{mode:0o755});}\n`,
   );
-  if (mode === "delayed") {
+  if (mode === "delayed" || mode.startsWith("physical")) {
     await execute("git", ["-C", f.source, "add", "."]);
     await execute("git", [
       "-C",
@@ -845,3 +867,214 @@ test(
     assert.equal(rows.at(-1).complete, true);
   },
 );
+
+for (const mode of [
+  "physical",
+  "physical-missing",
+  "physical-stall",
+  "physical-cancel",
+])
+  test(`physical command preserves ${mode} evidence, resource separation, and cleanup`, async (t) => {
+    const f = await diagnosticFixture(t, mode);
+    const compiler = `#!/usr/bin/env node
+import fs from 'node:fs';
+if(process.argv.includes('--version')) console.log('controlled physical fixture compiler');
+else {
+ const destination=process.argv[process.argv.indexOf('-o')+1];
+ fs.writeFileSync(destination,destination.endsWith('.so')?'': '#!/bin/sh\\necho \\'{"supported":true,"root":1,"outputId":2,"crtc":3,"mode":4,"width":1280,"height":720,"refreshMillihertz":60000,"compositor":false}\\'\\n',{mode:0o755});
+}
+`;
+    await writeFile(path.join(f.bin, "c++"), compiler, { mode: 0o755 });
+    const output = path.join(f.directory, "physical-output");
+    const operation = execute(
+      process.execPath,
+      [
+        path.join(root, "scripts/accept-presentation.mjs"),
+        "--display",
+        ":98765",
+        "--physical-output",
+        "EXAMPLE-1",
+        "--baseline",
+        `worktree:${f.source}`,
+        "--candidate",
+        `worktree:${f.source}`,
+        "--profile",
+        "smoke",
+        "--workloads",
+        "fresh-content",
+        ...(mode === "physical-stall" ? ["--max-missed-refreshes", "0"] : []),
+        ...(mode === "physical-cancel" ? ["--measurement-seconds", "2"] : []),
+        "--output",
+        output,
+      ],
+      { env: f.env },
+    );
+    if (mode === "physical-cancel") {
+      const { waitFor } = await import("./process-harness.mjs");
+      let requested = false;
+      operation.child.stdout.on("data", (chunk) => {
+        if (requested || !chunk.toString().includes("Physical repeat")) return;
+        requested = true;
+        void waitFor(
+          async () =>
+            assert.ok(
+              (await readFile(path.join(output, "content-3.jsonl"))).length > 0,
+            ),
+          operation.child,
+          "partial diagnostic evidence",
+        ).then(
+          () => operation.child.kill("SIGTERM"),
+          () => operation.child.kill("SIGTERM"),
+        );
+      });
+    }
+    const outcome = await operation
+      .then((result) => ({ ...result, code: 0 }))
+      .catch((error) => error);
+    assert.equal(
+      outcome.code,
+      mode === "physical"
+        ? 0
+        : mode === "physical-stall"
+          ? 3
+          : mode === "physical-cancel"
+            ? 130
+            : 2,
+      outcome.stderr,
+    );
+    const report = JSON.parse(
+      await readFile(path.join(output, "report.json"), "utf8"),
+    );
+    assert.equal(report.executionMode, "physical-display");
+    assert.equal(report.summaries["fresh-content"].cpuSeconds.baseline.n, 1);
+    assert.equal(
+      report.runs.filter((run) => run.kind === "resources").length,
+      2,
+    );
+    assert.ok(report.runs.some((run) => run.kind === "physical"));
+    const observed = report.runs.find((run) => run.kind === "physical");
+    if (mode === "physical") {
+      assert.equal(report.status, "complete");
+      assert.ok(
+        observed.physical.publications.some(
+          (p) => p.outcome === "presented" && p.publicationToPresentedMs > 0,
+        ),
+      );
+      assert.equal(report.physicalSummaries["fresh-content"].baseline.n, 1);
+      assert.equal(report.instrumentationOverhead.length, 2);
+    } else if (mode === "physical-cancel") {
+      assert.equal(report.status, "cancelled");
+      assert.equal(observed.status, "cancelled");
+      assert.throws(() => process.kill(observed.process.pid, 0), {
+        code: "ESRCH",
+      });
+      await assert.rejects(
+        readFile(path.join(observed.process.sessionDirectory, "display.json")),
+        { code: "ENOENT" },
+      );
+    } else if (mode === "physical-stall") {
+      assert.equal(report.status, "behavior-failed");
+      assert.equal(observed.physical.status, "complete");
+      assert.equal(observed.physical.contract.status, "failed");
+      assert.ok(observed.physical.cadence.missedPresentations > 0);
+    } else {
+      assert.equal(report.status, "invalid-evidence");
+      assert.equal(observed.physical.cadence, null);
+    }
+    const markdown = await readFile(path.join(output, "report.md"), "utf8");
+    assert.match(markdown, /not optical verification/);
+    assert.match(markdown, /Instrumented CPU seconds/);
+    assert.ok(markdown.split("\n").length < 200, "human report stays concise");
+    assert.match(markdown, /\[JSON report\]\(report.json\)/);
+    for (const run of report.runs) {
+      if (run.evidence)
+        assert.ok((await readFile(path.join(output, run.evidence))).length > 0);
+    }
+  });
+
+test("real native diagnostic recorder connects content and scene evidence without claiming headless delivery", async (t) => {
+  const { createNativeSession } = await import("./native-session.mjs");
+  const owner = await createNativeSession({ width: 1280, height: 720 });
+  t.after(() => owner.close());
+  const f = await fixture(t);
+  await mkdir(path.join(f.source, "src/renderer/src"), { recursive: true });
+  await cp(
+    path.join(root, "src/renderer/src/content_evidence.rs"),
+    path.join(f.source, "src/renderer/src/content_evidence.rs"),
+  );
+  await writeFile(
+    path.join(f.bin, "cargo"),
+    `#!/usr/bin/env node\nimport fs from 'node:fs'; if(process.argv.includes('--version')) console.log('controlled native integration build'); else {fs.mkdirSync(process.env.CARGO_TARGET_DIR+'/release',{recursive:true});fs.copyFileSync(${JSON.stringify(path.join(root, "target/debug/roonscape-renderer"))},process.env.CARGO_TARGET_DIR+'/release/roonscape-renderer');}\n`,
+  );
+  for (const name of ["Xvfb", "xwininfo", "python3"])
+    await rm(path.join(f.bin, name));
+  const { stdout: compilerPath } = await execute("sh", [
+    "-c",
+    "command -v c++",
+  ]);
+  // Substitute only the capability probe: Xvfb is deliberately NOT a physical
+  // display. The real collector/Renderer must still refuse physical claims.
+  const probe =
+    '#!/bin/sh\necho \'{"supported":true,"width":1280,"height":720,"refreshMillihertz":60000,"compositor":false}\'\n';
+  await writeFile(
+    path.join(f.bin, "c++"),
+    `#!/usr/bin/env node
+import fs from 'node:fs';import {spawnSync} from 'node:child_process';
+if(process.argv.some(arg=>arg.endsWith('presentation-probe.cpp'))) fs.writeFileSync(process.argv[process.argv.indexOf('-o')+1],${JSON.stringify(probe)},{mode:0o755});
+else {const child=spawnSync(${JSON.stringify(compilerPath.trim())},process.argv.slice(2),{stdio:'inherit',env:{...process.env,PATH:${JSON.stringify(process.env.PATH)}}});process.exit(child.status??1);}
+`,
+    { mode: 0o755 },
+  );
+  const output = path.join(f.directory, "native-physical");
+  const outcome = await execute(
+    process.execPath,
+    [
+      path.join(root, "scripts/accept-presentation.mjs"),
+      "--display",
+      owner.environment.DISPLAY,
+      "--physical-output",
+      "EXAMPLE-1",
+      "--baseline",
+      `worktree:${f.source}`,
+      "--candidate",
+      `worktree:${f.source}`,
+      "--profile",
+      "smoke",
+      "--measurement-seconds",
+      "1",
+      "--workloads",
+      "fresh-content",
+      "--output",
+      output,
+    ],
+    { env: f.env },
+  ).catch((error) => error);
+  assert.equal(outcome.code, 4, outcome.stderr);
+  const report = JSON.parse(
+    await readFile(path.join(output, "report.json"), "utf8"),
+  );
+  const observed = report.runs.find((run) => run.kind === "physical");
+  assert.equal(observed.physical.status, "unavailable");
+  assert.equal(observed.physical.cadence, null);
+  assert.ok(observed.content.publications.some((p) => p.frame !== null));
+  const animation = (
+    await readFile(path.join(output, observed.animationEvidence), "utf8")
+  )
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(animation.at(-1).complete, true);
+  assert.ok(animation.some((row) => row.event === "after-paint"));
+  for (const run of report.runs) {
+    assert.equal(run.process.ownsDisplay, false);
+    await assert.rejects(
+      readFile(path.join(run.process.sessionDirectory, "display.json")),
+      { code: "ENOENT" },
+    );
+    assert.throws(() => process.kill(run.process.pid, 0), { code: "ESRCH" });
+  }
+  const { stdout } = await execute("xwininfo", ["-root"], {
+    env: owner.environment,
+  });
+  assert.match(stdout, /Width: 1280/);
+});

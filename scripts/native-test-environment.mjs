@@ -23,6 +23,9 @@ export function nativeTestFailures(environment = process.env) {
     for (const [name, minimum, label] of [
       ["gtk4", "4.6", "GTK 4.6"],
       ["libjpeg", undefined, "JPEG"],
+      ["xcb", undefined, "XCB"],
+      ["xcb-present", undefined, "X Present"],
+      ["xcb-randr", undefined, "X RandR"],
     ]) {
       const result = spawnSync(
         pkgConfig,

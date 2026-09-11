@@ -40,6 +40,7 @@ namespace {
 using Gl = QOpenGLExtraFunctions;
 std::atomic<uint64_t> frameSerial{0};
 std::atomic<int64_t> frameTime{0};
+thread_local uint64_t submissionFrame = 0, submissionScene = 0;
 
 struct TextureFormat { GLint internal; GLenum format, type; size_t bytes; };
 TextureFormat textureFormat(uint32_t format) {
@@ -349,6 +350,7 @@ struct RsWindow {
         };
         animation = std::make_unique<Animation>(*window);
         QObject::connect(window.get(),&QQuickWindow::beforeFrameBegin,window.get(),[] {
+            submissionFrame = submissionScene = 0;
             frameTime.store(rs_clock_micros(),std::memory_order_relaxed);
             frameSerial.fetch_add(1,std::memory_order_relaxed);
         },Qt::DirectConnection);
@@ -376,6 +378,7 @@ struct RsWindow {
             const auto serial=renderedSerial.load(std::memory_order_relaxed);
             const auto frame=frameSerial.load(std::memory_order_relaxed);
             const auto time=frameTime.load(std::memory_order_relaxed);
+            submissionFrame = submissionScene = 0;
             QMetaObject::invokeMethod(window.get(),[this,serial,frame,time] {
                 if (callbacks.painted) callbacks.painted(callbacks.context,serial,frame,time);
             },Qt::QueuedConnection);
@@ -559,12 +562,16 @@ struct RsWindow {
         auto fence = worker->fence(gl);
         for (auto &texture : current->textures) texture->lastUse = fence;
         renderedSerial.store(current->serial,std::memory_order_relaxed);
+        submissionFrame = frameSerial.load(std::memory_order_relaxed);
+        submissionScene = current->serial;
     }
 };
 
 struct RsImage { QImage pixels; bool hasAlpha; };
 
 extern "C" {
+uint64_t roonscape_submission_frame() { return submissionFrame; }
+uint64_t roonscape_submission_scene() { return submissionScene; }
 uint64_t roonscape_frame_serial() { return frameSerial.load(std::memory_order_relaxed); }
 int64_t roonscape_frame_time_micros() { return frameTime.load(std::memory_order_relaxed); }
 int64_t rs_clock_micros() {

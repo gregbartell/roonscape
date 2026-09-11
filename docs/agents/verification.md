@@ -142,6 +142,16 @@ assertion. Successful capture generation alone does not establish visual
 correctness; do not generate additional artifacts merely to demonstrate that
 verification ran.
 
+## Explicit physical presentation acceptance
+
+Use [Physical presentation acceptance](physical-presentation.md) when an existing
+physical X11 display/output is explicitly selected for delivery evidence. It is
+separate from routine resource comparisons and repository verification. Report
+unavailable physical validation clearly; do not substitute headless readiness or
+swap callbacks for independent presentation completions. Inspect collector
+integrity and instrumentation overhead, and distinguish requested cadence
+contracts from advisory CPU/RSS changes.
+
 ## Live Capture Session helper tests
 
 `npm run test:live-capture-helpers` runs the existing option/environment,

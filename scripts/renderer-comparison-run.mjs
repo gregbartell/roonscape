@@ -12,7 +12,12 @@ import {
   processFailure,
 } from "./process-harness.mjs";
 import { contentEvidence } from "./renderer-comparison-content.mjs";
+import {
+  readPhysicalEvidence,
+  probePhysical,
+} from "./physical-presentation-run.mjs";
 import { resourceMetrics } from "./renderer-comparison-report.mjs";
+import { failureOutcome } from "./renderer-comparison-outcome.mjs";
 
 export async function measureRenderer(
   binary,
@@ -46,15 +51,24 @@ export async function measureRenderer(
   });
   let failure;
   const started = performance.now();
+  const diagnostic = run.kind === "content" || run.kind === "physical";
   try {
     session = await createNativeSession({
       width: options.width,
       height: options.height,
       signal,
+      ...(options.physical && {
+        physicalDisplay: {
+          display: options.physical.display,
+          authority: options.physicalTools.authority,
+        },
+      }),
       environment: {
         PATH: process.env.PATH,
         LANG: "C.UTF-8",
-        LIBGL_ALWAYS_SOFTWARE: "1",
+        ...(options.physical
+          ? { QT_XCB_GL_INTEGRATION: "xcb_glx" }
+          : { LIBGL_ALWAYS_SOFTWARE: "1" }),
       },
     });
     const configuration = JSON.parse(
@@ -82,7 +96,7 @@ export async function measureRenderer(
         : "0",
       ...(workload.static ? { ROONSCAPE_STATIC_FIXTURE: "1" } : {}),
     };
-    if (run.kind === "content") {
+    if (diagnostic) {
       run.evidence = `content-${run.order}.jsonl`;
       const controlPath = path.join(session.runtimeDirectory, "content.sock");
       controlServer = createServer((socket) => {
@@ -98,12 +112,37 @@ export async function measureRenderer(
       environment.ROONSCAPE_CONTENT_EVIDENCE = path.join(output, run.evidence);
       environment.ROONSCAPE_CONTENT_EVIDENCE_CONTROL = controlPath;
     }
+    if (run.kind === "physical") {
+      run.presentationEvidence = `presentation-${run.order}.jsonl`;
+      run.animationEvidence = `animation-${run.order}.jsonl`;
+      environment.LD_PRELOAD = options.physicalTools.collector.path;
+      environment.ROONSCAPE_PRESENT_EVIDENCE = path.join(
+        output,
+        run.presentationEvidence,
+      );
+      environment.ROONSCAPE_ANIMATION_EVIDENCE = path.join(
+        output,
+        run.animationEvidence,
+      );
+    }
+    if (options.physical)
+      run.capabilities = await probePhysical(
+        options.physicalTools.probe.path,
+        options,
+        signal,
+      );
     renderer = session.startProcess(
       binary,
       ["--config", session.configurationPath],
       environment,
     );
     await renderer.spawned;
+    run.process = {
+      pid: renderer.pid,
+      sessionDirectory: session.runtimeDirectory,
+      display: session.environment.DISPLAY,
+      ownsDisplay: !options.physical,
+    };
     await waitFor(
       () => {
         if (!connection) throw new Error("waiting for snapshot connection");
@@ -263,7 +302,7 @@ export async function measureRenderer(
         new Error("unavailable or invalid resource evidence"),
         { invalidEvidence: true },
       );
-    if (run.kind === "content") {
+    if (diagnostic) {
       run.phase = "drain";
       const drainStarted = performance.now();
       await delay(options.drainMs ?? 1000, undefined, { signal });
@@ -284,7 +323,9 @@ export async function measureRenderer(
         run.content = { status: "invalid-evidence", reason: error.message };
         if (
           code !== 0 &&
-          !/overflow|Content evidence/i.test(renderer.capturedStandardError)
+          !/overflow|(?:Content|Animation) evidence/i.test(
+            renderer.capturedStandardError,
+          )
         )
           throw processFailure(
             "diagnostic Renderer",
@@ -294,8 +335,44 @@ export async function measureRenderer(
           );
         throw error;
       }
-      if (code !== 0)
-        throw processFailure("diagnostic Renderer", renderer, code, exitSignal);
+      if (code !== 0) {
+        const error = processFailure(
+          "diagnostic Renderer",
+          renderer,
+          code,
+          exitSignal,
+        );
+        if (
+          /(?:Content|Animation) evidence/i.test(renderer.capturedStandardError)
+        )
+          error.invalidEvidence = true;
+        throw error;
+      }
+      if (run.kind === "physical") {
+        run.physical = await readPhysicalEvidence(output, run, options);
+        const after = await probePhysical(
+          options.physicalTools.probe.path,
+          options,
+          signal,
+        );
+        if (JSON.stringify(after) !== JSON.stringify(run.capabilities))
+          throw Object.assign(
+            new Error("physical display conditions changed during measurement"),
+            { invalidEvidence: true },
+          );
+        if (run.physical.status !== "complete")
+          throw Object.assign(
+            new Error(run.physical.reasons.join("; ")),
+            run.physical.status === "unavailable"
+              ? { unsupported: true }
+              : { invalidEvidence: true },
+          );
+        if (run.physical.contract.status === "failed")
+          throw Object.assign(
+            new Error("requested physical cadence contract failed"),
+            { behaviorFailure: true },
+          );
+      }
       if (run.content.failures.length)
         throw Object.assign(new Error(run.content.failures.join("; ")), {
           behaviorFailure: true,
@@ -304,13 +381,7 @@ export async function measureRenderer(
     run.status = "complete";
   } catch (error) {
     failure = error;
-    run.status = signal.aborted
-      ? "cancelled"
-      : error.invalidEvidence
-        ? "invalid-evidence"
-        : error.behaviorFailure
-          ? "behavior-failed"
-          : "execution-failed";
+    run.status = failureOutcome(error, signal).status;
     run.error = error.message;
     throw error;
   } finally {

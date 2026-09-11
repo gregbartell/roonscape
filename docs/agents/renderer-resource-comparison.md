@@ -45,6 +45,11 @@ this command does not translate old contracts. Workload content comes from the
 invoking command's maintained Fixture Scenarios, with common copied artwork.
 Workload schedules, content, and artwork digests are retained in `report.json`.
 
+For explicitly selected physical-display delivery evidence, use the separate
+[physical presentation acceptance command](physical-presentation.md). Its
+instrumented passes do not change this command's clean resource policy, and an
+unrequested physical check is not a routine comparison failure.
+
 ## Workload and duration choices
 
 The default selects all ten workloads at 1280×720. It uses two repeats,
@@ -119,10 +124,11 @@ Actual sampling intervals and receipt times are retained. First/last samples
 inside measurement bound the measured CPU interval; the interval can be shorter
 than the scheduled duration. Sampled peak RSS can miss short transients.
 
-Matching `report.md` and `report.json` contain per-repeat CPU, utilization,
-peak RSS, first/last RSS and growth, descriptive mean/range/sample standard
-deviation, absolute and relative deltas, actual durations/order, and links to
-retained evidence. RSS growth and repeat endpoints can motivate longer runs;
+`report.md` summarizes per-repeat CPU, utilization, peak RSS, first/last RSS
+and growth, descriptive means/sample standard deviations, absolute and relative
+deltas, actual durations/order, and links to retained evidence. The matching
+`report.json` also retains full ranges, conditions, schedules and observations.
+RSS growth and repeat endpoints can motivate longer runs;
 they do not establish a memory leak. Zero baselines have undefined relative
 deltas, unavailable metrics remain null, and one repeat has no variation
 estimate. No confidence interval, statistical significance, physical cadence,

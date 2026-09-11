@@ -63,6 +63,7 @@ export function summarizeAnimationEvidence(
   const misses = [];
   const renderStartGaps = [];
   const deliveryGaps = [];
+  const observedDeliveryGaps = [];
   const missedPhysicalDeadlines = new Set();
   let changedPaints = 0;
   let unchangedPaints = 0;
@@ -102,6 +103,12 @@ export function summarizeAnimationEvidence(
         ]),
       );
     }
+    if (
+      !window ||
+      (prior.delivery.presentedMicros < window.endMicros &&
+        prior.delivery.presentedMicros + gapMicros > window.startMicros)
+    )
+      observedDeliveryGaps.push(gap);
     if (gap.missedPresentations > 0) deliveryGaps.push(gap);
   };
 
@@ -304,6 +311,7 @@ export function summarizeAnimationEvidence(
     // missing observations cannot establish whether a change was required.
     missedPresentations: missedPhysicalDeadlines.size,
     deliveryGaps,
+    observedDeliveryGaps,
     unchangedPresentedStates,
     ...(association && { presentationAssociation: association.counts }),
   };

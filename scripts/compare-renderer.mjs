@@ -1,6 +1,7 @@
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
-function options(arguments_) {
+export function options(arguments_) {
   const values = {};
   for (let index = 0; index < arguments_.length; index += 2) {
     const key = arguments_[index];
@@ -65,14 +66,19 @@ function options(arguments_) {
     height,
   };
 }
-let selected;
-try {
-  selected = options(process.argv.slice(2));
-} catch (error) {
-  console.error(error.message);
-  process.exitCode = 2;
-}
-if (selected) {
-  const { compare } = await import("./renderer-comparison.mjs");
-  process.exitCode = await compare(selected);
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  let selected;
+  try {
+    selected = options(process.argv.slice(2));
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 2;
+  }
+  if (selected) {
+    const { compare } = await import("./renderer-comparison.mjs");
+    process.exitCode = await compare(selected);
+  }
 }
