@@ -47,15 +47,17 @@ Workload schedules, content, and artwork digests are retained in `report.json`.
 
 ## Workload and duration choices
 
-The default selects all seven workloads at 1280×720. It uses three repeats,
-each with two seconds of warmup and eight seconds of measurement per Renderer
-and workload: seven minutes of scheduled work, plus startup and cleanup. It
+The default selects all ten workloads at 1280×720. It uses two repeats,
+each with one second of warmup and eight seconds of measurement per Renderer
+and workload. Three content workloads also run in separate diagnostic processes
+on supported builds: 52 runs, about eight minutes of scheduled work including
+diagnostic drain, plus startup and cleanup. It
 targets completion within ten minutes **after preparation and builds**. This
 is a practical target, not a machine-specific CI assertion. Every selected
 workload runs; the command never truncates the set to meet a time budget.
 
 `--profile thorough` uses five repeats with five seconds of warmup and thirty
-seconds of measurement (about 41 minutes of scheduled work for all workloads).
+seconds of measurement (about 76 minutes of scheduled work including diagnostic passes).
 `--profile smoke` uses one repeat with 0.1 seconds of warmup and 0.4 seconds of
 measurement, solely to exercise the plumbing. Smoke does not cover full cycles
 or repeat variation. Normal verification runs deterministic command tests and
@@ -65,15 +67,18 @@ evidence. Full comparisons are invoked separately.
 
 Use `--workloads` with a comma-separated selection:
 
-| Name | Coverage |
-| --- | --- |
-| `progress` | Determinate progress and continuing local timing |
-| `lyrics` | Settled Synchronized Lyric Composition and adjacent Natural Cue Handoffs |
-| `lyric-transitions` | Entry and exit of Synchronized Lyric Composition, with an Intentional Blank |
-| `replacements` | Now Playing Transitions and replacements interrupted 100 ms apart |
-| `activity` | Starting activity, Idle, inactivity dimming/repositioning, and return to Playing |
-| `static` | Static Fixture Mode |
-| `reduced-animation` | Lyric, Now Playing, and Presentation Status changes with reduced animation |
+| Name                 | Coverage                                                                         |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `progress`           | Determinate progress and continuing local timing                                 |
+| `lyrics`             | Settled Synchronized Lyric Composition and adjacent Natural Cue Handoffs         |
+| `lyric-transitions`  | Entry and exit of Synchronized Lyric Composition, with an Intentional Blank      |
+| `replacements`       | Now Playing Transitions and replacements interrupted 100 ms apart                |
+| `activity`           | Starting activity, Idle, inactivity dimming/repositioning, and return to Playing |
+| `static`             | Static Fixture Mode                                                              |
+| `reduced-animation`  | Lyric, Now Playing, and Presentation Status changes with reduced animation       |
+| `fresh-content`      | Unique artwork paths/revisions first published inside measurement                |
+| `reused-content`     | Alternating already-prepared artwork identities                                  |
+| `superseded-content` | Fresh replacements interrupted 10 ms apart, followed by a settled replacement    |
 
 `--resolution WIDTHxHEIGHT` chooses a common landscape viewport from at least
 1280×720 through 8192 pixels wide. For a focused investigation,
@@ -95,7 +100,11 @@ machine/OS/toolchain conditions, CPU affinity, load, font inventory digest, and
 instrumentation. Environmental load and thermal drift remain sources of noise.
 
 Publications use elapsed-time deadlines, independent of Renderer reads or paint
-acknowledgements. Warmup and measurement each start the same schedule. Planned
+acknowledgements. The original workloads restart their schedule at measurement. Content workloads
+warm up only the seed; fresh measured artwork identities never enter the
+Renderer during warmup. Assets are materialized before measurement, with
+identical bytes and paths on both sides. This exercises uncached Renderer
+preparation, without claiming a cold OS file cache. Planned
 and actual publication times are retained. Backpressure, missing publications,
 or delivery more than 50 ms late invalidate evidence; they never extend the
 workload or make it easier for a slow Renderer. These are workload-validity
@@ -117,16 +126,60 @@ retained evidence. RSS growth and repeat endpoints can motivate longer runs;
 they do not establish a memory leak. Zero baselines have undefined relative
 deltas, unavailable metrics remain null, and one repeat has no variation
 estimate. No confidence interval, statistical significance, physical cadence,
-fresh-content readiness, or correctness/presentation acceptance is implied.
+or correctness/presentation acceptance is implied.
 No universal CPU/RSS threshold is applied, and increases are advisory.
 
-Exit 0 means complete resource evidence, 2 invalid evidence (or invalid CLI
-syntax), 1 execution/prerequisite failure, and 130 SIGINT/SIGTERM cancellation.
+Exit 0 means completed collection (individual content observations can remain
+unavailable or incomplete), 2 invalid evidence (or invalid CLI syntax),
+3 an observed content behavior failure, 1 execution/prerequisite failure,
+and 130 SIGINT/SIGTERM cancellation.
 Failure and cancellation retain partial reports and completed artifacts while
 bounded cleanup stops only owned processes and removes private runtime trees.
 The command does not run correctness or presentation contracts: run the required
 repository checks separately and report their failures separately from resource
 findings. SIGKILL or host failure cannot run cleanup.
+
+## Content observations
+
+The three content workloads run again after clean resource collection, in
+separate instrumented processes. Their CPU/RSS samples remain identifiable in
+JSON and never enter clean resource summaries. Builds without the content
+recorder report diagnostic coverage unavailable. The report identifies recorder
+version, source, bounds, clock, and drain duration; comparing different recorder
+implementations can introduce measurement differences.
+
+Publication and content identities, artwork digests, preparation tokens, frame
+and scene identities use the existing Snapshot revision without changing its
+contract. Timestamps are microseconds on Linux CLOCK_MONOTONIC within this host
+boot; windows and actual publication timestamps use the same clock. Preparation
+completion means prepared resources are available to the worker. Native readiness
+means a native draw callback observed the installed content, including positive
+artwork weight. Neither proves physical display delivery or first visibility.
+
+Per-publication and per-repeat latencies, outcome counts, descriptive variation,
+and baseline/candidate deltas appear in Markdown/JSON. Repeat means include only
+available observations; compare identities and outcome counts before interpreting
+latency differences. `delayed` means readiness was observed after measurement in
+the bounded drain; `superseded` means a replacement overtook the publication;
+`incomplete` means received content had no readiness before shutdown; `unavailable`
+means no receipt or no supported recorder. Missing milestones remain null.
+Preparation errors, failed prepared-resource reuse, retained handles after normal
+shutdown, and first drawing of discarded preparations are behavioral failures.
+
+Texture creation/release records describe Rust handle lifetime, including peak
+retained counts and a timeline across replacements. They do not observe GPU
+retirement fences or prove immediate GPU deallocation. Compare these with clean
+sampled RSS endpoints, peaks, and repeat variation; use longer repeated workloads
+to investigate suspected growth. No universal resource threshold is imposed.
+
+The opt-in recorder enqueues without waiting on the rendering thread. A worker
+writes the file; the queue holds at most 1,024 records and recording permits
+65,536 records of at most 64 KiB each. The reader also rejects files over 64 MiB.
+Overflow, malformed records, missing normal-shutdown footer, or lost records
+invalidate evidence. Normal completion allows a one-second diagnostic drain
+(0.2 seconds for smoke), requests native shutdown, and drains the writer, with a
+five-second process bound. Cancellation retains partial observations and reports;
+partial data does not become completed latency evidence.
 
 Handoffs should link the report and explain measured increases, deliberate
 tradeoffs, behavioral improvements, omitted coverage, and uncertainty. Do not

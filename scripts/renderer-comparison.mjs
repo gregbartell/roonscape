@@ -25,6 +25,7 @@ import {
   coverage,
   profiles,
   workloads,
+  prepareWorkloadContent,
   workloadRoot,
 } from "./renderer-comparison-workloads.mjs";
 import { measureRenderer } from "./renderer-comparison-run.mjs";
@@ -55,7 +56,6 @@ export async function compare(options) {
     report.selectedCoverage = selected.map((workload) => workload.name);
     report.omittedCoverage = [
       ...coverage.filter((name) => !report.selectedCoverage.includes(name)),
-      "fresh-content readiness",
       "physical presentation cadence",
       "GPU resources",
       "correctness/presentation contracts",
@@ -107,6 +107,7 @@ export async function compare(options) {
       "renderer-comparison-workloads.mjs",
       "renderer-comparison-run.mjs",
       "renderer-comparison-report.mjs",
+      "renderer-comparison-content.mjs",
       "native-session.mjs",
       "process-harness.mjs",
     ];
@@ -122,6 +123,16 @@ export async function compare(options) {
         ),
       ),
     );
+    report.conditions.contentInstrumentation = {
+      version: 1,
+      clock: "CLOCK_MONOTONIC",
+      queueRecords: 1024,
+      maximumRecords: 65536,
+      maximumRecordBytes: 65536,
+      normalDrainMs: report.profile.drainMs ?? 1000,
+      scope:
+        "separate diagnostic processes; preparation and native draw callbacks, not physical delivery",
+    };
     report.conditions.instrumentation.differencesBetweenSides =
       "none: both sides use this driver and sampler with identical settings";
     report.conditions.executables = {};
@@ -251,47 +262,64 @@ export async function compare(options) {
       );
       await writeReport(output, report);
     }
-    await mkdir(path.join(output, "content"));
-    for (const workload of selected)
-      for (const file of Object.keys(workload.artwork))
-        await copyFile(
-          path.join(workloadRoot, file),
-          path.join(output, "content", path.basename(file)),
-        );
+    await prepareWorkloadContent(selected, report.profile, output);
     report.workloads = selected;
     report.timing.preparationAndBuildMs = performance.now() - started;
     const measurementStarted = performance.now();
     report.status = "measuring";
-    for (let repeat = 0; repeat < report.profile.repeats; repeat++) {
-      const order =
-        repeat % 2 ? ["candidate", "baseline"] : ["baseline", "candidate"];
-      for (const workload of selected)
-        for (const side of order) {
-          const run = {
-            side,
-            workload: workload.name,
-            repeat: repeat + 1,
-            order: report.runs.length + 1,
-            status: "running",
-            phase: "startup",
-            publications: [],
-            samples: [],
-          };
-          report.runs.push(run);
-          console.log(`Repeat ${run.repeat}: ${side} / ${workload.name}`);
-          try {
-            await measureRenderer(
-              path.join(output, side, "target/release/roonscape-renderer"),
-              workload,
-              { ...options, ...report.profile },
-              run,
-              output,
-              signal,
+    for (const kind of ["resources", "content"]) {
+      const selectedRuns =
+        kind === "content"
+          ? selected.filter((workload) => workload.diagnostic)
+          : selected;
+      for (let repeat = 0; repeat < report.profile.repeats; repeat++) {
+        const order =
+          repeat % 2 ? ["candidate", "baseline"] : ["baseline", "candidate"];
+        for (const workload of selectedRuns)
+          for (const side of order) {
+            const run = {
+              side,
+              kind,
+              workload: workload.name,
+              repeat: repeat + 1,
+              order: report.runs.length + 1,
+              status: "running",
+              phase: "startup",
+              publications: [],
+              samples: [],
+            };
+            report.runs.push(run);
+            if (
+              kind === "content" &&
+              !report.sources[side].manifest.some(
+                (file) => file.path === "src/renderer/src/content_evidence.rs",
+              )
+            ) {
+              run.status = "unavailable";
+              run.content = {
+                status: "unavailable",
+                reason:
+                  "This Renderer build does not provide content observations",
+              };
+              continue;
+            }
+            console.log(
+              `${kind === "content" ? "Diagnostic repeat" : "Repeat"} ${run.repeat}: ${side} / ${workload.name}`,
             );
-          } finally {
-            await writeReport(output, report);
+            try {
+              await measureRenderer(
+                path.join(output, side, "target/release/roonscape-renderer"),
+                workload,
+                { ...options, ...report.profile },
+                run,
+                output,
+                signal,
+              );
+            } finally {
+              await writeReport(output, report);
+            }
           }
-        }
+      }
     }
     report.timing.comparisonMs = performance.now() - measurementStarted;
     report.conditions.loadAfter = os.loadavg();
@@ -302,10 +330,18 @@ export async function compare(options) {
       ? "cancelled"
       : error.invalidEvidence
         ? "invalid-evidence"
-        : "execution-failed";
+        : error.behaviorFailure
+          ? "behavior-failed"
+          : "execution-failed";
     report.error = error.message;
     console.error(error.message);
-    exitCode = signal.aborted ? 130 : error.invalidEvidence ? 2 : 1;
+    exitCode = signal.aborted
+      ? 130
+      : error.invalidEvidence
+        ? 2
+        : error.behaviorFailure
+          ? 3
+          : 1;
   } finally {
     try {
       if (scratch) await rm(scratch, { recursive: true, force: true });

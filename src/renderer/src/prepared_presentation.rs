@@ -356,6 +356,17 @@ impl<'window> PresentationPreparation<'window> {
     }
 
     fn image(&self, path: &Path) -> Result<PreparedArtwork<'window>, String> {
+        crate::content_evidence::record(
+            || serde_json::json!({"event":"artwork-started","path":path}),
+        );
+        let result = self.decode_image(path);
+        crate::content_evidence::record(
+            || serde_json::json!({"event":"artwork-completed","path":path,"resource":result.as_ref().ok().map(|image|image.texture.identity()),"success":result.is_ok()}),
+        );
+        result
+    }
+
+    fn decode_image(&self, path: &Path) -> Result<PreparedArtwork<'window>, String> {
         if let Ok(image) = crate::qt_window::DecodedImage::open(path) {
             let size = image.size;
             let pending = self.uploader.start_image(&image)?;

@@ -1,3 +1,6 @@
+#[allow(dead_code)]
+#[path = "../src/content_evidence.rs"]
+mod content_evidence;
 // Qt must run on the process's main thread. This harness exercises the same
 // native window and scene interface as the Renderer under the native session.
 #[allow(dead_code)]

@@ -1,4 +1,5 @@
 mod animation_evidence;
+mod content_evidence;
 mod displayed_state;
 mod lyric_motion;
 mod native_runtime;
@@ -46,10 +47,13 @@ fn main() -> ExitCode {
 }
 fn run() -> Result<(), Box<dyn Error>> {
     animation_evidence::initialize()?;
+    content_evidence::initialize()?;
     let result = native_runtime::run();
     let evidence = animation_evidence::finish();
+    let content = content_evidence::finish();
     result?;
     evidence?;
+    content?;
     Ok(())
 }
 

@@ -1,3 +1,6 @@
+#[allow(dead_code)]
+#[path = "../src/content_evidence.rs"]
+mod content_evidence;
 // The production preparation and presentation code runs with one real upload
 // context. Virtual presentation times make transition assertions deterministic.
 #[allow(dead_code)]
@@ -627,6 +630,45 @@ fn arriving_artwork_is_prepared_once_and_keyed_by_revision(
     );
 }
 
+fn repeated_replacements_evict_old_prepared_artwork(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut first = None;
+    for revision in 1..=12 {
+        let path = temporary.path().join(format!("replacement-{revision}.jpg"));
+        std::fs::copy(
+            repository.join("src/shared/fixtures/artwork/playing.jpg"),
+            &path,
+        )
+        .unwrap();
+        let mut incoming = fixture("playing");
+        if let Presentation::NowPlaying(value) = &mut incoming {
+            value.artwork_path = Some(path.to_string_lossy().into_owned());
+            value.artwork_revision = Some(revision);
+        }
+        let prepared = preparation
+            .prepare(&incoming, Viewport::new(1280, 720), repository, true)
+            .unwrap();
+        std::fs::remove_file(path).unwrap();
+        let reused = preparation
+            .prepare(&incoming, Viewport::new(1280, 720), repository, true)
+            .unwrap();
+        assert_eq!(
+            prepared.artwork.as_ref().unwrap().identity(),
+            reused.artwork.as_ref().unwrap().identity()
+        );
+        first.get_or_insert(incoming);
+    }
+    assert!(
+        preparation
+            .prepare(&first.unwrap(), Viewport::new(1280, 720), repository, true)
+            .is_err(),
+        "repeated replacements must evict old artwork instead of retaining every image"
+    );
+}
+
 fn decoded_artwork(repository: &Path) {
     let first =
         qt_window::DecodedImage::open(&repository.join("src/shared/fixtures/artwork/playing.jpg"))
@@ -700,6 +742,7 @@ fn main() {
     let window = Window::new(Viewport::new(1280, 720), false).unwrap();
     let mut preparation = PresentationPreparation::new(window.uploader(), typography, 1.0).unwrap();
     decoded_artwork(repository);
+    repeated_replacements_evict_old_prepared_artwork(&mut preparation, repository);
     arriving_artwork_is_prepared_once_and_keyed_by_revision(&mut preparation, repository);
     artwork_palettes(&mut preparation, repository);
     gradient_reuse_survives_content_changes(&mut preparation, repository);

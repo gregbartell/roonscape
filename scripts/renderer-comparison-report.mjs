@@ -31,6 +31,7 @@ export function summarizeRuns(runs, selected) {
             runs
               .filter(
                 (run) =>
+                  run.kind !== "content" &&
                   run.workload === name &&
                   run.side === side &&
                   run.status === "complete",
@@ -63,6 +64,61 @@ export function summarizeRuns(runs, selected) {
         }),
       ),
     ]),
+  );
+}
+const latencyMetrics = [
+  "preparationMs",
+  "publicationToPreparedMs",
+  "publicationToNativeDrawMs",
+];
+export function summarizeContent(runs, selected) {
+  return Object.fromEntries(
+    selected.map((name) => {
+      const matching = runs.filter(
+        (run) => run.kind === "content" && run.workload === name,
+      );
+      return [
+        name,
+        Object.fromEntries(
+          latencyMetrics.map((metric) => {
+            // Each repeat contributes one mean, so a faster side cannot gain weight
+            // merely by completing more publications. Outcome counts retain censoring.
+            const sideSummary = (side) =>
+              summary(
+                matching
+                  .filter(
+                    (run) =>
+                      run.side === side && run.content?.status === "complete",
+                  )
+                  .map(
+                    (run) =>
+                      summary(run.content.publications.map((p) => p[metric]))
+                        .mean,
+                  ),
+              );
+            const baseline = sideSummary("baseline"),
+              candidate = sideSummary("candidate");
+            const absoluteDelta =
+              baseline.mean === null || candidate.mean === null
+                ? null
+                : candidate.mean - baseline.mean;
+            return [
+              metric,
+              {
+                baseline,
+                candidate,
+                absoluteDelta,
+                relativeDeltaPercent:
+                  absoluteDelta === null || baseline.mean === 0
+                    ? null
+                    : (absoluteDelta / Math.abs(baseline.mean)) * 100,
+                note: "Completed observations only; compare outcome counts and publication identities before interpreting latency deltas",
+              },
+            ];
+          }),
+        ),
+      ];
+    }),
   );
 }
 export function resourceMetrics(samples) {
@@ -100,6 +156,10 @@ export function resourceMetrics(samples) {
 }
 export async function writeReport(output, report) {
   report.summaries = summarizeRuns(report.runs, report.selectedCoverage);
+  report.contentSummaries = summarizeContent(
+    report.runs,
+    report.selectedCoverage,
+  );
   const lines = [
     "# Renderer resource comparison",
     "",
@@ -107,7 +167,7 @@ export async function writeReport(output, report) {
     "",
     "CPU seconds include user + system time of all Renderer threads; CPU % is seconds / sampled wall seconds × 100 (one logical CPU = 100%, may exceed 100%). RSS is bytes sampled for the Renderer process only, excluding Xvfb, publisher, sampler, descendants, and GPU memory. RSS peaks can miss short transients. RSS change is end minus start within each fresh process; compare per-repeat endpoints for repeated-work behavior, not a leak diagnosis.",
     "",
-    "No tracing or profiling. Headless software rendering does not establish physical display cadence, content readiness, correctness, or presentation acceptance. No statistical confidence is claimed. One repeat cannot describe repeat variation; unavailable values and zero-baseline relative deltas are null. Do not run substantial analysis concurrently with resource collection.",
+    "Clean resource runs have no diagnostic recorder. Separate content runs observe preparation and native drawing with bounded asynchronous recording; their CPU/RSS values are excluded from resource summaries. Headless software rendering does not establish physical display delivery or presentation acceptance. No statistical confidence is claimed. One repeat cannot describe repeat variation; unavailable values and zero-baseline relative deltas are null. Do not run substantial analysis concurrently with resource collection.",
     "",
     `Selected: ${report.selectedCoverage.join(", ")}. Omitted: ${report.omittedCoverage.join(", ")}.`,
     "",
@@ -143,7 +203,7 @@ export async function writeReport(output, report) {
     "| Order | Side / workload / repeat | CPU seconds | CPU % | Peak RSS bytes | First RSS bytes | Last RSS bytes | RSS change bytes | Sampled ms |",
     "| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   );
-  for (const run of report.runs) {
+  for (const run of report.runs.filter((run) => run.kind !== "content")) {
     const values = [
       "cpuSeconds",
       "cpuPercent",
@@ -156,6 +216,50 @@ export async function writeReport(output, report) {
     lines.push(
       `| ${run.order} | ${run.side} / ${run.workload} / ${run.repeat} | ${values.join(" | ")} |`,
     );
+  }
+  lines.push(
+    "",
+    "## Content preparation and native readiness",
+    "",
+    "These timestamps observe preparation and native draw callbacks, not physical first-visible-content latency. Each repeat contributes one mean of available publication latencies. Missing observations remain null; delayed/superseded/incomplete outcomes are retained and must be considered before comparing means.",
+    "",
+    "| Workload / milliseconds | Baseline mean | Candidate mean | Absolute delta | Relative % | Repeats B/C |",
+    "| --- | ---: | ---: | ---: | ---: | ---: |",
+  );
+  for (const [workload, values] of Object.entries(report.contentSummaries))
+    for (const [metric, value] of Object.entries(values))
+      lines.push(
+        `| ${workload} / ${metric} | ${format(value.baseline.mean)} | ${format(value.candidate.mean)} | ${format(value.absoluteDelta)} | ${format(value.relativeDeltaPercent)} | ${value.baseline.n}/${value.candidate.n} |`,
+      );
+  for (const run of report.runs.filter((run) => run.kind === "content")) {
+    lines.push(
+      "",
+      `### ${run.side} / ${run.workload} / repeat ${run.repeat}`,
+      "",
+      `Status: ${run.content?.status ?? run.status}. ${run.content?.reason ?? ""}${run.evidence ? ` [Raw observations](${run.evidence}).` : ""}`,
+    );
+    if (!run.content?.publications) continue;
+    const counts = {};
+    for (const publication of run.content.publications)
+      counts[publication.outcome] = (counts[publication.outcome] ?? 0) + 1;
+    run.content.outcomes = counts;
+    run.content.latencies = Object.fromEntries(
+      latencyMetrics.map((metric) => [
+        metric,
+        summary(run.content.publications.map((p) => p[metric])),
+      ]),
+    );
+    lines.push(
+      "",
+      `Outcomes: ${JSON.stringify(counts)}. Texture handles: peak ${run.content.resources.peakRetained}, after shutdown ${run.content.resources.retainedAfterShutdown}. These are Rust handle lifetimes, not GPU retirement or memory allocations. Draws while incoming content was not ready: ${run.content.continuingPresentation.drawsWhileIncomingNotReady}.`,
+      "",
+      "| Publication / content | Outcome | Preparation ms | Publication to prepared ms | Publication to native draw ms | Frame / scene / artwork resource |",
+      "| --- | --- | ---: | ---: | ---: | --- |",
+    );
+    for (const p of run.content.publications)
+      lines.push(
+        `| ${p.revision} / ${p.contentId} | ${p.outcome} | ${format(p.preparationMs)} | ${format(p.publicationToPreparedMs)} | ${format(p.publicationToNativeDrawMs)} | ${p.frame ?? "unavailable"} / ${p.scene ?? "unavailable"} / ${p.artworkResource ?? "unavailable"} |`,
+      );
   }
   // Keep the human report self-contained without duplicating raw sample/publication arrays.
   lines.push(
@@ -170,6 +274,7 @@ export async function writeReport(output, report) {
         timing: report.timing,
         workloads: report.workloads,
         summaries: report.summaries,
+        contentSummaries: report.contentSummaries,
       },
       null,
       2,

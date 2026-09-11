@@ -124,7 +124,7 @@ test("compares isolated optimized sources and preserves a dirty candidate", asyn
   );
 });
 
-async function compareFixture(f, extra = []) {
+async function compareFixture(f, extra = [], workload = "progress") {
   const output = path.join(
     f.directory,
     `evidence-${Math.random().toString(16).slice(2)}`,
@@ -142,7 +142,7 @@ async function compareFixture(f, extra = []) {
         "--profile",
         "smoke",
         "--workloads",
-        "progress",
+        workload,
         "--output",
         output,
         ...extra,
@@ -328,13 +328,38 @@ test("real Renderer consumes synthetic workloads while resources reach reports",
   );
   for (const name of ["Xvfb", "xwininfo", "python3"])
     await rm(path.join(f.bin, name));
-  const { report, outcome } = await compareFixture(f, [
-    "--measurement-seconds",
-    "0.8",
-  ]);
+  await mkdir(path.join(f.source, "src/renderer/src"), { recursive: true });
+  await cp(
+    path.join(root, "src/renderer/src/content_evidence.rs"),
+    path.join(f.source, "src/renderer/src/content_evidence.rs"),
+  );
+  const { report, outcome } = await compareFixture(
+    f,
+    ["--measurement-seconds", "3"],
+    "fresh-content",
+  );
   assert.equal(report.status, "complete", outcome.stderr);
-  assert.ok(report.runs.every((run) => run.metrics.peakRssBytes > 0));
-  assert.ok(report.runs.every((run) => run.publications.length >= 3));
+  assert.ok(
+    report.runs
+      .filter((run) => run.kind === "resources")
+      .every((run) => run.metrics.peakRssBytes > 0),
+  );
+  assert.ok(
+    report.runs
+      .filter((run) => run.kind === "resources")
+      .every((run) => run.publications.length >= 3),
+  );
+  const diagnostic = report.runs.find(
+    (run) => run.side === "candidate" && run.kind === "content",
+  );
+  assert.equal(diagnostic.content.status, "complete");
+  assert.ok(
+    diagnostic.content.publications.some(
+      (publication) =>
+        ["ready", "delayed"].includes(publication.outcome) && publication.fresh,
+    ),
+    JSON.stringify(diagnostic.content.publications),
+  );
 });
 
 test("interrupted replacements keep identical elapsed-time publications on both sides", async (t) => {
@@ -461,5 +486,362 @@ test(
       assert.throws(() => process.kill(owned.pid, 0), { code: "ESRCH" });
       await assert.rejects(readFile(owned.socket), { code: "ENOENT" });
     }
+  },
+);
+
+test("fresh content has distinct measured identities and a separate diagnostic pass", async (t) => {
+  const f = await fixture(t);
+  const { report, outcome } = await compareFixture(f, [], "fresh-content");
+  assert.equal(report.status, "complete", outcome.stderr);
+  assert.deepEqual(report.selectedCoverage, ["fresh-content"]);
+  assert.equal(report.runs.filter((run) => run.kind === "resources").length, 2);
+  assert.equal(report.runs.filter((run) => run.kind === "content").length, 2);
+  const measured = report.runs[0].publications.filter(
+    (p) => p.phase === "measurement",
+  );
+  assert.ok(measured.length > 1);
+  assert.notEqual(measured[0].contentId, measured[1].contentId);
+  assert.equal(
+    report.runs.find((run) => run.kind === "content").content.status,
+    "unavailable",
+  );
+});
+
+async function diagnosticFixture(t, mode) {
+  const f = await fixture(t);
+  await mkdir(path.join(f.source, "src/renderer/src"), { recursive: true });
+  await writeFile(
+    path.join(f.source, "src/renderer/src/content_evidence.rs"),
+    "// controlled observations\n",
+  );
+  const renderer = `#!/usr/bin/env node
+import net from 'node:net';
+import fs from 'node:fs';
+const mode = ${JSON.stringify(mode)};
+const file = process.env.ROONSCAPE_CONTENT_EVIDENCE;
+const now = () => Number(process.hrtime.bigint()/1000n);
+const rows = [];
+const emit = (event, fields={}) => rows.push({event,observedMicros:now(),...fields});
+let buffer = '', latest;
+const socket = net.createConnection(process.env.ROONSCAPE_SOCKET);
+socket.on('error',()=>process.exit(1));
+socket.on('data',chunk => {
+  buffer += chunk;
+  while(buffer.includes('\\n')) {
+    const end = buffer.indexOf('\\n');
+    const snapshot = JSON.parse(buffer.slice(0,end)); buffer = buffer.slice(end+1);
+    if (!file) continue;
+    const revision = snapshot.revision, token = revision;
+    latest = snapshot;
+    if(mode === 'unavailable') continue;
+    emit('snapshot-received',{revision, receivedMicros:now()});
+    emit('preparation-requested',{revision,token});
+    emit('preparation-started',{revision,token});
+    if (mode === 'incomplete') continue;
+    emit('artwork-completed',{path:snapshot.artwork.path,success:true,resource:revision});
+    emit('preparation-completed',{revision,token,success:true,artworkResource:revision});
+    if(mode === 'behavior') emit('native-draw',{revision,preparedToken:token,frame:revision,scene:revision,frameTimeMicros:now(),drawing:{ready:false,targetArtwork:revision,artwork:[[revision,0]],progress:0.2}});
+    if(mode === 'superseded' || mode === 'behavior') emit('preparation-superseded',{token});
+    if(mode === 'behavior') draw(snapshot);
+  }
+});
+function draw(snapshot) {
+  emit('native-draw',{revision:snapshot.revision,preparedToken:snapshot.revision,frame:snapshot.revision,scene:snapshot.revision,frameTimeMicros:now(),drawing:{ready:true,targetArtwork:snapshot.revision,artwork:[[snapshot.revision,1]],progress:0.2}});
+}
+if(file) {
+  fs.writeFileSync(file,JSON.stringify({event:'start',version:1,clock:'CLOCK_MONOTONIC',physicalDelivery:false})+'\\n');
+  const control=net.createConnection(process.env.ROONSCAPE_CONTENT_EVIDENCE_CONTROL);
+  control.on('error',()=>process.exit(1));
+  control.on('data',()=> {
+    if(mode === 'delayed') draw(latest);
+    if(mode === 'malformed') rows.push({event:'preparation-completed',observedMicros:now()});
+    if(mode === 'malformed-draw') emit('native-draw',{revision:1,preparedToken:1,frame:1,scene:1,frameTimeMicros:now(),drawing:{ready:true,targetArtwork:1,artwork:[null]}});
+    fs.appendFileSync(file, rows.map(row=>JSON.stringify(row)+'\\n').join('')+JSON.stringify({event:'end',records:rows.length,lost:mode === 'overflow'?1:0,complete:mode !== 'overflow'})+'\\n');
+    process.exit(0);
+  });
+}
+setInterval(()=>{},1000);
+`;
+  await writeFile(
+    path.join(f.bin, "cargo"),
+    `#!/usr/bin/env node\nimport fs from 'node:fs'; if(process.argv.includes('--version')) console.log('controlled'); else {fs.mkdirSync(process.env.CARGO_TARGET_DIR+'/release',{recursive:true});fs.writeFileSync(process.env.CARGO_TARGET_DIR+'/release/roonscape-renderer',${JSON.stringify(renderer)},{mode:0o755});}\n`,
+  );
+  if (mode === "delayed") {
+    await execute("git", ["-C", f.source, "add", "."]);
+    await execute("git", [
+      "-C",
+      f.source,
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "-qm",
+      "supported diagnostic baseline",
+    ]);
+  }
+  return f;
+}
+
+for (const mode of [
+  "delayed",
+  "superseded",
+  "incomplete",
+  "unavailable",
+  "overflow",
+  "malformed",
+  "malformed-draw",
+  "behavior",
+]) {
+  test(`diagnostic command preserves ${mode} content outcomes`, async (t) => {
+    const f = await diagnosticFixture(t, mode);
+    const { report, outcome, output } = await compareFixture(
+      f,
+      [],
+      "fresh-content",
+    );
+    const run = report.runs.find(
+      (run) => run.side === "candidate" && run.kind === "content",
+    );
+    if (["overflow", "malformed", "malformed-draw"].includes(mode)) {
+      assert.equal(outcome.code, 2, outcome.stderr);
+      assert.equal(report.status, "invalid-evidence");
+    } else if (mode === "behavior") {
+      assert.equal(outcome.code, 3, outcome.stderr);
+      assert.equal(run.content.status, "behavior-failed");
+      assert.match(run.content.failures.join(), /Superseded preparation/);
+    } else {
+      assert.equal(report.status, "complete", outcome.stderr);
+      assert.ok(run.content.publications.some((p) => p.outcome === mode));
+      assert.ok(
+        (await readFile(path.join(output, "report.md"), "utf8")).includes(mode),
+      );
+      if (mode === "delayed") {
+        assert.ok(
+          run.content.publications.at(-1).publicationToNativeDrawMs > 0,
+        );
+        assert.equal(
+          report.contentSummaries["fresh-content"].publicationToNativeDrawMs
+            .candidate.n,
+          1,
+        );
+        assert.equal(
+          report.contentSummaries["fresh-content"].publicationToNativeDrawMs
+            .baseline.n,
+          1,
+        );
+        assert.ok(
+          Number.isFinite(
+            report.contentSummaries["fresh-content"].publicationToNativeDrawMs
+              .absoluteDelta,
+          ),
+        );
+      }
+    }
+    assert.equal(report.summaries["fresh-content"].cpuSeconds.candidate.n, 1);
+  });
+}
+
+test(
+  "native slow preparation continues drawing and discards superseded content",
+  { timeout: 60000 },
+  async (t) => {
+    const { createNativeSession } = await import("./native-session.mjs");
+    const { createServer } = await import("node:net");
+    const { open } = await import("node:fs/promises");
+    const { constants } = await import("node:fs");
+    const { waitFor, waitForProcessExit } =
+      await import("./process-harness.mjs");
+    const f = await fixture(t);
+    const fifo = path.join(f.directory, "slow.png");
+    const png = path.join(f.directory, "pixels.png");
+    await execute("ffmpeg", [
+      "-v",
+      "error",
+      "-i",
+      path.join(root, "src/shared/fixtures/artwork/light.jpg"),
+      "-vf",
+      "scale=32:32",
+      png,
+    ]);
+    await execute("mkfifo", [fifo]);
+    const writer = await open(fifo, constants.O_RDWR);
+    const session = await createNativeSession({ width: 1280, height: 720 });
+    const evidence = path.join(f.directory, "native.jsonl");
+    let connection, control;
+    const server = createServer((socket) => {
+      connection = socket;
+      socket.on("error", () => {});
+    });
+    const controls = createServer((socket) => {
+      control = socket;
+      socket.on("error", () => {});
+    });
+    const socketPath = path.join(session.runtimeDirectory, "snapshots.sock");
+    const controlPath = path.join(session.runtimeDirectory, "content.sock");
+    await new Promise((resolve) => server.listen(socketPath, resolve));
+    await new Promise((resolve) => controls.listen(controlPath, resolve));
+    let released = false;
+    t.after(async () => {
+      if (!released) await writer.close();
+      connection?.destroy();
+      control?.destroy();
+      await session.close();
+      await Promise.all([
+        new Promise((resolve) => server.close(resolve)),
+        new Promise((resolve) => controls.close(resolve)),
+      ]);
+    });
+    const renderer = session.startProcess(
+      path.join(root, "target/debug/roonscape-renderer"),
+      ["--config", session.configurationPath],
+      {
+        ROONSCAPE_SOCKET: socketPath,
+        ROONSCAPE_CONTENT_EVIDENCE: evidence,
+        ROONSCAPE_CONTENT_EVIDENCE_CONTROL: controlPath,
+        ROONSCAPE_CAPTURE_VIEWPORT: "1280x720",
+      },
+    );
+    await renderer.spawned;
+    const observe = async (predicate) =>
+      waitFor(
+        async () => {
+          const rows = (await readFile(evidence, "utf8"))
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => JSON.parse(line));
+          const result = predicate(rows);
+          assert.ok(result, "waiting for native observation");
+          return result;
+        },
+        renderer,
+        "native content observations",
+        { timeoutMilliseconds: 15000 },
+      );
+    await waitFor(
+      () => assert.ok(connection && control),
+      renderer,
+      "native connections",
+    );
+    const snapshot = JSON.parse(
+      await readFile(
+        path.join(root, "src/shared/fixtures/playing.json"),
+        "utf8",
+      ),
+    );
+    snapshot.artwork.path = path.join(root, snapshot.artwork.path);
+    snapshot.revision = 1;
+    snapshot.timing.position.sampledAt = new Date().toISOString();
+    connection.write(JSON.stringify(snapshot) + "\n");
+    await observe((rows) =>
+      rows.find(
+        (row) =>
+          row.event === "native-draw" &&
+          row.revision === 1 &&
+          row.drawing.ready,
+      ),
+    );
+    snapshot.revision = 2;
+    snapshot.artwork = { path: fifo, revision: 2 };
+    snapshot.nowPlaying.title = "Slow incoming content";
+    connection.write(JSON.stringify(snapshot) + "\n");
+    const blocked = await observe((rows) =>
+      rows.find((row) => row.event === "artwork-started" && row.path === fifo),
+    );
+    const waiting = await observe((rows) => {
+      const draws = rows.filter(
+        (row) =>
+          row.event === "native-draw" &&
+          row.observedMicros >= blocked.observedMicros &&
+          !row.drawing.ready,
+      );
+      return (
+        new Set(
+          draws.map((row) => row.drawing.progress).filter(Number.isFinite),
+        ).size >= 2 && draws
+      );
+    });
+    assert.ok(waiting.every((draw) => draw.drawing.artwork.length > 0));
+    snapshot.revision = 3;
+    snapshot.artwork = {
+      path: path.join(root, "src/shared/fixtures/artwork/dark-teal.jpg"),
+      revision: 3,
+    };
+    snapshot.nowPlaying.title = "Current replacement";
+    connection.write(JSON.stringify(snapshot) + "\n");
+    await observe((rows) =>
+      rows.find(
+        (row) => row.event === "preparation-requested" && row.revision === 3,
+      ),
+    );
+    await writer.writeFile(await readFile(png));
+    await writer.close();
+    released = true;
+    await observe((rows) =>
+      rows.find(
+        (row) =>
+          row.event === "native-draw" &&
+          row.revision === 3 &&
+          row.drawing.ready,
+      ),
+    );
+    const original = await observe((rows) =>
+      rows.find(
+        (row) => row.event === "preparation-completed" && row.revision === 1,
+      ),
+    );
+    for (let revision = 4; revision <= 9; revision++) {
+      const replacement = path.join(f.directory, `replacement-${revision}.png`);
+      await cp(png, replacement);
+      snapshot.revision = revision;
+      snapshot.artwork = { path: replacement, revision };
+      snapshot.nowPlaying.title = `Replacement ${revision}`;
+      connection.write(JSON.stringify(snapshot) + "\n");
+      await observe((rows) =>
+        rows.find(
+          (row) =>
+            row.event === "native-draw" &&
+            row.revision === revision &&
+            row.drawing.ready,
+        ),
+      );
+    }
+    await observe((rows) =>
+      rows.find(
+        (row) =>
+          row.event === "resource-released" &&
+          row.resource === original.artworkResource,
+      ),
+    );
+    control.write("F");
+    const [code] = await waitForProcessExit(renderer, {
+      timeoutMilliseconds: 15000,
+    });
+    assert.equal(code, 0, renderer.capturedStandardError);
+    const rows = (await readFile(evidence, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    const stale = rows.find(
+      (row) => row.event === "preparation-requested" && row.revision === 2,
+    ).token;
+    assert.ok(
+      rows.some(
+        (row) => row.event === "preparation-superseded" && row.token === stale,
+      ),
+    );
+    assert.ok(
+      !rows.some(
+        (row) => row.event === "native-draw" && row.preparedToken === stale,
+      ),
+    );
+    const retained = new Set();
+    for (const row of rows) {
+      if (row.event === "resource-created") retained.add(row.resource);
+      if (row.event === "resource-released") retained.delete(row.resource);
+    }
+    assert.equal(retained.size, 0);
+    assert.equal(rows.at(-1).complete, true);
   },
 );

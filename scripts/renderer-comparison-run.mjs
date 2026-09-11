@@ -5,7 +5,13 @@ import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { createNativeSession, waitForNativeWindow } from "./native-session.mjs";
-import { assertProcessRunning, waitFor } from "./process-harness.mjs";
+import {
+  assertProcessRunning,
+  waitFor,
+  waitForProcessExit,
+  processFailure,
+} from "./process-harness.mjs";
+import { contentEvidence } from "./renderer-comparison-content.mjs";
 import { resourceMetrics } from "./renderer-comparison-report.mjs";
 
 export async function measureRenderer(
@@ -16,7 +22,13 @@ export async function measureRenderer(
   output,
   signal,
 ) {
-  let session, renderer, sampler, connection, socketError;
+  let session,
+    renderer,
+    sampler,
+    connection,
+    socketError,
+    controlServer,
+    control;
   const server = createServer((socket) => {
     if (connection) {
       socket.destroy();
@@ -27,7 +39,7 @@ export async function measureRenderer(
       socketError = error;
     });
     socket.on("close", () => {
-      if (run.phase !== "cleanup")
+      if (!["cleanup", "finishing"].includes(run.phase))
         socketError = new Error("Renderer snapshot connection closed");
     });
     socket.on("data", () => {}); // Optional observations never gate publication.
@@ -70,6 +82,22 @@ export async function measureRenderer(
         : "0",
       ...(workload.static ? { ROONSCAPE_STATIC_FIXTURE: "1" } : {}),
     };
+    if (run.kind === "content") {
+      run.evidence = `content-${run.order}.jsonl`;
+      const controlPath = path.join(session.runtimeDirectory, "content.sock");
+      controlServer = createServer((socket) => {
+        control = socket;
+        socket.on("error", (error) => {
+          socketError = error;
+        });
+      });
+      await new Promise((resolve, reject) => {
+        controlServer.once("error", reject);
+        controlServer.listen(controlPath, resolve);
+      });
+      environment.ROONSCAPE_CONTENT_EVIDENCE = path.join(output, run.evidence);
+      environment.ROONSCAPE_CONTENT_EVIDENCE_CONTROL = controlPath;
+    }
     renderer = session.startProcess(
       binary,
       ["--config", session.configurationPath],
@@ -84,6 +112,15 @@ export async function measureRenderer(
       "snapshot connection",
       { signal },
     );
+    if (controlServer)
+      await waitFor(
+        () => {
+          if (!control) throw new Error("waiting for diagnostic control");
+        },
+        renderer,
+        "content evidence control",
+        { signal },
+      );
     let revision = 0;
     function publish(entry, origin, epoch) {
       const snapshot = structuredClone(entry.snapshot);
@@ -92,16 +129,11 @@ export async function measureRenderer(
         snapshot.timing.position.sampledAt = new Date(
           epoch + entry.atMs,
         ).toISOString();
-      if (snapshot.artwork?.path)
-        snapshot.artwork.path = path.join(
-          output,
-          "content",
-          path.basename(snapshot.artwork.path),
-        );
       const actualMs = performance.now() - origin;
       if (socketError || connection.destroyed)
         throw socketError ?? new Error("Renderer disconnected");
       // Never await drain or an acknowledgement: excessive backlog invalidates evidence.
+      const publishedMicros = Number(process.hrtime.bigint() / 1000n);
       if (!connection.write(JSON.stringify(snapshot) + "\n"))
         throw Object.assign(
           new Error(
@@ -112,11 +144,15 @@ export async function measureRenderer(
       run.publications.push({
         phase: run.phase,
         revision,
+        contentId: entry.contentId,
+        artwork: snapshot.artwork,
+        asset: entry.asset,
+        publishedMicros,
         plannedMs: entry.atMs,
         actualMs,
       });
     }
-    publish(workload.schedule[0], performance.now(), Date.now());
+    publish(workload.phases.warmup.entries[0], performance.now(), Date.now());
     await waitForNativeWindow(
       renderer,
       { ...session.environment, ...environment },
@@ -171,31 +207,24 @@ export async function measureRenderer(
       run.phase = phase;
       const origin = performance.now(),
         epoch = Date.now();
-      let cycle = 0,
-        index = 0;
+      const entries = workload.phases[phase].entries;
+      run.windows ??= {};
+      run.windows[phase] = {
+        startMicros: Number(process.hrtime.bigint() / 1000n),
+        durationMs: duration,
+      };
+      let index = 0;
       while (performance.now() - origin < duration) {
         signal.throwIfAborted();
         assertProcessRunning(renderer, "Renderer");
         assertProcessRunning(sampler, "resource sampler");
         if (socketError) throw socketError;
-        let entry = workload.schedule[index];
         while (
-          cycle * workload.cycleMs + entry.atMs < duration &&
-          cycle * workload.cycleMs + entry.atMs <= performance.now() - origin
-        ) {
-          publish(
-            { ...entry, atMs: cycle * workload.cycleMs + entry.atMs },
-            origin,
-            epoch,
-          );
-          index++;
-          if (index === workload.schedule.length) {
-            index = 0;
-            cycle++;
-          }
-          entry = workload.schedule[index];
-        }
-        const next = Math.min(duration, cycle * workload.cycleMs + entry.atMs);
+          index < entries.length &&
+          entries[index].atMs <= performance.now() - origin
+        )
+          publish(entries[index++], origin, epoch);
+        const next = Math.min(duration, entries[index]?.atMs ?? duration);
         await delay(
           Math.max(1, Math.min(10, next - (performance.now() - origin))),
           undefined,
@@ -203,13 +232,8 @@ export async function measureRenderer(
         );
       }
       run[`${phase}Ms`] = performance.now() - origin;
-      const plannedCount = Array.from(
-        { length: Math.ceil(duration / workload.cycleMs) },
-        (_, cycleIndex) =>
-          workload.schedule.filter(
-            (entry) => cycleIndex * workload.cycleMs + entry.atMs < duration,
-          ).length,
-      ).reduce((a, b) => a + b, 0);
+      run.windows[phase].endMicros = Number(process.hrtime.bigint() / 1000n);
+      const plannedCount = entries.length;
       const delivered = run.publications.filter(
         (publication) => publication.phase === phase,
       );
@@ -239,6 +263,44 @@ export async function measureRenderer(
         new Error("unavailable or invalid resource evidence"),
         { invalidEvidence: true },
       );
+    if (run.kind === "content") {
+      run.phase = "drain";
+      const drainStarted = performance.now();
+      await delay(options.drainMs ?? 1000, undefined, { signal });
+      run.drainMs = performance.now() - drainStarted;
+      run.phase = "finishing";
+      control.write("F");
+      const [code, exitSignal] = await waitForProcessExit(renderer, {
+        signal,
+        timeoutMilliseconds: 5000,
+      });
+      // A valid footer distinguishes explicitly lost evidence from process failure.
+      try {
+        run.content = await contentEvidence(
+          path.join(output, run.evidence),
+          run,
+        );
+      } catch (error) {
+        run.content = { status: "invalid-evidence", reason: error.message };
+        if (
+          code !== 0 &&
+          !/overflow|Content evidence/i.test(renderer.capturedStandardError)
+        )
+          throw processFailure(
+            "diagnostic Renderer",
+            renderer,
+            code,
+            exitSignal,
+          );
+        throw error;
+      }
+      if (code !== 0)
+        throw processFailure("diagnostic Renderer", renderer, code, exitSignal);
+      if (run.content.failures.length)
+        throw Object.assign(new Error(run.content.failures.join("; ")), {
+          behaviorFailure: true,
+        });
+    }
     run.status = "complete";
   } catch (error) {
     failure = error;
@@ -246,7 +308,9 @@ export async function measureRenderer(
       ? "cancelled"
       : error.invalidEvidence
         ? "invalid-evidence"
-        : "execution-failed";
+        : error.behaviorFailure
+          ? "behavior-failed"
+          : "execution-failed";
     run.error = error.message;
     throw error;
   } finally {
@@ -266,11 +330,14 @@ export async function measureRenderer(
       );
     } finally {
       connection?.destroy();
+      control?.destroy();
       try {
         if (session) await session.close(failure);
       } finally {
         if (server.listening)
           await new Promise((resolve) => server.close(resolve));
+        if (controlServer?.listening)
+          await new Promise((resolve) => controlServer.close(resolve));
       }
     }
   }
