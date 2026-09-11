@@ -76,7 +76,19 @@ The fifth study is at <http://localhost:8765/kings.html?variant=B>:
 
 It shows Kings, credited to Steely Dan / Elliott Randall, from Can't Buy A
 Thrill, frozen at 0:52. All options keep the captured layout and styling.
-Backing plate, Playing, and progress share the accent. No selection yet.
+Backing plate, Playing, and progress share the accent. The user selected
+D (butter + violet), a light palette.
+
+The sixth study is at <http://localhost:8765/one.html?variant=B>:
+
+- A: Current olive-gold, the captured light baseline.
+- B: Limestone + forest, pale stone fields and a green accent.
+- C: Marble + graphite, cool gray fields and a blue-gray accent.
+- D: Sage + slate, pale green fields with dark slate text and green accents.
+
+It shows One (Remastered), by Metallica, from ...And Justice for All
+(Remastered), frozen at 0:35. All variants keep the captured layout and
+styling. Backing plate, Playing, and progress share the accent. No selection yet.
 
 ## Selection balance
 
@@ -90,11 +102,13 @@ The user wants equal numbers of dark and light selected examples.
 | That Kid / Strictly for My Streamers | D — Midnight + cyan | Dark |
 | Don't Come To LA / Still Brazy | B — Crimson + parchment | Dark |
 | Campaign | D — Paper + royal blue | Light |
-| Kings / Can't Buy A Thrill | Pending | Pending |
+| Kings / Can't Buy A Thrill | D — Butter + violet | Light |
+| One / ...And Justice for All | Pending | Pending |
 
-Four selected studies: three dark, one light. Five comparisons including the
-pending Kings study. Two further light selections would give three of each;
-Kings provides three light alternatives toward that balance.
+Five selected studies: three dark, two light. Six comparisons including the
+pending One study. A light selection in the sixth study would give three of
+each; all four sixth-study candidates are light. The user expects this may
+be the final artwork, but has not selected its palette yet.
 
 Use the floating arrows, A–D buttons, or keyboard arrows. H hides the controls;
 H restores them; double-clicking the preview also restores them. R toggles the original capture. The URL records the
