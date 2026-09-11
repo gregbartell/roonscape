@@ -77,7 +77,9 @@ test("determinate progress renders without invalid GTK measurements", async () =
     );
     await renderer.spawned;
     const [exitCode, signal] = await waitForProcessExit(renderer, {
-      timeoutMilliseconds: 5_000,
+      // Include cold graphics initialization, the two-second fixture run,
+      // and Qt shutdown under concurrent CI load.
+      timeoutMilliseconds: 15_000,
     });
 
     assert.equal(signal, null);
