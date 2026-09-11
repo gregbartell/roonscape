@@ -88,7 +88,8 @@ The sixth study is at <http://localhost:8765/one.html?variant=B>:
 
 It shows One (Remastered), by Metallica, from ...And Justice for All
 (Remastered), frozen at 0:35. All variants keep the captured layout and
-styling. Backing plate, Playing, and progress share the accent. No selection yet.
+styling. Backing plate, Playing, and progress share the accent. The user
+selected B (limestone + forest), a light palette.
 
 ## Selection balance
 
@@ -103,12 +104,14 @@ The user wants equal numbers of dark and light selected examples.
 | Don't Come To LA / Still Brazy | B — Crimson + parchment | Dark |
 | Campaign | D — Paper + royal blue | Light |
 | Kings / Can't Buy A Thrill | D — Butter + violet | Light |
-| One / ...And Justice for All | Pending | Pending |
+| One / ...And Justice for All | B — Limestone + forest | Light |
 
-Five selected studies: three dark, two light. Six comparisons including the
-pending One study. A light selection in the sixth study would give three of
-each; all four sixth-study candidates are light. The user expects this may
-be the final artwork, but has not selected its palette yet.
+Six selected studies: three dark and three light. The visual-example set is
+complete. These are examples of appealing designs, not exact output targets
+for the palette chooser. The next step is a requirements interview for a
+ticket changing the general color selection logic. Layout, font sizes and
+positions, movement, and other geometric styling changes are out of scope;
+font colors are in scope.
 
 Use the floating arrows, A–D buttons, or keyboard arrows. H hides the controls;
 H restores them; double-clicking the preview also restores them. R toggles the original capture. The URL records the
