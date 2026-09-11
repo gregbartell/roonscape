@@ -31,7 +31,7 @@ struct RsSprite {
     RsRect bounds, uv, clip;
     RsColor color;
     RsColor secondary;
-    float radius, angle, fade_top, fade_bottom, dimming;
+    float radius, angle, fade_top, fade_top_origin, fade_bottom, dimming;
     // 0: rectangle; 1: mask; 2: RGBA; 3: colored glyph base + tintable foreground.
     uint32_t kind;
 };

@@ -7,8 +7,8 @@ use roonscape_renderer::{
 
 use crate::lyric_motion::LyricFrame;
 use crate::prepared_presentation::{
-    PreparedContent, PreparedIdentity, PreparedNowPlaying, PreparedPresentation, PreparedReel,
-    PreparedStatus, TextAt, TextRole,
+    MetadataMovement, PreparedContent, PreparedIdentity, PreparedNowPlaying, PreparedPresentation,
+    PreparedReel, PreparedStatus, TextAt,
 };
 use crate::qt_window::{Color, Rect, Scene, Sprite, SpriteGeometry, SpriteKind, Texture};
 
@@ -133,53 +133,32 @@ fn now_playing<'window>(
             clip,
         );
     }
-    let ordinary_opacity =
-        (1.0 - motion_phase(progress, 0.0, 0.35)) as f32 * frame.opacity * frame.metadata_opacity;
-    let ordinary_y =
-        -(motion_phase(progress, 0.0, 0.62) * layout.typography.lyric_cue_px as f64 * 1.75) as f32;
-    let metadata_clip = Rect::new(
-        rail,
-        layout.metadata_region_top_viewport_y_px as f32,
-        layout.information.musical_metadata_width_px as f32,
-        (layout.metadata_region_bottom_viewport_y_px - layout.metadata_region_top_viewport_y_px)
-            as f32,
-    );
-    for text in &content.metadata.ordinary {
-        text_at(
-            scene,
-            text,
-            rail,
-            ordinary_y,
-            frame.palette,
-            ordinary_opacity,
-            metadata_clip,
-        );
-    }
-    let masthead_opacity =
-        motion_phase(progress, 0.35, 0.25) as f32 * frame.opacity * frame.metadata_opacity;
-    let travel =
-        ((1.0 - motion_phase(progress, 0.12, 0.46)) * layout.typography.lyric_cue_px as f64 * 1.8)
-            .round() as f32;
-    for text in &content.metadata.masthead {
-        text_at(
-            scene,
-            text,
-            rail,
-            layout.metadata_region_top_viewport_y_px as f32 + travel,
-            frame.palette,
-            masthead_opacity,
-            clip,
-        );
-    }
+    let metadata_bottom = draw_metadata(scene, content, layout, progress, frame, clip);
     if let (Some(reel), Some(lyrics)) = (&content.reel, frame.lyrics) {
+        let amount = composition_geometry(progress) as f32;
+        let travel =
+            (1.0 - amount) * (reel.bottom - reel.top + 2.0 * layout.typography.lyric_cue_px as f32);
+        let settled_metadata_bottom = content
+            .metadata
+            .masthead
+            .iter()
+            .map(|text| {
+                layout.metadata_region_top_viewport_y_px as f32
+                    + text.y
+                    + text.text.bounds.y
+                    + text.text.bounds.height
+            })
+            .fold(0.0, f32::max);
+        let clearance = (reel.top - settled_metadata_bottom).max(0.0);
+        let top = (reel.top + travel).max(metadata_bottom + clearance);
         draw_reel(
             scene,
             reel,
             lyrics,
-            rail,
+            Rect::new(rail, top, reel.width, (reel.bottom - top).max(0.0)),
             travel,
             frame.palette,
-            motion_phase(progress, 0.35, 0.2) as f32 * frame.opacity,
+            frame.opacity,
         );
     }
     let amount = composition_geometry(progress) as f32;
@@ -330,6 +309,166 @@ fn now_playing<'window>(
     }
 }
 
+fn draw_metadata<'window>(
+    scene: &mut Scene<'window>,
+    content: &PreparedNowPlaying<'window>,
+    layout: &NowPlayingLayout,
+    progress: f64,
+    frame: &Foreground<'_>,
+    clip: Rect,
+) -> f32 {
+    let metadata = &content.metadata;
+    let rail = layout.information.left_viewport_x_px as f32;
+    let amount = composition_geometry(progress) as f32;
+    let opacity = frame.opacity * frame.metadata_opacity;
+    let start = scene.sprites.len();
+    if amount == 0.0 {
+        let metadata_clip = Rect::new(
+            rail,
+            layout.metadata_region_top_viewport_y_px as f32,
+            layout.information.musical_metadata_width_px as f32,
+            (layout.metadata_region_bottom_viewport_y_px - layout.metadata_region_top_viewport_y_px)
+                as f32,
+        );
+        for text in &metadata.ordinary {
+            text_at(
+                scene,
+                text,
+                rail,
+                0.0,
+                frame.palette,
+                opacity,
+                metadata_clip,
+            );
+        }
+    } else if amount == 1.0 {
+        for text in &metadata.masthead {
+            text_at(
+                scene,
+                text,
+                rail,
+                layout.metadata_region_top_viewport_y_px as f32,
+                frame.palette,
+                opacity,
+                clip,
+            );
+        }
+    } else {
+        // Ordinary metadata can clip oversized native tokens. Preserve that
+        // boundary when movement starts, then release it toward the masthead's
+        // viewport clip without exposing hidden glyphs in a single frame.
+        let mix = |a: f32, b: f32| a + (b - a) * amount;
+        let moving_clip = Rect::new(
+            mix(rail, clip.x),
+            mix(layout.metadata_region_top_viewport_y_px as f32, clip.y),
+            mix(
+                layout.information.musical_metadata_width_px as f32,
+                clip.width,
+            ),
+            mix(
+                (layout.metadata_region_bottom_viewport_y_px
+                    - layout.metadata_region_top_viewport_y_px) as f32,
+                clip.height,
+            ),
+        );
+        for movement in &metadata.movement {
+            moving_words(
+                scene,
+                movement,
+                layout,
+                amount,
+                frame.palette,
+                opacity,
+                moving_clip,
+            );
+        }
+        if let Some(album) = metadata
+            .album_index
+            .and_then(|index| metadata.ordinary.get(index))
+        {
+            text_at(
+                scene,
+                album,
+                rail,
+                metadata.album_displacement * amount,
+                frame.palette,
+                opacity * (1.0 - motion_phase(progress, 0.12, 0.35)) as f32,
+                moving_clip,
+            );
+        }
+    }
+    scene.sprites[start..]
+        .iter()
+        .filter(|sprite| sprite.geometry.color.alpha > 0.0)
+        .map(|sprite| sprite.geometry.bounds.y + sprite.geometry.bounds.height)
+        .fold(0.0, f32::max)
+}
+
+fn moving_words<'window>(
+    scene: &mut Scene<'window>,
+    movement: &MetadataMovement<'window>,
+    layout: &NowPlayingLayout,
+    amount: f32,
+    palette: PresentationPalette,
+    opacity: f32,
+    clip: Rect,
+) {
+    let rail = layout.information.left_viewport_x_px as f32;
+    let width = layout.information.musical_metadata_width_px as f32;
+    let mix = |a: f32, b: f32| a + (b - a) * amount;
+    let horizontal = 1.0 - (1.0 - amount).powi(3);
+    let visibility = motion_phase(horizontal as f64, 0.35, 0.45) as f32;
+    let [source_extent, destination_extent] = movement.normalized_extents;
+    let normalized_extent = source_extent + (destination_extent - source_extent) * horizontal;
+    let size = (movement.ordinary.size
+        + (movement.compact.size - movement.ordinary.size) * horizontal)
+        .min((width + 2.0) / normalized_extent.max(1.0));
+    let rgb = movement.role.color(palette);
+    for word in &movement.paths {
+        let alpha = opacity
+            * match word.visible {
+                [true, true] => 1.0,
+                [true, false] => 1.0 - visibility,
+                [false, true] => visibility,
+                [false, false] => 0.0,
+            };
+        if alpha <= 0.0 {
+            continue;
+        }
+        // Horizontal line changes and shrinking lead vertical convergence so
+        // neighboring native lines do not collide on their way to the masthead.
+        let mut x =
+            rail + (word.source[0] + (word.destination[0] - word.source[0]) * horizontal) * size;
+        let mut y = mix(word.source[1], word.destination[1]);
+        let disappearing = match word.visible {
+            [true, false] => horizontal,
+            [false, true] => 1.0 - horizontal,
+            _ => 0.0,
+        };
+        let spread =
+            disappearing * (1.0 - motion_phase(disappearing as f64, 0.8, 0.2) as f32) * size;
+        x += word.omitted_spread[0] * spread;
+        y += word.omitted_spread[1] * spread;
+        let mut sprite = word.text.sprite(0.0, 0.0, Color::new(rgb, alpha), clip);
+        sprite.geometry.bounds = Rect::new(
+            x + word.bounds.x * size,
+            y + word.bounds.y * size,
+            word.bounds.width * size,
+            word.bounds.height * size,
+        );
+        if let Some([a, b]) = word.clipping {
+            let clipping = motion_phase(horizontal as f64, 0.35, 0.55) as f32;
+            let interpolate = |a: f32, b: f32| a + (b - a) * clipping;
+            let left = x + interpolate(a.x, b.x) * size - 1.0;
+            let right = x + interpolate(a.x + a.width, b.x + b.width) * size + 1.0;
+            sprite.geometry.clip.x = clip.x.max(left);
+            sprite.geometry.clip.width =
+                ((clip.x + clip.width).min(right) - sprite.geometry.clip.x).max(0.0);
+        }
+        scene.sprites.push(sprite);
+    }
+}
+
 fn status<'window>(
     scene: &mut Scene<'window>,
     prepared: &PreparedStatus<'window>,
@@ -415,7 +554,7 @@ fn draw_reel<'window>(
     scene: &mut Scene<'window>,
     reel: &PreparedReel<'window>,
     frame: &LyricFrame,
-    x: f32,
+    clip: Rect,
     travel: f32,
     palette: PresentationPalette,
     opacity: f32,
@@ -456,12 +595,10 @@ fn draw_reel<'window>(
             top * weight
         })
         .sum::<f64>();
-    let clip = Rect::new(
-        x,
-        reel.top + travel,
-        reel.width,
-        (reel.bottom - reel.top - travel).max(1.0),
-    );
+    let x = clip.x;
+    if clip.height <= 0.0 {
+        return;
+    }
     for ((cue, prepared), top) in cues.into_iter().zip(tops) {
         let y = reel.top + travel + reel.primary_y + (top - anchor) as f32;
         if cue.opacity <= 0.0
@@ -481,6 +618,7 @@ fn draw_reel<'window>(
         };
         let mut sprite = prepared.sprite(x, y, Color::new(rgb, opacity * cue.opacity as f32), clip);
         sprite.geometry.fade_top = reel.fade;
+        sprite.geometry.fade_top_origin = reel.top + travel;
         sprite.geometry.fade_bottom = reel.fade;
         scene.sprites.push(sprite);
     }
@@ -495,11 +633,7 @@ fn text_at<'window>(
     opacity: f32,
     clip: Rect,
 ) {
-    let rgb = match text.role {
-        TextRole::Primary => palette.primary_text,
-        TextRole::Secondary => palette.secondary_text,
-        TextRole::Muted => palette.muted_text,
-    };
+    let rgb = text.role.color(palette);
     scene.sprites.push(
         text.text
             .sprite(x + text.x, y + text.y, Color::new(rgb, opacity), clip),

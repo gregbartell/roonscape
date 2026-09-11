@@ -282,7 +282,7 @@ const examples = {
       reviewFrame(
         3.6,
         "discovery-midpoint",
-        "Geometry and metadata/reel fades continue after the Now Playing reveal.",
+        "Word movement and reel travel continue after the Now Playing reveal.",
       ),
       reviewFrame(
         3.95,
@@ -746,7 +746,7 @@ const examples = {
       reviewFrame(
         21.2,
         "lyric-exit-early",
-        "Compact metadata retires before the large Title returns.",
+        "Compact metadata grows into its ordinary layout as the reel rolls downward.",
       ),
       reviewFrame(
         21.4,

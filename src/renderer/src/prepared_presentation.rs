@@ -1,24 +1,35 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::Path;
+use std::sync::Arc;
 
 use gtk::cairo;
 use roonscape_renderer::{
     ArtworkDimensions, ArtworkLayout, ArtworkReference, FullFieldLayout, FullFieldPresentation,
-    IdentityRowLayout, MetadataLinePlan, NowPlayingGradientLookup, NowPlayingLayout,
-    NowPlayingPresentation, Presentation, PresentationIdentity, PresentationPalette,
-    PresentationStatusDecoration, PresentationStatusLayout, PresentationStatusSymbol,
-    TypographySelection, Viewport, metadata_layout, resolve_presentation_with_palette,
+    IdentityRowLayout, NowPlayingGradientLookup, NowPlayingLayout, NowPlayingPresentation,
+    Presentation, PresentationIdentity, PresentationPalette, PresentationStatusDecoration,
+    PresentationStatusLayout, PresentationStatusSymbol, TypographySelection, Viewport,
+    metadata_layout, resolve_presentation_with_palette,
 };
 
 use crate::qt_window::{Color, Graphic, GraphicGeometry, Rect, Texture, Uploader};
-use crate::text_preparation::{Face, PreparedText, TextPreparation};
+use crate::text_preparation::{Face, PreparedText, PreparedWord, TextPreparation};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TextRole {
     Primary,
     Secondary,
     Muted,
+}
+
+impl TextRole {
+    pub fn color(self, palette: PresentationPalette) -> roonscape_renderer::Rgb {
+        match self {
+            Self::Primary => palette.primary_text,
+            Self::Secondary => palette.secondary_text,
+            Self::Muted => palette.muted_text,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -49,6 +60,184 @@ pub(crate) struct PreparedMetadata<'window> {
     pub ordinary: Vec<TextAt<'window>>,
     pub masthead: Vec<TextAt<'window>>,
     pub masthead_height: f32,
+    pub movement: Vec<MetadataMovement<'window>>,
+    pub album_index: Option<usize>,
+    pub album_displacement: f32,
+}
+
+#[derive(Clone)]
+pub(crate) struct MetadataMovement<'window> {
+    pub ordinary: MetadataEndpoint<'window>,
+    pub compact: MetadataEndpoint<'window>,
+    pub role: TextRole,
+    pub paths: Vec<MetadataWordPath<'window>>,
+    pub normalized_extents: [f32; 2],
+}
+
+#[derive(Clone)]
+pub(crate) struct MetadataEndpoint<'window> {
+    pub words: Arc<[PreparedWord<'window>]>,
+    pub size: f32,
+    pub y: f32,
+    pub width: f32,
+}
+
+impl MetadataEndpoint<'_> {
+    fn normalized_extent(&self) -> f32 {
+        self.words
+            .iter()
+            .map(|word| (word.text.bounds.x + word.text.bounds.width) / self.size)
+            .fold(0.0, f32::max)
+            // An unbroken token may be wider than the native endpoint's
+            // clip. Hidden glyphs must not force a smaller moving size.
+            .min((self.width + 2.0) / self.size)
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct MetadataWordPath<'window> {
+    pub text: PreparedText<'window>,
+    pub bounds: Rect,
+    pub source: [f32; 2],
+    pub destination: [f32; 2],
+    pub visible: [bool; 2],
+    pub clipping: Option<[Rect; 2]>,
+    pub omitted_spread: [f32; 2],
+}
+
+impl<'window> MetadataMovement<'window> {
+    fn new(
+        ordinary: MetadataEndpoint<'window>,
+        compact: MetadataEndpoint<'window>,
+        role: TextRole,
+    ) -> Self {
+        let mut movement = Self {
+            normalized_extents: [ordinary.normalized_extent(), compact.normalized_extent()],
+            ordinary,
+            compact,
+            role,
+            paths: Vec::new(),
+        };
+        movement.prepare_paths();
+        movement
+    }
+
+    fn prepare_paths(&mut self) {
+        let mut identities: Vec<_> = self
+            .ordinary
+            .words
+            .iter()
+            .chain(self.compact.words.iter())
+            .map(|word| word.occurrence)
+            .collect();
+        identities.sort();
+        identities.dedup();
+        let source_ellipsis = self
+            .ordinary
+            .words
+            .iter()
+            .find(|word| word.occurrence.is_none())
+            .or_else(|| self.ordinary.words.last());
+        let destination_ellipsis = self
+            .compact
+            .words
+            .iter()
+            .find(|word| word.occurrence.is_none())
+            .or_else(|| self.compact.words.last());
+        let first_source_only = self.ordinary.words.iter().find(|word| {
+            word.occurrence.is_some()
+                && !self
+                    .compact
+                    .words
+                    .iter()
+                    .any(|other| other.occurrence == word.occurrence)
+        });
+        let first_destination_only = self.compact.words.iter().find(|word| {
+            word.occurrence.is_some()
+                && !self
+                    .ordinary
+                    .words
+                    .iter()
+                    .any(|other| other.occurrence == word.occurrence)
+        });
+        for identity in identities {
+            let source = self
+                .ordinary
+                .words
+                .iter()
+                .find(|word| word.occurrence == identity);
+            let destination = self
+                .compact
+                .words
+                .iter()
+                .find(|word| word.occurrence == identity);
+            let (Some(a), Some(b)) = (
+                source.or(source_ellipsis),
+                destination.or(destination_ellipsis),
+            ) else {
+                continue;
+            };
+            let (word, native_size) = match (source, destination) {
+                (Some(a), Some(b))
+                    if b.visible_bytes > a.visible_bytes
+                        || (b.visible_bytes == a.visible_bytes
+                            && self.compact.size > self.ordinary.size) =>
+                {
+                    (b, self.compact.size)
+                }
+                (Some(a), _) => (a, self.ordinary.size),
+                (_, Some(b)) => (b, self.compact.size),
+                _ => continue,
+            };
+            let relative = |bounds: Rect| {
+                Rect::new(
+                    (bounds.x - word.x) / native_size,
+                    (bounds.y - word.baseline) / native_size,
+                    bounds.width / native_size,
+                    bounds.height / native_size,
+                )
+            };
+            let clipping = source
+                .zip(destination)
+                .filter(|(a, b)| a.visible_bytes != b.visible_bytes)
+                .map(|(a, b)| {
+                    [
+                        relative(word.retained_bounds(a.visible_bytes)),
+                        relative(word.retained_bounds(b.visible_bytes)),
+                    ]
+                });
+            // Keep omitted words as an intact tail while they fade. They only
+            // converge on the ellipsis after becoming invisible, avoiding a
+            // pile of opaque words at the truncation point.
+            let omitted_spread = match (source, destination) {
+                (Some(word), None) if word.occurrence.is_some() => first_source_only.map(|first| {
+                    [
+                        (word.x - first.x) / self.ordinary.size,
+                        (word.baseline - first.baseline) / self.ordinary.size,
+                    ]
+                }),
+                (None, Some(word)) if word.occurrence.is_some() => {
+                    first_destination_only.map(|first| {
+                        [
+                            (word.x - first.x) / self.compact.size,
+                            (word.baseline - first.baseline) / self.compact.size,
+                        ]
+                    })
+                }
+                _ => None,
+            }
+            .unwrap_or([0.0; 2]);
+            self.paths.push(MetadataWordPath {
+                text: word.text.clone(),
+                bounds: relative(word.text.bounds),
+                source: [a.x / self.ordinary.size, self.ordinary.y + a.baseline],
+                destination: [b.x / self.compact.size, self.compact.y + b.baseline],
+                visible: [source.is_some(), destination.is_some()],
+                omitted_spread,
+                clipping,
+            });
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -571,6 +760,8 @@ impl<'window> PresentationPreparation<'window> {
             |role, text, size| self.text.measure(role.into(), text, size),
         );
         let mut result = Vec::new();
+        let mut ordinary_endpoints = Vec::new();
+        let mut album_index = None;
         let mut top = (ordinary.metadata_region_top_viewport_y_px
             + ordinary.metadata_group_offset_px(plan.height_px)) as f32;
         let mut previous = None;
@@ -589,7 +780,23 @@ impl<'window> PresentationPreparation<'window> {
                     plan.album_gap_px
                 } as f32;
             }
-            let prepared = self.metadata_line(line, face)?;
+            let native = self
+                .text
+                .layout(&line.lines.join("\n"), face, line.font_size_px, 0);
+            let prepared = self.text.rasterize(&native, 1.0)?;
+            if face == Face::Album {
+                album_index = Some(result.len());
+            } else {
+                ordinary_endpoints.push((
+                    role,
+                    MetadataEndpoint {
+                        words: self.text.words(&native, line.ellipsized)?,
+                        size: line.font_size_px as f32,
+                        y: top,
+                        width: ordinary.information.musical_metadata_width_px as f32,
+                    },
+                ));
+            }
             let height = prepared.height;
             result.push(TextAt {
                 text: prepared,
@@ -601,6 +808,7 @@ impl<'window> PresentationPreparation<'window> {
             previous = Some(face);
         }
         let mut masthead = Vec::new();
+        let mut movement = Vec::new();
         let mut top = 0.0;
         for (text, face, size, role) in [
             (
@@ -621,7 +829,26 @@ impl<'window> PresentationPreparation<'window> {
                     top +=
                         (lyrics.typography.lyric_masthead_artist_px as f64 * 0.25).round() as f32;
                 }
-                let prepared = self.text.line(text, face, size, lyrics.lyric_width_px, 0)?;
+                let native = self.text.layout(text, face, size, 0);
+                native.set_width(lyrics.lyric_width_px.max(1) as i32 * gtk::pango::SCALE);
+                native.set_single_paragraph_mode(true);
+                native.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                let prepared = self.text.rasterize(&native, 1.0)?;
+                let index = ordinary_endpoints
+                    .iter()
+                    .position(|(ordinary_role, _)| *ordinary_role == role)
+                    .expect("ordinary metadata has the same Title and Artist roles");
+                let (_, ordinary) = ordinary_endpoints.remove(index);
+                movement.push(MetadataMovement::new(
+                    ordinary,
+                    MetadataEndpoint {
+                        words: self.text.words(&native, false)?,
+                        size: size as f32,
+                        y: lyrics.metadata_region_top_viewport_y_px as f32 + top,
+                        width: lyrics.lyric_width_px as f32,
+                    },
+                    role,
+                ));
                 let height = prepared.height;
                 masthead.push(TextAt {
                     text: prepared,
@@ -636,18 +863,12 @@ impl<'window> PresentationPreparation<'window> {
             ordinary: result,
             masthead,
             masthead_height: top,
+            album_index,
+            album_displacement: movement
+                .last()
+                .map_or(0.0, |movement| movement.compact.y - movement.ordinary.y),
+            movement,
         })
-    }
-
-    fn metadata_line(
-        &self,
-        plan: &MetadataLinePlan,
-        face: Face,
-    ) -> Result<PreparedText<'window>, String> {
-        let layout = self
-            .text
-            .layout(&plan.lines.join("\n"), face, plan.font_size_px, 0);
-        self.text.rasterize(&layout, 1.0)
     }
 
     fn identity(

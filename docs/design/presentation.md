@@ -156,11 +156,17 @@ it. Preserve the complete text and determine these breaks before animation so
 they remain stable throughout composition transitions and cue handoffs.
 
 Same-identity lyric entry and exit animate persistent artwork and information
-rail geometry in place. Ordinary metadata relinquishes ownership to the compact
-masthead and reel without duplicating artwork, Presentation Status, or footer.
-Ordinary metadata finishes fading out before the compact masthead and lyric
-reel fade in. Exit reverses this sequence, so departing cues and compact Titles
-never compete with the returning large Title.
+rail geometry in place. Title and Artist words move and resize between their native ordinary and compact
+masthead positions over 580 ms, without duplicating artwork, Presentation Status,
+or footer. Word occurrences retain their identities as wrapping changes; native
+shaping and truncation determine visible text at both endpoints. Omitted words
+travel toward the corresponding ellipsis while fading, or emerge from it.
+Album follows Artist's origin displacement at its existing size while fading
+from the start of metadata movement. The entire Lyric Reel rolls upward from
+below its viewport on entry and downward on exit, with no additional cue or
+whole-reel fade. A shared upper clipping boundary keeps lyrics below visible
+moving metadata, including multiline bounds and glyph overhangs. The settled
+edge fades, footer clearance, and Primary Position remain unchanged.
 Preparation starts three seconds before the first nonblank cue's timestamp,
 using only the available time when the track starts or the timeline arrives
 later. A cue at zero activates immediately, and cue arrival may overlap the
@@ -185,9 +191,9 @@ cue, Intentional Blank, or preparation state immediately. Starting before the
 timing reset does not itself clear lyrics.
 
 Boundary crossings retain the 580 ms Lyric Composition Transition and metadata
-fade sequence. After a seek or restart, the lyric area may briefly be empty
+movement. After a seek or restart, the lyric area may briefly be empty
 while composition geometry settles; the old passage does not linger or fade.
-Natural exit after the final lyric hold retains its normal fade. Interrupted
+Natural exit after the final lyric hold rolls the reel downward. Interrupted
 composition movement retargets from its current geometry. The platform's
 reduced-animation preference and deterministic Presentation Capture behavior
 suppress motion while preserving the complete Lyric Reel.

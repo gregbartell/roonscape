@@ -280,7 +280,7 @@ impl LyricMotion {
                 .retarget(f64::from(next.is_some()), now, animations_enabled);
             // A timing relocation owns its lyric destination immediately, even
             // while artwork and metadata finish the composition transition.
-            // Only continuous exits retain the old reel for its normal fade.
+            // Only continuous exits retain the old reel for its downward travel.
             if next.is_some()
                 || (revision_changed && self.timing_discontinuity)
                 || !animations_enabled
@@ -1075,6 +1075,26 @@ mod tests {
         let settled = motion.frame_at(Duration::from_millis(780));
         assert!(!settled.cue_motion_active);
         assert_eq!(settled.cues[1].text, "Third");
+    }
+
+    #[test]
+    fn cue_activation_during_entry_preserves_the_composition_clock() {
+        let first = lyrics(0, None, "First", Some("Second"));
+        let second = lyrics(1, Some("First"), "Second", Some("Third"));
+        let mut motion = LyricMotion::new(23, None);
+        motion.update(23, Some(&first), Duration::ZERO, true);
+        let activation = Duration::from_millis(180);
+        let progress = motion.frame_at(activation).composition_progress;
+        motion.update(23, Some(&second), activation, true);
+        let frame = motion.frame_at(activation);
+        assert_eq!(frame.composition_progress, progress);
+        assert_eq!(frame.cause, LyricMotionCause::NaturalCueHandoff);
+        assert!(frame.cue_motion_active);
+        assert!(frame.composition_motion_active);
+        let frame = motion.frame_at(COMPOSITION_TRANSITION_DURATION);
+        assert_eq!(frame.composition_progress, 1.0);
+        assert!(!frame.composition_motion_active);
+        assert!(frame.cues.iter().any(|cue| cue.text == "Second"));
     }
 
     #[test]

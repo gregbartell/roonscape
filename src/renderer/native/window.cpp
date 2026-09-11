@@ -541,7 +541,7 @@ struct RsWindow {
             sprites->setUniformValue("clip",vector(s.clip)); sprites->setUniformValue("tint",vector(s.color));
             sprites->setUniformValue("secondary",vector(s.secondary));
             sprites->setUniformValue("radius",s.radius); sprites->setUniformValue("angle",s.angle);
-            sprites->setUniformValue("fadeTop",s.fade_top); sprites->setUniformValue("fadeBottom",s.fade_bottom);
+            sprites->setUniformValue("fadeTop",s.fade_top); sprites->setUniformValue("fadeTopOrigin",s.fade_top_origin); sprites->setUniformValue("fadeBottom",s.fade_bottom);
             sprites->setUniformValue("dimming",s.dimming);
             sprites->setUniformValue("kind",GLint(s.kind));
             gl->glDrawArrays(GL_TRIANGLE_STRIP,0,4);

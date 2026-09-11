@@ -4,7 +4,7 @@ out vec4 outputColor;
 uniform sampler2D image;
 uniform sampler2D foreground;
 uniform vec4 tint, secondary, bounds, clip, uv;
-uniform float radius, angle, fadeTop, fadeBottom, dimming;
+uniform float radius, angle, fadeTop, fadeTopOrigin, fadeBottom, dimming;
 uniform int kind;
 // Keep values aligned with Rust SpriteKind.
 const int RoundedRect = 0;
@@ -42,7 +42,7 @@ void main() {
         } else value = texel*tint.a;
     }
     float fade = 1.0;
-    if (fadeTop > 0.0) fade *= clamp((p.y-clip.y)/fadeTop,0.0,1.0);
+    if (fadeTop > 0.0) fade *= clamp((p.y-(fadeTopOrigin > 0.0 ? fadeTopOrigin : clip.y))/fadeTop,0.0,1.0);
     if (fadeBottom > 0.0) fade *= clamp((clip.y+clip.w-p.y)/fadeBottom,0.0,1.0);
     value.rgb *= 1.0-dimming;
     outputColor = value*fade;

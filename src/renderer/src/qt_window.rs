@@ -202,6 +202,7 @@ pub(crate) struct SpriteGeometry {
     pub radius: f32,
     pub angle: f32,
     pub fade_top: f32,
+    pub fade_top_origin: f32,
     pub fade_bottom: f32,
     pub dimming: f32,
     pub kind: SpriteKind,

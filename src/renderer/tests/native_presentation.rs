@@ -236,6 +236,592 @@ fn lyrics(preparation: &mut PresentationPreparation<'_>, repository: &Path) {
     println!("native lyric preparation crosses blank runs and preserves departing context");
 }
 
+fn word_motion_meets_native_endpoints(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    use qt_window::{Color, Rect};
+    for title in [
+        "Last Light on Phobos",
+        "ليلة القمر — Office affinities 東京の夜",
+    ] {
+        let viewport = Viewport::new(3840, 2160);
+        let mut presentation = fixture("lyrics-reel-capacity");
+        let Presentation::NowPlaying(value) = &mut presentation else {
+            panic!("Now Playing")
+        };
+        value.title = Some(title.into());
+        let prepared = preparation
+            .prepare(&presentation, viewport, repository, true)
+            .unwrap();
+        let PreparedContent::NowPlaying(content) = &prepared.content else {
+            panic!("Now Playing")
+        };
+        let movement = &content.metadata.movement[0];
+        let layout = roonscape_renderer::NowPlayingLayout::for_composition_progress(
+            match &presentation {
+                Presentation::NowPlaying(value) => value,
+                _ => unreachable!(),
+            },
+            viewport,
+            0.0,
+        );
+        assert!(
+            movement.ordinary.size * movement.normalized_extents[0]
+                <= layout.information.musical_metadata_width_px as f32 + 3.0,
+            "ordinary word bounds exceed native rail: size={} extent={} width={}",
+            movement.ordinary.size,
+            movement.normalized_extents[0],
+            layout.information.musical_metadata_width_px
+        );
+        for word in movement.ordinary.words.iter() {
+            let path = movement
+                .paths
+                .iter()
+                .find(|path| {
+                    path.source
+                        == [
+                            word.x / movement.ordinary.size,
+                            movement.ordinary.y + word.baseline,
+                        ]
+                })
+                .unwrap();
+            if !path.visible[1] {
+                continue;
+            }
+            let native = word
+                .text
+                .sprite(0.0, 0.0, Color::default(), Rect::viewport(viewport))
+                .geometry
+                .bounds;
+            let height = path.bounds.height * movement.ordinary.size;
+            assert!(
+                (height - native.height).abs() < 4.0,
+                "{title}: endpoint height jumps {} -> {}",
+                height,
+                native.height
+            );
+        }
+    }
+}
+
+fn composition_keeps_shared_metadata_visible(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    let viewport = Viewport::new(1280, 720);
+    let presentation = fixture("lyrics-reel-capacity");
+    let prepared = preparation
+        .prepare(&presentation, viewport, repository, true)
+        .unwrap();
+    let Presentation::NowPlaying(value) = &presentation else {
+        panic!("Now Playing")
+    };
+    let mut motion = lyric_motion::LyricMotion::new(1, None);
+    motion.update(1, value.lyrics.as_deref(), ms(0), true);
+    let mut frame = motion.frame_at(ms(290));
+    frame.cues.clear();
+    let mut scene = Scene::default();
+    scene::foreground(
+        &mut scene,
+        &prepared,
+        &scene::Foreground {
+            presentation: &presentation,
+            palette: prepared.palette,
+            now: ms(290),
+            animated: true,
+            opacity: 1.0,
+            metadata_opacity: 1.0,
+            status: value.status,
+            status_opacity: 1.0,
+            timing_opacity: 1.0,
+            lyrics: Some(&frame),
+        },
+    );
+    // Title remains legible throughout travel, even before the reel arrives.
+    let title = scene
+        .sprites
+        .iter()
+        .filter(|sprite| {
+            sprite.geometry.color.red == f32::from(prepared.palette.primary_text.red) / 255.0
+                && sprite.texture.is_some()
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        title
+            .iter()
+            .any(|sprite| sprite.geometry.color.alpha == 1.0),
+        "shared Title words must not fade during composition movement"
+    );
+}
+
+fn composition_preserves_clipped_title_at_motion_boundary(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    let viewport = Viewport::new(1280, 720);
+    let mut presentation = fixture("lyrics-reel-capacity");
+    let Presentation::NowPlaying(value) = &mut presentation else {
+        panic!("Now Playing")
+    };
+    value.title = Some(format!(
+        "{} alpha beta gamma delta epsilon",
+        "W".repeat(200)
+    ));
+    value.artist = None;
+    value.album = None;
+    let prepared = preparation
+        .prepare(&presentation, viewport, repository, true)
+        .unwrap();
+    let PreparedContent::NowPlaying(content) = &prepared.content else {
+        panic!("Now Playing")
+    };
+    let Presentation::NowPlaying(value) = &presentation else {
+        unreachable!()
+    };
+    let layout =
+        roonscape_renderer::NowPlayingLayout::for_composition_progress(value, viewport, 0.0);
+    let first_word = &content.metadata.movement[0].ordinary.words[0];
+    let first_texture = first_word
+        .text
+        .sprite(
+            0.0,
+            0.0,
+            qt_window::Color::default(),
+            qt_window::Rect::viewport(viewport),
+        )
+        .texture
+        .unwrap()
+        .identity();
+    assert!(
+        first_word.text.bounds.width > layout.information.musical_metadata_width_px as f32,
+        "the native ordinary endpoint clips the overlong first token"
+    );
+    let mut motion = lyric_motion::LyricMotion::new(1, None);
+    motion.update(1, value.lyrics.as_deref(), ms(0), true);
+    let mut frame = motion.frame_at(ms(0));
+    frame.composition_progress = 0.12001;
+    frame.cues.clear();
+    let mut scene = Scene::default();
+    scene::foreground(
+        &mut scene,
+        &prepared,
+        &scene::Foreground {
+            presentation: &presentation,
+            palette: prepared.palette,
+            now: ms(0),
+            animated: true,
+            opacity: 1.0,
+            metadata_opacity: 1.0,
+            status: value.status,
+            status_opacity: 1.0,
+            timing_opacity: 1.0,
+            lyrics: Some(&frame),
+        },
+    );
+    let moving = &scene
+        .sprites
+        .iter()
+        .find(|sprite| {
+            sprite.texture.as_ref().map(|texture| texture.identity()) == Some(first_texture)
+        })
+        .expect("the first Title word remains visible")
+        .geometry;
+    assert!(
+        (moving.bounds.height - first_word.text.bounds.height).abs() < 1.0,
+        "movement must retain native clipped font size: {} -> {}",
+        first_word.text.bounds.height,
+        moving.bounds.height
+    );
+    assert!(
+        (moving.clip.x + moving.clip.width
+            - (layout.information.left_viewport_x_px + layout.information.musical_metadata_width_px)
+                as f32)
+            .abs()
+            < 1.0,
+        "movement must retain native horizontal clipping"
+    );
+}
+
+fn composition_reel_translation_and_clipping(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    use qt_window::{Color, Rect};
+    for viewport in [
+        Viewport::new(1280, 720),
+        Viewport::new(1600, 1200),
+        Viewport::new(3840, 2160),
+    ] {
+        let presentation = fixture("lyrics-reel-capacity");
+        let prepared = preparation
+            .prepare(&presentation, viewport, repository, true)
+            .unwrap();
+        let PreparedContent::NowPlaying(content) = &prepared.content else {
+            panic!("Now Playing")
+        };
+        let reel = content.reel.as_ref().unwrap();
+        let textures: Vec<_> = reel
+            .cues
+            .values()
+            .map(|text| {
+                text.sprite(0.0, 0.0, Color::default(), Rect::viewport(viewport))
+                    .texture
+                    .unwrap()
+                    .identity()
+            })
+            .collect();
+        let Presentation::NowPlaying(value) = &presentation else {
+            panic!("Now Playing")
+        };
+        let mut motion = lyric_motion::LyricMotion::new(1, None);
+        motion.update(1, value.lyrics.as_deref(), ms(0), true);
+        let render = |frame: &lyric_motion::LyricFrame| {
+            let mut result = Scene::default();
+            scene::foreground(
+                &mut result,
+                &prepared,
+                &scene::Foreground {
+                    presentation: &presentation,
+                    palette: prepared.palette,
+                    now: ms(400),
+                    animated: true,
+                    opacity: 1.0,
+                    metadata_opacity: 1.0,
+                    status: value.status,
+                    status_opacity: 1.0,
+                    timing_opacity: 1.0,
+                    lyrics: Some(frame),
+                },
+            );
+            result
+        };
+        let frame = motion.frame_at(ms(400));
+        let moving = render(&frame);
+        let mut settled_frame = frame.clone();
+        settled_frame.composition_progress = 1.0;
+        let settled = render(&settled_frame);
+        let mut translations = Vec::new();
+        for identity in &textures {
+            let sprite = |scene: &Scene<'_>| {
+                scene
+                    .sprites
+                    .iter()
+                    .find(|sprite| {
+                        sprite
+                            .texture
+                            .as_ref()
+                            .is_some_and(|texture| texture.identity() == *identity)
+                    })
+                    .map(|sprite| sprite.geometry)
+            };
+            if let (Some(moving), Some(settled)) = (sprite(&moving), sprite(&settled)) {
+                close(moving.color.alpha, settled.color.alpha);
+                close(moving.bounds.width, settled.bounds.width);
+                translations.push(moving.bounds.y - settled.bounds.y);
+                assert!(moving.clip.y >= reel.top);
+                assert!(moving.clip.y + moving.clip.height <= reel.bottom + 0.01);
+                close(moving.fade_bottom, settled.fade_bottom);
+            }
+        }
+        assert!(translations.len() >= 2);
+        assert!(translations[0] > 0.0);
+        let first_translation = translations[0];
+        for translation in translations {
+            close(translation, first_translation);
+        }
+        let before = render(&motion.frame_at(ms(290)));
+        motion.update(1, None, ms(290), true);
+        let reversed = render(&motion.frame_at(ms(290)));
+        assert_eq!(
+            serde_json::to_value(
+                before
+                    .sprites
+                    .iter()
+                    .map(|s| s.geometry)
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+            serde_json::to_value(
+                reversed
+                    .sprites
+                    .iter()
+                    .map(|s| s.geometry)
+                    .collect::<Vec<_>>()
+            )
+            .unwrap(),
+            "reversal must begin at the displayed scene"
+        );
+        let ordinary = render(&motion.frame_at(ms(870)));
+        assert!(
+            ordinary.sprites.iter().all(|sprite| sprite
+                .texture
+                .as_ref()
+                .is_none_or(|texture| !textures.contains(&texture.identity()))),
+            "empty lyric clip must emit no cue sprites"
+        );
+    }
+}
+
+fn cue_preparation_reuses_metadata_words(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    use qt_window::{Color, Rect};
+    let viewport = Viewport::new(1280, 720);
+    let mut presentation = fixture("lyrics-reel-capacity");
+    let Presentation::NowPlaying(value) = &mut presentation else {
+        panic!("Now Playing")
+    };
+    value.title = Some("go ".repeat(70).trim().to_owned());
+    value.artist = Some("la ".repeat(120).trim().to_owned());
+    let first = preparation
+        .prepare(&presentation, viewport, repository, true)
+        .unwrap();
+    let PreparedContent::NowPlaying(content) = &first.content else {
+        panic!("Now Playing")
+    };
+    let identity = content.metadata.movement[0].ordinary.words[0]
+        .text
+        .sprite(0.0, 0.0, Color::default(), Rect::viewport(viewport))
+        .texture
+        .unwrap()
+        .identity();
+    let Presentation::NowPlaying(value) = &mut presentation else {
+        panic!("Now Playing")
+    };
+    value.lyrics.as_mut().unwrap().current_index += 1;
+    let next = preparation
+        .prepare(&presentation, viewport, repository, true)
+        .unwrap();
+    let PreparedContent::NowPlaying(content) = &next.content else {
+        panic!("Now Playing")
+    };
+    let next_identity = content.metadata.movement[0].ordinary.words[0]
+        .text
+        .sprite(0.0, 0.0, Color::default(), Rect::viewport(viewport))
+        .texture
+        .unwrap()
+        .identity();
+    assert_eq!(
+        identity, next_identity,
+        "cue preparation must reuse metadata word textures even for dense credits"
+    );
+    let texture_identity = |prepared: &prepared_presentation::PreparedPresentation<'_>| {
+        let PreparedContent::NowPlaying(content) = &prepared.content else {
+            panic!("Now Playing")
+        };
+        content.metadata.movement[0].ordinary.words[0]
+            .text
+            .sprite(0.0, 0.0, Color::default(), Rect::viewport(viewport))
+            .texture
+            .unwrap()
+            .identity()
+    };
+    for index in 0..10 {
+        let mut changed = presentation.clone();
+        let Presentation::NowPlaying(value) = &mut changed else {
+            panic!("Now Playing")
+        };
+        value.title = Some(format!("Changed title {index}"));
+        let changed = preparation
+            .prepare(&changed, viewport, repository, true)
+            .unwrap();
+        assert_ne!(
+            identity,
+            texture_identity(&changed),
+            "changed text invalidates its words"
+        );
+    }
+    let refreshed = preparation
+        .prepare(&presentation, viewport, repository, true)
+        .unwrap();
+    assert_ne!(
+        identity,
+        texture_identity(&refreshed),
+        "old endpoints are evicted from the bounded cache"
+    );
+    let resized = preparation
+        .prepare(&presentation, Viewport::new(1600, 1200), repository, true)
+        .unwrap();
+    assert_ne!(
+        texture_identity(&refreshed),
+        texture_identity(&resized),
+        "viewport fitting invalidates native word geometry"
+    );
+}
+
+fn wrapping_words_do_not_collide_during_composition(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    use qt_window::{Color, Rect};
+    let viewport = Viewport::new(1280, 720);
+    let presentation = fixture("lyrics-reel-capacity");
+    let prepared = preparation
+        .prepare(&presentation, viewport, repository, true)
+        .unwrap();
+    let PreparedContent::NowPlaying(content) = &prepared.content else {
+        panic!("Now Playing")
+    };
+    let words = &content.metadata.movement[0].ordinary.words;
+    assert_eq!(
+        words.iter().map(|word| word.occurrence).collect::<Vec<_>>(),
+        vec![Some(0), Some(1), Some(2), Some(3)]
+    );
+    let textures: Vec<_> = words
+        .iter()
+        .map(|word| {
+            word.text
+                .sprite(0.0, 0.0, Color::default(), Rect::viewport(viewport))
+                .texture
+                .unwrap()
+                .identity()
+        })
+        .collect();
+    let Presentation::NowPlaying(value) = &presentation else {
+        panic!("Now Playing")
+    };
+    let mut motion = lyric_motion::LyricMotion::new(1, None);
+    motion.update(1, value.lyrics.as_deref(), ms(0), true);
+    for time in [290, 319, 348, 377] {
+        let mut frame = motion.frame_at(ms(time));
+        frame.cues.clear();
+        let mut scene = Scene::default();
+        scene::foreground(
+            &mut scene,
+            &prepared,
+            &scene::Foreground {
+                presentation: &presentation,
+                palette: prepared.palette,
+                now: ms(time),
+                animated: true,
+                opacity: 1.0,
+                metadata_opacity: 1.0,
+                status: value.status,
+                status_opacity: 1.0,
+                timing_opacity: 1.0,
+                lyrics: Some(&frame),
+            },
+        );
+        let bounds: Vec<_> = textures
+            .iter()
+            .map(|identity| {
+                scene
+                    .sprites
+                    .iter()
+                    .find(|sprite| {
+                        sprite
+                            .texture
+                            .as_ref()
+                            .is_some_and(|texture| texture.identity() == *identity)
+                    })
+                    .unwrap()
+                    .geometry
+                    .bounds
+            })
+            .collect();
+        for (index, a) in bounds.iter().enumerate() {
+            for (other, b) in bounds.iter().enumerate().skip(index + 1) {
+                if words[index].baseline == words[other].baseline {
+                    continue;
+                }
+                let overlap_x = (a.x + a.width).min(b.x + b.width) - a.x.max(b.x);
+                let overlap_y = (a.y + a.height).min(b.y + b.height) - a.y.max(b.y);
+                assert!(
+                    overlap_x <= 2.0 || overlap_y <= 2.0,
+                    "line-changing Title words collide at {time} ms: {index}/{other}"
+                );
+            }
+        }
+    }
+}
+
+fn partially_retained_words_follow_native_ellipsis(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    use qt_window::{Color, Rect};
+    let viewport = Viewport::new(1280, 720);
+    let mut presentation = fixture("lyrics-reel-capacity");
+    let Presentation::NowPlaying(value) = &mut presentation else {
+        panic!("Now Playing")
+    };
+    value.title = Some("affinity ".repeat(18).trim().to_owned());
+    let prepared = preparation
+        .prepare(&presentation, viewport, repository, true)
+        .unwrap();
+    let PreparedContent::NowPlaying(content) = &prepared.content else {
+        panic!("Now Playing")
+    };
+    let movement = &content.metadata.movement[0];
+    let (source, destination) = movement
+        .ordinary
+        .words
+        .iter()
+        .find_map(|source| {
+            let destination = movement
+                .compact
+                .words
+                .iter()
+                .find(|word| word.occurrence == source.occurrence)?;
+            (source.visible_bytes > destination.visible_bytes && destination.occurrence.is_some())
+                .then_some((source, destination))
+        })
+        .expect("fixture must exercise a native partially retained word");
+    let source_texture = source
+        .text
+        .sprite(0.0, 0.0, Color::default(), Rect::viewport(viewport))
+        .texture
+        .unwrap()
+        .identity();
+    let Presentation::NowPlaying(value) = &presentation else {
+        panic!("Now Playing")
+    };
+    let mut motion = lyric_motion::LyricMotion::new(1, None);
+    motion.update(1, value.lyrics.as_deref(), ms(0), true);
+    let mut frame = motion.frame_at(ms(487));
+    frame.cues.clear();
+    let mut scene = Scene::default();
+    scene::foreground(
+        &mut scene,
+        &prepared,
+        &scene::Foreground {
+            presentation: &presentation,
+            palette: prepared.palette,
+            now: ms(487),
+            animated: true,
+            opacity: 1.0,
+            metadata_opacity: 1.0,
+            status: value.status,
+            status_opacity: 1.0,
+            timing_opacity: 1.0,
+            lyrics: Some(&frame),
+        },
+    );
+    let sprite = scene
+        .sprites
+        .iter()
+        .find(|sprite| {
+            sprite
+                .texture
+                .as_ref()
+                .is_some_and(|texture| texture.identity() == source_texture)
+        })
+        .expect("retained word travels continuously");
+    let layout =
+        roonscape_renderer::NowPlayingLayout::for_composition_progress(value, viewport, 1.0);
+    let endpoint_right = layout.information.left_viewport_x_px as f32
+        + destination.text.bounds.x
+        + destination.text.bounds.width;
+    let visible_right = (sprite.geometry.bounds.x + sprite.geometry.bounds.width)
+        .min(sprite.geometry.clip.x + sprite.geometry.clip.width);
+    assert!(
+        visible_right <= endpoint_right + 1.0,
+        "partial word must approach native ellipsis, got {visible_right} beyond {endpoint_right}"
+    );
+}
+
 fn compatible_content(preparation: &mut PresentationPreparation<'_>, repository: &Path) {
     let viewport = Viewport::new(1280, 720);
     let mut playing = fixture("playing");
@@ -750,6 +1336,13 @@ fn main() {
     transitions(&mut preparation, repository);
     disabling_animation_settles_active_graphics(&mut preparation, repository);
     lyrics(&mut preparation, repository);
+    word_motion_meets_native_endpoints(&mut preparation, repository);
+    composition_keeps_shared_metadata_visible(&mut preparation, repository);
+    composition_preserves_clipped_title_at_motion_boundary(&mut preparation, repository);
+    partially_retained_words_follow_native_ellipsis(&mut preparation, repository);
+    wrapping_words_do_not_collide_during_composition(&mut preparation, repository);
+    cue_preparation_reuses_metadata_words(&mut preparation, repository);
+    composition_reel_translation_and_clipping(&mut preparation, repository);
     compatible_content(&mut preparation, repository);
     palette_surfaces(&mut preparation, repository);
     fitted_text(&text_preparation::TextPreparation::new(

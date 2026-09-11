@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 
 use gtk::{cairo, glib::Unichar, pango};
 use pango::prelude::*;
@@ -75,12 +76,79 @@ impl<'window> PreparedText<'window> {
     }
 }
 
+/// A word occurrence drawn from the endpoint's already-shaped glyphs. Byte
+/// coverage stops at native cluster boundaries when Pango retains a prefix.
+#[derive(Clone)]
+pub(crate) struct PreparedWord<'window> {
+    pub occurrence: Option<usize>,
+    pub text: PreparedText<'window>,
+    pub x: f32,
+    pub baseline: f32,
+    pub visible_bytes: usize,
+    pub clusters: Vec<(usize, Rect)>,
+}
+
+impl PreparedWord<'_> {
+    pub fn retained_bounds(&self, bytes: usize) -> Rect {
+        self.clusters
+            .iter()
+            .filter(|(end, _)| *end <= bytes)
+            .map(|(_, bounds)| *bounds)
+            .reduce(|a, b| union(Some(a), b))
+            .unwrap_or(Rect::new(self.x, self.baseline, 0.0, 0.0))
+    }
+}
+
+struct WordGlyphs {
+    occurrence: Option<usize>,
+    runs: Vec<(pango::Font, pango::GlyphString, f32, f32)>,
+    ink: Option<Rect>,
+    logical: Option<Rect>,
+    baseline: f32,
+    visible_bytes: usize,
+    clusters: Vec<(usize, Rect)>,
+}
+
+fn union(a: Option<Rect>, b: Rect) -> Rect {
+    let Some(a) = a else { return b };
+    let x = a.x.min(b.x);
+    let y = a.y.min(b.y);
+    Rect::new(
+        x,
+        y,
+        (a.x + a.width).max(b.x + b.width) - x,
+        (a.y + a.height).max(b.y + b.height) - y,
+    )
+}
+
+fn pango_rect(rect: pango::Rectangle, x: f32, y: f32) -> Rect {
+    let unit = pango::SCALE as f32;
+    Rect::new(
+        x + rect.x() as f32 / unit,
+        y + rect.y() as f32 / unit,
+        rect.width() as f32 / unit,
+        rect.height() as f32 / unit,
+    )
+}
+
+fn pixel_rect(rect: Rect, x: f32, y: f32) -> pango::Rectangle {
+    let left = (rect.x - x).floor() as i32;
+    let top = (rect.y - y).floor() as i32;
+    pango::Rectangle::new(
+        left,
+        top,
+        (rect.x + rect.width - x).ceil() as i32 - left,
+        (rect.y + rect.height - y).ceil() as i32 - top,
+    )
+}
+
 pub(crate) struct TextPreparation<'window> {
     context: pango::Context,
     typography: TypographySelection,
     uploader: Uploader<'window>,
     scale: f64,
     drawings: RefCell<VecDeque<(String, PreparedText<'window>)>>,
+    word_drawings: RefCell<VecDeque<(String, Arc<[PreparedWord<'window>]>)>>,
     measurements: HashMap<(Face, String, u32), (u32, u32)>,
 }
 
@@ -102,6 +170,7 @@ impl<'window> TextPreparation<'window> {
             uploader,
             scale,
             drawings: RefCell::new(VecDeque::new()),
+            word_drawings: RefCell::new(VecDeque::new()),
             measurements: HashMap::new(),
         }
     }
@@ -209,6 +278,42 @@ impl<'window> TextPreparation<'window> {
             return Ok(result);
         }
         let (ink, logical) = layout.pixel_extents();
+        #[allow(unused_mut)]
+        let mut prepared = self.rasterize_drawing(
+            ink,
+            logical,
+            fitting_scale,
+            layout.baseline() as f32 / pango::SCALE as f32,
+            |context| pangocairo::functions::show_layout(context, layout),
+        )?;
+        #[cfg(test)]
+        {
+            prepared.lines = layout
+                .lines_readonly()
+                .iter()
+                .map(|line| {
+                    let text = layout.text();
+                    text[line.start_index() as usize..(line.start_index() + line.length()) as usize]
+                        .to_owned()
+                })
+                .collect();
+            prepared.ellipsized = layout.is_ellipsized();
+        }
+        if drawings.len() >= 128 {
+            drawings.pop_front();
+        }
+        drawings.push_back((key, prepared.clone()));
+        Ok(prepared)
+    }
+
+    fn rasterize_drawing(
+        &self,
+        ink: pango::Rectangle,
+        logical: pango::Rectangle,
+        fitting_scale: f64,
+        baseline: f32,
+        draw: impl Fn(&cairo::Context),
+    ) -> Result<PreparedText<'window>, String> {
         let left = ink.x().min(logical.x()) - 1;
         let top = ink.y().min(logical.y()) - 1;
         let right = (ink.x() + ink.width()).max(logical.x() + logical.width()) + 1;
@@ -224,7 +329,7 @@ impl<'window> TextPreparation<'window> {
             let context = cairo::Context::new(&surface).map_err(|e| e.to_string())?;
             context.translate(-f64::from(left), -f64::from(top));
             context.set_source_rgba(foreground, foreground, foreground, 1.0);
-            pangocairo::functions::show_layout(&context, layout);
+            draw(&context);
             drop(context);
             let stride = surface.stride() as usize;
             let data = surface.take_data().map_err(|e| e.to_string())?;
@@ -275,20 +380,205 @@ impl<'window> TextPreparation<'window> {
             width: logical.width() as f32 * fitting_scale as f32,
             height: logical.height() as f32 * fitting_scale as f32,
             #[cfg(test)]
-            lines: layout
-                .lines_readonly()
-                .iter()
-                .map(|line| {
-                    let text = layout.text();
-                    text[line.start_index() as usize..(line.start_index() + line.length()) as usize]
-                        .to_owned()
-                })
-                .collect(),
+            lines: Vec::new(),
             #[cfg(test)]
-            ellipsized: layout.is_ellipsized(),
-            baseline: layout.baseline() as f32 / pango::SCALE as f32 * fitting_scale as f32,
+            ellipsized: false,
+            baseline: baseline * fitting_scale as f32,
         };
-        if drawings.len() >= 128 {
+        Ok(prepared)
+    }
+
+    pub fn words(
+        &self,
+        layout: &pango::Layout,
+        synthetic_ellipsis: bool,
+    ) -> Result<Arc<[PreparedWord<'window>]>, String> {
+        let text = layout.text();
+        let key = format!(
+            "{:?}|{:?}|{}|{:?}|{}",
+            text,
+            layout.font_description().map(|font| font.to_string()),
+            layout.width(),
+            layout.ellipsize(),
+            synthetic_ellipsis
+        );
+        let mut drawings = self.word_drawings.borrow_mut();
+        if let Some(index) = drawings.iter().position(|(cached, _)| cached == &key) {
+            let entry = drawings.remove(index).unwrap();
+            let result = entry.1.clone();
+            drawings.push_back(entry);
+            return Ok(result);
+        }
+        let cutoff = if synthetic_ellipsis && text.ends_with('…') {
+            text.len() - '…'.len_utf8()
+        } else {
+            text.len()
+        };
+        let mut ranges = Vec::new();
+        let mut offset = 0;
+        for token in text[..cutoff].split_inclusive(char::is_whitespace) {
+            let word = token.trim();
+            if !word.is_empty() {
+                let start = offset + token.find(word).unwrap();
+                ranges.push(start..start + word.len());
+            }
+            offset += token.len();
+        }
+        let mut groups: Vec<WordGlyphs> = Vec::new();
+        let mut iter = layout.iter();
+        loop {
+            if let Some(run) = iter.run_readonly() {
+                let item = run.item();
+                let font = item.analysis().font();
+                let glyphs = run.glyph_string();
+                let (_, logical) = iter.run_extents();
+                let mut x = logical.x() as f32 / pango::SCALE as f32;
+                let baseline = iter.run_baseline() as f32 / pango::SCALE as f32;
+                let ellipsis =
+                    item.analysis().flags() & pango::ANALYSIS_FLAG_IS_ELLIPSIS as u8 != 0;
+                let identity = |glyph: usize| {
+                    let index = (item.offset() + glyphs.log_clusters()[glyph]) as usize;
+                    if ellipsis || index >= cutoff {
+                        Some(None)
+                    } else {
+                        ranges
+                            .iter()
+                            .position(|range| range.contains(&index))
+                            .map(Some)
+                    }
+                };
+                let mut start = 0;
+                while start < glyphs.num_glyphs() as usize {
+                    let id = identity(start);
+                    let mut end = start + 1;
+                    while end < glyphs.num_glyphs() as usize && identity(end) == id {
+                        end += 1;
+                    }
+                    let advance = glyphs.glyph_info()[start..end]
+                        .iter()
+                        .map(|glyph| glyph.geometry().width())
+                        .sum::<i32>() as f32
+                        / pango::SCALE as f32;
+                    if let Some(occurrence) = id {
+                        let mut selected = pango::GlyphString::new();
+                        selected.set_size((end - start) as i32);
+                        selected
+                            .glyph_info_mut()
+                            .clone_from_slice(&glyphs.glyph_info()[start..end]);
+                        selected
+                            .log_clusters_mut()
+                            .copy_from_slice(&glyphs.log_clusters()[start..end]);
+                        let (ink, logical) = selected.extents(&font);
+                        let group_index = groups
+                            .iter()
+                            .position(|group| group.occurrence == occurrence)
+                            .unwrap_or_else(|| {
+                                groups.push(WordGlyphs {
+                                    occurrence,
+                                    runs: Vec::new(),
+                                    ink: None,
+                                    logical: None,
+                                    baseline,
+                                    visible_bytes: 0,
+                                    clusters: Vec::new(),
+                                });
+                                groups.len() - 1
+                            });
+                        let group = &mut groups[group_index];
+                        group.ink = Some(union(group.ink, pango_rect(ink, x, baseline)));
+                        group.logical =
+                            Some(union(group.logical, pango_rect(logical, x, baseline)));
+                        if let Some(occurrence) = occurrence {
+                            let mut cluster_start = start;
+                            let mut cluster_x = x;
+                            while cluster_start < end {
+                                let cluster = glyphs.log_clusters()[cluster_start];
+                                let mut cluster_end = cluster_start + 1;
+                                while cluster_end < end
+                                    && glyphs.log_clusters()[cluster_end] == cluster
+                                {
+                                    cluster_end += 1;
+                                }
+                                let mut cluster_glyphs = pango::GlyphString::new();
+                                cluster_glyphs.set_size((cluster_end - cluster_start) as i32);
+                                cluster_glyphs.glyph_info_mut().clone_from_slice(
+                                    &glyphs.glyph_info()[cluster_start..cluster_end],
+                                );
+                                let (ink, logical) = cluster_glyphs.extents(&font);
+                                let next = glyphs
+                                    .log_clusters()
+                                    .iter()
+                                    .copied()
+                                    .filter(|index| *index > cluster)
+                                    .min()
+                                    .unwrap_or(item.length());
+                                let end_byte = ((item.offset() + next) as usize)
+                                    .min(ranges[occurrence].end)
+                                    - ranges[occurrence].start;
+                                group.visible_bytes = group.visible_bytes.max(end_byte);
+                                group.clusters.push((
+                                    end_byte,
+                                    union(
+                                        Some(pango_rect(ink, cluster_x, baseline)),
+                                        pango_rect(logical, cluster_x, baseline),
+                                    ),
+                                ));
+                                cluster_x += glyphs.glyph_info()[cluster_start..cluster_end]
+                                    .iter()
+                                    .map(|glyph| glyph.geometry().width())
+                                    .sum::<i32>()
+                                    as f32
+                                    / pango::SCALE as f32;
+                                cluster_start = cluster_end;
+                            }
+                        }
+                        group.runs.push((font.clone(), selected, x, baseline));
+                    }
+                    x += advance;
+                    start = end;
+                }
+            }
+            if !iter.next_run() {
+                break;
+            }
+        }
+        groups.sort_by_key(|group| group.occurrence.unwrap_or(usize::MAX));
+        let prepared: Arc<[PreparedWord<'window>]> = groups
+            .into_iter()
+            .map(|group| {
+                let logical = group.logical.unwrap();
+                let x = logical.x;
+                let y = group.baseline;
+                let prepared = self.rasterize_drawing(
+                    pixel_rect(group.ink.unwrap(), 0.0, 0.0),
+                    pixel_rect(logical, 0.0, 0.0),
+                    1.0,
+                    0.0,
+                    |context| {
+                        for (font, glyphs, run_x, run_y) in &group.runs {
+                            context.move_to(f64::from(*run_x), f64::from(*run_y));
+                            pangocairo::functions::show_glyph_string(
+                                context,
+                                font,
+                                &mut glyphs.clone(),
+                            );
+                        }
+                    },
+                )?;
+                Ok(PreparedWord {
+                    occurrence: group.occurrence,
+                    text: prepared,
+                    x,
+                    baseline: y,
+                    visible_bytes: group.visible_bytes,
+                    clusters: group.clusters,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?
+            .into();
+        // Cache complete endpoints so dense credits cannot evict their own
+        // earliest words, and cue preparation does not reshape unchanged text.
+        if drawings.len() >= 8 {
             drawings.pop_front();
         }
         drawings.push_back((key, prepared.clone()));
