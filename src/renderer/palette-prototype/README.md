@@ -65,7 +65,36 @@ in the Synchronized Lyric Composition. The smaller artwork, compact masthead,
 Lyric Reel, active cue, and footer positions are shared across all variants.
 The active cue uses primary text; surrounding cues use secondary text.
 Playing, progress fill, and backing plate share the accent color. Only colors
-vary; no fourth-study preference has been selected.
+vary. The user selected D (paper + royal blue), a light palette.
+
+The fifth study is at <http://localhost:8765/kings.html?variant=B>:
+
+- A: Current ochre, the captured dark baseline.
+- B: Aged paper + teal, a light warm field and deep teal accents.
+- C: Ivory + carmine, a light ivory field and red accents.
+- D: Butter + violet, a light yellow field and violet accents.
+
+It shows Kings, credited to Steely Dan / Elliott Randall, from Can't Buy A
+Thrill, frozen at 0:52. All options keep the captured layout and styling.
+Backing plate, Playing, and progress share the accent. No selection yet.
+
+## Selection balance
+
+Count distinct artwork studies, not revisions or individual variants. Count
+dark/light by the selected presentation palette, not source artwork brightness.
+The user wants equal numbers of dark and light selected examples.
+
+| Study | Selected option | Tone |
+| --- | --- | --- |
+| Miami Ultras / Warlord | B — Neutral silver | Dark |
+| That Kid / Strictly for My Streamers | D — Midnight + cyan | Dark |
+| Don't Come To LA / Still Brazy | B — Crimson + parchment | Dark |
+| Campaign | D — Paper + royal blue | Light |
+| Kings / Can't Buy A Thrill | Pending | Pending |
+
+Four selected studies: three dark, one light. Five comparisons including the
+pending Kings study. Two further light selections would give three of each;
+Kings provides three light alternatives toward that balance.
 
 Use the floating arrows, A–D buttons, or keyboard arrows. H hides the controls;
 H restores them; double-clicking the preview also restores them. R toggles the original capture. The URL records the
