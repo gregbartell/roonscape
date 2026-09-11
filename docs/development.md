@@ -247,6 +247,14 @@ DISPLAY=:0 ROONSCAPE_WINDOWED=1 npm run fixture -- --static --scenario paused
 Manual operation retains the existing desktop/display defaults. Use headless
 operation for unattended verification alongside an existing Live Mode session.
 
+## Compare Renderer resources
+
+Use `npm run compare:renderer -- --baseline ref:HEAD --candidate worktree:.`
+to collect sequential CPU/RSS comparisons with maintained synthetic workloads.
+See [Renderer resource comparison](agents/renderer-resource-comparison.md) for
+profiles, focused selection, build reuse, retained reports, and interpretation.
+Full comparisons are separate from routine verification.
+
 ## Desktop launcher
 
 After installing dependencies, build the application and complete first-time

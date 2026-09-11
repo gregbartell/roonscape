@@ -24,6 +24,14 @@ and [failure diagnostics](#failure-diagnostics). For presentation changes,
 also follow [Presentation review](#presentation-review). Documentation-only work
 uses the guidance in this section.
 
+Before finishing potentially performance-affecting Renderer work, run the
+[Renderer resource comparison](renderer-resource-comparison.md) with explicitly
+selected baseline and candidate sources. Reuse valid evidence while it covers
+the final change and conditions. This is separate from correctness/presentation
+verification; measured increases are advisory. Follow that guide for focused
+coverage, uncertainty, and handoff requirements. Do not make unmeasured
+optimization claims.
+
 Run applicable final verification when the change is ready. Reuse successful
 results while they cover the final change and relevant environment. Rerun when
 subsequent changes, failures, or new evidence invalidate that coverage; preparing
