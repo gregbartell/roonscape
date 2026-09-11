@@ -37,6 +37,7 @@ struct PreparationKey {
     generation: u64,
 }
 struct Request {
+    revision: u64,
     key: PreparationKey,
     presentation: Presentation,
     token: u64,
@@ -173,6 +174,8 @@ pub(crate) fn run() -> Result<(), Box<dyn Error>> {
         ready: None,
         ready_at: Duration::ZERO,
         installed_palette: None,
+        installed_token: 0,
+        installed_artwork: None,
         send,
         replies,
         wake,
@@ -236,11 +239,15 @@ pub(crate) fn run() -> Result<(), Box<dyn Error>> {
             };
             while let Ok(work) = receive.recv() {
                 let mut artwork = None;
-                let mut request = None;
+                let mut request:Option<Box<Request>> = None;
                 for work in std::iter::once(work).chain(receive.try_iter()) {
                     match work {
                         PreparationWork::Artwork(next) => artwork = Some(next),
-                        PreparationWork::Presentation(next) => request = Some(next),
+                        PreparationWork::Presentation(next) => {
+                            if let Some(previous)=request.replace(next) {
+                                crate::content_evidence::record(||serde_json::json!({"event":"preparation-superseded","token":previous.token,"revision":previous.revision}));
+                            }
+                        },
                     }
                 }
                 let Some(request) = request else {
@@ -250,8 +257,10 @@ pub(crate) fn run() -> Result<(), Box<dyn Error>> {
                     continue;
                 };
                 if request.token != worker_latest.load(Ordering::Acquire) {
+                    crate::content_evidence::record(||serde_json::json!({"event":"preparation-superseded","token":request.token,"revision":request.revision}));
                     continue;
                 }
+                crate::content_evidence::record(||serde_json::json!({"event":"preparation-started","token":request.token,"revision":request.revision}));
                 let result = (|| {
                     if scale != request.key.scale {
                         preparation =
@@ -272,7 +281,9 @@ pub(crate) fn run() -> Result<(), Box<dyn Error>> {
                         .transpose()?;
                     Ok(prepared)
                 })();
+                crate::content_evidence::record(||serde_json::json!({"event":"preparation-completed","token":request.token,"revision":request.revision,"success":result.is_ok(),"artworkResource":result.as_ref().ok().and_then(|prepared|prepared.artwork.as_ref()).map(|texture|texture.identity())}));
                 if request.token != worker_latest.load(Ordering::Acquire) {
+                    crate::content_evidence::record(||serde_json::json!({"event":"preparation-superseded","token":request.token,"revision":request.revision}));
                     continue;
                 }
                 if reply_send
@@ -304,6 +315,8 @@ pub(crate) fn run() -> Result<(), Box<dyn Error>> {
 }
 
 struct PaintedScene {
+    content: Option<crate::content_evidence::Drawing>,
+    prepared_token: u64,
     serial: u64,
     revision: u64,
     visible_lyrics: bool,
@@ -318,6 +331,8 @@ struct Runtime<'window> {
     rendered: Presentation,
     shown: Presentation,
     installed_palette: Option<roonscape_renderer::PresentationPalette>,
+    installed_token: u64,
+    installed_artwork: Option<u64>,
     generation: u64,
     revision: u64,
     view: Option<NativeView<'window>>,
@@ -416,6 +431,11 @@ impl Runtime<'_> {
             generation: self.state.now_playing_generation(),
         };
         if self.key.as_ref() != Some(&key) {
+            if self.ready.is_some() {
+                crate::content_evidence::record(
+                    || serde_json::json!({"event":"preparation-superseded","token":self.token}),
+                );
+            }
             self.token += 1;
             self.latest.store(self.token, Ordering::Release);
             crate::animation_evidence::record(|| {
@@ -424,8 +444,12 @@ impl Runtime<'_> {
                     "revision": self.state.revision(), "observedMicros": crate::qt_window::clock_micros(),
                 })
             });
+            crate::content_evidence::record(
+                || serde_json::json!({"event":"preparation-requested","token":self.token,"revision":self.state.revision()}),
+            );
             self.send
                 .send(PreparationWork::Presentation(Box::new(Request {
+                    revision: self.state.revision(),
                     key: key.clone(),
                     presentation: incoming.presentation.clone(),
                     token: self.token,
@@ -448,7 +472,15 @@ impl Runtime<'_> {
                     .err()
                     .unwrap_or_else(|| "Preparation stopped".into()));
             }
+            if reply.token != self.token {
+                crate::content_evidence::record(
+                    || serde_json::json!({"event":"preparation-superseded","token":reply.token}),
+                );
+            }
             if reply.token == self.token {
+                crate::content_evidence::record(
+                    || serde_json::json!({"event":"preparation-adopted","token":reply.token}),
+                );
                 crate::animation_evidence::record(|| {
                     serde_json::json!({
                         "event": "preparation-ready", "token": reply.token,
@@ -521,6 +553,8 @@ impl Runtime<'_> {
         .presentation;
         if reveal_ready && let Some(prepared) = self.ready.take() {
             self.installed_key = self.key.clone();
+            self.installed_token = self.token;
+            self.installed_artwork = prepared.artwork.as_ref().map(|texture| texture.identity());
             self.installed_palette = prepared.artwork.as_ref().map(|_| prepared.palette);
             match &mut self.view {
                 Some(view) if replacement => view.replace(
@@ -555,6 +589,13 @@ impl Runtime<'_> {
             let serial = frame.submit(&scene);
             self.revision = selected.revision;
             self.paint_records.push_back(PaintedScene {
+                content: crate::content_evidence::Drawing::capture(
+                    &scene,
+                    self.installed_key == self.key
+                        && self.generation == self.state.now_playing_generation(),
+                    self.installed_artwork,
+                ),
+                prepared_token: self.installed_token,
                 serial,
                 revision: self.revision,
                 visible_lyrics: view.visible_lyrics(),
@@ -617,6 +658,9 @@ impl Runtime<'_> {
                             "receivedMicros": crate::qt_window::clock_micros() - received_at.elapsed().as_micros() as i64,
                         })
                     });
+                    crate::content_evidence::record(
+                        || serde_json::json!({"event":"snapshot-received","revision":snapshot.revision,"artwork":snapshot.artwork.as_ref().map(|artwork|serde_json::json!({"path":artwork.path,"revision":artwork.revision})),"receivedMicros":crate::qt_window::clock_micros()-received_at.elapsed().as_micros() as i64}),
+                    );
                     if let Some(diagnostics) = &mut self.diagnostics {
                         diagnostics.observe_snapshot(&snapshot, &self.repository);
                     }
@@ -688,6 +732,10 @@ impl WindowEvents for Runtime<'_> {
 
     fn input(&mut self, window: &Window, event: i32) {
         if event == 4 {
+            if crate::content_evidence::stop_requested() {
+                window.quit();
+                return;
+            }
             self.refresh_gui_state();
             if self
                 .auto_close
@@ -793,6 +841,11 @@ impl WindowEvents for Runtime<'_> {
         else {
             return;
         };
+        if let Some(content) = &painted.content {
+            crate::content_evidence::record(
+                || serde_json::json!({"event":"native-draw","revision":painted.revision,"preparedToken":painted.prepared_token,"frame":frame.frame,"scene":frame.scene,"frameTimeMicros":frame.time_micros,"drawing":content}),
+            );
+        }
         if let Some(values) = &painted.values {
             crate::animation_evidence::painted(
                 frame,

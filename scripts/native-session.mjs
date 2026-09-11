@@ -17,6 +17,7 @@ export async function createNativeSession({
   height,
   environment = process.env,
   signal,
+  physicalDisplay,
 } = {}) {
   const runtimeDirectory = await mkdtemp(path.join(tmpdir(), "rs-native."));
   const configurationPath = path.join(runtimeDirectory, "display.json");
@@ -53,6 +54,11 @@ export async function createNativeSession({
     "ROONSCAPE_WINDOWED",
     "ROONSCAPE_STATIC_FIXTURE",
     "ROONSCAPE_DIAGNOSTICS",
+    "ROONSCAPE_ANIMATION_EVIDENCE",
+    "ROONSCAPE_CONTENT_EVIDENCE",
+    "ROONSCAPE_CONTENT_EVIDENCE_CONTROL",
+    "ROONSCAPE_PRESENT_EVIDENCE",
+    "LD_PRELOAD",
     "ROONSCAPE_TEST_FIRST_REVEALED_PAINT_CONTROL",
   ])
     delete isolated[name];
@@ -121,14 +127,21 @@ export async function createNativeSession({
       "private native session bus",
       { signal },
     );
-    const { display, xvfb } = await startXvfbDisplay({
-      width,
-      height,
-      environment: isolated,
-      signal,
-    });
-    infrastructureProcesses.push(xvfb);
-    isolated.DISPLAY = display;
+    if (physicalDisplay) {
+      // The selected display is borrowed, never started, stopped, or reconfigured.
+      isolated.DISPLAY = physicalDisplay.display;
+      if (physicalDisplay.authority)
+        isolated.XAUTHORITY = physicalDisplay.authority;
+    } else {
+      const { display, xvfb } = await startXvfbDisplay({
+        width,
+        height,
+        environment: isolated,
+        signal,
+      });
+      infrastructureProcesses.push(xvfb);
+      isolated.DISPLAY = display;
+    }
     return {
       runtimeDirectory,
       configurationPath,

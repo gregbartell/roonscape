@@ -5,7 +5,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc::{SyncSender, sync_channel},
 };
 use std::thread::{self, JoinHandle};
@@ -75,6 +75,7 @@ enum Entry {
 struct AnimationEvidence {
     send: SyncSender<Entry>,
     worker: JoinHandle<io::Result<()>>,
+    lost: Arc<AtomicU64>,
 }
 
 #[derive(Serialize)]
@@ -95,8 +96,18 @@ impl AnimationEvidence {
         // Bound diagnostic memory without letting a slow disk stall animation.
         // A full queue invalidates the run instead of dropping evidence.
         let (send, receive) = sync_channel(64);
+        let lost = Arc::new(AtomicU64::new(0));
+        let worker_lost = lost.clone();
         let worker = thread::spawn(move || {
-            let mut output = BufWriter::new(output);
+            let mut output = EvidenceWriter {
+                output: BufWriter::new(output),
+                bytes: 0,
+                records: 0,
+            };
+            write(
+                &mut output,
+                &json!({"event":"start","version":1,"clock":"CLOCK_MONOTONIC","queueFrames":64,"maximumBytes":134217728}),
+            )?;
             let mut display_recorded = false;
             for entry in receive {
                 match entry {
@@ -146,14 +157,26 @@ impl AnimationEvidence {
                     }
                 }
             }
-            output.flush()
+            let lost = worker_lost.load(Ordering::Relaxed);
+            let records = output.records - 1;
+            write(
+                &mut output,
+                &json!({"event":"end","records":records,"lost":lost,"complete":lost==0,"observedMicros":crate::qt_window::clock_micros()}),
+            )?;
+            output.flush()?;
+            if lost > 0 {
+                return Err(io::Error::other(
+                    "Animation evidence overflowed; this run is incomplete",
+                ));
+            }
+            Ok(())
         });
-        Self { send, worker }
+        Self { send, worker, lost }
     }
 
     fn enqueue(&self, entry: Entry) {
-        if let Err(error) = self.send.try_send(entry) {
-            panic!("Animation evidence cannot keep up; this run is incomplete: {error}");
+        if self.send.try_send(entry).is_err() {
+            self.lost.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -164,9 +187,31 @@ impl AnimationEvidence {
             .map_err(|_| io::Error::other("Animation evidence writer panicked"))?
     }
 }
-fn write(output: &mut impl Write, entry: &impl Serialize) -> io::Result<()> {
+struct EvidenceWriter {
+    output: BufWriter<File>,
+    bytes: usize,
+    records: u64,
+}
+impl Write for EvidenceWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self.bytes.saturating_add(bytes.len()) > 128 * 1024 * 1024 {
+            return Err(io::Error::other(
+                "Animation evidence exceeds its retained size bound",
+            ));
+        }
+        let written = self.output.write(bytes)?;
+        self.bytes += written;
+        Ok(written)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.output.flush()
+    }
+}
+fn write(output: &mut EvidenceWriter, entry: &impl Serialize) -> io::Result<()> {
     serde_json::to_writer(&mut *output, entry).map_err(io::Error::other)?;
-    output.write_all(b"\n")
+    output.write_all(b"\n")?;
+    output.records += 1;
+    Ok(())
 }
 
 pub(crate) fn initialize() -> io::Result<()> {
@@ -262,7 +307,11 @@ mod tests {
             .lines()
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
-        assert_eq!(entries.len(), 5);
+        assert_eq!(entries.len(), 7);
+        assert_eq!(entries[0]["event"], "start");
+        assert_eq!(entries[6]["complete"], true);
+        assert_eq!(entries[6]["records"], 5);
+        let entries = &entries[1..6];
         assert_eq!(entries[0]["revision"], 7);
         assert_eq!(entries[1]["event"], "display");
         assert_eq!(entries[1]["frameTimeSource"], "render-start");

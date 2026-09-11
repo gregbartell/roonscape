@@ -59,6 +59,9 @@ void rs_window_resize(RsWindow *, uint32_t, uint32_t);
 uint64_t rs_window_scene(RsWindow *, const RsGraphic *, size_t, const RsSprite *, size_t, bool direct);
 int64_t rs_clock_micros();
 // Read-only identities for associating external presentation observations.
+// Nonzero only on the thread that drew this frame, until its next frame begins.
+uint64_t roonscape_submission_frame();
+uint64_t roonscape_submission_scene();
 uint64_t roonscape_frame_serial();
 int64_t roonscape_frame_time_micros();
 // Formats: 0 RGBA8, 1 BGRA8, 2 R8, 3 RGBA32I, 4 RGB16I, 5 RGB8.

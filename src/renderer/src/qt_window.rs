@@ -641,6 +641,9 @@ impl Texture<'_> {
 
 impl Drop for TextureHandle {
     fn drop(&mut self) {
+        crate::content_evidence::record(
+            || serde_json::json!({"event":"resource-released","resource":self.1}),
+        );
         unsafe { rs_texture_delete(self.0.as_ptr()) }
     }
 }
@@ -670,11 +673,12 @@ impl Drop for PendingTexture<'_, '_> {
 impl<'window> Uploader<'window> {
     fn texture(&self, pointer: *mut NativeTexture) -> Result<Texture<'window>, String> {
         let pointer = NonNull::new(pointer).ok_or("Cannot prepare a Renderer texture")?;
+        let identity = NEXT_TEXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        crate::content_evidence::record(
+            || serde_json::json!({"event":"resource-created","resource":identity}),
+        );
         Ok(Texture {
-            native: Arc::new(TextureHandle(
-                pointer,
-                NEXT_TEXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            )),
+            native: Arc::new(TextureHandle(pointer, identity)),
             _window: PhantomData,
         })
     }

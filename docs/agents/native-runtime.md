@@ -28,6 +28,13 @@ the same runtime directory.
 Headless sessions select the X11 backends at unit scale and clear inherited Qt
 plugin, rendering, and per-screen scale overrides.
 
+The separately invoked physical presentation command can borrow an explicitly
+selected X11 display. Its native session still owns a private home/XDG tree,
+Display Configuration, D-Bus session, and application processes. It neither
+starts nor stops the borrowed display, and it passes only the selected X
+authority to access it. Read [physical acceptance](physical-presentation.md)
+for the capability restrictions and evidence limits.
+
 ## Readiness and process cleanup
 
 Native-session startup and window readiness waits have five-second bounds. Window
