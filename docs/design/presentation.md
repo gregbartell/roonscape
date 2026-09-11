@@ -223,6 +223,15 @@ progress, and diagnostics roles. Both dark and light results are valid when
 the selected roles remain readable. Presentations without usable artwork use
 a fixed navy, coral, and cream palette with the same role hierarchy.
 
+The artwork's average brightness does not dictate a light or dark result.
+Large fields draw on substantial color families and support the artwork's
+edges; smaller distinctive details can supply accents without taking over
+those fields. Neutral and nearly neutral artwork keeps restrained fields,
+text, and accents. Lightness changes establish readability without inventing
+hues or turning weak casts into vivid colors. Surrounding colors support the
+artwork in ordinary Now Playing and the active Cue in the Synchronized Lyric
+Composition.
+
 The artwork-derived gradient uses stable geometry across revisions: the
 artwork field holds through approximately the first fifth, transitions near
 the middle, and reaches the metadata field at the far edge on an angle near

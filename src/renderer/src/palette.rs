@@ -5,35 +5,14 @@ use std::path::Path;
 use gdk_pixbuf::Pixbuf;
 
 const SAMPLE_SIZE: i32 = 64;
-const LIGHT_TONE_LUMINANCE: f64 = 0.55;
-const BRIGHT_TONE_LUMINANCE: f64 = 0.65;
-const MINIMUM_CHROMATIC_SATURATION: f64 = 0.08;
-// Normalized OKLab distance. The endpoint floor rejects the near-solid dark
-// captures, while the smaller adjacent floor keeps the middle stop visible
-// without requiring every artwork to match unusually broad palettes.
+// Perceptual distances in OKLab, independent of the gradient geometry.
 const MINIMUM_ENDPOINT_FIELD_SEPARATION: f64 = 0.12;
 const MINIMUM_DARK_ADJACENT_FIELD_SEPARATION: f64 = 0.05;
 const MINIMUM_LIGHT_ADJACENT_FIELD_SEPARATION: f64 = 0.045;
 const FAMILY_CLUSTER_DISTANCE: f64 = 0.045;
-// Recovered artwork places authored muted navy/violet families just above
-// 0.025 OKLCH chroma and independently salient details near 3% area.
 const MINIMUM_CHROMATIC_FAMILY_CHROMA: f64 = 0.025;
-const MINIMUM_FIELD_FAMILY_SHARE: f64 = 0.03;
-const DOMINANT_NEUTRAL_FIELD_SHARE: f64 = 0.65;
-const MINIMUM_DARK_SECONDARY_TO_PRIMARY_SHARE: f64 = 0.1;
-const MINIMUM_LIGHT_SECONDARY_TO_PRIMARY_SHARE: f64 = 0.03;
-const MINIMUM_SECONDARY_HUE_DISTANCE: f64 = 0.8;
+const MINIMUM_FIELD_FAMILY_SHARE: f64 = 0.08;
 const MINIMUM_ACCENT_DETAIL_SHARE: f64 = 0.008;
-const MINIMUM_GLOBAL_ACCENT_SHARE: f64 = 0.07;
-const MAXIMUM_ANCHORED_ACCENT_HUE_DISTANCE: f64 = 0.55;
-const MAXIMUM_DARK_ARTWORK_CHROMA: f64 = 0.16;
-const MAXIMUM_DARK_METADATA_CHROMA: f64 = 0.12;
-// These are calibrated in OKLCH against the approved 082afdc dark-field
-// luminance, independently from the HSL lightness values used elsewhere.
-const DARK_ARTWORK_OKLCH_LIGHTNESS: f64 = 0.34;
-const DARK_METADATA_OKLCH_LIGHTNESS: f64 = 0.27;
-const DARK_RESTRAINED_METADATA_OKLCH_LIGHTNESS: f64 = 0.22;
-const DARK_FIELD_CHROMA_RETENTION: f64 = 0.78;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rgb {
@@ -264,57 +243,27 @@ enum PaletteTone {
 
 #[derive(Clone, Copy)]
 struct ToneProfile {
-    background_lightness: f64,
-    metadata_lightness: f64,
-    artwork_lightness: f64,
     primary_lightness: f64,
     secondary_lightness: f64,
     accent_lightness: f64,
     contrast_step: f64,
 }
 
-#[derive(Clone, Copy)]
-struct FieldCandidate {
-    artwork_source: ColorFamily,
-    metadata_source: ColorFamily,
-    background: Rgb,
-    artwork_field: Rgb,
-    metadata_field: Rgb,
-    accent: Hsl,
-}
-
-impl FieldCandidate {
-    fn presentation_fields(self) -> [Rgb; 3] {
-        [self.background, self.artwork_field, self.metadata_field]
-    }
-}
-
 impl PaletteTone {
-    fn profile(self, artwork_luminance: f64) -> ToneProfile {
+    fn profile(self) -> ToneProfile {
         match self {
             Self::Dark => ToneProfile {
-                background_lightness: 0.065,
-                metadata_lightness: 0.19,
-                artwork_lightness: 0.3,
-                primary_lightness: 0.88,
+                primary_lightness: 0.9,
                 secondary_lightness: 0.68,
-                accent_lightness: 0.58,
+                accent_lightness: 0.8,
                 contrast_step: 0.02,
             },
-            Self::Light => {
-                let bright_end = ((artwork_luminance - LIGHT_TONE_LUMINANCE)
-                    / (BRIGHT_TONE_LUMINANCE - LIGHT_TONE_LUMINANCE))
-                    .clamp(0.0, 1.0);
-                ToneProfile {
-                    background_lightness: 0.64 + 0.18 * bright_end,
-                    metadata_lightness: 0.68 + 0.18 * bright_end,
-                    artwork_lightness: 0.53 + 0.04 * bright_end,
-                    primary_lightness: 0.14,
-                    secondary_lightness: 0.28,
-                    accent_lightness: 0.32,
-                    contrast_step: -0.02,
-                }
-            }
+            Self::Light => ToneProfile {
+                primary_lightness: 0.12,
+                secondary_lightness: 0.26,
+                accent_lightness: 0.38,
+                contrast_step: -0.02,
+            },
         }
     }
 }
@@ -594,171 +543,32 @@ impl PresentationPalette {
     fn from_sample(pixbuf: &Pixbuf) -> Result<Self, PaletteError> {
         let swatches = swatches(pixbuf);
         let families = color_families(&swatches);
-        let dominant_family = families
+        let total = families.iter().map(|family| family.count).sum::<u32>();
+        if total == 0 {
+            return Err(PaletteError::NoVisiblePixels);
+        }
+        // Bound the search by substantial families, not by individual pixels.
+        // Both tones compete for every field source; mean luminance never
+        // preselects a presentation or excludes a light/dark alternative.
+        let mut sources: Vec<_> = families.iter().collect();
+        sources.sort_by_key(|family| std::cmp::Reverse(family.count));
+        let candidate = sources
             .iter()
-            .max_by_key(|family| family.count)
-            .ok_or(PaletteError::NoVisiblePixels)?;
-        let dominant = dominant_family.color;
-        let vibrant = swatches
-            .iter()
-            .max_by(|first, second| {
-                swatch_score(first)
-                    .total_cmp(&swatch_score(second))
-                    .then_with(|| first.count.cmp(&second.count))
+            .take(12)
+            .filter(|source| {
+                source.count == sources[0].count
+                    || (f64::from(source.count) / f64::from(total) >= MINIMUM_ACCENT_DETAIL_SHARE
+                        && field_support(source, &families, total) >= MINIMUM_FIELD_FAMILY_SHARE)
             })
-            .map_or(dominant, |swatch| swatch.color);
-        let light = swatches
-            .iter()
-            .max_by(|first, second| {
-                text_score(first)
-                    .total_cmp(&text_score(second))
-                    .then_with(|| first.count.cmp(&second.count))
+            .flat_map(|source| {
+                [PaletteTone::Dark, PaletteTone::Light]
+                    .into_iter()
+                    .filter_map(|tone| composition_candidate(source, tone, &families, total))
             })
-            .map_or(dominant, |swatch| swatch.color);
-
-        let dominant_hsl = dominant.hsl();
-        let vibrant_hsl = vibrant.hsl();
-        let light_hsl = light.hsl();
-        let artwork_luminance = artwork_luminance(&swatches);
-        let tone = palette_tone(artwork_luminance);
-        let profile = tone.profile(artwork_luminance);
-        let candidate = match tone {
-            PaletteTone::Dark => {
-                let background = dominant_hsl
-                    .with_saturation_and_lightness(
-                        field_saturation(dominant_hsl.saturation, 0.12, 0.52),
-                        profile.background_lightness,
-                    )
-                    .rgb();
-                select_field_candidate(
-                    &families,
-                    profile,
-                    dominant_hsl,
-                    light_hsl,
-                    tone,
-                    |artwork_source, metadata_source| {
-                        let generated_fields = (
-                            dark_field(
-                                artwork_source.color,
-                                DARK_ARTWORK_OKLCH_LIGHTNESS,
-                                MAXIMUM_DARK_ARTWORK_CHROMA,
-                            ),
-                            dark_field(
-                                metadata_source.color,
-                                if std::ptr::eq(artwork_source, metadata_source) {
-                                    DARK_RESTRAINED_METADATA_OKLCH_LIGHTNESS
-                                } else {
-                                    DARK_METADATA_OKLCH_LIGHTNESS
-                                },
-                                MAXIMUM_DARK_METADATA_CHROMA,
-                            ),
-                        );
-                        let fields = separate_presentation_fields(
-                            tone,
-                            background,
-                            generated_fields.0,
-                            generated_fields.1,
-                        );
-                        FieldCandidate {
-                            artwork_source: *artwork_source,
-                            metadata_source: *metadata_source,
-                            background,
-                            artwork_field: fields.0,
-                            metadata_field: fields.1,
-                            accent: salient_dark_accent(&families, artwork_source, metadata_source)
-                                .hsl(),
-                        }
-                    },
-                )
-            }
-            PaletteTone::Light => {
-                let family_pixel_count = families.iter().map(|family| family.count).sum::<u32>();
-                let neutral_dominated = dominant.oklch().chroma < MINIMUM_CHROMATIC_FAMILY_CHROMA
-                    && f64::from(dominant_family.count) / f64::from(family_pixel_count)
-                        >= DOMINANT_NEUTRAL_FIELD_SHARE;
-                let light_artwork_source = if neutral_dominated {
-                    swatches
-                        .iter()
-                        .max_by(|first, second| {
-                            light_field_swatch_score(first)
-                                .total_cmp(&light_field_swatch_score(second))
-                                .then_with(|| first.count.cmp(&second.count))
-                        })
-                        .map_or(vibrant, |swatch| swatch.color)
-                } else {
-                    vibrant
-                };
-                let light_source_distance = {
-                    let first = light_artwork_source.oklch();
-                    let second = vibrant.oklch();
-                    let distance = (first.hue - second.hue).abs();
-                    distance.min(std::f64::consts::TAU - distance)
-                };
-                let neutral_bridge = neutral_dominated && light_source_distance >= 0.8;
-                let light_background_source = if neutral_bridge {
-                    dominant_hsl
-                } else {
-                    vibrant_hsl
-                };
-                let background_lightness =
-                    profile.background_lightness - if neutral_bridge { 0.04 } else { 0.0 };
-                let generated_background = light_background_source
-                    .with_saturation_and_lightness(
-                        field_saturation(light_background_source.saturation, 0.08, 0.18),
-                        background_lightness,
-                    )
-                    .rgb();
-                select_field_candidate(
-                    &families,
-                    profile,
-                    dominant_hsl,
-                    light_hsl,
-                    tone,
-                    |artwork_source, metadata_source| {
-                        let metadata_hsl = metadata_source.color.hsl();
-                        let generated_fields = [
-                            generated_background,
-                            light_artwork_field(light_artwork_source, profile.artwork_lightness),
-                            metadata_hsl
-                                .with_saturation_and_lightness(
-                                    field_saturation(metadata_hsl.saturation, 0.1, 0.22),
-                                    profile.metadata_lightness,
-                                )
-                                .rgb(),
-                        ];
-                        let [background, artwork_field, metadata_field] =
-                            compress_bright_palette(generated_fields);
-                        let fields = separate_presentation_fields(
-                            tone,
-                            background,
-                            artwork_field,
-                            metadata_field,
-                        );
-                        FieldCandidate {
-                            artwork_source: *artwork_source,
-                            metadata_source: *metadata_source,
-                            background,
-                            artwork_field: fields.0,
-                            metadata_field: fields.1,
-                            accent: metadata_hsl,
-                        }
-                    },
-                )
-            }
-        };
-        let background = candidate.background;
-        let artwork_field = candidate.artwork_field;
-        let metadata_field = candidate.metadata_field;
-        let accent_hsl = candidate.accent;
-        let presentation_fields = [background, artwork_field, metadata_field];
-        let semantic = semantic_roles(
-            profile,
-            dominant_hsl,
-            light_hsl,
-            accent_hsl,
-            presentation_fields,
-        )
-        .expect("selected palette fields support every semantic role");
+            .max_by(|first, second| first.score.total_cmp(&second.score))
+            .expect("sampled artwork supports a restrained dark composition");
+        let [background, artwork_field, metadata_field] = candidate.fields;
+        let semantic = candidate.semantic;
 
         Ok(Self {
             background,
@@ -785,193 +595,173 @@ impl PresentationPalette {
     }
 }
 
-fn dark_field(source: Rgb, lightness: f64, maximum_chroma: f64) -> Rgb {
-    let source = source.oklch();
-    Oklch {
-        lightness,
-        chroma: (source.chroma * DARK_FIELD_CHROMA_RETENTION).min(maximum_chroma),
-        hue: source.hue,
+struct CompositionCandidate {
+    fields: [Rgb; 3],
+    semantic: SemanticRoles,
+    score: f64,
+}
+
+// Weak casts carry unreliable hue. Fade their chroma continuously instead of
+// amplifying an almost-neutral sample with a saturation floor.
+fn supported_color(color: Rgb) -> Oklch {
+    let mut color = color.oklch();
+    let confidence = ((color.chroma - 0.012) / 0.033).clamp(0.0, 1.0);
+    color.chroma *= confidence * confidence * (3.0 - 2.0 * confidence);
+    color
+}
+
+fn composition_candidate(
+    source: &ColorFamily,
+    tone: PaletteTone,
+    families: &[ColorFamily],
+    total: u32,
+) -> Option<CompositionCandidate> {
+    let color = supported_color(source.color);
+    let field = |lightness, retention: f64, ceiling: f64| {
+        Oklch {
+            lightness,
+            chroma: (color.chroma * retention).min(ceiling),
+            hue: color.hue,
+        }
+        .rgb()
+    };
+    // One family grounds the large fields. Other families can give the small
+    // accent roles emphasis without spreading a detail across the room.
+    let fields = match tone {
+        PaletteTone::Dark => [
+            field(0.16, 0.5, 0.04),
+            field(0.34, 0.78, 0.16),
+            field(0.22, 0.4, 0.055),
+        ],
+        PaletteTone::Light => compress_bright_palette([
+            field(0.825, 0.6, 0.035),
+            // Leave headroom above the primary-text contrast floor, so a
+            // tiny chroma change cannot disqualify an otherwise sound tone.
+            field(0.765, 0.8, 0.065),
+            field(0.91, 0.45, 0.025),
+        ]),
+    };
+    let (artwork, metadata) = separate_presentation_fields(tone, fields[0], fields[1], fields[2]);
+    let fields = [fields[0], artwork, metadata];
+    let accent_source = families
+        .iter()
+        .filter(|family| f64::from(family.count) / f64::from(total) >= MINIMUM_ACCENT_DETAIL_SHARE)
+        .max_by(|first, second| {
+            accent_score(first, color, total).total_cmp(&accent_score(second, color, total))
+        })
+        .unwrap_or(source);
+    let accent = supported_color(accent_source.color);
+    let text_source = Oklch {
+        chroma: (color.chroma * 0.15).min(0.015),
+        ..color
     }
     .rgb()
+    .hsl();
+    let semantic = semantic_roles(tone.profile(), text_source, accent, fields)?;
+    let share = field_support(source, families, total);
+    let generated = artwork.oklch();
+    // Prefer a well-supported family with modest lightness changes and useful
+    // retained color. Chroma loss matters: washing a vivid cover into a light
+    // field is not automatically preferable to a dark, chromatic surround.
+    let color_support = (color.chroma / 0.08).min(1.0) * (share / 0.3).min(1.0);
+    let shade_lightness = color.lightness.min(chromatic_lightness(color.hue));
+    let chromatic_weight = (color.chroma / 0.08).min(1.0) * 0.85;
+    let reference_lightness =
+        color.lightness * (1.0 - chromatic_weight) + shade_lightness * chromatic_weight;
+    let score = 0.55 * share.sqrt()
+        + 0.45 * f64::from(source.count) / f64::from(total)
+        + 0.4 * color_support
+        + 0.25 * edge_support(source, families)
+        - 0.4 * fields[0].relative_luminance()
+        - 0.65 * (reference_lightness - generated.lightness).abs()
+        - 3.0 * (color.chroma - generated.chroma).abs()
+        + 0.4 * accent_score(accent_source, color, total);
+    Some(CompositionCandidate {
+        fields,
+        semantic,
+        score,
+    })
 }
 
-fn salient_dark_accent(
-    families: &[ColorFamily],
-    primary: &ColorFamily,
-    secondary: &ColorFamily,
-) -> Rgb {
-    let total = families.iter().map(|family| family.count).sum::<u32>();
-    let selected = families
+// The saturated sRGB corners give a hue-relative lightness reference: a
+// pale blue can retain its family in a deeper field, whereas darkening yellow
+// into brown changes its character. This guides tone ranking only; every
+// generated hue still comes from artwork, and both tones remain candidates.
+fn chromatic_lightness(hue: f64) -> f64 {
+    let corners = [
+        Rgb::new(255, 0, 0),
+        Rgb::new(255, 255, 0),
+        Rgb::new(0, 255, 0),
+        Rgb::new(0, 255, 255),
+        Rgb::new(0, 0, 255),
+        Rgb::new(255, 0, 255),
+        Rgb::new(255, 0, 0),
+    ]
+    .map(Rgb::oklch);
+    let start = corners[0].hue;
+    let hue = (hue - start).rem_euclid(std::f64::consts::TAU);
+    for pair in corners.windows(2) {
+        let first = (pair[0].hue - start).rem_euclid(std::f64::consts::TAU);
+        let mut second = (pair[1].hue - start).rem_euclid(std::f64::consts::TAU);
+        if second == 0.0 {
+            second = std::f64::consts::TAU;
+        }
+        if hue <= second {
+            let amount = (hue - first) / (second - first);
+            return pair[0].lightness * (1.0 - amount) + pair[1].lightness * amount;
+        }
+    }
+    unreachable!("the sRGB corners span the hue circle")
+}
+
+fn field_support(source: &ColorFamily, families: &[ColorFamily], total: u32) -> f64 {
+    let source = supported_color(source.color);
+    families
         .iter()
-        .filter(|family| {
-            let color = family.color.oklch();
-            let share = f64::from(family.count) / f64::from(total);
-            color.chroma >= MINIMUM_CHROMATIC_FAMILY_CHROMA
-                && share >= MINIMUM_ACCENT_DETAIL_SHARE
-                && (share >= MINIMUM_GLOBAL_ACCENT_SHARE
-                    || family_hue_distance(family, primary) <= MAXIMUM_ANCHORED_ACCENT_HUE_DISTANCE
-                    || family_hue_distance(family, secondary)
-                        <= MAXIMUM_ANCHORED_ACCENT_HUE_DISTANCE)
+        .map(|family| {
+            let color = supported_color(family.color);
+            let similarity = if source.chroma >= 0.02 && color.chroma >= 0.02 {
+                let angle = (source.hue - color.hue).abs();
+                let angle = angle.min(std::f64::consts::TAU - angle);
+                (1.0 - angle / 0.65).max(0.0)
+            } else {
+                (1.0 - (source.lightness - color.lightness).abs() / 0.25).max(0.0)
+                    * (1.0 - (source.chroma - color.chroma).abs() / 0.025).max(0.0)
+            };
+            f64::from(family.count) * similarity
         })
-        .max_by(|first, second| {
-            accent_family_rank(first, primary, secondary)
-                .total_cmp(&accent_family_rank(second, primary, secondary))
-        })
-        .unwrap_or(primary);
-    selected.color
+        .sum::<f64>()
+        / f64::from(total)
 }
 
-fn family_hue_distance(first: &ColorFamily, second: &ColorFamily) -> f64 {
-    let first = family_field_source(first);
-    let second = family_field_source(second);
-    let distance = (first.hue - second.hue).abs();
-    distance.min(std::f64::consts::TAU - distance)
-}
-
-fn family_field_source(family: &ColorFamily) -> Oklch {
-    let centroid = family.color.oklch();
-    if centroid.chroma >= MINIMUM_CHROMATIC_FAMILY_CHROMA {
-        centroid
-    } else {
-        family.exemplar.color.oklch()
-    }
-}
-
-fn accent_family_score(family: &ColorFamily) -> f64 {
-    let color = family.color.oklch();
-    color.chroma * f64::from(family.count).sqrt() * (0.35 + color.lightness)
-}
-
-fn accent_family_rank(family: &ColorFamily, primary: &ColorFamily, secondary: &ColorFamily) -> f64 {
-    let family_chroma = family.color.oklch().chroma;
-    let primary_chroma = family_field_source(primary).chroma;
-    let secondary_emphasis = if family_hue_distance(family, secondary)
-        <= MAXIMUM_ANCHORED_ACCENT_HUE_DISTANCE
-        && family_chroma >= primary_chroma * 1.5
-    {
-        1.3
-    } else {
-        1.0
-    };
-    accent_family_score(family) * secondary_emphasis
-}
-
-fn field_saturation(source: f64, minimum: f64, maximum: f64) -> f64 {
-    // Near-neutral artwork has no meaningful hue to strengthen.
-    if source < MINIMUM_CHROMATIC_SATURATION {
-        source
-    } else {
-        source.clamp(minimum, maximum)
-    }
-}
-
-fn light_artwork_field(source: Rgb, target_lightness: f64) -> Rgb {
-    let source_hsl = source.hsl();
-    if (0.45..=0.58).contains(&source_hsl.lightness) {
-        source
-    } else {
-        source_hsl
-            .with_saturation_and_lightness(
-                field_saturation(source_hsl.saturation, 0.24, 0.45),
-                target_lightness,
-            )
-            .rgb()
-    }
-}
-
-fn select_field_candidate(
-    families: &[ColorFamily],
-    profile: ToneProfile,
-    dominant: Hsl,
-    light: Hsl,
-    tone: PaletteTone,
-    build: impl Fn(&ColorFamily, &ColorFamily) -> FieldCandidate,
-) -> FieldCandidate {
-    let mut field_families = eligible_field_families(families);
-    field_families.sort_by_key(|family| std::cmp::Reverse(family.count));
-    let family_pixel_count = families.iter().map(|family| family.count).sum();
-    let primary = field_families
-        .first()
-        .expect("palettes always have sampled color families");
-    let restrained = build(primary, primary);
-    field_families
+fn edge_support(source: &ColorFamily, families: &[ColorFamily]) -> f64 {
+    let total = families.iter().map(|family| family.edge_count).sum::<u32>();
+    families
         .iter()
-        .skip(1)
-        .filter(|secondary| meaningful_secondary(primary, secondary, family_pixel_count, tone))
-        .map(|secondary| build(primary, secondary))
-        .filter(|candidate| field_candidate_is_eligible(*candidate, profile, dominant, light))
-        .max_by(|first, second| {
-            first
-                .metadata_source
-                .count
-                .cmp(&second.metadata_source.count)
-                .then_with(|| {
-                    field_candidate_tiebreaker(*first)
-                        .total_cmp(&field_candidate_tiebreaker(*second))
-                })
+        .map(|family| {
+            let distance = ((source.lab.lightness - family.lab.lightness) / 0.3).powi(2)
+                + ((source.lab.a - family.lab.a) / 0.08).powi(2)
+                + ((source.lab.b - family.lab.b) / 0.08).powi(2);
+            f64::from(family.edge_count) * (-distance).exp()
         })
-        .unwrap_or(restrained)
+        .sum::<f64>()
+        / f64::from(total.max(1))
 }
 
-fn meaningful_secondary(
-    primary: &ColorFamily,
-    secondary: &ColorFamily,
-    total: u32,
-    tone: PaletteTone,
-) -> bool {
-    let secondary_share = f64::from(secondary.count) / f64::from(total);
-    let relative_share = f64::from(secondary.count) / f64::from(primary.count);
-    let primary_color = family_field_source(primary);
-    let secondary_color = family_field_source(secondary);
-    let hue_distance = (primary_color.hue - secondary_color.hue).abs();
-    let hue_distance = hue_distance.min(std::f64::consts::TAU - hue_distance);
-    let (minimum_relative_share, minimum_hue_distance) = match tone {
-        PaletteTone::Dark => (
-            MINIMUM_DARK_SECONDARY_TO_PRIMARY_SHARE,
-            MINIMUM_SECONDARY_HUE_DISTANCE,
-        ),
-        PaletteTone::Light => (
-            MINIMUM_LIGHT_SECONDARY_TO_PRIMARY_SHARE,
-            MINIMUM_SECONDARY_HUE_DISTANCE,
-        ),
-    };
-
-    secondary_share >= MINIMUM_FIELD_FAMILY_SHARE
-        && relative_share >= minimum_relative_share
-        && secondary_color.chroma >= MINIMUM_CHROMATIC_FAMILY_CHROMA
-        && hue_distance >= minimum_hue_distance
-}
-
-fn field_candidate_is_eligible(
-    candidate: FieldCandidate,
-    profile: ToneProfile,
-    dominant: Hsl,
-    light: Hsl,
-) -> bool {
-    let fields = candidate.presentation_fields();
-    candidate
-        .artwork_field
-        .perceptual_distance(candidate.background)
-        >= MINIMUM_LIGHT_ADJACENT_FIELD_SEPARATION
-        && candidate
-            .background
-            .perceptual_distance(candidate.metadata_field)
-            >= MINIMUM_LIGHT_ADJACENT_FIELD_SEPARATION
-        && candidate
-            .artwork_field
-            .perceptual_distance(candidate.metadata_field)
-            >= MINIMUM_ENDPOINT_FIELD_SEPARATION
-        && semantic_roles(profile, dominant, light, candidate.accent, fields).is_some()
-}
-
-fn field_candidate_tiebreaker(candidate: FieldCandidate) -> f64 {
-    let primary = candidate.artwork_source.color.oklch();
-    let secondary = candidate.metadata_source.color.oklch();
-    let hue_distance = (primary.hue - secondary.hue).abs();
-    let hue_breadth = hue_distance.min(std::f64::consts::TAU - hue_distance);
-    candidate.artwork_field.oklch().chroma
-        + candidate.metadata_field.oklch().chroma
-        + hue_breadth * 0.01
+fn accent_score(family: &ColorFamily, field: Oklch, total: u32) -> f64 {
+    let color = supported_color(family.color);
+    let share = f64::from(family.count) / f64::from(total);
+    let distinction = ((color.chroma * color.hue.cos() - field.chroma * field.hue.cos()).powi(2)
+        + (color.chroma * color.hue.sin() - field.chroma * field.hue.sin()).powi(2))
+    .sqrt();
+    // Small authored details remain useful, but their influence tapers with
+    // area. Neutral accents can distinguish strongly colored fields too.
+    let detail_confidence = (share / 0.03).sqrt().min(1.0);
+    let chromatic = (color.chroma / 0.025).min(1.0);
+    let neutral_distinction = chromatic + (1.0 - chromatic) * (field.chroma / 0.12).min(1.0);
+    0.04 * share.sqrt()
+        + detail_confidence
+            * (0.6 * distinction * neutral_distinction + 0.5 * color.chroma.min(0.16))
 }
 
 #[derive(Clone, Copy)]
@@ -986,25 +776,21 @@ struct SemanticRoles {
 
 fn semantic_roles(
     profile: ToneProfile,
-    dominant: Hsl,
-    light: Hsl,
-    accent: Hsl,
+    text: Hsl,
+    accent: Oklch,
     fields: [Rgb; 3],
 ) -> Option<SemanticRoles> {
     let supporting_fields = [fields[0], fields[2]];
     let primary_text = readable_tint(
-        light.with_saturation_and_lightness(
-            light.saturation.clamp(0.08, 0.24),
-            profile.primary_lightness,
-        ),
+        text.with_saturation_and_lightness(text.saturation.min(0.12), profile.primary_lightness),
         &fields,
         7.0,
         profile.contrast_step,
     );
     let secondary_text = readable_tint(
         readable_tint(
-            dominant.with_saturation_and_lightness(
-                dominant.saturation.clamp(0.12, 0.3),
+            text.with_saturation_and_lightness(
+                text.saturation.min(0.12),
                 profile.secondary_lightness,
             ),
             &supporting_fields,
@@ -1018,8 +804,8 @@ fn semantic_roles(
     );
     let muted_text = readable_tint(
         readable_tint(
-            dominant.with_saturation_and_lightness(
-                dominant.saturation.clamp(0.08, 0.2),
+            text.with_saturation_and_lightness(
+                text.saturation.min(0.08),
                 profile.secondary_lightness,
             ),
             &supporting_fields,
@@ -1031,11 +817,11 @@ fn semantic_roles(
         4.5,
         profile.contrast_step,
     );
-    let accent = readable_tint(
-        accent.with_saturation_and_lightness(
-            accent.saturation.clamp(0.48, 1.0),
-            profile.accent_lightness,
-        ),
+    let accent = readable_perceptual_tint(
+        Oklch {
+            lightness: profile.accent_lightness,
+            ..accent
+        },
         &fields,
         4.5,
         profile.contrast_step,
@@ -1046,6 +832,25 @@ fn semantic_roles(
         4.5,
         profile.contrast_step,
     );
+    if [
+        (primary_text, 7.0),
+        (secondary_text, 4.5),
+        (muted_text, 4.5),
+        (accent, 4.5),
+        (status_muted_accent, 4.5),
+    ]
+    .into_iter()
+    .any(|(color, minimum)| {
+        fields
+            .iter()
+            .any(|field| color.contrast_ratio(*field) < minimum)
+    }) || [secondary_text, muted_text].into_iter().any(|color| {
+        supporting_fields
+            .iter()
+            .any(|field| color.contrast_ratio(*field) < 7.0)
+    }) {
+        return None;
+    }
     Some(SemanticRoles {
         primary_text,
         secondary_text,
@@ -1136,7 +941,7 @@ fn progress_track_candidate(
     (1..=100)
         .map(|step| metadata_field.mix(primary_text, f64::from(step) / 100.0))
         .find(|track| {
-            track.contrast_ratio(metadata_field) >= 1.5
+            (1.5..=2.0).contains(&track.contrast_ratio(metadata_field))
                 && track.contrast_ratio(progress_fill) >= 3.0
         })
 }
@@ -1169,6 +974,7 @@ impl Error for PaletteError {
 struct Swatch {
     color: Rgb,
     count: u32,
+    edge_count: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1176,7 +982,7 @@ struct ColorFamily {
     color: Rgb,
     lab: Oklab,
     count: u32,
-    exemplar: Swatch,
+    edge_count: u32,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1185,6 +991,7 @@ struct Bucket {
     green: u64,
     blue: u64,
     count: u32,
+    edge_count: u32,
 }
 
 fn swatches(pixbuf: &Pixbuf) -> Vec<Swatch> {
@@ -1193,6 +1000,7 @@ fn swatches(pixbuf: &Pixbuf) -> Vec<Swatch> {
     let channels = pixbuf.n_channels() as usize;
     let row_stride = pixbuf.rowstride() as usize;
     let mut buckets = [Bucket::default(); 4096];
+    let edge = (pixbuf.width().min(pixbuf.height()) as usize / 16).max(1);
 
     for row in 0..pixbuf.height() as usize {
         for column in 0..pixbuf.width() as usize {
@@ -1211,6 +1019,13 @@ fn swatches(pixbuf: &Pixbuf) -> Vec<Swatch> {
             bucket.green += u64::from(green);
             bucket.blue += u64::from(blue);
             bucket.count += 1;
+            if row < edge
+                || column < edge
+                || row + edge >= pixbuf.height() as usize
+                || column + edge >= pixbuf.width() as usize
+            {
+                bucket.edge_count += 1;
+            }
         }
     }
 
@@ -1224,6 +1039,7 @@ fn swatches(pixbuf: &Pixbuf) -> Vec<Swatch> {
                 (bucket.blue / u64::from(bucket.count)) as u8,
             ),
             count: bucket.count,
+            edge_count: bucket.edge_count,
         })
         .collect()
 }
@@ -1255,20 +1071,14 @@ fn color_families(swatches: &[Swatch]) -> Vec<ColorFamily> {
             let combined_count = family.count + swatch.count;
             family.lab = family.lab.weighted_average(family.count, lab, swatch.count);
             family.count = combined_count;
+            family.edge_count += swatch.edge_count;
             family.color = family.lab.oklch().rgb();
-            if swatch_score(&swatch)
-                .total_cmp(&swatch_score(&family.exemplar))
-                .then_with(|| swatch.count.cmp(&family.exemplar.count))
-                .is_gt()
-            {
-                family.exemplar = swatch;
-            }
         } else {
             families.push(ColorFamily {
                 color: swatch.color,
                 lab,
                 count: swatch.count,
-                exemplar: swatch,
+                edge_count: swatch.edge_count,
             });
         }
     }
@@ -1291,74 +1101,6 @@ fn color_family_distance(first: Oklab, second: Oklab) -> f64 {
     .sqrt()
 }
 
-fn eligible_field_families(families: &[ColorFamily]) -> Vec<&ColorFamily> {
-    let total = families.iter().map(|family| family.count).sum::<u32>();
-    let minimum_count = (f64::from(total) * MINIMUM_FIELD_FAMILY_SHARE).ceil() as u32;
-    let dominant = families.iter().max_by_key(|family| family.count);
-    let mut eligible = families
-        .iter()
-        .filter(|family| {
-            family.count >= minimum_count
-                && family.color.oklch().chroma >= MINIMUM_CHROMATIC_FAMILY_CHROMA
-        })
-        .collect::<Vec<_>>();
-    if let Some(dominant) = dominant
-        && dominant.color.oklch().chroma < MINIMUM_CHROMATIC_FAMILY_CHROMA
-        && f64::from(dominant.count) / f64::from(total) >= DOMINANT_NEUTRAL_FIELD_SHARE
-    {
-        eligible.push(dominant);
-    }
-
-    if eligible.is_empty() {
-        dominant.into_iter().collect()
-    } else {
-        eligible
-    }
-}
-
-fn swatch_score(swatch: &Swatch) -> f64 {
-    swatch_score_with_population_weight(swatch, 0.75)
-}
-
-fn light_field_swatch_score(swatch: &Swatch) -> f64 {
-    swatch_score_with_population_weight(swatch, 0.25)
-}
-
-fn swatch_score_with_population_weight(swatch: &Swatch, population_weight: f64) -> f64 {
-    let hsl = swatch.color.hsl();
-    let useful_lightness = 1.0 - (hsl.lightness - 0.55).abs();
-    hsl.saturation.powi(2)
-        * useful_lightness.max(0.2)
-        * (1.0 + f64::from(swatch.count).ln() * population_weight)
-}
-
-fn text_score(swatch: &Swatch) -> f64 {
-    let hsl = swatch.color.hsl();
-    swatch.color.relative_luminance() + hsl.saturation * 0.18 + f64::from(swatch.count).ln() * 0.01
-}
-
-fn artwork_luminance(swatches: &[Swatch]) -> f64 {
-    let (weighted_luminance, pixel_count) =
-        swatches
-            .iter()
-            .fold((0.0, 0_u64), |(weighted_luminance, pixel_count), swatch| {
-                (
-                    weighted_luminance
-                        + swatch.color.relative_luminance() * f64::from(swatch.count),
-                    pixel_count + u64::from(swatch.count),
-                )
-            });
-    weighted_luminance / pixel_count as f64
-}
-
-fn palette_tone(artwork_luminance: f64) -> PaletteTone {
-    if artwork_luminance >= LIGHT_TONE_LUMINANCE {
-        PaletteTone::Light
-    } else {
-        PaletteTone::Dark
-    }
-}
-
 fn compress_bright_palette(mut fields: [Rgb; 3]) -> [Rgb; 3] {
     const BRIGHT_FIELD_CEILING: f64 = 0.8;
     const COMPRESSION_RATIO: f64 = 0.9;
@@ -1371,10 +1113,31 @@ fn compress_bright_palette(mut fields: [Rgb; 3]) -> [Rgb; 3] {
     }
     for field in &mut fields {
         let mut hsl = field.hsl();
-        hsl.lightness *= COMPRESSION_RATIO;
+        hsl.lightness = (hsl.lightness * COMPRESSION_RATIO).min(BRIGHT_FIELD_CEILING);
         *field = hsl.rgb();
     }
     fields
+}
+
+fn readable_perceptual_tint(
+    mut tint: Oklch,
+    fields: &[Rgb],
+    minimum_contrast: f64,
+    contrast_step: f64,
+) -> Rgb {
+    let mut color = tint.rgb();
+    while fields
+        .iter()
+        .any(|field| color.contrast_ratio(*field) < minimum_contrast)
+    {
+        let next_lightness = (tint.lightness + contrast_step).clamp(0.02, 0.98);
+        if next_lightness == tint.lightness {
+            break;
+        }
+        tint.lightness = next_lightness;
+        color = tint.rgb();
+    }
+    color
 }
 
 fn readable_tint(mut tint: Hsl, fields: &[Rgb], minimum_contrast: f64, contrast_step: f64) -> Rgb {

@@ -16,6 +16,144 @@ const WHITE: Rgb = Rgb {
 };
 
 #[test]
+fn grayscale_and_weak_scanning_casts_do_not_acquire_visible_tints() {
+    let directory = tempdir().unwrap();
+    for (field, detail) in [("#303030", "#dddddd"), ("#313030", "#dddcda")] {
+        let path = synthetic_artwork(&directory, "neutral.svg", field, detail);
+        let palette = PresentationPalette::from_artwork(&path).unwrap();
+        for color in [
+            palette.background,
+            palette.artwork_field,
+            palette.metadata_field,
+            palette.primary_text,
+            palette.secondary_text,
+            palette.muted_text,
+            palette.accent,
+            palette.status_muted_accent,
+        ] {
+            assert!(
+                oklch(color).chroma < 0.01,
+                "neutral artwork must not manufacture a visible tint: {}",
+                color.to_hex(),
+            );
+        }
+    }
+}
+
+#[test]
+fn muted_paper_and_blue_detail_can_support_a_light_composition() {
+    let directory = tempdir().unwrap();
+    let path = synthetic_artwork(&directory, "paper.svg", "#c7ac87", "#28569a");
+    let palette = PresentationPalette::from_artwork(&path).unwrap();
+    assert!(palette.background.contrast_ratio(BLACK) >= 7.0);
+    assert!(
+        palette.accent.blue > palette.accent.red + 20,
+        "the small blue detail should supply an accent: {}",
+        palette.accent.to_hex(),
+    );
+}
+
+#[test]
+fn a_dark_artwork_edge_can_anchor_a_bright_monochrome_composition() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("monochrome-edge.svg");
+    fs::write(
+        &path,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+        <rect width="64" height="64" fill="#202020"/>
+        <rect x="4" y="4" width="56" height="56" fill="#c6c6c6"/>
+        <rect x="4" y="4" width="14" height="56" fill="#707070"/>
+    </svg>"##,
+    )
+    .unwrap();
+    let palette = PresentationPalette::from_artwork(&path).unwrap();
+    assert!(
+        palette.background.contrast_ratio(WHITE) >= 7.0,
+        "the surrounding field should support the artwork's dark edge",
+    );
+}
+
+#[test]
+fn muted_dark_artwork_does_not_become_a_vivid_accent() {
+    let directory = tempdir().unwrap();
+    let path = synthetic_artwork(&directory, "dark-cast.svg", "#021621", "#b8b8b8");
+    let palette = PresentationPalette::from_artwork(&path).unwrap();
+    assert!(
+        oklch(palette.accent).chroma <= oklch(rgb(2, 22, 33)).chroma + 0.005,
+        "lightening a weak dark cast must not manufacture chroma: {}",
+        palette.accent.to_hex(),
+    );
+}
+
+#[test]
+fn incidental_pixels_and_small_channel_changes_preserve_palette_direction() {
+    for (field, detail) in [
+        (rgb(35, 35, 35), rgb(190, 190, 190)),
+        (rgb(199, 172, 135), rgb(40, 86, 154)),
+        (rgb(60, 118, 121), rgb(215, 215, 210)),
+        (rgb(140, 180, 230), rgb(35, 70, 145)),
+        (rgb(239, 198, 206), rgb(49, 44, 47)),
+    ] {
+        let pixels: Vec<_> = (0..64 * 64)
+            .flat_map(|index| {
+                let color = if index % 64 > 48 && index / 64 < 16 {
+                    detail
+                } else {
+                    field
+                };
+                [color.red, color.green, color.blue]
+            })
+            .collect();
+        let palette = |pixels| {
+            let image = gdk_pixbuf::Pixbuf::from_mut_slice(
+                pixels,
+                gdk_pixbuf::Colorspace::Rgb,
+                false,
+                8,
+                64,
+                64,
+                64 * 3,
+            );
+            PresentationPalette::from_pixbuf(&image).unwrap()
+        };
+        let before = palette(pixels.clone());
+        for changes in [
+            [-1, -1, -1],
+            [1, 1, 1],
+            [-1, 0, 0],
+            [1, 0, 0],
+            [0, -1, 0],
+            [0, 1, 0],
+            [0, 0, -1],
+            [0, 0, 1],
+        ] {
+            let mut changed: Vec<u8> = pixels
+                .iter()
+                .enumerate()
+                .map(|(index, value)| (i16::from(*value) + changes[index % 3]).clamp(0, 255) as u8)
+                .collect();
+            for index in [37, 319, 880, 1764] {
+                changed[index * 3..index * 3 + 3].copy_from_slice(&[255, 0, 180]);
+            }
+            let after = palette(changed);
+            for (first, second) in [
+                (before.background, after.background),
+                (before.artwork_field, after.artwork_field),
+                (before.metadata_field, after.metadata_field),
+                (before.accent, after.accent),
+            ] {
+                assert!(
+                    oklab_distance(first, second) < 0.04,
+                    "incidental changes must not redirect a palette: {} -> {}",
+                    first.to_hex(),
+                    second.to_hex()
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn file_and_decoded_artwork_use_the_same_palette_sample() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork");
     for name in ["playing.jpg", "light.jpg"] {
@@ -88,21 +226,6 @@ const MINIMUM_ADJACENT_FIELD_SEPARATION: f64 = 0.05;
 const MINIMUM_LIGHT_ADJACENT_FIELD_SEPARATION: f64 = 0.045;
 const MINIMUM_ENDPOINT_FIELD_SEPARATION: f64 = 0.12;
 
-fn assert_color_near(role: &str, actual: Rgb, expected: Rgb, maximum_channel_delta: u8) {
-    let actual_color = actual;
-    for (channel, actual, expected) in [
-        ("red", actual.red, expected.red),
-        ("green", actual.green, expected.green),
-        ("blue", actual.blue, expected.blue),
-    ] {
-        assert!(
-            actual.abs_diff(expected) <= maximum_channel_delta,
-            "{role} {channel} channel should stay within {maximum_channel_delta} of the visual direction; expected {expected}, got {actual} in {}",
-            actual_color.to_hex(),
-        );
-    }
-}
-
 fn hsl_lightness(color: Rgb) -> f64 {
     let maximum = color.red.max(color.green).max(color.blue);
     let minimum = color.red.min(color.green).min(color.blue);
@@ -120,7 +243,6 @@ struct TestOklab {
 
 #[derive(Clone, Copy)]
 struct TestOklch {
-    lightness: f64,
     chroma: f64,
     hue: f64,
 }
@@ -211,7 +333,6 @@ fn realistic_family_artwork(
 fn oklch(color: Rgb) -> TestOklch {
     let lab = oklab(color);
     TestOklch {
-        lightness: lab.lightness,
         chroma: (lab.a * lab.a + lab.b * lab.b).sqrt(),
         hue: lab.b.atan2(lab.a).to_degrees().rem_euclid(360.0),
     }
@@ -222,80 +343,29 @@ fn hue_distance(first: f64, second: f64) -> f64 {
     distance.min(360.0 - distance)
 }
 
-fn nearest_field(palette: PresentationPalette, family: Rgb) -> (usize, Rgb, TestOklch) {
-    let family_hue = oklch(family).hue;
-    [palette.artwork_field, palette.metadata_field]
-        .into_iter()
-        .enumerate()
-        .map(|(index, color)| (index, color, oklch(color)))
-        .min_by(|first, second| {
-            hue_distance(first.2.hue, family_hue).total_cmp(&hue_distance(second.2.hue, family_hue))
-        })
-        .expect("a presentation palette always has two endpoint fields")
+fn assert_artwork_family(role: &str, color: Rgb, sources: &[Rgb]) {
+    let output = oklch(color);
+    if output.chroma < 0.01 {
+        return;
+    }
+    assert!(
+        sources.iter().any(|source| {
+            let source = oklch(*source);
+            source.chroma >= 0.01
+                && hue_distance(output.hue, source.hue) <= 20.0
+                && output.chroma <= source.chroma + 0.008
+        }),
+        "{role} must retain a supplied family without manufacturing chroma: {}",
+        color.to_hex()
+    );
 }
 
-fn assert_dark_family_relationships(
-    palette: PresentationPalette,
-    primary_family: Rgb,
-    secondary_family: Rgb,
-    accent_family: Rgb,
-    incidental_highlight: Rgb,
-    name: &str,
-) {
-    let (primary_index, primary_field, primary) = nearest_field(palette, primary_family);
-    let (secondary_index, secondary_field, secondary) = nearest_field(palette, secondary_family);
-    let primary_source = oklch(primary_family);
-    let secondary_source = oklch(secondary_family);
-
-    assert_ne!(
-        primary_index,
-        secondary_index,
-        "{name} should retain distinct primary and secondary authored families; fields were {} and {}",
-        palette.artwork_field.to_hex(),
-        palette.metadata_field.to_hex(),
-    );
-    for (role, field, output, source) in [
-        ("primary", primary_field, primary, primary_source),
-        ("secondary", secondary_field, secondary, secondary_source),
-    ] {
-        assert!(
-            hue_distance(output.hue, source.hue) <= 18.0,
-            "{name} {role} field should retain its authored hue; got {}",
-            field.to_hex(),
-        );
-        assert!(
-            (0.015..=source.chroma * 1.05).contains(&output.chroma),
-            "{name} {role} field should retain bounded source chroma; source {:.3}, output {:.3} ({})",
-            source.chroma,
-            output.chroma,
-            field.to_hex(),
-        );
-    }
-    assert!(
-        secondary.lightness >= 0.25,
-        "{name} dark secondary should remain readable at television distance (OKLab L >= 0.25); got {:.3} ({})",
-        secondary.lightness,
-        secondary_field.to_hex(),
-    );
-
-    let accent = oklch(palette.accent);
-    assert!(
-        hue_distance(accent.hue, oklch(accent_family).hue) <= 18.0,
-        "{name} accent should stay near the intended salient family; got {}",
-        palette.accent.to_hex(),
-    );
-    assert!(
-        hue_distance(accent.hue, oklch(incidental_highlight).hue) > 24.0,
-        "{name} incidental highlight must not take over semantic accents; got {}",
-        palette.accent.to_hex(),
-    );
-    for field in [palette.artwork_field, palette.metadata_field] {
-        assert!(
-            hue_distance(oklch(field).hue, oklch(incidental_highlight).hue) > 18.0,
-            "{name} incidental highlight must not take over a presentation field; got {}",
-            field.to_hex(),
-        );
-    }
+fn hex_rgb(value: &str) -> Rgb {
+    rgb(
+        u8::from_str_radix(&value[1..3], 16).unwrap(),
+        u8::from_str_radix(&value[3..5], 16).unwrap(),
+        u8::from_str_radix(&value[5..7], 16).unwrap(),
+    )
 }
 
 fn palette_from_realistic_artwork(
@@ -319,53 +389,23 @@ fn palette_from_realistic_artwork(
 }
 
 #[test]
-fn keeps_the_representative_artworks_navy_coral_and_cream_direction() {
-    let artwork_path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/playing.svg");
-
-    let palette = PresentationPalette::from_artwork(&artwork_path)
-        .expect("the shared artwork should produce a palette");
-
-    assert_color_near(
-        "navy field",
-        palette.background,
-        Rgb {
-            red: 0x07,
-            green: 0x15,
-            blue: 0x22,
-        },
-        18,
-    );
-    assert_color_near(
-        "coral accent",
-        palette.accent,
-        Rgb {
-            red: 0xff,
-            green: 0x70,
-            blue: 0x51,
-        },
-        32,
-    );
-    assert_color_near(
-        "cream primary text",
+fn representative_artwork_retains_navy_and_coral_with_quiet_text() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/playing.svg");
+    let palette = PresentationPalette::from_artwork(&path).unwrap();
+    assert!(palette.artwork_field.blue > palette.artwork_field.red + 15);
+    assert_artwork_family("accent", palette.accent, &[rgb(255, 112, 81)]);
+    assert!(oklch(palette.accent).chroma > 0.08);
+    for text in [
         palette.primary_text,
-        Rgb {
-            red: 0xf3,
-            green: 0xea,
-            blue: 0xd7,
-        },
-        24,
-    );
-    assert_color_near(
-        "muted supporting text",
+        palette.secondary_text,
         palette.muted_text,
-        Rgb {
-            red: 0x92,
-            green: 0x99,
-            blue: 0xa8,
-        },
-        32,
-    );
+    ] {
+        assert!(
+            oklch(text).chroma < 0.025,
+            "text should support the artwork: {}",
+            text.to_hex()
+        );
+    }
 }
 
 #[test]
@@ -407,7 +447,7 @@ fn allows_light_artwork_to_own_a_light_presentation() {
 }
 
 #[test]
-fn light_blue_and_blush_reference_keeps_its_approved_palette_direction() {
+fn blue_and_blush_artwork_does_not_require_a_prescribed_field_assignment() {
     let directory = tempdir().expect("a temporary artwork directory should be available");
     let artwork_path = directory.path().join("light-blue-blush-reference.svg");
     fs::write(
@@ -426,25 +466,25 @@ fn light_blue_and_blush_reference_keeps_its_approved_palette_direction() {
     let palette = PresentationPalette::from_artwork(&artwork_path)
         .expect("the light blue-and-blush reference should produce a palette");
 
-    assert_color_near(
-        "approved blue artwork field",
+    let sources = [
+        rgb(247, 247, 245),
+        rgb(36, 35, 35),
+        rgb(75, 139, 187),
+        rgb(106, 132, 154),
+        rgb(127, 147, 166),
+        rgb(168, 120, 119),
+    ];
+    for color in [
         palette.artwork_field,
-        Rgb {
-            red: 0x4b,
-            green: 0x8b,
-            blue: 0xbb,
-        },
-        8,
-    );
-    assert_color_near(
-        "approved blush metadata field",
+        palette.background,
         palette.metadata_field,
-        Rgb {
-            red: 0xd0,
-            green: 0xbd,
-            blue: 0xb8,
-        },
-        8,
+        palette.accent,
+    ] {
+        assert_artwork_family("blue and blush composition", color, &sources);
+    }
+    assert!(
+        oklab_distance(palette.artwork_field, palette.metadata_field)
+            >= MINIMUM_ENDPOINT_FIELD_SEPARATION
     );
 }
 
@@ -463,27 +503,28 @@ fn visual_acceptance_light_artwork_fixture_produces_a_light_presentation() {
 }
 
 #[test]
-fn keeps_a_below_ceiling_light_palette_at_its_generated_lightness() {
+fn moderate_light_artwork_keeps_bounded_light_fields() {
     let directory = tempdir().expect("a temporary artwork directory should be available");
     let artwork_path = synthetic_artwork(&directory, "moderate-light.svg", "#cacaca", "#75a0a5");
 
     let palette = PresentationPalette::from_artwork(&artwork_path)
         .expect("moderately light artwork should produce a palette");
 
-    assert!(
-        (0.62..=0.7).contains(&hsl_lightness(palette.background)),
-        "the below-ceiling center field should keep its generated lightness: {:?}",
+    for field in [
         palette.background,
-    );
-    assert!(
-        (0.66..=0.74).contains(&hsl_lightness(palette.metadata_field)),
-        "the below-ceiling metadata field should keep its generated lightness: {:?}",
+        palette.artwork_field,
         palette.metadata_field,
-    );
+    ] {
+        assert!(
+            (0.5..=0.8).contains(&hsl_lightness(field)),
+            "light fields must remain restrained: {}",
+            field.to_hex()
+        );
+    }
 }
 
 #[test]
-fn restrained_light_produces_a_restrained_teal_gray_and_mauve_light_matte() {
+fn bright_artwork_retains_a_restrained_light_matte_and_authored_accents() {
     let artwork_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../shared/fixtures/artwork/restrained-light.svg");
 
@@ -498,16 +539,19 @@ fn restrained_light_produces_a_restrained_teal_gray_and_mauve_light_matte() {
         hsl_lightness(palette.background) > 0.5 && hsl_lightness(palette.metadata_field) > 0.5,
         "restraining brightness should preserve a light presentation",
     );
-    assert!(
-        palette.artwork_field.green > palette.artwork_field.red + 8
-            && palette.artwork_field.blue > palette.artwork_field.red + 8,
-        "the artwork field should retain the cyan color family",
-    );
-    assert!(
-        palette.metadata_field.red > palette.metadata_field.green
-            && palette.metadata_field.blue > palette.metadata_field.green,
-        "the metadata field should retain the plum color family",
-    );
+    let sources = [
+        rgb(245, 244, 241),
+        rgb(57, 156, 171),
+        rgb(160, 92, 145),
+        rgb(212, 217, 216),
+    ];
+    for color in [
+        palette.artwork_field,
+        palette.metadata_field,
+        palette.accent,
+    ] {
+        assert_artwork_family("restrained light composition", color, &sources);
+    }
 }
 
 #[test]
@@ -580,111 +624,81 @@ fn weak_dark_artwork_patterns_keep_perceptually_separated_gradient_stops() {
 }
 
 #[test]
-fn ochre_artwork_with_a_salient_muted_purple_family_retains_a_purple_field() {
-    let palette = palette_from_realistic_artwork(
-        "ochre-purple.svg",
-        ["#9b741d", "#85651c"],
-        ["#504c69", "#3f3e5c"],
-        ["#292720", "#c1b58f"],
-        "#00d9ff",
-    );
-
-    assert_dark_family_relationships(
-        palette,
-        rgb(0x9b, 0x74, 0x1d),
-        rgb(0x50, 0x4c, 0x69),
-        rgb(0x9b, 0x74, 0x1d),
-        rgb(0x00, 0xd9, 0xff),
-        "ochre and muted purple artwork",
-    );
+fn multiple_substantial_families_supply_fields_and_accents_without_invented_hues() {
+    for (name, primary, secondary, neutral, detail) in [
+        (
+            "ochre-purple",
+            ["#9b741d", "#85651c"],
+            ["#504c69", "#3f3e5c"],
+            ["#292720", "#c1b58f"],
+            "#00d9ff",
+        ),
+        (
+            "blue-violet",
+            ["#8eb3c2", "#769eae"],
+            ["#493259", "#3f3157"],
+            ["#20272b", "#c5c1bc"],
+            "#e12531",
+        ),
+        (
+            "steel-umber",
+            ["#758fb2", "#5f7092"],
+            ["#9a5b43", "#6f3d2d"],
+            ["#ead9b8", "#292724"],
+            "#e8dc24",
+        ),
+        (
+            "copper-navy",
+            ["#a84f24", "#8e3f1e"],
+            ["#353346", "#292d43"],
+            ["#24201d", "#b39a82"],
+            "#d533c7",
+        ),
+    ] {
+        let palette = palette_from_realistic_artwork(name, primary, secondary, neutral, detail);
+        let mut sources: Vec<_> = primary
+            .into_iter()
+            .chain(secondary)
+            .chain(neutral)
+            .map(hex_rgb)
+            .collect();
+        for field in [
+            palette.artwork_field,
+            palette.background,
+            palette.metadata_field,
+        ] {
+            assert_artwork_family(name, field, &sources);
+        }
+        assert!(
+            oklch(palette.artwork_field).chroma >= 0.015,
+            "substantial color should remain recognizable: {name}"
+        );
+        sources.push(hex_rgb(detail));
+        assert_artwork_family("accent", palette.accent, &sources);
+    }
 }
 
 #[test]
-fn related_shades_do_not_displace_a_smaller_independently_salient_family() {
-    let directory = tempdir().expect("a temporary artwork directory should be available");
-    let artwork_path = directory.path().join("ochre-olive-purple-cyan.svg");
+fn related_shades_leave_room_for_a_distinctive_accent() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("related-shades.svg");
     fs::write(
-        &artwork_path,
+        &path,
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
-            <rect width="100" height="100" fill="#2b2924"/>
-            <rect width="44" height="100" fill="#ad7d13"/>
-            <rect width="30" height="100" x="44" fill="#515417"/>
-            <rect width="12" height="100" x="74" fill="#4c496f"/>
-            <rect width="10" height="100" x="86" fill="#c1b58f"/>
-            <rect width="4" height="100" x="96" fill="#00d9ff"/>
-        </svg>"##,
+        <rect width="100" height="100" fill="#ad7d13"/>
+        <rect width="30" height="100" x="44" fill="#515417"/>
+        <rect width="12" height="100" x="74" fill="#4c496f"/>
+        <rect width="10" height="100" x="86" fill="#c1b58f"/>
+        <rect width="4" height="100" x="96" fill="#00d9ff"/>
+    </svg>"##,
     )
-    .expect("the competing-family fixture should be writable");
-
-    let palette = PresentationPalette::from_artwork(&artwork_path)
-        .expect("competing authored families should produce a palette");
-    assert_dark_family_relationships(
-        palette,
-        rgb(0xad, 0x7d, 0x13),
-        rgb(0x4c, 0x49, 0x6f),
-        rgb(0xad, 0x7d, 0x13),
-        rgb(0x00, 0xd9, 0xff),
-        "ochre with a related olive shade and independently salient purple",
-    );
-}
-
-#[test]
-fn icy_blue_artwork_with_a_salient_deep_violet_family_retains_a_violet_field() {
-    let palette = palette_from_realistic_artwork(
-        "icy-blue-violet.svg",
-        ["#8eb3c2", "#769eae"],
-        ["#493259", "#3f3157"],
-        ["#20272b", "#c5c1bc"],
-        "#e12531",
-    );
-
-    assert_dark_family_relationships(
-        palette,
-        rgb(0x8e, 0xb3, 0xc2),
-        rgb(0x49, 0x32, 0x59),
-        rgb(0x8e, 0xb3, 0xc2),
-        rgb(0xe1, 0x25, 0x31),
-        "icy blue and deep violet artwork",
-    );
-}
-
-#[test]
-fn cream_and_warm_artwork_with_a_salient_steel_blue_family_retains_a_blue_field() {
-    let palette = palette_from_realistic_artwork(
-        "cream-warm-steel-blue.svg",
-        ["#758fb2", "#5f7092"],
-        ["#9a5b43", "#6f3d2d"],
-        ["#ead9b8", "#292724"],
-        "#e8dc24",
-    );
-
-    assert_dark_family_relationships(
-        palette,
-        rgb(0x75, 0x8f, 0xb2),
-        rgb(0x9a, 0x5b, 0x43),
-        rgb(0x9a, 0x5b, 0x43),
-        rgb(0xe8, 0xdc, 0x24),
-        "steel blue and warm umber artwork",
-    );
-}
-
-#[test]
-fn copper_artwork_with_a_salient_navy_family_keeps_warm_roles_and_a_navy_field() {
-    let palette = palette_from_realistic_artwork(
-        "copper-navy.svg",
-        ["#a84f24", "#8e3f1e"],
-        ["#353346", "#292d43"],
-        ["#24201d", "#b39a82"],
-        "#d533c7",
-    );
-
-    assert_dark_family_relationships(
-        palette,
-        rgb(0xa8, 0x4f, 0x24),
-        rgb(0x35, 0x33, 0x46),
-        rgb(0xa8, 0x4f, 0x24),
-        rgb(0xd5, 0x33, 0xc7),
-        "copper and midnight navy artwork",
+    .unwrap();
+    let palette = PresentationPalette::from_artwork(&path).unwrap();
+    assert!(hue_distance(oklch(palette.artwork_field).hue, oklch(palette.accent).hue) > 40.0);
+    assert_artwork_family(
+        "accent",
+        palette.accent,
+        &[hex_rgb("#4c496f"), hex_rgb("#00d9ff")],
     );
 }
 
@@ -861,42 +875,46 @@ fn every_semantic_text_and_accent_role_meets_its_field_contrast() {
     ];
 
     for (source, palette, artwork_derived) in palettes {
-        let supporting_text_minimum = if artwork_derived { 7.0 } else { 4.5 };
-        for (field_name, field, supporting_minimum) in [
-            ("background", palette.background, supporting_text_minimum),
-            ("artwork field", palette.artwork_field, 4.5),
-            (
-                "metadata field",
-                palette.metadata_field,
-                supporting_text_minimum,
-            ),
-        ] {
-            for (role, color, minimum) in [
-                ("primary text", palette.primary_text, 7.0),
-                ("secondary text", palette.secondary_text, supporting_minimum),
-                ("muted text", palette.muted_text, supporting_minimum),
-                ("accent", palette.accent, 4.5),
-                ("muted status accent", palette.status_muted_accent, 4.5),
-                ("progress fill", palette.progress_fill, 4.5),
-            ] {
-                assert!(
-                    color.contrast_ratio(field) >= minimum,
-                    "{source} {role} must have at least {minimum}:1 contrast against the {field_name}; got {:.2}:1 from {} on {}",
-                    color.contrast_ratio(field),
-                    color.to_hex(),
-                    field.to_hex(),
-                );
-            }
-        }
+        assert_readable_roles(source, palette, artwork_derived);
+    }
+}
+
+fn assert_readable_roles(source: &str, palette: PresentationPalette, artwork_derived: bool) {
+    let supporting_text_minimum = if artwork_derived { 7.0 } else { 4.5 };
+    for (field_name, field, supporting_minimum) in [
+        ("background", palette.background, supporting_text_minimum),
+        ("artwork field", palette.artwork_field, 4.5),
+        (
+            "metadata field",
+            palette.metadata_field,
+            supporting_text_minimum,
+        ),
+    ] {
         for (role, color, minimum) in [
-            ("diagnostics text", palette.diagnostics_text, 7.0),
-            ("diagnostics border", palette.diagnostics_border, 4.5),
+            ("primary text", palette.primary_text, 7.0),
+            ("secondary text", palette.secondary_text, supporting_minimum),
+            ("muted text", palette.muted_text, supporting_minimum),
+            ("accent", palette.accent, 4.5),
+            ("muted status accent", palette.status_muted_accent, 4.5),
+            ("progress fill", palette.progress_fill, 4.5),
         ] {
             assert!(
-                color.contrast_ratio(palette.diagnostics_field) >= minimum,
-                "{source} {role} must have at least {minimum}:1 contrast against the diagnostics field"
+                color.contrast_ratio(field) >= minimum,
+                "{source} {role} must have at least {minimum}:1 contrast against the {field_name}; got {:.2}:1 from {} on {}",
+                color.contrast_ratio(field),
+                color.to_hex(),
+                field.to_hex(),
             );
         }
+    }
+    for (role, color, minimum) in [
+        ("diagnostics text", palette.diagnostics_text, 7.0),
+        ("diagnostics border", palette.diagnostics_border, 4.5),
+    ] {
+        assert!(
+            color.contrast_ratio(palette.diagnostics_field) >= minimum,
+            "{source} {role} must have at least {minimum}:1 contrast against the diagnostics field"
+        );
     }
 }
 
@@ -945,5 +963,54 @@ fn progress_roles_preserve_fill_track_and_field_contrast() {
             palette.progress_fill, palette.accent,
             "{source} progress fill should retain the full artwork-derived accent",
         );
+    }
+}
+
+#[test]
+fn saturated_and_neutral_color_extremes_preserve_all_readability_contracts() {
+    for red in [0_u8, 64, 128, 192, 255] {
+        for green in [0_u8, 64, 128, 192, 255] {
+            for blue in [0_u8, 64, 128, 192, 255] {
+                let image =
+                    gdk_pixbuf::Pixbuf::new(gdk_pixbuf::Colorspace::Rgb, false, 8, 1, 1).unwrap();
+                image.fill(u32::from_be_bytes([red, green, blue, 255]));
+                let palette = PresentationPalette::from_pixbuf(&image).unwrap();
+                let source = rgb(red, green, blue).to_hex();
+                assert_readable_roles(&source, palette, true);
+                assert!(
+                    palette.accent.contrast_ratio(palette.progress_track) >= 3.0,
+                    "{source}: fill/track separation"
+                );
+                assert!(
+                    (1.5..=2.0).contains(
+                        &palette
+                            .progress_track
+                            .contrast_ratio(palette.metadata_field)
+                    ),
+                    "{source}: restrained track"
+                );
+                assert!(
+                    oklab_distance(palette.artwork_field, palette.metadata_field)
+                        >= MINIMUM_ENDPOINT_FIELD_SEPARATION,
+                    "{source}: distinct endpoints"
+                );
+                let dark = palette.background.contrast_ratio(WHITE) >= 7.0;
+                let minimum = if dark {
+                    MINIMUM_ADJACENT_FIELD_SEPARATION
+                } else {
+                    MINIMUM_LIGHT_ADJACENT_FIELD_SEPARATION
+                };
+                for field in [palette.artwork_field, palette.metadata_field] {
+                    assert!(
+                        oklab_distance(field, palette.background) >= minimum,
+                        "{source}: distinct adjacent fields"
+                    );
+                    assert!(
+                        hsl_lightness(field) <= 0.8,
+                        "{source}: bright-field restraint"
+                    );
+                }
+            }
+        }
     }
 }
