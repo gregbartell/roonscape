@@ -31,16 +31,18 @@ blue cover; it does not establish that every bright cover should be dark.
 The third study is at <http://localhost:8765/dont-come-to-la.html?variant=B>:
 
 - A: Current crimson, sampled from the capture.
-- B: Crimson + oxblood, the same gradient and semantic colors as A with an
-  oxblood four-sided artwork frame and offset plate.
-- C: Lacquer + porcelain, richer red fields, porcelain text, and a garnet frame.
-- D: Parchment + burgundy, light warm fields and dark burgundy type and frame.
+- B: Crimson + parchment, identical to A except for the parchment backing plate.
+- C: Espresso + copper, warm brown-black fields with ivory text and copper accents.
+- D: Aubergine + lilac, deep purple fields with pale lilac text and accents.
 
-The user rejected the first set of third-study alternatives (charcoal +
-scarlet, oxblood + chalk, and ink + ice). Those remain in the previous branch
-commit. The replacement set retains A and explicitly explores the requested
-current-gradient/oxblood-border combination as B. Artwork border and plate
-colors are independent of status and progress accent in this study.
+The user rejected the first set of third-study alternatives and requested
+further color options. The subsequent framed variants misunderstood their
+intent: only the backing plate color was in scope, not artwork styling.
+All variants now retain A's fixed geometry, 2 px keyline, shadow, and backing
+plate offset of 24 px right and 16 px down. B changes only the plate color to
+parchment (#e0d2c2), retaining every other color from A. C and D are new
+color-only alternatives. Earlier versions remain in the branch history.
+Backing plate color remains independent of status and progress accent.
 
 It shows Don't Come To LA, from YG's Still Brazy (Deluxe), paused at 0:01.
 The full artist credit is retained. Paused status has its own muted accent,
