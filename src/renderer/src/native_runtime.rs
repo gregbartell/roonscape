@@ -512,7 +512,7 @@ impl Runtime<'_> {
             || classify_presentation_update(&self.shown, &destination)
                 == PresentationUpdate::TransitionRequired;
         if replacement && let Some(view) = &mut self.view {
-            view.begin_departure(now, animated);
+            view.begin_departure(&destination, now, animated);
         }
         let reveal_ready = (self.ready.is_some() || self.installed_key == self.key)
             && (!replacement

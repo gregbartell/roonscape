@@ -53,6 +53,7 @@ pub(crate) struct PreparedText<'window> {
 impl<'window> PreparedText<'window> {
     pub fn sprite(&self, x: f32, y: f32, color: Color, clip: Rect) -> Sprite<'window> {
         Sprite {
+            field: None,
             texture: Some(self.texture.clone()),
             foreground: self.foreground.clone(),
             geometry: SpriteGeometry {

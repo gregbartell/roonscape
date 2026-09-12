@@ -418,9 +418,22 @@ transitions while keeping timing and progress live.
 ### Now Playing Transitions and content updates
 
 A Now Playing Transition enters Now Playing from a Full-field Presentation or
-replaces a track. Fade outgoing text out over 225 ms, then reveal incoming
-artwork and text together over the next 225 ms with a continuous background. Incoming
-timing, Presentation Status, and lyric motion remain live throughout the reveal.
+replaces a track. Between Now Playing presentations, compare the displayed Title,
+Artist, Album, Presentation Status, Output, and Zone independently against actual
+incoming values. Retain unchanged text, identity labels, and separators at full
+visibility. Missing incoming values clear the corresponding outgoing content.
+Fade only changed text out over 225 ms, replace it while invisible, and reveal
+it over 225 ms together with changed artwork and its background. Fields changing
+together share these phases. Identical artwork remains continuously visible.
+Incoming timing and lyric motion remain live throughout the reveal; track
+replacements retain the existing lyric fade without comparing lyric text.
+Entry from a Full-field Presentation retains its complete foreground fade.
+
+Smoothly reposition retained text over the reveal when new wrapping, fitting, or
+composition geometry changes its bounds. Move incoming text bounds with it so
+fields remain separated throughout the reveal. Interpolate visible foreground colors
+with the artwork palette, including during interrupted reveals, so retained
+content never exposes an abrupt palette switch.
 The [layered compositing decision](../adr/0004-use-layered-compositing-for-now-playing-transitions.md)
 records the architectural tradeoff supporting this behavior.
 
@@ -453,10 +466,10 @@ presentation.
 
 Compatible updates to the current track change only the affected content.
 Crossfade artwork and its background palette together over 225 ms while text
-remains visible. For metadata, fade the title/artist/album group out over
-225 ms, replace and refit it while invisible, then fade it in over 225 ms;
-Presentation Status, timing, and lyrics remain visible and live. Use the same
-latest-destination interruption behavior for partial updates. When animations
+remains visible. Apply the same independent field comparison, invisible
+replacement, and smooth repositioning to partial metadata and identity updates.
+Unchanged Presentation Status, timing, and lyrics remain visible and live.
+Use the same latest-destination interruption behavior for partial updates. When animations
 are disabled, apply the latest destination immediately.
 
 ### Track continuity

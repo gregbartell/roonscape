@@ -75,9 +75,9 @@ fn transitions(preparation: &mut PresentationPreparation<'_>, repository: &Path)
         .unwrap();
     let mut view = NativeView::new(prepared, 1);
     close(progress_alpha(&view.render(ms(0), true)), 1.0);
-    view.begin_departure(ms(10), true);
+    view.begin_departure(&fixture("disconnected"), ms(10), true);
     // Invisible destinations inherit the original departure deadline.
-    view.begin_departure(ms(100), true);
+    view.begin_departure(&fixture("disconnected"), ms(100), true);
     assert!(!view.departure_complete(ms(234), true));
     assert!(view.departure_complete(ms(235), true));
     let mut live = playing.clone();
@@ -331,7 +331,6 @@ fn composition_keeps_shared_metadata_visible(
             now: ms(290),
             animated: true,
             opacity: 1.0,
-            metadata_opacity: 1.0,
             status: value.status,
             status_opacity: 1.0,
             timing_opacity: 1.0,
@@ -412,7 +411,6 @@ fn composition_preserves_clipped_title_at_motion_boundary(
             now: ms(0),
             animated: true,
             opacity: 1.0,
-            metadata_opacity: 1.0,
             status: value.status,
             status_opacity: 1.0,
             timing_opacity: 1.0,
@@ -487,7 +485,6 @@ fn composition_reel_translation_and_clipping(
                     now: ms(400),
                     animated: true,
                     opacity: 1.0,
-                    metadata_opacity: 1.0,
                     status: value.status,
                     status_opacity: 1.0,
                     timing_opacity: 1.0,
@@ -697,7 +694,6 @@ fn wrapping_words_do_not_collide_during_composition(
                 now: ms(time),
                 animated: true,
                 opacity: 1.0,
-                metadata_opacity: 1.0,
                 status: value.status,
                 status_opacity: 1.0,
                 timing_opacity: 1.0,
@@ -792,7 +788,6 @@ fn partially_retained_words_follow_native_ellipsis(
             now: ms(487),
             animated: true,
             opacity: 1.0,
-            metadata_opacity: 1.0,
             status: value.status,
             status_opacity: 1.0,
             timing_opacity: 1.0,
@@ -860,6 +855,37 @@ fn compatible_content(preparation: &mut PresentationPreparation<'_>, repository:
     view.render(ms(10), true);
     let early = view.render(ms(120), true);
     close(progress_alpha(&early), 1.0);
+    let outgoing = preparation
+        .prepare(&playing, viewport, repository, true)
+        .unwrap();
+    let PreparedContent::NowPlaying(content) = &outgoing.content else {
+        panic!("Now Playing")
+    };
+    for text in &content.metadata.ordinary {
+        let id = text
+            .text
+            .sprite(
+                0.0,
+                0.0,
+                qt_window::Color::default(),
+                qt_window::Rect::viewport(viewport),
+            )
+            .texture
+            .unwrap()
+            .identity();
+        let sprite = early
+            .sprites
+            .iter()
+            .find(|sprite| {
+                sprite
+                    .texture
+                    .as_ref()
+                    .is_some_and(|texture| texture.identity() == id)
+            })
+            .unwrap();
+        close(sprite.geometry.color.alpha, 1.0);
+    }
+
     assert!(!early.sprites.iter().any(|sprite| {
         sprite
             .texture
@@ -1173,7 +1199,7 @@ fn disabling_animation_settles_active_graphics(
     view.replace(next, &light, 3, ms(200), true);
     close(progress_alpha(&view.render(ms(200), true)), 0.0);
     close(progress_alpha(&view.render(ms(201), false)), 1.0);
-    view.begin_departure(ms(300), true);
+    view.begin_departure(&fixture("disconnected"), ms(300), true);
     close(progress_alpha(&view.render(ms(301), false)), 0.0);
 }
 
@@ -1313,6 +1339,448 @@ fn gradient_reuse_survives_content_changes(
     );
 }
 
+fn retained_track_fields(preparation: &mut PresentationPreparation<'_>, repository: &Path) {
+    use qt_window::Field;
+    let playing = fixture("playing");
+    let viewport = Viewport::new(1280, 720);
+    let prepared = preparation
+        .prepare(&playing, viewport, repository, true)
+        .unwrap();
+    let identity_color = prepared.palette.identity_name_text();
+    let mut view = NativeView::new(prepared, 1);
+    let initial = view.render(ms(0), true);
+    let mut incoming = playing.clone();
+    if let Presentation::NowPlaying(value) = &mut incoming {
+        value.title = Some(
+            "A replacement title that wraps onto several lines across the information rail".into(),
+        );
+    }
+    view.begin_departure(&incoming, ms(10), true);
+    let departure = view.render(ms(120), true);
+    let artist = |scene: &Scene<'_>| {
+        scene
+            .sprites
+            .iter()
+            .find(|sprite| sprite.field == Some(Field::Artist))
+            .unwrap()
+            .geometry
+    };
+    close(artist(&departure).color.alpha, 1.0);
+    view.replace(
+        preparation
+            .prepare(&incoming, viewport, repository, true)
+            .unwrap(),
+        &incoming,
+        2,
+        ms(235),
+        true,
+    );
+    let zero = view.render(ms(235), true);
+    close(artist(&zero).color.alpha, 1.0);
+    close(artist(&zero).bounds.y, artist(&initial).bounds.y);
+    assert_eq!(
+        zero.graphics.len(),
+        1,
+        "identical artwork remains one continuously visible layer"
+    );
+    for time in [245, 260, 285, 310] {
+        let frame = view.render(ms(time), true);
+        let title = frame
+            .sprites
+            .iter()
+            .find(|sprite| sprite.field == Some(Field::Title))
+            .unwrap();
+        assert!(
+            title.geometry.bounds.y + title.geometry.bounds.height <= artist(&frame).bounds.y,
+            "incoming Title must clear retained Artist during reflow at {time} ms"
+        );
+    }
+    let middle = view.render(ms(347), true);
+    let settled = view.render(ms(460), true);
+    let title_bounds = |scene: &Scene<'_>| {
+        scene
+            .sprites
+            .iter()
+            .find(|sprite| sprite.field == Some(Field::Title))
+            .unwrap()
+            .geometry
+            .bounds
+    };
+    let a = title_bounds(&middle);
+    let b = title_bounds(&settled);
+    close(a.width / a.height, b.width / b.height);
+
+    assert!((artist(&middle).bounds.y - artist(&initial).bounds.y).abs() > 0.1);
+    assert!((artist(&middle).bounds.y - artist(&settled).bounds.y).abs() > 0.1);
+    for field in [
+        Field::Artist,
+        Field::Album,
+        Field::Status,
+        Field::OutputLabel,
+        Field::Output,
+        Field::ZoneLabel,
+        Field::Zone,
+        Field::Separator,
+    ] {
+        for scene in [&departure, &zero, &middle, &settled] {
+            let sprites: Vec<_> = scene
+                .sprites
+                .iter()
+                .filter(|sprite| sprite.field == Some(field))
+                .collect();
+            assert!(!sprites.is_empty(), "missing {field:?}");
+            if matches!(field, Field::Output | Field::Zone) {
+                for sprite in &sprites {
+                    assert_color(sprite.geometry.color, identity_color, 1.0);
+                }
+            }
+            assert!(
+                sprites
+                    .iter()
+                    .all(|sprite| sprite.geometry.color.alpha == 1.0),
+                "{field:?} must remain visible"
+            );
+        }
+    }
+}
+
+fn interrupted_fields(preparation: &mut PresentationPreparation<'_>, repository: &Path) {
+    use qt_window::Field;
+    let viewport = Viewport::new(1280, 720);
+    let playing = fixture("playing");
+    let mut view = NativeView::new(
+        preparation
+            .prepare(&playing, viewport, repository, true)
+            .unwrap(),
+        1,
+    );
+    view.render(ms(0), true);
+    let mut incoming = playing.clone();
+    if let Presentation::NowPlaying(value) = &mut incoming {
+        value.title = Some("Superseded title".into());
+    }
+    view.begin_departure(&incoming, ms(10), true);
+    view.render(ms(110), true);
+    if let Presentation::NowPlaying(value) = &mut incoming {
+        value.title = Some("Latest title".into());
+        value.artist = Some("Another Artist".into());
+        value.tracked_zone = "New grouped Zone".into();
+    }
+    view.begin_departure(&incoming, ms(110), true);
+    assert!(
+        !view.departure_complete(ms(235), true),
+        "newly changed fields must complete departure before the coordinated reveal"
+    );
+    assert!(view.departure_complete(ms(335), true));
+    let prepared = preparation
+        .prepare(&incoming, viewport, repository, true)
+        .unwrap();
+    view.replace(prepared, &incoming, 2, ms(335), true);
+    let zero = view.render(ms(335), true);
+    for field in [Field::Title, Field::Artist, Field::Zone] {
+        assert!(
+            zero.sprites
+                .iter()
+                .filter(|sprite| sprite.field == Some(field))
+                .all(|sprite| sprite.geometry.color.alpha == 0.0)
+        );
+    }
+    let middle = view.render(ms(435), true);
+    let alpha = |scene: &Scene<'_>, field| {
+        scene
+            .sprites
+            .iter()
+            .find(|sprite| sprite.field == Some(field))
+            .unwrap()
+            .geometry
+            .color
+            .alpha
+    };
+    close(alpha(&middle, Field::Title), alpha(&middle, Field::Artist));
+    close(alpha(&middle, Field::Output), 1.0);
+    let mut newest = incoming.clone();
+    if let Presentation::NowPlaying(value) = &mut newest {
+        value.title = Some("Interrupted reveal".into());
+    }
+    view.begin_departure(&newest, ms(435), true);
+    close(
+        alpha(&view.render(ms(435), true), Field::Title),
+        alpha(&middle, Field::Title),
+    );
+    // Reduced animation applies the complete latest destination at once.
+    view.replace(
+        preparation
+            .prepare(&newest, viewport, repository, true)
+            .unwrap(),
+        &newest,
+        3,
+        ms(450),
+        false,
+    );
+    close(alpha(&view.render(ms(450), false), Field::Title), 1.0);
+}
+
+fn departing_fields_follow_palette(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    let viewport = Viewport::new(1280, 720);
+    let playing = fixture("playing");
+    let first = preparation
+        .prepare(&playing, viewport, repository, true)
+        .unwrap();
+    let source_palette = first.palette;
+    let mut view = NativeView::new(first, 1);
+    view.render(ms(0), true);
+    let mut incoming = fixture("light-artwork");
+    if let (Presentation::NowPlaying(value), Presentation::NowPlaying(old)) =
+        (&mut incoming, &playing)
+    {
+        value.title = None;
+        value.artist.clone_from(&old.artist);
+        value.album.clone_from(&old.album);
+    }
+    let prepared = preparation
+        .prepare(&incoming, viewport, repository, true)
+        .unwrap();
+    let destination_palette = prepared.palette;
+    view.install(prepared, ms(10), true);
+    view.update(&incoming, 2);
+    view.render(ms(10), true);
+    let middle = view.render(ms(120), true);
+    let expected = qt_window::Color::new(
+        source_palette
+            .mix(
+                destination_palette,
+                scene::motion_phase(110.0 / 225.0, 0.0, 1.0),
+            )
+            .primary_text,
+        1.0,
+    );
+    let title = middle
+        .sprites
+        .iter()
+        .find(|sprite| sprite.field == Some(qt_window::Field::Title))
+        .unwrap();
+    close(title.geometry.color.red, expected.red);
+    close(title.geometry.color.green, expected.green);
+    close(title.geometry.color.blue, expected.blue);
+    assert!(title.geometry.color.alpha > 0.4 && title.geometry.color.alpha < 0.6);
+    let cleared = view.render(ms(235), true);
+    assert!(
+        !cleared
+            .sprites
+            .iter()
+            .any(|sprite| sprite.field == Some(qt_window::Field::Title)),
+        "missing incoming Title clears the outgoing value"
+    );
+}
+
+fn interrupted_full_field_boundaries(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    use qt_window::Field;
+    let viewport = Viewport::new(1280, 720);
+    let full = fixture("disconnected");
+    let playing = fixture("playing");
+    let mut view = NativeView::new(
+        preparation
+            .prepare(&full, viewport, repository, true)
+            .unwrap(),
+        1,
+    );
+    view.render(ms(0), true);
+    view.replace(
+        preparation
+            .prepare(&playing, viewport, repository, true)
+            .unwrap(),
+        &playing,
+        2,
+        ms(225),
+        true,
+    );
+    let middle = view.render(ms(325), true);
+    let alpha = |scene: &Scene<'_>, field| {
+        scene
+            .sprites
+            .iter()
+            .find(|sprite| sprite.field == Some(field))
+            .unwrap()
+            .geometry
+            .color
+            .alpha
+    };
+    let mut next = playing.clone();
+    if let Presentation::NowPlaying(value) = &mut next {
+        value.title = Some("Interrupt entry".into());
+    }
+    view.begin_departure(&next, ms(325), true);
+    let interrupted = view.render(ms(325), true);
+    close(
+        alpha(&interrupted, Field::Artist),
+        alpha(&middle, Field::Artist),
+    );
+    close(
+        alpha(&interrupted, Field::Title),
+        alpha(&middle, Field::Title),
+    );
+    view.render(ms(400), true);
+    view.replace(
+        preparation
+            .prepare(&next, viewport, repository, true)
+            .unwrap(),
+        &next,
+        3,
+        ms(550),
+        true,
+    );
+    view.render(ms(550), true);
+    let middle = view.render(ms(650), true);
+    view.begin_departure(&full, ms(650), true);
+    let interrupted = view.render(ms(650), true);
+    close(
+        alpha(&interrupted, Field::Artist),
+        alpha(&middle, Field::Artist),
+    );
+    close(
+        alpha(&interrupted, Field::Title),
+        alpha(&middle, Field::Title),
+    );
+}
+
+fn delayed_reveal_uses_one_clock(preparation: &mut PresentationPreparation<'_>, repository: &Path) {
+    let viewport = Viewport::new(1280, 720);
+    let playing = fixture("playing");
+    let mut incoming = fixture("light-artwork");
+    if let Presentation::NowPlaying(value) = &mut incoming {
+        value.title = Some("New artwork and Title".into());
+    }
+    let mut view = NativeView::new(
+        preparation
+            .prepare(&playing, viewport, repository, true)
+            .unwrap(),
+        1,
+    );
+    view.render(ms(0), true);
+    view.begin_departure(&incoming, ms(10), true);
+    view.render(ms(120), true);
+    view.replace(
+        preparation
+            .prepare(&incoming, viewport, repository, true)
+            .unwrap(),
+        &incoming,
+        2,
+        ms(235),
+        true,
+    );
+    let middle = view.render(ms(347), true);
+    let title = middle
+        .sprites
+        .iter()
+        .find(|sprite| sprite.field == Some(qt_window::Field::Title))
+        .unwrap();
+    assert_eq!(middle.graphics.len(), 2);
+    close(
+        title.geometry.color.alpha,
+        middle.graphics[1].geometry.weight,
+    );
+}
+
+fn partial_removal_preserves_field_spacing(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    use qt_window::Field;
+    let viewport = Viewport::new(1280, 720);
+    let playing = fixture("long-metadata");
+    let mut view = NativeView::new(
+        preparation
+            .prepare(&playing, viewport, repository, true)
+            .unwrap(),
+        1,
+    );
+    view.render(ms(0), true);
+    let mut incoming = playing.clone();
+    if let Presentation::NowPlaying(value) = &mut incoming {
+        value.artist = None;
+    }
+    view.install(
+        preparation
+            .prepare(&incoming, viewport, repository, true)
+            .unwrap(),
+        ms(10),
+        true,
+    );
+    view.update(&incoming, 2);
+    view.render(ms(10), true);
+    for time in [60, 120, 200] {
+        let frame = view.render(ms(time), true);
+        let bounds = |field| {
+            frame
+                .sprites
+                .iter()
+                .find(|sprite| sprite.field == Some(field))
+                .unwrap()
+                .geometry
+                .bounds
+        };
+        assert!(
+            bounds(Field::Artist).y + bounds(Field::Artist).height <= bounds(Field::Album).y,
+            "retained Album must not move through departing Artist at {time} ms"
+        );
+    }
+}
+
+fn identity_reflow_waits_for_invisible_replacement(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    use qt_window::Field;
+    let viewport = Viewport::new(1280, 720);
+    let mut playing = fixture("playing");
+    if let Presentation::NowPlaying(value) = &mut playing {
+        value.tracked_output =
+            "A very long physical output name filling its allocated width".into();
+    }
+    let mut view = NativeView::new(
+        preparation
+            .prepare(&playing, viewport, repository, true)
+            .unwrap(),
+        1,
+    );
+    view.render(ms(0), true);
+    let mut incoming = playing.clone();
+    if let Presentation::NowPlaying(value) = &mut incoming {
+        value.tracked_output = "A".into();
+    }
+    view.install(
+        preparation
+            .prepare(&incoming, viewport, repository, true)
+            .unwrap(),
+        ms(10),
+        true,
+    );
+    view.update(&incoming, 2);
+    view.render(ms(10), true);
+    for time in [60, 120, 200, 235, 280, 347, 460] {
+        let frame = view.render(ms(time), true);
+        let bounds = |field| {
+            frame
+                .sprites
+                .iter()
+                .find(|sprite| sprite.field == Some(field))
+                .unwrap()
+                .geometry
+                .bounds
+        };
+        assert!(
+            bounds(Field::Output).x + bounds(Field::Output).width <= bounds(Field::Separator).x,
+            "retained separator must clear the departing Output at {time} ms"
+        );
+    }
+}
+
 fn main() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -1345,6 +1813,13 @@ fn main() {
     cue_preparation_reuses_metadata_words(&mut preparation, repository);
     composition_reel_translation_and_clipping(&mut preparation, repository);
     compatible_content(&mut preparation, repository);
+    retained_track_fields(&mut preparation, repository);
+    interrupted_fields(&mut preparation, repository);
+    departing_fields_follow_palette(&mut preparation, repository);
+    interrupted_full_field_boundaries(&mut preparation, repository);
+    delayed_reveal_uses_one_clock(&mut preparation, repository);
+    partial_removal_preserves_field_spacing(&mut preparation, repository);
+    identity_reflow_waits_for_invisible_replacement(&mut preparation, repository);
     palette_surfaces(&mut preparation, repository);
     fitted_text(&text_preparation::TextPreparation::new(
         typography,

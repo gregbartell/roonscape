@@ -10,7 +10,7 @@ use crate::prepared_presentation::{
     MetadataMovement, PreparedContent, PreparedIdentity, PreparedNowPlaying, PreparedPresentation,
     PreparedReel, PreparedStatus, TextAt,
 };
-use crate::qt_window::{Color, Rect, Scene, Sprite, SpriteGeometry, SpriteKind, Texture};
+use crate::qt_window::{Color, Field, Rect, Scene, Sprite, SpriteGeometry, SpriteKind, Texture};
 
 pub(crate) struct Foreground<'a> {
     pub presentation: &'a Presentation,
@@ -18,7 +18,6 @@ pub(crate) struct Foreground<'a> {
     pub now: Duration,
     pub animated: bool,
     pub opacity: f32,
-    pub metadata_opacity: f32,
     pub status: PresentationStatus,
     pub status_opacity: f32,
     pub timing_opacity: f32,
@@ -116,6 +115,7 @@ fn now_playing<'window>(
     clip: Rect,
 ) {
     let rail = layout.information.left_viewport_x_px as f32;
+    let status_start = scene.sprites.len();
     if let Some((_, prepared_status)) = content
         .statuses
         .iter()
@@ -129,10 +129,11 @@ fn now_playing<'window>(
                 .artwork_field_anchors
                 .presentation_status_top_viewport_y_px as f32,
             frame,
-            frame.opacity * frame.status_opacity,
+            1.0,
             clip,
         );
     }
+    tag(scene, status_start, Field::Status);
     let metadata_bottom = draw_metadata(scene, content, layout, progress, frame, clip);
     if let (Some(reel), Some(lyrics)) = (&content.reel, frame.lyrics) {
         let amount = composition_geometry(progress) as f32;
@@ -170,6 +171,7 @@ fn now_playing<'window>(
     let identity_y = layout.footer_anchor.bottom_viewport_y_px as f32 - identity.height;
     let mix = |a: f32, b: f32| a + (b - a) * amount;
     for (index, text) in identity.text.iter().enumerate() {
+        let start = scene.sprites.len();
         let mut text = text.clone();
         if let (Some(ordinary), Some(lyric)) = (
             content.ordinary_identity.text.get(index),
@@ -178,20 +180,23 @@ fn now_playing<'window>(
             text.x = mix(ordinary.x, lyric.x);
             text.y = mix(ordinary.y, lyric.y);
         }
-        text_at(
+        text_at(scene, &text, rail, identity_y, frame.palette, 1.0, clip);
+        tag(
             scene,
-            &text,
-            rail,
-            identity_y,
-            frame.palette,
-            frame.opacity,
-            clip,
+            start,
+            [
+                Field::OutputLabel,
+                Field::Output,
+                Field::ZoneLabel,
+                Field::Zone,
+            ][index],
         );
     }
     if let (Some(a), Some(b)) = (
         content.ordinary_identity.separator,
         content.lyric_identity.separator,
     ) {
+        let start = scene.sprites.len();
         solid(
             scene,
             Rect::new(
@@ -200,10 +205,11 @@ fn now_playing<'window>(
                 mix(a.width, b.width),
                 mix(a.height, b.height),
             ),
-            Color::new(frame.palette.muted_text, frame.opacity),
+            Color::new(frame.palette.muted_text, 1.0),
             a.width / 2.0,
             clip,
         );
+        tag(scene, start, Field::Separator);
     }
     let timing_height = layout.timing_height_px() as f32;
     let timing_y = identity_y - layout.footer_gap_px as f32 - timing_height;
@@ -320,7 +326,7 @@ fn draw_metadata<'window>(
     let metadata = &content.metadata;
     let rail = layout.information.left_viewport_x_px as f32;
     let amount = composition_geometry(progress) as f32;
-    let opacity = frame.opacity * frame.metadata_opacity;
+    let opacity = 1.0;
     let start = scene.sprites.len();
     if amount == 0.0 {
         let metadata_clip = Rect::new(
@@ -330,7 +336,8 @@ fn draw_metadata<'window>(
             (layout.metadata_region_bottom_viewport_y_px - layout.metadata_region_top_viewport_y_px)
                 as f32,
         );
-        for text in &metadata.ordinary {
+        for (index, text) in metadata.ordinary.iter().enumerate() {
+            let start = scene.sprites.len();
             text_at(
                 scene,
                 text,
@@ -340,9 +347,19 @@ fn draw_metadata<'window>(
                 opacity,
                 metadata_clip,
             );
+            tag(
+                scene,
+                start,
+                if Some(index) == metadata.album_index {
+                    Field::Album
+                } else {
+                    metadata_field(text.role)
+                },
+            );
         }
     } else if amount == 1.0 {
         for text in &metadata.masthead {
+            let start = scene.sprites.len();
             text_at(
                 scene,
                 text,
@@ -352,6 +369,7 @@ fn draw_metadata<'window>(
                 opacity,
                 clip,
             );
+            tag(scene, start, metadata_field(text.role));
         }
     } else {
         // Ordinary metadata can clip oversized native tokens. Preserve that
@@ -372,6 +390,7 @@ fn draw_metadata<'window>(
             ),
         );
         for movement in &metadata.movement {
+            let start = scene.sprites.len();
             moving_words(
                 scene,
                 movement,
@@ -381,11 +400,13 @@ fn draw_metadata<'window>(
                 opacity,
                 moving_clip,
             );
+            tag(scene, start, metadata_field(movement.role));
         }
         if let Some(album) = metadata
             .album_index
             .and_then(|index| metadata.ordinary.get(index))
         {
+            let start = scene.sprites.len();
             text_at(
                 scene,
                 album,
@@ -395,6 +416,7 @@ fn draw_metadata<'window>(
                 opacity * (1.0 - motion_phase(progress, 0.12, 0.35)) as f32,
                 moving_clip,
             );
+            tag(scene, start, Field::Album);
         }
     }
     scene.sprites[start..]
@@ -705,4 +727,18 @@ pub(crate) fn diagnostics<'window>(
         Color::new(palette.diagnostics_text, 1.0),
         clip,
     ));
+}
+
+fn metadata_field(role: crate::prepared_presentation::TextRole) -> Field {
+    if role == crate::prepared_presentation::TextRole::Primary {
+        Field::Title
+    } else {
+        Field::Artist
+    }
+}
+
+fn tag(scene: &mut Scene<'_>, start: usize, field: Field) {
+    for sprite in &mut scene.sprites[start..] {
+        sprite.field = Some(field);
+    }
 }

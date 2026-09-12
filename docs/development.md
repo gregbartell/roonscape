@@ -369,6 +369,7 @@ npm run capture:lyrics -- --example short-blanks
 npm run capture:lyrics -- --example blank-lifecycle
 npm run capture:lyrics -- --example timing-stability
 npm run capture:lyrics -- --example artwork-updates
+npm run capture:lyrics -- --example selective-fields
 npm run capture:lyrics -- --example metadata-updates
 npm run capture:lyrics -- --example opening-lyrics
 npm run capture:lyrics -- --example composition-inheritance

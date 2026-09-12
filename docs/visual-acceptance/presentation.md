@@ -155,9 +155,17 @@ preserving the same content and fallback behavior.
 Use `metadata-updates` to inspect missing-to-known enrichment, long grouped
 fitting, interrupted departure and reveal, and superseding track replacements
 in ordinary and Synchronized Lyric Compositions. Only the ordinary metadata or
-compact masthead should fade; compare artwork, Presentation Status, timing,
-and the Lyric Reel across intermediate frames. The reduced-animation version
+compact masthead fields that change should fade; compare retained fields,
+artwork, Presentation Status, timing, and the Lyric Reel across intermediate frames. The reduced-animation version
 should apply metadata immediately.
+
+Use `selective-fields` to inspect same-Album replacements, Title wrapping,
+changed Artist/Album, palette changes, Output/Zone renaming and grouping,
+missing incoming metadata, interrupted departures and reveals, and replacement
+with identical lyric text. Compare full-rate frames for continuously visible
+unchanged fields, labels, separators, and artwork; smooth retained-text movement;
+and coordinated changed-text/artwork reveals. Include reduced animation for
+immediate complete destinations with live timing.
 
 Use `opening-lyrics` to inspect song replacement from the regular composition
 with lyrics present immediately and discovered during the incoming reveal.

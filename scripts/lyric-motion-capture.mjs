@@ -291,6 +291,192 @@ const examples = {
       ),
     ],
   },
+  "selective-fields": {
+    durationSeconds: 12,
+    initialFixture: "src/shared/fixtures/playing.json",
+    publications: [
+      {
+        atSeconds: 0.5,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "A second song",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 1.5,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title:
+            "The Long Road Past the Observatory and the Quiet Sea Beneath a Thousand Distant Stars",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 2.5,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "A third song",
+          artist: "The Evening Ensemble",
+          album: "After the Horizon",
+        },
+      },
+      {
+        atSeconds: 3.5,
+        fixture: "src/shared/fixtures/light-artwork.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "A fourth song",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 4.5,
+        fixture: "src/shared/fixtures/light-artwork.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "A fourth song",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+        trackedOutput: {
+          name: "Renamed Speaker System",
+        },
+        trackedZone: {
+          id: "grouped-zone",
+          name: "Living Room + Kitchen",
+        },
+      },
+      {
+        atSeconds: 5.5,
+        fixture: "src/shared/fixtures/light-artwork.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "A fourth song",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: null,
+        },
+      },
+      {
+        atSeconds: 6.5,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "An invisible destination",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 6.6,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "Latest destination",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 6.9,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "Interrupted visible destination",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 8,
+        fixture: "src/shared/fixtures/lyrics-reel-lift-tour.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "Interrupted visible destination",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 10,
+        fixture: "src/shared/fixtures/lyrics-reel-lift-tour.json",
+        positionSeconds: 0,
+        nowPlaying: {
+          title: "Another lyric track",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+      },
+    ],
+    reviewFrames: [
+      reviewFrame(
+        0.6,
+        "same-album-departure",
+        "Only Title departs; Artist, Album, status, identities and artwork remain visible.",
+      ),
+      reviewFrame(
+        0.85,
+        "same-album-reveal",
+        "Incoming Title reveals over retained content.",
+      ),
+      reviewFrame(
+        1.85,
+        "wrapping-reflow",
+        "Retained credits move continuously as Title wraps.",
+      ),
+      reviewFrame(
+        2.85,
+        "changed-credits",
+        "Changed Title, Artist and Album reveal together.",
+      ),
+      reviewFrame(
+        3.85,
+        "palette-reveal",
+        "Visible foreground colors interpolate with artwork and background.",
+      ),
+      reviewFrame(
+        4.6,
+        "identity-departure",
+        "Only changed Output and Zone values depart; labels and separator remain.",
+      ),
+      reviewFrame(
+        5.85,
+        "missing-album",
+        "Missing Album clears its outgoing value.",
+      ),
+      reviewFrame(
+        6.8,
+        "latest-destination",
+        "An obsolete invisible destination must never appear.",
+      ),
+      reviewFrame(
+        7.2,
+        "interrupted-reveal",
+        "Visible replacement retires from its current opacity.",
+      ),
+      reviewFrame(
+        8.65,
+        "lyrics-entry",
+        "Existing Lyric Composition Transition retains its movement.",
+      ),
+      reviewFrame(
+        10.15,
+        "lyric-replacement",
+        "Track replacement fades lyrics even if the text is identical.",
+      ),
+      reviewFrame(
+        10.7,
+        "lyric-destination",
+        "Latest lyrics and retained compact metadata settle together.",
+      ),
+    ],
+  },
   "metadata-updates": {
     durationSeconds: 8,
     initialFixture: "src/shared/fixtures/long-metadata.json",
@@ -1522,6 +1708,8 @@ export function reanchorLyricMotionSnapshot(
     durationSeconds = fixture.timing?.durationSeconds,
     artwork = fixture.artwork,
     nowPlaying = fixture.nowPlaying,
+    trackedOutput = fixture.trackedOutput,
+    trackedZone = fixture.trackedZone,
   },
 ) {
   return {
@@ -1530,6 +1718,8 @@ export function reanchorLyricMotionSnapshot(
     playback,
     artwork: structuredClone(artwork),
     nowPlaying: structuredClone(nowPlaying),
+    trackedOutput: structuredClone(trackedOutput),
+    trackedZone: structuredClone(trackedZone),
     timing:
       fixture.timing === null
         ? null

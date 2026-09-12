@@ -854,3 +854,22 @@ test("executes a capture plan through its session adapter", async () => {
 function reviewFrame(atSeconds, name, observation) {
   return { atSeconds, name, observation };
 }
+
+test("scheduled identity changes use the actual Output and Zone", () => {
+  const fixture = {
+    trackedOutput: { name: "Speaker" },
+    trackedZone: { id: "old-zone", name: "Room" },
+    timing: null,
+  };
+  const snapshot = reanchorLyricMotionSnapshot(fixture, {
+    revision: 2,
+    trackedOutput: { name: "Renamed Speaker" },
+    trackedZone: { id: "group", name: "Grouped Rooms" },
+  });
+  assert.deepEqual(snapshot.trackedOutput, { name: "Renamed Speaker" });
+  assert.deepEqual(snapshot.trackedZone, {
+    id: "group",
+    name: "Grouped Rooms",
+  });
+  assert.equal(fixture.trackedZone.id, "old-zone");
+});

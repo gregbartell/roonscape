@@ -10,6 +10,10 @@ use crate::prepared_presentation::{PreparedContent, PreparedPresentation};
 use crate::qt_window::{Graphic, Scene};
 use crate::scene::{self, Foreground};
 
+#[path = "selective_foreground.rs"]
+mod selective_foreground;
+use selective_foreground::SelectiveForeground;
+
 const PHASE: Duration = Duration::from_millis(225);
 
 type Metadata = (Option<String>, Option<String>, Option<String>);
@@ -163,12 +167,13 @@ struct Reveal<'window> {
     previous_composition: f64,
     started: Duration,
     full_field: bool,
+    same_art: bool,
 }
 
 pub(crate) struct NativeView<'window> {
     prepared: PreparedPresentation<'window>,
     latest: Presentation,
-    pending_metadata: Option<PreparedPresentation<'window>>,
+    fields: SelectiveForeground<'window>,
     pending_activity: Option<
         Option<(
             crate::text_preparation::PreparedText<'window>,
@@ -176,7 +181,6 @@ pub(crate) struct NativeView<'window> {
         )>,
     >,
     graphics: Graphics<'window>,
-    metadata: ReplacementFade<Metadata>,
     status: ReplacementFade<PresentationStatus>,
     timing: ReplacementFade<Timing>,
     last_progress: Option<roonscape_renderer::PresentationProgress>,
@@ -196,10 +200,9 @@ impl<'window> NativeView<'window> {
         };
         Self {
             latest: prepared.presentation.clone(),
-            pending_metadata: None,
+            fields: SelectiveForeground::new(&prepared.presentation),
             pending_activity: None,
             graphics: Graphics::Single(Box::new(prepared.clone())),
-            metadata: ReplacementFade::new(metadata(&prepared.presentation)),
             status: ReplacementFade::new(status(&prepared.presentation)),
             timing: ReplacementFade::new(timing(&prepared.presentation)),
             last_progress: None,
@@ -213,7 +216,10 @@ impl<'window> NativeView<'window> {
         }
     }
 
-    pub fn begin_departure(&mut self, now: Duration, animated: bool) {
+    pub fn begin_departure(&mut self, destination: &Presentation, now: Duration, animated: bool) {
+        if matches!(self.latest, Presentation::NowPlaying(_)) {
+            self.fields.request(destination, now, animated);
+        }
         if self.departure.is_none() {
             self.departure = Some(Departure {
                 started: now,
@@ -223,17 +229,14 @@ impl<'window> NativeView<'window> {
     }
 
     pub fn departure_complete(&self, now: Duration, animated: bool) -> bool {
-        !animated
-            || self
-                .departure
-                .as_ref()
-                .is_none_or(|departure| now.saturating_sub(departure.started) >= PHASE)
+        !animated || now >= self.reveal_at(Duration::ZERO)
     }
 
     pub fn reveal_at(&self, prepared_at: Duration) -> Duration {
-        self.departure.as_ref().map_or(prepared_at, |departure| {
+        let deadline = self.departure.as_ref().map_or(prepared_at, |departure| {
             prepared_at.max(departure.started + PHASE)
-        })
+        });
+        deadline.max(self.fields.departure_deadline().unwrap_or(deadline))
     }
 
     pub fn replace(
@@ -246,7 +249,25 @@ impl<'window> NativeView<'window> {
     ) {
         let inherited = self.lyrics.inherit_composition(self.last_frame, now);
         let previous_composition = self.lyrics.frame_at(self.last_frame).composition_progress;
+        let selective = matches!(
+            (&self.latest, presentation),
+            (Presentation::NowPlaying(_), Presentation::NowPlaying(_))
+        );
+        let same_art = same_artwork(
+            &self.graphics.current().presentation,
+            &prepared.presentation,
+        );
         let mut incoming = Self::new(prepared, revision);
+        if selective {
+            incoming.fields =
+                std::mem::replace(&mut self.fields, SelectiveForeground::new(presentation));
+            incoming.fields.request(presentation, now, animated);
+            incoming.fields.reflow();
+            incoming.fields.reveal_prepared(presentation, now);
+        }
+        if animated && !selective && matches!(presentation, Presentation::NowPlaying(_)) {
+            incoming.fields.reveal_all(now);
+        }
         incoming.latest = presentation.clone();
         if animated {
             incoming.lyrics = inherited;
@@ -267,11 +288,15 @@ impl<'window> NativeView<'window> {
             } else {
                 previous
             };
+            if same_art {
+                incoming.graphics = previous.clone();
+            }
             incoming.reveal = Some(Reveal {
                 previous,
                 previous_composition,
                 started: now,
                 full_field: matches!(presentation, Presentation::FullField(_)),
+                same_art,
             });
             incoming.text_opacity = 0.0;
         }
@@ -286,13 +311,7 @@ impl<'window> NativeView<'window> {
     ) {
         self.prepared.diagnostics = prepared.diagnostics.clone();
         let previous = self.graphics.current();
-        let same_art = match (&previous.presentation, &prepared.presentation) {
-            (Presentation::NowPlaying(a), Presentation::NowPlaying(b)) => {
-                a.artwork_path == b.artwork_path && a.artwork_revision == b.artwork_revision
-            }
-            (Presentation::FullField(_), Presentation::FullField(_)) => true,
-            _ => false,
-        };
+        let same_art = same_artwork(&previous.presentation, &prepared.presentation);
         if !same_art {
             let previous = std::mem::replace(
                 &mut self.graphics,
@@ -324,21 +343,10 @@ impl<'window> NativeView<'window> {
             self.pending_activity = Some(incoming.activity.take());
             incoming.activity = current.activity.clone();
         }
-        // Content is selected invisibly in render(); keep the latest prepared
-        // sprites available while the old metadata completes its departure.
-        if metadata(&prepared.presentation) == *self.metadata.displayed() {
-            self.pending_metadata = None;
-            self.prepared = prepared;
-        } else {
-            if let (PreparedContent::NowPlaying(current), PreparedContent::NowPlaying(next)) =
-                (&mut self.prepared.content, &prepared.content)
-            {
-                let old = current.metadata.clone();
-                *current = next.clone();
-                current.metadata = old;
-            }
-            self.pending_metadata = Some(prepared);
+        if displayed_fields_changed(&prepared.presentation, &self.prepared.presentation) {
+            self.fields.reflow();
         }
+        self.prepared = prepared;
     }
 
     pub fn update(&mut self, presentation: &Presentation, revision: u64) {
@@ -357,15 +365,8 @@ impl<'window> NativeView<'window> {
             }
         }
         self.status.retarget(status(&self.latest), now, animated);
-        let changed = self
-            .metadata
-            .retarget(metadata(&self.latest), now, animated);
-        if changed
-            && let Some(prepared) = self.pending_metadata.take()
-            && let (PreparedContent::NowPlaying(current), PreparedContent::NowPlaying(incoming)) =
-                (&mut self.prepared.content, prepared.content)
-        {
-            current.metadata = incoming.metadata;
+        if self.departure.is_none() {
+            self.fields.request(&self.latest, now, animated);
         }
         if self.timing.update(
             timing(&self.latest),
@@ -400,17 +401,22 @@ impl<'window> NativeView<'window> {
         let mut opacity = 1.0;
         if let Some(reveal) = &mut self.reveal {
             weight = phase(now, reveal.started, PHASE) as f32;
-            reveal.previous.append(
-                &mut scene.graphics,
-                reveal.previous_composition,
-                1.0 - weight,
-                now,
-            );
+            if !reveal.same_art {
+                reveal.previous.append(
+                    &mut scene.graphics,
+                    reveal.previous_composition,
+                    1.0 - weight,
+                    now,
+                );
+            }
             opacity = if reveal.full_field {
                 phase(now, reveal.started + PHASE, PHASE) as f32
             } else {
                 weight
             };
+            if reveal.same_art {
+                weight = 1.0;
+            }
             if now.saturating_sub(reveal.started)
                 >= if reveal.full_field { PHASE * 2 } else { PHASE }
             {
@@ -429,10 +435,6 @@ impl<'window> NativeView<'window> {
         self.text_opacity = opacity;
         let mut presentation = self.latest.clone();
         if let Presentation::NowPlaying(value) = &mut presentation {
-            let (title, artist, album) = self.metadata.displayed();
-            value.title.clone_from(title);
-            value.artist.clone_from(artist);
-            value.album.clone_from(album);
             match self.timing.displayed() {
                 Timing::Progress => {
                     value.progress = self.last_progress.clone();
@@ -453,34 +455,47 @@ impl<'window> NativeView<'window> {
             &self.prepared,
             &Foreground {
                 presentation: &presentation,
-                palette: self.graphics.palette(now),
+                palette: self.palette(now),
                 now,
                 animated,
                 opacity,
-                metadata_opacity: self.metadata.opacity() as f32,
-                status: *self.status.displayed(),
+                status: if matches!(presentation, Presentation::NowPlaying(_)) {
+                    status(&self.latest)
+                } else {
+                    *self.status.displayed()
+                },
                 status_opacity: self.status.opacity() as f32,
                 timing_opacity: self.timing.opacity() as f32,
                 lyrics: Some(&lyric_frame),
             },
         );
+        if matches!(presentation, Presentation::NowPlaying(_)) {
+            let palette = self.palette(now);
+            self.fields
+                .apply(&mut scene, &presentation, now, animated, palette);
+        }
         if let Some(text) = &self.prepared.diagnostics {
-            scene::diagnostics(
-                &mut scene,
-                text,
-                self.graphics.palette(now),
-                self.prepared.viewport,
-            );
+            scene::diagnostics(&mut scene, text, self.palette(now), self.prepared.viewport);
         }
         self.last_frame = now;
         scene
+    }
+
+    fn palette(&self, now: Duration) -> PresentationPalette {
+        let current = self.graphics.palette(now);
+        self.reveal.as_ref().map_or(current, |reveal| {
+            reveal
+                .previous
+                .palette(now)
+                .mix(current, phase(now, reveal.started, PHASE))
+        })
     }
 
     pub fn active(&self, now: Duration) -> bool {
         self.departure.is_some()
             || self.reveal.is_some()
             || self.graphics.active()
-            || self.metadata.is_active()
+            || self.fields.active()
             || self.status.is_active()
             || self.timing.is_active()
             || self.lyrics.is_active_at(now)
@@ -519,4 +534,19 @@ impl<'window> NativeView<'window> {
                 .iter()
                 .any(|cue| !cue.text.trim().is_empty() && cue.opacity > 0.0)
     }
+}
+
+fn same_artwork(a: &Presentation, b: &Presentation) -> bool {
+    match (a, b) {
+        (Presentation::NowPlaying(a), Presentation::NowPlaying(b)) => {
+            a.artwork_path == b.artwork_path && a.artwork_revision == b.artwork_revision
+        }
+        (Presentation::FullField(_), Presentation::FullField(_)) => true,
+        _ => false,
+    }
+}
+
+fn displayed_fields_changed(a: &Presentation, b: &Presentation) -> bool {
+    metadata(a) != metadata(b)
+        || matches!((a,b), (Presentation::NowPlaying(a), Presentation::NowPlaying(b)) if a.tracked_output != b.tracked_output || a.tracked_zone != b.tracked_zone)
 }

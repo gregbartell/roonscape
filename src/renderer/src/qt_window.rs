@@ -208,8 +208,22 @@ pub(crate) struct SpriteGeometry {
     pub kind: SpriteKind,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Field {
+    Title,
+    Artist,
+    Album,
+    Status,
+    OutputLabel,
+    Output,
+    ZoneLabel,
+    Zone,
+    Separator,
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct Sprite<'window> {
+    pub field: Option<Field>,
     pub texture: Option<Texture<'window>>,
     pub foreground: Option<Texture<'window>>,
     pub geometry: SpriteGeometry,
