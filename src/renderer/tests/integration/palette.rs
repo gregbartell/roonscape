@@ -16,6 +16,169 @@ const WHITE: Rgb = Rgb {
 };
 
 #[test]
+fn a_tiny_interior_badge_does_not_color_a_neutral_field() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("interior-badge.svg");
+    fs::write(
+        &path,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+        <rect width="100" height="100" fill="#303030"/>
+        <rect x="15" y="15" width="15" height="15" fill="#c83129"/>
+    </svg>"##,
+    )
+    .unwrap();
+    let palette = PresentationPalette::from_artwork(&path).unwrap();
+    for field in [
+        palette.background,
+        palette.artwork_field,
+        palette.metadata_field,
+    ] {
+        let channels = [field.red, field.green, field.blue];
+        assert!(
+            channels.iter().max().unwrap() - channels.iter().min().unwrap() <= 3,
+            "a tiny badge must not establish the atmosphere: {palette:?}"
+        );
+    }
+}
+
+#[test]
+fn expressive_red_and_blue_shadows_share_a_dark_atmosphere() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("red-and-shadows.svg");
+    fs::write(
+        &path,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+        <rect width="100" height="100" fill="#171a29"/>
+        <rect x="10" y="30" width="40" height="70" fill="#a32b25"/>
+        <rect x="20" y="10" width="20" height="20" fill="#ac874d"/>
+        <rect x="80" y="90" width="10" height="10" fill="#ffffff"/>
+    </svg>"##,
+    )
+    .unwrap();
+    let palette = PresentationPalette::from_artwork(&path).unwrap();
+    assert!(
+        palette.artwork_field.red > palette.artwork_field.blue + 20,
+        "the meaningful red region should extend beyond the sleeve: {palette:?}"
+    );
+    assert!(
+        palette.metadata_field.blue > palette.metadata_field.red + 5,
+        "blue shadows should supply the second family: {palette:?}"
+    );
+    assert!(palette.background.contrast_ratio(WHITE) >= 7.0);
+    assert_readable_roles("red and shadows", palette, true);
+}
+
+#[test]
+fn small_interior_colors_can_extend_a_white_sleeves_atmosphere() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("white-blue-rose.svg");
+    fs::write(
+        &path,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+        <rect width="100" height="100" fill="#fdfdfd"/>
+        <rect x="40" y="10" width="20" height="65" fill="#292423"/>
+        <rect x="46" y="25" width="8" height="8" fill="#9bb9d4"/>
+        <rect x="40" y="60" width="20" height="22" fill="#ad7579"/>
+        <rect x="94" y="94" width="6" height="6" fill="#00ff00"/>
+    </svg>"##,
+    )
+    .unwrap();
+    let palette = PresentationPalette::from_artwork(&path).unwrap();
+    assert!(
+        palette.background.contrast_ratio(BLACK) >= 7.0,
+        "white sleeve: {palette:?}"
+    );
+    assert!(
+        palette.artwork_field.blue > palette.artwork_field.red + 25,
+        "the interior blue region should supply a recognizable cool field: {palette:?}"
+    );
+    assert!(
+        palette.metadata_field.red > palette.metadata_field.blue + 5,
+        "rose should supply the other end of the atmosphere: {palette:?}"
+    );
+}
+
+#[test]
+fn nearly_uniform_neutral_artwork_can_have_an_almost_solid_background() {
+    let directory = tempdir().unwrap();
+    for (field, detail) in [("#303030", "#313131"), ("#eeeeee", "#efefef")] {
+        let path = synthetic_artwork(&directory, "quiet.svg", field, detail);
+        let palette = PresentationPalette::from_artwork(&path).unwrap();
+        assert!(
+            oklab_distance(palette.artwork_field, palette.metadata_field) < 0.04,
+            "quiet artwork need not announce a gradient: {palette:?}"
+        );
+        assert_readable_roles("quiet neutral", palette, true);
+    }
+}
+
+#[test]
+fn a_red_accent_retains_its_depth_instead_of_becoming_pastel() {
+    let directory = tempdir().unwrap();
+    let path = synthetic_artwork(&directory, "red-accent.svg", "#171a29", "#c83129");
+    let palette = PresentationPalette::from_artwork(&path).unwrap();
+    assert!(
+        oklab(palette.accent).lightness < 0.70,
+        "a readable red should not be lifted to salmon: {}",
+        palette.accent.to_hex()
+    );
+    assert!(f64::from(palette.accent.green) < f64::from(palette.accent.red) * 0.5);
+    assert_eq!(palette.progress_fill, palette.accent);
+    assert!(
+        (1.5..=2.0).contains(
+            &palette
+                .progress_track
+                .contrast_ratio(palette.metadata_field)
+        )
+    );
+    assert_readable_roles("red accent", palette, true);
+}
+
+#[test]
+fn warm_and_cool_shadow_regions_do_not_average_into_one_neutral_family() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("shadow-families.svg");
+    fs::write(
+        &path,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+        <rect width="100" height="100" fill="#161622"/>
+        <rect width="35" height="100" fill="#211919"/>
+        <rect x="10" y="40" width="30" height="50" fill="#b02a23"/>
+    </svg>"##,
+    )
+    .unwrap();
+    let palette = PresentationPalette::from_artwork(&path).unwrap();
+    let fields = [palette.artwork_field, palette.metadata_field];
+    assert!(
+        fields.iter().any(|field| field.red > field.blue + 20),
+        "the red region must remain expressive: {palette:?}"
+    );
+    assert!(
+        fields.iter().any(|field| field.blue > field.red + 3),
+        "cool shadows must not disappear into a warm average: {palette:?}"
+    );
+}
+
+#[test]
+fn a_colored_sleeve_can_recede_into_its_nearly_neutral_shadows() {
+    let directory = tempdir().unwrap();
+    let path = synthetic_artwork(&directory, "shadow-tint.svg", "#151518", "#a32b25");
+    let palette = PresentationPalette::from_artwork(&path).unwrap();
+    assert!(
+        palette.artwork_field.red > palette.artwork_field.blue + 20,
+        "{palette:?}"
+    );
+    assert!(
+        palette.metadata_field.blue > palette.metadata_field.red + 3,
+        "{palette:?}"
+    );
+    assert!(
+        oklch(palette.metadata_field).chroma <= 0.025,
+        "the weak shadow tint must remain restrained"
+    );
+}
+
+#[test]
 fn grayscale_and_weak_scanning_casts_do_not_acquire_visible_tints() {
     let directory = tempdir().unwrap();
     for (field, detail) in [("#303030", "#dddddd"), ("#313030", "#dddcda")] {
@@ -222,9 +385,6 @@ fn artwork_palette_blends_keep_text_distinct_across_dark_and_light_fields() {
 const fn rgb(red: u8, green: u8, blue: u8) -> Rgb {
     Rgb { red, green, blue }
 }
-const MINIMUM_ADJACENT_FIELD_SEPARATION: f64 = 0.05;
-const MINIMUM_LIGHT_ADJACENT_FIELD_SEPARATION: f64 = 0.045;
-const MINIMUM_ENDPOINT_FIELD_SEPARATION: f64 = 0.12;
 
 fn hsl_lightness(color: Rgb) -> f64 {
     let maximum = color.red.max(color.green).max(color.blue);
@@ -353,9 +513,9 @@ fn assert_artwork_family(role: &str, color: Rgb, sources: &[Rgb]) {
             let source = oklch(*source);
             source.chroma >= 0.01
                 && hue_distance(output.hue, source.hue) <= 20.0
-                && output.chroma <= source.chroma + 0.008
+                && (source.chroma >= 0.025 || output.chroma <= source.chroma + 0.008)
         }),
-        "{role} must retain a supplied family without manufacturing chroma: {}",
+        "{role} must retain a supplied hue without amplifying weak casts: {}",
         color.to_hex()
     );
 }
@@ -440,8 +600,7 @@ fn allows_light_artwork_to_own_a_light_presentation() {
         "a predominantly light artwork should be allowed to produce a light field"
     );
     assert!(
-        oklab_distance(palette.artwork_field, palette.metadata_field)
-            >= MINIMUM_ENDPOINT_FIELD_SEPARATION,
+        oklab_distance(palette.artwork_field, palette.metadata_field) >= 0.04,
         "light artwork should retain visibly differentiated presentation fields",
     );
 }
@@ -482,10 +641,7 @@ fn blue_and_blush_artwork_does_not_require_a_prescribed_field_assignment() {
     ] {
         assert_artwork_family("blue and blush composition", color, &sources);
     }
-    assert!(
-        oklab_distance(palette.artwork_field, palette.metadata_field)
-            >= MINIMUM_ENDPOINT_FIELD_SEPARATION
-    );
+    assert!(oklab_distance(palette.artwork_field, palette.metadata_field) >= 0.04);
 }
 
 #[test]
@@ -516,7 +672,7 @@ fn moderate_light_artwork_keeps_bounded_light_fields() {
         palette.metadata_field,
     ] {
         assert!(
-            (0.5..=0.8).contains(&hsl_lightness(field)),
+            field.contrast_ratio(BLACK) >= 7.0 && hsl_lightness(field) <= 0.8,
             "light fields must remain restrained: {}",
             field.to_hex()
         );
@@ -565,61 +721,6 @@ fn allows_dark_artwork_to_own_a_dark_presentation() {
     assert!(
         palette.background.contrast_ratio(WHITE) >= 7.0,
         "a predominantly dark artwork should produce a dark field"
-    );
-}
-
-#[test]
-fn weak_dark_artwork_patterns_keep_perceptually_separated_gradient_stops() {
-    let directory = tempdir().expect("a temporary artwork directory should be available");
-    let patterns = [
-        ("dark-red", "#241516", "#823b36"),
-        ("dark-warm", "#2e1712", "#ab5a28"),
-        ("dark-teal", "#102329", "#346b70"),
-        ("dark-olive", "#261f0d", "#887129"),
-        ("low-chroma", "#282725", "#5f5b52"),
-    ];
-    let mut failures = Vec::new();
-
-    for (name, field, accent) in patterns {
-        let artwork_path = synthetic_artwork(&directory, &format!("{name}.svg"), field, accent);
-        let palette = PresentationPalette::from_artwork(&artwork_path)
-            .expect("synthetic artwork should produce a palette");
-        let separation = oklab_distance(palette.artwork_field, palette.metadata_field);
-
-        if separation < MINIMUM_ENDPOINT_FIELD_SEPARATION {
-            failures.push(format!(
-                "{name} endpoints: {separation:.3} from {} to {}",
-                palette.artwork_field.to_hex(),
-                palette.metadata_field.to_hex(),
-            ));
-        }
-        for (leg, first, second) in [
-            (
-                "artwork/background",
-                palette.artwork_field,
-                palette.background,
-            ),
-            (
-                "background/metadata",
-                palette.background,
-                palette.metadata_field,
-            ),
-        ] {
-            let separation = oklab_distance(first, second);
-            if separation < MINIMUM_ADJACENT_FIELD_SEPARATION {
-                failures.push(format!(
-                    "{name} {leg}: {separation:.3} from {} to {}",
-                    first.to_hex(),
-                    second.to_hex(),
-                ));
-            }
-        }
-    }
-
-    assert!(
-        failures.is_empty(),
-        "presentation endpoints should reach ΔE_OK >= 0.12 and adjacent stops ΔE_OK >= 0.05:\n{}",
-        failures.join("\n"),
     );
 }
 
@@ -737,7 +838,7 @@ fn near_monochrome_charcoal_with_sparse_warm_detail_stays_restrained() {
 }
 
 #[test]
-fn monochromatic_artwork_uses_lightness_separation_without_inventing_field_hues() {
+fn monochromatic_artwork_does_not_invent_field_hues() {
     let directory = tempdir().expect("a temporary artwork directory should be available");
     let artwork_path = synthetic_artwork(&directory, "monochrome.svg", "#282828", "#565656");
 
@@ -754,39 +855,6 @@ fn monochromatic_artwork_uses_lightness_separation_without_inventing_field_hues(
             maximum - minimum <= 2,
             "{role} should remain neutral for monochromatic artwork; got {}",
             color.to_hex(),
-        );
-    }
-    assert!(
-        oklab_distance(palette.artwork_field, palette.metadata_field)
-            >= MINIMUM_ENDPOINT_FIELD_SEPARATION,
-        "monochromatic presentation fields should gain separation through lightness",
-    );
-}
-
-#[test]
-fn light_monochromatic_artwork_keeps_all_three_gradient_stops_distinct() {
-    let directory = tempdir().expect("a temporary artwork directory should be available");
-    let artwork_path = synthetic_artwork(&directory, "light-monochrome.svg", "#ededed", "#ffffff");
-
-    let palette = PresentationPalette::from_artwork(&artwork_path)
-        .expect("light monochromatic artwork should produce a palette");
-
-    for (leg, first, second) in [
-        (
-            "artwork/background",
-            palette.artwork_field,
-            palette.background,
-        ),
-        (
-            "background/metadata",
-            palette.background,
-            palette.metadata_field,
-        ),
-    ] {
-        let separation = oklab_distance(first, second);
-        assert!(
-            separation >= MINIMUM_LIGHT_ADJACENT_FIELD_SEPARATION,
-            "light monochromatic {leg} should reach ΔE_OK >= 0.045; got {separation:.3}",
         );
     }
 }
@@ -978,10 +1046,6 @@ fn saturated_and_neutral_color_extremes_preserve_all_readability_contracts() {
                 let source = rgb(red, green, blue).to_hex();
                 assert_readable_roles(&source, palette, true);
                 assert!(
-                    palette.accent.contrast_ratio(palette.progress_track) >= 3.0,
-                    "{source}: fill/track separation"
-                );
-                assert!(
                     (1.5..=2.0).contains(
                         &palette
                             .progress_track
@@ -989,22 +1053,7 @@ fn saturated_and_neutral_color_extremes_preserve_all_readability_contracts() {
                     ),
                     "{source}: restrained track"
                 );
-                assert!(
-                    oklab_distance(palette.artwork_field, palette.metadata_field)
-                        >= MINIMUM_ENDPOINT_FIELD_SEPARATION,
-                    "{source}: distinct endpoints"
-                );
-                let dark = palette.background.contrast_ratio(WHITE) >= 7.0;
-                let minimum = if dark {
-                    MINIMUM_ADJACENT_FIELD_SEPARATION
-                } else {
-                    MINIMUM_LIGHT_ADJACENT_FIELD_SEPARATION
-                };
                 for field in [palette.artwork_field, palette.metadata_field] {
-                    assert!(
-                        oklab_distance(field, palette.background) >= minimum,
-                        "{source}: distinct adjacent fields"
-                    );
                     assert!(
                         hsl_lightness(field) <= 0.8,
                         "{source}: bright-field restraint"

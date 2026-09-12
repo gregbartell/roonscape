@@ -229,14 +229,26 @@ progress, and diagnostics roles. Both dark and light results are valid when
 the selected roles remain readable. Presentations without usable artwork use
 a fixed navy, coral, and cream palette with the same role hierarchy.
 
+The background extends the artwork's atmosphere while presenting the artwork
+without distracting from it. It is a composed surrounding field rather than
+a literal continuation of the image. The gradient is usually apparent, but
+nearly solid results are valid when they better support the artwork.
+
 The artwork's average brightness does not dictate a light or dark result.
-Large fields draw on substantial color families and support the artwork's
-edges; smaller distinctive details can supply accents without taking over
-those fields. Neutral and nearly neutral artwork keeps restrained fields,
-text, and accents. Lightness changes establish readability without inventing
-hues or turning weak casts into vivid colors. Surrounding colors support the
-artwork in ordinary Now Playing and the active Cue in the Synchronized Lyric
-Composition.
+Large fields may combine two artwork-derived color families. An expressive
+color occupying a meaningful region may establish the atmosphere even when
+it is not the dominant color; tiny logos and badges must not drive the field.
+Smaller distinctive details can still supply accents. Brightness and
+saturation may change substantially to support the composition, while colors
+remain recognizably connected to the artwork. Neutral and nearly neutral
+artwork keeps restrained fields, text, and accents without inventing hues or
+turning weak casts into vivid colors.
+
+For the same artwork, background colors, geometry, and intensity remain
+identical in ordinary Now Playing and the Synchronized Lyric Composition.
+The background must support both the artwork and readable lyrics from the
+outset; entering or leaving the Synchronized Lyric Composition does not
+retune it.
 
 The artwork-derived gradient uses stable geometry across revisions: the
 artwork field holds through approximately the first fifth, transitions near
@@ -253,9 +265,12 @@ palette retains its established role colors.
 
 Determinate progress uses a field-relative neutral track rather than a text
 role. The track remains approximately 1.5–2:1 against the local metadata field,
-while the full artwork-derived accent fill differs from the track by at least
-3:1. This direct relationship is guaranteed independently of either color's
-contrast with the surrounding field.
+while the full artwork-derived accent fill targets at least 3:1 against the
+track. The fill-to-track ratio is a preferred target, not a hard requirement.
+Visually reviewed exceptions are acceptable when both the filled and remaining
+portions read clearly. Do not sacrifice the remaining track's visibility
+against the surrounding field solely to reach the preferred fill-to-track
+ratio. Text-readability requirements remain unchanged.
 
 Presentation Status uses the artwork-derived accent without assigning fixed
 hues to playback or availability conditions. Playing and Starting use the
