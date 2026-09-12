@@ -16,6 +16,55 @@ const WHITE: Rgb = Rgb {
 };
 
 #[test]
+fn identical_artwork_keeps_its_colors_across_paths_and_intervening_artwork() {
+    let directory = tempdir().unwrap();
+    let first = synthetic_artwork(&directory, "first-track.svg", "#eadca8", "#ac8e35");
+    let second = directory.path().join("second-track.svg");
+    fs::copy(&first, &second).unwrap();
+    let unrelated = synthetic_artwork(&directory, "other-album.svg", "#171a29", "#c83129");
+    let expected = PresentationPalette::from_artwork(&first).unwrap();
+    let _ = PresentationPalette::from_artwork(&unrelated).unwrap();
+    assert_eq!(
+        PresentationPalette::from_artwork(&second).unwrap(),
+        expected
+    );
+    assert_eq!(PresentationPalette::from_artwork(&first).unwrap(), expected);
+}
+
+#[test]
+fn active_cues_have_a_clear_lightness_lead_over_readable_context() {
+    let directory = tempdir().unwrap();
+    for (name, background, detail) in [
+        ("dark-neutral", "#242424", "#555555"),
+        ("light-neutral", "#eeeeee", "#aaaaaa"),
+        ("warm-paper", "#eadca8", "#ac8e35"),
+        ("red-and-navy", "#171a29", "#c83129"),
+    ] {
+        let artwork = synthetic_artwork(&directory, &format!("{name}.svg"), background, detail);
+        let palette = PresentationPalette::from_artwork(&artwork).unwrap();
+        assert!(
+            palette.primary_text.contrast_ratio(palette.secondary_text) >= 2.0,
+            "{name}: active and context cues must be distinct even without hue: {palette:?}"
+        );
+        assert!(
+            (oklab(palette.primary_text).lightness - oklab(palette.secondary_text).lightness).abs()
+                >= 0.18,
+            "{name}: activation needs a substantial lightness change"
+        );
+        for field in [
+            palette.background,
+            palette.artwork_field,
+            palette.metadata_field,
+        ] {
+            assert!(
+                palette.secondary_text.contrast_ratio(field) >= 3.0,
+                "{name}: surrounding cues must remain readable"
+            );
+        }
+    }
+}
+
+#[test]
 fn a_tiny_interior_badge_does_not_color_a_neutral_field() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("interior-badge.svg");
@@ -65,7 +114,7 @@ fn expressive_red_and_blue_shadows_share_a_dark_atmosphere() {
         "blue shadows should supply the second family: {palette:?}"
     );
     assert!(palette.background.contrast_ratio(WHITE) >= 7.0);
-    assert_readable_roles("red and shadows", palette, true);
+    assert_readable_roles("red and shadows", palette);
 }
 
 #[test]
@@ -108,7 +157,7 @@ fn nearly_uniform_neutral_artwork_can_have_an_almost_solid_background() {
             oklab_distance(palette.artwork_field, palette.metadata_field) < 0.04,
             "quiet artwork need not announce a gradient: {palette:?}"
         );
-        assert_readable_roles("quiet neutral", palette, true);
+        assert_readable_roles("quiet neutral", palette);
     }
 }
 
@@ -131,7 +180,7 @@ fn a_red_accent_retains_its_depth_instead_of_becoming_pastel() {
                 .contrast_ratio(palette.metadata_field)
         )
     );
-    assert_readable_roles("red accent", palette, true);
+    assert_readable_roles("red accent", palette);
 }
 
 #[test]
@@ -337,12 +386,20 @@ fn artwork_palette_blends_keep_text_distinct_across_dark_and_light_fields() {
     let light = PresentationPalette::from_artwork(&root.join("light.jpg")).unwrap();
     assert_eq!(dark.mix(light, 0.0), dark);
     assert_eq!(dark.mix(light, 1.0), light);
-    for (from, to) in [
-        (dark, light),
-        (light, dark),
-        (PresentationPalette::fallback(), light),
-        (dark.mix(light, 0.5), dark),
-    ] {
+    let teal = PresentationPalette::from_artwork(&root.join("dark-teal.svg")).unwrap();
+    let paper = PresentationPalette::from_artwork(&root.join("restrained-light.svg")).unwrap();
+    let palettes = [
+        dark,
+        light,
+        teal,
+        paper,
+        PresentationPalette::fallback(),
+        dark.mix(light, 0.5),
+    ];
+    for (from, to) in palettes
+        .into_iter()
+        .flat_map(|from| palettes.map(|to| (from, to)))
+    {
         for step in 1..100 {
             let palette = from.mix(to, f64::from(step) / 100.0);
             for text in [
@@ -360,6 +417,13 @@ fn artwork_palette_blends_keep_text_distinct_across_dark_and_light_fields() {
                 }
             }
             for neighbor in [palette.secondary_text, palette.muted_text] {
+                for field in [palette.background, palette.metadata_field] {
+                    assert_eq!(
+                        palette.primary_text.contrast_ratio(BLACK) > field.contrast_ratio(BLACK),
+                        neighbor.contrast_ratio(BLACK) > field.contrast_ratio(BLACK),
+                        "cue handoff endpoints must share a light/dark polarity at step {step}"
+                    );
+                }
                 for weight in [0.25, 0.5, 0.75] {
                     let channel = |primary: u8, supporting: u8| {
                         (f64::from(primary) * weight + f64::from(supporting) * (1.0 - weight))
@@ -549,17 +613,18 @@ fn palette_from_realistic_artwork(
 }
 
 #[test]
-fn representative_artwork_retains_navy_and_coral_with_quiet_text() {
+fn representative_artwork_supports_expressive_focal_ink_and_quiet_context() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/playing.svg");
     let palette = PresentationPalette::from_artwork(&path).unwrap();
     assert!(palette.artwork_field.blue > palette.artwork_field.red + 15);
     assert_artwork_family("accent", palette.accent, &[rgb(255, 112, 81)]);
     assert!(oklch(palette.accent).chroma > 0.08);
-    for text in [
-        palette.primary_text,
-        palette.secondary_text,
-        palette.muted_text,
-    ] {
+    assert!(
+        oklch(palette.primary_text).chroma > 0.035,
+        "the active cue may carry the artwork's coral: {palette:?}"
+    );
+    assert_artwork_family("focal ink", palette.primary_text, &[rgb(255, 112, 81)]);
+    for text in [palette.secondary_text, palette.muted_text] {
         assert!(
             oklch(text).chroma < 0.025,
             "text should support the artwork: {}",
@@ -576,8 +641,16 @@ fn uses_the_fixed_no_art_palette_without_artwork() {
     assert_eq!(palette.artwork_field.to_hex(), "#142856");
     assert_eq!(palette.metadata_field.to_hex(), "#0A1429");
     assert_eq!(palette.primary_text.to_hex(), "#F3EAD7");
-    assert_eq!(palette.secondary_text.to_hex(), "#C9C5BD");
-    assert_eq!(palette.muted_text.to_hex(), "#9299A8");
+    assert!(
+        palette.primary_text.contrast_ratio(palette.secondary_text) >= 2.0,
+        "fallback cues need the same clear hierarchy as artwork-derived cues"
+    );
+    assert!(
+        palette
+            .secondary_text
+            .contrast_ratio(palette.metadata_field)
+            > palette.muted_text.contrast_ratio(palette.metadata_field)
+    );
     assert_eq!(palette.accent.to_hex(), "#FF7051");
     assert_eq!(palette.status_muted_accent.to_hex(), "#C38781");
     assert_eq!(palette.progress_track.to_hex(), "#2F3645");
@@ -909,59 +982,49 @@ fn every_semantic_text_and_accent_role_meets_its_field_contrast() {
     let dark_teal_path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fixtures/artwork/dark-teal.svg");
     let palettes = [
-        ("fallback", PresentationPalette::fallback(), false),
+        ("fallback", PresentationPalette::fallback()),
         (
             "dark artwork",
             PresentationPalette::from_artwork(&dark_artwork_path)
                 .expect("dark artwork should produce a palette"),
-            true,
         ),
         (
             "light artwork",
             PresentationPalette::from_artwork(&light_artwork_path)
                 .expect("light artwork should produce a palette"),
-            true,
         ),
         (
             "representative artwork",
             PresentationPalette::from_artwork(&representative_artwork_path)
                 .expect("representative artwork should produce a palette"),
-            true,
         ),
         (
             "Restrained light palette artwork",
             PresentationPalette::from_artwork(&restrained_light_path)
                 .expect("Restrained light palette artwork should produce a palette"),
-            true,
         ),
         (
             "Dark teal palette artwork",
             PresentationPalette::from_artwork(&dark_teal_path)
                 .expect("Dark teal palette artwork should produce a palette"),
-            true,
         ),
     ];
 
-    for (source, palette, artwork_derived) in palettes {
-        assert_readable_roles(source, palette, artwork_derived);
+    for (source, palette) in palettes {
+        assert_readable_roles(source, palette);
     }
 }
 
-fn assert_readable_roles(source: &str, palette: PresentationPalette, artwork_derived: bool) {
-    let supporting_text_minimum = if artwork_derived { 7.0 } else { 4.5 };
-    for (field_name, field, supporting_minimum) in [
-        ("background", palette.background, supporting_text_minimum),
-        ("artwork field", palette.artwork_field, 4.5),
-        (
-            "metadata field",
-            palette.metadata_field,
-            supporting_text_minimum,
-        ),
+fn assert_readable_roles(source: &str, palette: PresentationPalette) {
+    for (field_name, field) in [
+        ("background", palette.background),
+        ("artwork field", palette.artwork_field),
+        ("metadata field", palette.metadata_field),
     ] {
         for (role, color, minimum) in [
             ("primary text", palette.primary_text, 7.0),
-            ("secondary text", palette.secondary_text, supporting_minimum),
-            ("muted text", palette.muted_text, supporting_minimum),
+            ("secondary text", palette.secondary_text, 3.5),
+            ("muted text", palette.muted_text, 3.0),
             ("accent", palette.accent, 4.5),
             ("muted status accent", palette.status_muted_accent, 4.5),
             ("progress fill", palette.progress_fill, 4.5),
@@ -1044,7 +1107,18 @@ fn saturated_and_neutral_color_extremes_preserve_all_readability_contracts() {
                 image.fill(u32::from_be_bytes([red, green, blue, 255]));
                 let palette = PresentationPalette::from_pixbuf(&image).unwrap();
                 let source = rgb(red, green, blue).to_hex();
-                assert_readable_roles(&source, palette, true);
+                assert_readable_roles(&source, palette);
+                assert!(
+                    palette.primary_text.contrast_ratio(palette.secondary_text) >= 2.0,
+                    "{source}: active/context distinction must survive extreme artwork colors: {palette:?}"
+                );
+                assert!(
+                    palette
+                        .secondary_text
+                        .contrast_ratio(palette.metadata_field)
+                        > palette.muted_text.contrast_ratio(palette.metadata_field),
+                    "{source}: utility text must recede below context"
+                );
                 assert!(
                     (1.5..=2.0).contains(
                         &palette

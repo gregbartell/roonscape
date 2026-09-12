@@ -105,8 +105,10 @@ keep each Cue distinct.
 Each cue retains its fitted size and wrapping in earlier, active, and upcoming
 roles. The preferred size is 96 px at a viewport height of 2160 px, scaled
 proportionally with viewport height, rounded to whole pixels, and limited to
-42–118 px. The active cue uses the palette's primary-text color; earlier and
-upcoming cues share its readable secondary-text color. Activation changes no
+42–118 px. The active cue has a clearly distinguishable foreground color;
+earlier and upcoming cues share one comfortably readable supporting color.
+A clear lightness difference establishes activation, with hue reinforcing it
+when useful. Hue alone must not carry the distinction. Activation changes no
 glyph size, weight, or spacing and adds no accent rule or backdrop.
 
 Short fades at the top and bottom allow partial cues to enter and leave
@@ -227,7 +229,15 @@ Usable artwork supplies the color basis for the complete presentation,
 including its background, artwork field, metadata field, text, accent,
 progress, and diagnostics roles. Both dark and light results are valid when
 the selected roles remain readable. Presentations without usable artwork use
-a fixed navy, coral, and cream palette with the same role hierarchy.
+a fixed navy, coral, and cream palette with the same role hierarchy. Its
+foreground shades support the same active-cue distinction and supporting-text
+restraint as artwork-derived palettes.
+
+Selected role colors are deterministic from the artwork. Replaying a track or
+playing another track with identical artwork produces the same role colors.
+Track metadata, playback history, and cue text do not alter the selected
+palette. Cues acquire the stable active and context colors as their roles
+change through the existing handoff.
 
 The background extends the artwork's atmosphere while presenting the artwork
 without distracting from it. It is a composed surrounding field rather than
@@ -258,26 +268,44 @@ otherwise approach a room-filling near-white field. The calibrated reduction
 is approximately 8–12% at the bright end and preserves the artwork's hue and
 chroma; it does not neutralize dark or teal-heavy palettes.
 
-Artwork-derived secondary and muted text target at least 7:1 contrast against
-the background and metadata fields used by the information rail. Their hue
-and relative emphasis remain derived from the artwork. The fixed no-art
-palette retains its established role colors.
+Foreground color contributes to the artwork's atmosphere along a spectrum
+from restrained ink to expressive color, according to the artwork. The active
+cue may use a different artwork-derived hue family from the background or
+context text. Do not invent a complementary hue merely to create emphasis.
+Neutral artwork retains a restrained foreground.
+
+Immediate distinction between the active cue and its surrounding cues takes
+priority over broader foreground hierarchy. The active cue leads the
+foreground while surrounding cues remain comfortably readable from the
+listening position. Utility information recedes. Text, print plate,
+Presentation Status, progress, and identity roles may use separate colors
+where sharing would compromise this composition.
+
+Contrast ratios guide color selection and remain open to visual calibration;
+no existing numeric target is an immutable requirement. Assess active/context
+separation independently from each role's readability against its local
+background. Preserve strong active-cue readability while allowing surrounding
+cues and utility information to use lower contrast when they remain
+comfortably readable. This color hierarchy does not change typography,
+placement, cue handoff motion, or the Lyric Reel's edge fades.
 
 Determinate progress uses a field-relative neutral track rather than a text
-role. The track remains approximately 1.5–2:1 against the local metadata field,
-while the full artwork-derived accent fill targets at least 3:1 against the
-track. The fill-to-track ratio is a preferred target, not a hard requirement.
+role. Working contrast references are approximately 1.5–2:1 for the track against
+the local metadata field and at least 3:1 for the artwork-derived fill against
+the track; these remain subject to visual calibration. The fill-to-track ratio is a preferred target, not a hard requirement.
 Visually reviewed exceptions are acceptable when both the filled and remaining
 portions read clearly. Do not sacrifice the remaining track's visibility
 against the surrounding field solely to reach the preferred fill-to-track
-ratio. Text-readability requirements remain unchanged.
+ratio. Judge text readability separately from progress visibility.
 
-Presentation Status uses the artwork-derived accent without assigning fixed
-hues to playback or availability conditions. Playing and Starting use the
-full accent without a glow or halo; Paused uses a muted and desaturated form
-of the accent. The fixed no-art palette supplies the same roles when artwork
-is unavailable. Accent emphasis is reserved for the print plate, active
-Presentation Status, determinate progress fill, and indeterminate activity.
+Presentation Status uses an artwork-derived accent without assigning fixed
+hues to playback or availability conditions. Playing and Starting use its
+full form without a glow or halo; Paused uses a muted and desaturated form.
+The status accent need not equal the print plate, progress, or active-cue
+color and must respect the foreground hierarchy. The fixed no-art palette
+supplies the same roles when artwork is unavailable. Strong color emphasis
+serves the active cue, print plate, active Presentation Status, determinate
+progress fill, and indeterminate activity according to their roles.
 
 ## Presentation Status
 

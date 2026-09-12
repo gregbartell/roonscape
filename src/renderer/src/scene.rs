@@ -545,7 +545,7 @@ fn digits<'window>(
     for glyph in text.chars().filter_map(|ch| content.digits.get(&ch)) {
         scene
             .sprites
-            .push(glyph.sprite(x, y, Color::new(palette.secondary_text, opacity), clip));
+            .push(glyph.sprite(x, y, Color::new(palette.muted_text, opacity), clip));
         x += glyph.width;
     }
 }

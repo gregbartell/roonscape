@@ -937,7 +937,7 @@ impl<'window> PresentationPreparation<'window> {
                 text: name,
                 x: name_x,
                 y: name_y,
-                role: TextRole::Secondary,
+                role: TextRole::Muted,
             });
         }
         if let Some(separator) = &mut separator {

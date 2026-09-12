@@ -460,6 +460,11 @@ impl PresentationPalette {
                 .map(|field| color.contrast_ratio(*field))
                 .fold(f64::INFINITY, f64::min)
         };
+        // All text uses the same light/dark polarity during an artwork blend.
+        // Independent corrections can put active and context cues on opposite
+        // sides of the field, making their handoff pass through the background.
+        let light_foreground = minimum_contrast(Rgb::new(255, 255, 255), &fields)
+            > minimum_contrast(Rgb::new(0, 0, 0), &fields);
         let readable_mix = |first: Rgb, second: Rgb| {
             let color = first.mix(second, amount);
             let target = minimum_contrast(first, &[self.background, self.metadata_field])
@@ -468,19 +473,14 @@ impl PresentationPalette {
                     &[other.background, other.metadata_field],
                 ))
                 .min(7.0);
-            if minimum_contrast(color, &fields) >= target {
+            let same_polarity = fields.iter().all(|field| {
+                (color.relative_luminance() > field.relative_luminance()) == light_foreground
+            });
+            if same_polarity && minimum_contrast(color, &fields) >= target {
                 return color;
             }
-            // Mid-gray cannot support 7:1 even with black or white. Search both
-            // polarities and retain the best feasible contrast, using the same
-            // hue-preserving lightness adjustment as settled palette selection.
-            [-0.02, 0.02]
-                .into_iter()
-                .map(|step| readable_tint(color.hsl(), &fields, target, step))
-                .max_by(|left, right| {
-                    minimum_contrast(*left, &fields).total_cmp(&minimum_contrast(*right, &fields))
-                })
-                .expect("two lightness directions")
+            let step = if light_foreground { 0.02 } else { -0.02 };
+            readable_tint(color.hsl(), &fields, target, step)
         };
         Self {
             background,
@@ -505,8 +505,8 @@ impl PresentationPalette {
             artwork_field: Rgb::new(0x14, 0x28, 0x56),
             metadata_field: Rgb::new(0x0a, 0x14, 0x29),
             primary_text: Rgb::new(0xf3, 0xea, 0xd7),
-            secondary_text: Rgb::new(0xc9, 0xc5, 0xbd),
-            muted_text: Rgb::new(0x92, 0x99, 0xa8),
+            secondary_text: Rgb::new(0x94, 0x9f, 0xae),
+            muted_text: Rgb::new(0x72, 0x80, 0x94),
             accent: Rgb::new(0xff, 0x70, 0x51),
             status_muted_accent: Rgb::new(0xc3, 0x87, 0x81),
             progress_track: Rgb::new(0x2f, 0x36, 0x45),
@@ -609,7 +609,10 @@ impl PresentationPalette {
             .max_by(|first, second| first.score.total_cmp(&second.score))
             .expect("sampled artwork supports a restrained dark composition");
         let [background, artwork_field, metadata_field] = candidate.fields;
-        let semantic = candidate.semantic;
+        // Candidate roles reserve readability headroom when choosing fields.
+        // Calibrate foreground hierarchy only after selection, so it cannot
+        // redirect the established artwork atmosphere.
+        let semantic = candidate.semantic.with_text_hierarchy(candidate.fields);
 
         Ok(Self {
             background,
@@ -775,7 +778,7 @@ fn composition_candidate(
     }
     .rgb()
     .hsl();
-    let semantic = semantic_roles(tone.profile(), text_source, accent, fields)?;
+    let semantic = composition_readability_roles(tone.profile(), text_source, accent, fields)?;
     let share = field_support(field_source, families, total);
     let generated = fields[1].oklch();
     // Prefer a well-supported family with modest lightness changes and useful
@@ -894,7 +897,48 @@ struct SemanticRoles {
     progress_track: Rgb,
 }
 
-fn semantic_roles(
+impl SemanticRoles {
+    fn with_text_hierarchy(mut self, fields: [Rgb; 3]) -> Self {
+        let dark = self.primary_text.relative_luminance() > fields[0].relative_luminance();
+        let step = if dark { 0.01 } else { -0.01 };
+        let ink = self.secondary_text.oklch();
+        let authored = self.accent.oklch();
+        self.primary_text = readable_perceptual_tint(
+            Oklch {
+                lightness: if dark { 0.90 } else { 0.23 },
+                chroma: (authored.chroma * 0.55).min(0.08),
+                hue: authored.hue,
+            },
+            &fields,
+            7.0,
+            step,
+        );
+        self.secondary_text = readable_perceptual_tint(
+            Oklch {
+                lightness: if dark { 0.64 } else { 0.50 },
+                ..ink
+            },
+            &fields,
+            3.5,
+            step,
+        );
+        self.primary_text =
+            readable_perceptual_tint(self.primary_text.oklch(), &[self.secondary_text], 2.0, step);
+        self.muted_text = readable_perceptual_tint(
+            Oklch {
+                lightness: if dark { 0.57 } else { 0.55 },
+                chroma: ink.chroma * 0.6,
+                ..ink
+            },
+            &fields,
+            3.0,
+            step,
+        );
+        self
+    }
+}
+
+fn composition_readability_roles(
     profile: ToneProfile,
     text: Hsl,
     accent: Oklch,
@@ -1220,10 +1264,10 @@ fn readable_perceptual_tint(
 
 fn readable_tint(mut tint: Hsl, fields: &[Rgb], minimum_contrast: f64, contrast_step: f64) -> Rgb {
     let mut color = tint.rgb();
-    while fields
-        .iter()
-        .any(|field| color.contrast_ratio(*field) < minimum_contrast)
-    {
+    while fields.iter().any(|field| {
+        color.contrast_ratio(*field) < minimum_contrast
+            || (color.relative_luminance() > field.relative_luminance()) != (contrast_step > 0.0)
+    }) {
         let next_lightness = (tint.lightness + contrast_step).clamp(0.02, 0.98);
         if next_lightness == tint.lightness {
             break;
