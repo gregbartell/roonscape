@@ -517,6 +517,11 @@ impl PresentationPalette {
         }
     }
 
+    /// Name ink leads identity labels while remaining subordinate to focal text.
+    pub fn identity_name_text(self) -> Rgb {
+        self.muted_text.mix(self.primary_text, 0.55)
+    }
+
     pub fn from_artwork(path: &Path) -> Result<Self, PaletteError> {
         // Decoder-side thumbnail scaling can select different colors from
         // sampling the full artwork already used by native preparation.

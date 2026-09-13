@@ -65,7 +65,11 @@ including during crossfades and within the Synchronized Lyric Composition.
 The identity row follows at a responsive gap and contains two compact
 inline phrases separated by a small muted dot: `OUTPUT <Tracked Output>` and
 `ZONE <Tracked Zone>`. Each semibold uppercase label uses slight positive
-tracking and shares one baseline with its name. The two phrases receive bounded
+tracking and shares one baseline with its name. Labels and the separator retain muted ink;
+names use a 55% sRGB interpolation from the native palette’s muted ink toward
+its focal ink. This preserves artwork-derived hue and neutral restraint while
+giving names priority over labels in both compositions and Full-field
+Presentations. Other palette roles retain their colors. The two phrases receive bounded
 shares of the row, so names ellipsize independently without moving the
 separator or footer. Presentation Status, timing, and activity copy derive
 their sizes from viewport height while preserving readable floors. Identity

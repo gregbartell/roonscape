@@ -1019,6 +1019,7 @@ fn palette_surfaces(preparation: &mut PresentationPreparation<'_>, repository: &
                         TextRole::Primary => palette.primary_text,
                         TextRole::Secondary => palette.secondary_text,
                         TextRole::Muted => palette.muted_text,
+                        TextRole::IdentityName => palette.identity_name_text(),
                     },
                 )
             })

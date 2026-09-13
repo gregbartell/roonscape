@@ -16,6 +16,40 @@ const WHITE: Rgb = Rgb {
 };
 
 #[test]
+fn identity_names_lead_labels_without_competing_with_focal_text() {
+    let directory = tempdir().unwrap();
+    for (name, background, detail) in [
+        ("dark-neutral", "#242424", "#555555"),
+        ("light-neutral", "#eeeeee", "#aaaaaa"),
+        ("warm-paper", "#eadca8", "#ac8e35"),
+        ("red-and-navy", "#171a29", "#c83129"),
+    ] {
+        let artwork = synthetic_artwork(&directory, &format!("{name}.svg"), background, detail);
+        let palette = PresentationPalette::from_artwork(&artwork).unwrap();
+        let ink = palette.identity_name_text();
+        let field = palette.metadata_field;
+        assert!(
+            ink.contrast_ratio(field) > palette.muted_text.contrast_ratio(field),
+            "{name}: names lead labels"
+        );
+        assert!(
+            ink.contrast_ratio(field) < palette.primary_text.contrast_ratio(field),
+            "{name}: focal text retains priority"
+        );
+        if name.ends_with("neutral") {
+            assert_eq!(ink.red, ink.green);
+            assert_eq!(ink.green, ink.blue);
+        }
+        assert_eq!(
+            ink,
+            PresentationPalette::from_artwork(&artwork)
+                .unwrap()
+                .identity_name_text()
+        );
+    }
+}
+
+#[test]
 fn identical_artwork_keeps_its_colors_across_paths_and_intervening_artwork() {
     let directory = tempdir().unwrap();
     let first = synthetic_artwork(&directory, "first-track.svg", "#eadca8", "#ac8e35");

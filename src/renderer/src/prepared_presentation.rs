@@ -20,6 +20,7 @@ pub(crate) enum TextRole {
     Primary,
     Secondary,
     Muted,
+    IdentityName,
 }
 
 impl TextRole {
@@ -28,6 +29,7 @@ impl TextRole {
             Self::Primary => palette.primary_text,
             Self::Secondary => palette.secondary_text,
             Self::Muted => palette.muted_text,
+            Self::IdentityName => palette.identity_name_text(),
         }
     }
 }
@@ -937,7 +939,7 @@ impl<'window> PresentationPreparation<'window> {
                 text: name,
                 x: name_x,
                 y: name_y,
-                role: TextRole::Muted,
+                role: TextRole::IdentityName,
             });
         }
         if let Some(separator) = &mut separator {
