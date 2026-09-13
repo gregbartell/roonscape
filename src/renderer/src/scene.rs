@@ -21,6 +21,7 @@ pub(crate) struct Foreground<'a> {
     pub status: PresentationStatus,
     pub status_opacity: f32,
     pub timing_opacity: f32,
+    pub persistent_progress: bool,
     pub lyrics: Option<&'a LyricFrame>,
 }
 
@@ -215,6 +216,11 @@ fn now_playing<'window>(
     let timing_y = identity_y - layout.footer_gap_px as f32 - timing_height;
     let opacity = frame.opacity * frame.timing_opacity;
     if let Some(progress) = &presentation.progress {
+        let opacity = if frame.persistent_progress {
+            frame.timing_opacity
+        } else {
+            opacity
+        };
         let height =
             (layout.progress_fill_height_px + layout.time_spacing_px) as f32 + content.time_height;
         let top = timing_y + (timing_height - height) / 2.0;

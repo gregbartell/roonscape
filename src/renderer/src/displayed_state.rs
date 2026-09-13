@@ -66,6 +66,7 @@ impl DisplayedState {
             value.lyrics = timing.lyrics;
             value.lyrics_known = timing.lyrics_known;
             value.progress = timing.progress;
+            value.timing_grace_active = timing.timing_grace_active;
             value.playback_position_seconds = timing.playback_position_seconds;
         }
         if !assets_ready && let Presentation::NowPlaying(presentation) = &mut frame.presentation {

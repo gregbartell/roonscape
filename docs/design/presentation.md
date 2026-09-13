@@ -338,7 +338,12 @@ identities is approximately 40 px; these values scale responsively across peer
 viewports.
 
 During the existing five-second timing grace, show supported Provisional Timing
-when it supplies determinate progress; otherwise leave the timing area quiet.
+when it supplies determinate progress. Across Now Playing replacements, retain
+an existing rail even when incoming duration or position is unavailable, retract
+its fill toward zero, and show only supported numerals. Never borrow the outgoing
+duration. Supported incoming timing appears immediately if it arrives during
+grace, and the fill travels to its supported fraction. Without an existing rail,
+leave unsupported timing quiet.
 Starting and Playing share this grace, so entering Playing does not restart it.
 When playback begins after Idle in the same Tracked Zone, seed Provisional
 Timing at zero if position is absent; expose it only when duration is known.
@@ -378,7 +383,7 @@ characters.
 
 Motion is restrained to information that changes over time or protects the
 display. Determinate progress advances in place while Playing and remains
-frozen while Paused. Status and timing updates retain unchanged text and its
+frozen between timing updates while Paused. Status and timing updates retain unchanged text and its
 position in the current composition. Replacement text in the same space fades
 out completely before its replacement fades in; determinate timing appears
 immediately when available, then numeric progress advances in place.
@@ -471,6 +476,32 @@ replacement, and smooth repositioning to partial metadata and identity updates.
 Unchanged Presentation Status, timing, and lyrics remain visible and live.
 Use the same latest-destination interruption behavior for partial updates. When animations
 are disabled, apply the latest destination immediately.
+
+### Continuous progress
+
+Between Now Playing presentations, retain the progress rail and outgoing timing
+through the 225 ms departure. At the coordinated artwork/background reveal,
+switch elapsed and remaining numerals directly to supported incoming timing.
+Animate only the fill toward the incoming fraction, or zero when no fraction is
+supported; do not detour through zero when the incoming fraction is known.
+Interpolate fill and rail colors with the palette over the full 225 ms reveal,
+even when fill travel finishes earlier. Identical colors remain steady.
+
+Fill travel uses easing over 225 ms multiplied by the absolute visual fraction
+difference: half a rail takes 112.5 ms, and 80% to zero takes 180 ms. Zero distance
+has no travel. Retarget interruptions from the currently visible fraction, and
+rejoin the latest advancing playback fraction at completion. Ordinary timing
+updates do not restart travel. A significant position discontinuity within a
+continuing track travels in either direction by the same rule, accounting for
+expected playback advancement with a 0.5-second tolerance. This includes paused
+seeks and indistinguishable repeats; a seek alone does not fade content or
+change the palette.
+
+This motion changes only visual fill geometry. Authoritative Timing, Provisional
+Timing, timing numerals, and lyrics remain independent and adopt new timing
+immediately. Grace expiration and reset rules remain unchanged. Reduced animation
+applies the latest fill destination immediately while timing stays live.
+Full-field Presentation transitions and diagnostics retain their existing behavior.
 
 ### Track continuity
 

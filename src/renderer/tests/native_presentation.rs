@@ -84,7 +84,7 @@ fn transitions(preparation: &mut PresentationPreparation<'_>, repository: &Path)
     if let Presentation::NowPlaying(value) = &mut live {
         value.progress.as_mut().unwrap().fraction = 0.8;
     }
-    view.update(&live, 2);
+    view.update(&live, 1);
     let departing = view.render(ms(120), true);
     assert!(progress_alpha(&departing) > 0.4 && progress_alpha(&departing) < 0.6);
     close(
@@ -109,10 +109,10 @@ fn transitions(preparation: &mut PresentationPreparation<'_>, repository: &Path)
         .unwrap();
     view.replace(prepared, &replacement, 3, ms(235), true);
     let zero = view.render(ms(235), true);
-    close(progress_alpha(&zero), 0.0);
+    close(progress_alpha(&zero), 1.0);
     graphics_complete(&zero);
     let middle = view.render(ms(347), true);
-    assert!(progress_alpha(&middle) > 0.49 && progress_alpha(&middle) < 0.51);
+    close(progress_alpha(&middle), 1.0);
     graphics_complete(&middle);
     close(progress_alpha(&view.render(ms(460), true)), 1.0);
 
@@ -334,6 +334,7 @@ fn composition_keeps_shared_metadata_visible(
             status: value.status,
             status_opacity: 1.0,
             timing_opacity: 1.0,
+            persistent_progress: false,
             lyrics: Some(&frame),
         },
     );
@@ -414,6 +415,7 @@ fn composition_preserves_clipped_title_at_motion_boundary(
             status: value.status,
             status_opacity: 1.0,
             timing_opacity: 1.0,
+            persistent_progress: false,
             lyrics: Some(&frame),
         },
     );
@@ -488,6 +490,7 @@ fn composition_reel_translation_and_clipping(
                     status: value.status,
                     status_opacity: 1.0,
                     timing_opacity: 1.0,
+                    persistent_progress: false,
                     lyrics: Some(frame),
                 },
             );
@@ -697,6 +700,7 @@ fn wrapping_words_do_not_collide_during_composition(
                 status: value.status,
                 status_opacity: 1.0,
                 timing_opacity: 1.0,
+                persistent_progress: false,
                 lyrics: Some(&frame),
             },
         );
@@ -791,6 +795,7 @@ fn partially_retained_words_follow_native_ellipsis(
             status: value.status,
             status_opacity: 1.0,
             timing_opacity: 1.0,
+            persistent_progress: false,
             lyrics: Some(&frame),
         },
     );
@@ -1197,7 +1202,7 @@ fn disabling_animation_settles_active_graphics(
     );
     close(settled.graphics[0].geometry.weight, 1.0);
     view.replace(next, &light, 3, ms(200), true);
-    close(progress_alpha(&view.render(ms(200), true)), 0.0);
+    close(progress_alpha(&view.render(ms(200), true)), 1.0);
     close(progress_alpha(&view.render(ms(201), false)), 1.0);
     view.begin_departure(&fixture("disconnected"), ms(300), true);
     close(progress_alpha(&view.render(ms(301), false)), 0.0);
@@ -1781,6 +1786,175 @@ fn identity_reflow_waits_for_invisible_replacement(
     }
 }
 
+fn continuous_progress(preparation: &mut PresentationPreparation<'_>, repository: &Path) {
+    let viewport = Viewport::new(1280, 720);
+    let mut outgoing = fixture("playing");
+    if let Presentation::NowPlaying(value) = &mut outgoing {
+        let progress = value.progress.as_mut().unwrap();
+        progress.fraction = 0.8;
+        value.playback_position_seconds = Some(80.0);
+    }
+    let first = preparation
+        .prepare(&outgoing, viewport, repository, true)
+        .unwrap();
+    let old_palette = first.palette;
+    let mut view = NativeView::new(first, 1);
+    view.render(ms(0), true);
+    let mut incoming = fixture("light-artwork");
+    if let Presentation::NowPlaying(value) = &mut incoming {
+        value.title = Some("Incoming progress".into());
+        let progress = value.progress.as_mut().unwrap();
+        progress.fraction = 0.3;
+        progress.elapsed = "0:30".into();
+        progress.remaining = "−1:10".into();
+        value.playback_position_seconds = Some(30.0);
+    }
+    let prepared = preparation
+        .prepare(&incoming, viewport, repository, true)
+        .unwrap();
+    let new_palette = prepared.palette;
+    let PreparedContent::NowPlaying(content) = &prepared.content else {
+        panic!()
+    };
+    let glyphs = content
+        .digits
+        .iter()
+        .map(|(ch, glyph)| {
+            let sprite = glyph.sprite(
+                0.0,
+                0.0,
+                qt_window::Color::new(new_palette.muted_text, 1.0),
+                qt_window::Rect::viewport(viewport),
+            );
+            (sprite.texture.unwrap().identity(), *ch)
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let numerals = |scene: &Scene<'_>| {
+        scene
+            .sprites
+            .iter()
+            .filter_map(|sprite| {
+                let ch = glyphs.get(&sprite.texture.as_ref()?.identity())?;
+                close(sprite.geometry.color.alpha, 1.0);
+                Some(*ch)
+            })
+            .collect::<String>()
+    };
+    let fill = |scene: &Scene<'_>| {
+        scene
+            .sprites
+            .iter()
+            .find(|sprite| sprite.geometry.kind == SpriteKind::Progress)
+            .unwrap()
+            .geometry
+    };
+    view.begin_departure(&incoming, ms(10), true);
+    for time in [10, 120, 234] {
+        let frame = view.render(ms(time), true);
+        close(progress_alpha(&frame), 1.0);
+        close(fill(&frame).uv.x, 0.8);
+    }
+    view.replace(prepared, &incoming, 2, ms(235), true);
+    for (time, fraction) in [(235.0, 0.8), (291.25, 0.55), (347.5, 0.3), (460.0, 0.3)] {
+        let frame = view.render(Duration::from_secs_f64(time / 1000.0), true);
+        close(fill(&frame).uv.x, fraction);
+        close(progress_alpha(&frame), 1.0);
+        assert_eq!(numerals(&frame), "0:30−1:10");
+        let palette = old_palette.mix(
+            new_palette,
+            scene::motion_phase((time - 235.0) / 225.0, 0.0, 1.0),
+        );
+        assert_color(fill(&frame).color, palette.progress_fill, 1.0);
+        assert_color(fill(&frame).secondary, palette.progress_track, 1.0);
+    }
+    // The incoming rail survives absent duration, without any outgoing numerals.
+    let mut missing = incoming.clone();
+    if let Presentation::NowPlaying(value) = &mut missing {
+        value.title = Some("Waiting for timing".into());
+        value.progress = None;
+        value.playback_position_seconds = None;
+        value.timing_grace_active = true;
+        value.activity = None;
+    }
+    view.replace(
+        preparation
+            .prepare(&missing, viewport, repository, true)
+            .unwrap(),
+        &missing,
+        3,
+        ms(500),
+        true,
+    );
+    let frame = view.render(ms(500), true);
+    close(fill(&frame).uv.x, 0.3);
+    assert_eq!(numerals(&frame), "");
+    let frame = view.render(ms(568), true);
+    close(fill(&frame).uv.x, 0.0);
+    close(progress_alpha(&frame), 1.0);
+    if let Presentation::NowPlaying(value) = &mut missing {
+        value.playback_position_seconds = Some(12.0);
+    }
+    view.update(&missing, 4);
+    assert_eq!(numerals(&view.render(ms(600), true)), "0:12");
+    view.update(&incoming, 5);
+    let frame = view.render(ms(650), true);
+    close(fill(&frame).uv.x, 0.0);
+    assert_eq!(numerals(&frame), "0:30−1:10");
+    close(fill(&view.render(ms(718), true)).uv.x, 0.3);
+    // A new seek interrupts travel immediately; reduced animation settles it.
+    if let Presentation::NowPlaying(value) = &mut incoming {
+        value.progress.as_mut().unwrap().fraction = 0.9;
+        value.playback_position_seconds = Some(90.0);
+    }
+    view.update(&incoming, 6);
+    close(fill(&view.render(ms(800), true)).uv.x, 0.3);
+    let before = fill(&view.render(ms(840), true)).uv.x;
+    view.replace(
+        preparation
+            .prepare(&outgoing, viewport, repository, true)
+            .unwrap(),
+        &outgoing,
+        7,
+        ms(840),
+        true,
+    );
+    close(fill(&view.render(ms(840), true)).uv.x, before);
+    close(fill(&view.render(ms(841), false)).uv.x, 0.8);
+    // Grace expiry removes the retained rail using the existing timing fade.
+    if let Presentation::NowPlaying(value) = &mut missing {
+        value.timing_grace_active = false;
+    }
+    view.update(&missing, 8);
+    view.render(ms(900), true);
+    assert!(
+        !view
+            .render(ms(1400), true)
+            .sprites
+            .iter()
+            .any(|sprite| sprite.geometry.kind == SpriteKind::Progress)
+    );
+    if let Presentation::NowPlaying(value) = &mut missing {
+        value.timing_grace_active = true;
+    }
+    view.replace(
+        preparation
+            .prepare(&missing, viewport, repository, true)
+            .unwrap(),
+        &missing,
+        9,
+        ms(1500),
+        true,
+    );
+    assert!(
+        !view
+            .render(ms(1500), true)
+            .sprites
+            .iter()
+            .any(|sprite| sprite.geometry.kind == SpriteKind::Progress),
+        "a rail that already expired is not an outgoing rail to retain"
+    );
+}
+
 fn main() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -1803,6 +1977,7 @@ fn main() {
     gradient_reuse_survives_content_changes(&mut preparation, repository);
     metadata_wrapping(&mut preparation, repository);
     transitions(&mut preparation, repository);
+    continuous_progress(&mut preparation, repository);
     disabling_animation_settles_active_graphics(&mut preparation, repository);
     lyrics(&mut preparation, repository);
     word_motion_meets_native_endpoints(&mut preparation, repository);

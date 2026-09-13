@@ -57,6 +57,140 @@ const defaultRendererExecutable = path.join(
 );
 
 const examples = {
+  "progress-continuity": {
+    durationSeconds: 14,
+    initialFixture: "src/shared/fixtures/lyrics-one-line.json",
+    publications: [
+      {
+        atSeconds: 0.5,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 30,
+      },
+      {
+        atSeconds: 1.5,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 240,
+      },
+      {
+        atSeconds: 1.6,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 80,
+      },
+      {
+        atSeconds: 2.5,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 0,
+        playback: "paused",
+      },
+      {
+        atSeconds: 3,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 220,
+        playback: "paused",
+      },
+      {
+        atSeconds: 4,
+        fixture: "src/shared/fixtures/light-artwork.json",
+        positionSeconds: 90,
+        nowPlaying: {
+          title: "Incoming Horizon",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 5,
+        fixture: "src/shared/fixtures/timing-stability.json",
+        positionSeconds: 0,
+        playback: "playing",
+      },
+      {
+        atSeconds: 5.8,
+        fixture: "src/shared/fixtures/timing-stability.json",
+        positionSeconds: 100,
+        durationSeconds: 266,
+        playback: "playing",
+      },
+      {
+        atSeconds: 6.5,
+        fixture: "src/shared/fixtures/playing.json",
+        positionSeconds: 210,
+      },
+      {
+        atSeconds: 6.8,
+        fixture: "src/shared/fixtures/light-artwork.json",
+        positionSeconds: 30,
+        nowPlaying: {
+          title: "Incoming Horizon",
+          artist: "Evelyn Lark & The Orbital Choir",
+          album: "Signals from the Quiet Sea",
+        },
+      },
+      {
+        atSeconds: 7.5,
+        fixture: "src/shared/fixtures/timing-stability.json",
+        positionSeconds: 0,
+        playback: "playing",
+      },
+    ],
+    reviewFrames: [
+      reviewFrame(
+        1.55,
+        "forward-seek",
+        "Only the fill travels; numerals adopt the destination.",
+      ),
+      reviewFrame(
+        1.65,
+        "interrupted-seek",
+        "Backward travel retargets the visible fill.",
+      ),
+      reviewFrame(
+        3.05,
+        "paused-seek",
+        "Paused timing adopts the destination while fill travels.",
+      ),
+      reviewFrame(
+        4.15,
+        "departure",
+        "Outgoing timing and rail remain visible.",
+      ),
+      reviewFrame(
+        4.3,
+        "reveal",
+        "Incoming numerals switch directly; fill and rail share the palette reveal.",
+      ),
+      reviewFrame(
+        4.45,
+        "palette-end",
+        "Palette continues after shorter fill travel.",
+      ),
+      reviewFrame(
+        5.3,
+        "missing-duration",
+        "Rail retracts; unsupported remaining timing is absent.",
+      ),
+      reviewFrame(
+        5.85,
+        "supported-timing",
+        "Supported timing arrives inside grace.",
+      ),
+      reviewFrame(
+        7.1,
+        "rapid-replacements",
+        "Replacements retain fill and palette continuity.",
+      ),
+      reviewFrame(
+        8,
+        "empty-rail",
+        "Unknown duration retains an empty rail during grace.",
+      ),
+      reviewFrame(
+        13,
+        "expired-grace",
+        "Existing timing-unavailable treatment follows grace expiry.",
+      ),
+    ],
+  },
   "composition-inheritance": {
     durationSeconds: 18,
     initialFixture: "src/shared/fixtures/lyrics-opening.json",

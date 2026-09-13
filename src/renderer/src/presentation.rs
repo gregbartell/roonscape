@@ -93,6 +93,8 @@ pub struct NowPlayingPresentation {
     pub status: PresentationStatus,
     pub progress: Option<PresentationProgress>,
     pub playback_position_seconds: Option<f64>,
+    /// Existing timing grace, shared by provisional timing and visual rail retention.
+    pub timing_grace_active: bool,
     pub activity: Option<Box<PresentationActivity>>,
     pub artwork_revision: Option<u64>,
     pub artwork_path: Option<String>,
@@ -872,6 +874,7 @@ pub fn classify_presentation_update(
             }
             previous.status = next.status;
             previous.playback_position_seconds = next.playback_position_seconds;
+            previous.timing_grace_active = next.timing_grace_active;
             previous.progress.clone_from(&next.progress);
             previous.activity.clone_from(&next.activity);
             previous.lyrics.clone_from(&next.lyrics);
@@ -1062,6 +1065,7 @@ fn presentation_from_snapshot_with_timing(
         tracked_zone: tracked_zone.name.clone(),
         status: presentation_status_for_playback(playback),
         playback_position_seconds: timing.position_seconds,
+        timing_grace_active,
         progress: timing.position_seconds.zip(timing.duration_seconds).map(
             |(position_seconds, duration_seconds)| {
                 presentation_progress(position_seconds, duration_seconds)
@@ -1129,6 +1133,11 @@ fn available_full_field(
 }
 
 impl NowPlayingPresentation {
+    /// Supported elapsed timing, even when duration is not yet available.
+    pub fn elapsed_time(&self) -> Option<String> {
+        self.playback_position_seconds.map(format_duration)
+    }
+
     pub fn has_usable_metadata(&self) -> bool {
         [
             self.title.as_deref(),

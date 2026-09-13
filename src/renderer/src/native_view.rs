@@ -14,6 +14,10 @@ use crate::scene::{self, Foreground};
 mod selective_foreground;
 use selective_foreground::SelectiveForeground;
 
+#[path = "progress_motion.rs"]
+mod progress_motion;
+use progress_motion::ProgressMotion;
+
 const PHASE: Duration = Duration::from_millis(225);
 
 type Metadata = (Option<String>, Option<String>, Option<String>);
@@ -160,6 +164,7 @@ fn phase(now: Duration, start: Duration, duration: Duration) -> f64 {
 struct Departure {
     started: Duration,
     opacity: f32,
+    now_playing: bool,
 }
 
 struct Reveal<'window> {
@@ -184,6 +189,8 @@ pub(crate) struct NativeView<'window> {
     status: ReplacementFade<PresentationStatus>,
     timing: ReplacementFade<Timing>,
     last_progress: Option<roonscape_renderer::PresentationProgress>,
+    progress: ProgressMotion,
+    persistent_progress: bool,
     lyrics: LyricMotion,
     departure: Option<Departure>,
     reveal: Option<Reveal<'window>>,
@@ -206,6 +213,8 @@ impl<'window> NativeView<'window> {
             status: ReplacementFade::new(status(&prepared.presentation)),
             timing: ReplacementFade::new(timing(&prepared.presentation)),
             last_progress: None,
+            progress: ProgressMotion::default(),
+            persistent_progress: false,
             lyrics: LyricMotion::new(revision, lyrics),
             prepared,
             departure: None,
@@ -220,10 +229,14 @@ impl<'window> NativeView<'window> {
         if matches!(self.latest, Presentation::NowPlaying(_)) {
             self.fields.request(destination, now, animated);
         }
+        if let Some(departure) = &mut self.departure {
+            departure.now_playing = matches!(destination, Presentation::NowPlaying(_));
+        }
         if self.departure.is_none() {
             self.departure = Some(Departure {
                 started: now,
                 opacity: if animated { self.text_opacity } else { 0.0 },
+                now_playing: matches!(destination, Presentation::NowPlaying(_)),
             });
         }
     }
@@ -259,6 +272,19 @@ impl<'window> NativeView<'window> {
         );
         let mut incoming = Self::new(prepared, revision);
         if selective {
+            incoming.progress = std::mem::take(&mut self.progress);
+            incoming.persistent_progress = true;
+            if let Presentation::NowPlaying(value) = presentation {
+                incoming.progress.replace(value, revision, now, animated);
+                if value.progress.is_none()
+                    && value.timing_grace_active
+                    && matches!(self.timing.displayed(), Timing::Progress)
+                    && self.last_progress.is_some()
+                {
+                    incoming.last_progress = Some(unfractioned_progress(value));
+                    incoming.timing = ReplacementFade::new(Timing::Progress);
+                }
+            }
             incoming.fields =
                 std::mem::replace(&mut self.fields, SelectiveForeground::new(presentation));
             incoming.fields.request(presentation, now, animated);
@@ -368,18 +394,31 @@ impl<'window> NativeView<'window> {
         if self.departure.is_none() {
             self.fields.request(&self.latest, now, animated);
         }
+        let target_timing = match &self.latest {
+            Presentation::NowPlaying(value)
+                if value.progress.is_none()
+                    && value.timing_grace_active
+                    && self.last_progress.is_some() =>
+            {
+                Timing::Progress
+            }
+            _ => timing(&self.latest),
+        };
         if self.timing.update(
-            timing(&self.latest),
+            target_timing.clone(),
             now,
-            animated && !matches!(timing(&self.latest), Timing::Progress),
+            animated && !matches!(target_timing, Timing::Progress),
         ) && let Some(activity) = self.pending_activity.take()
             && let PreparedContent::NowPlaying(current) = &mut self.prepared.content
         {
             current.activity = activity;
         }
         if let Presentation::NowPlaying(value) = &self.latest {
+            self.progress.update(value, self.revision, now, animated);
             if let Some(progress) = &value.progress {
                 self.last_progress = Some(progress.clone());
+            } else if value.timing_grace_active && self.last_progress.is_some() {
+                self.last_progress = Some(unfractioned_progress(value));
             }
             self.lyrics.observe_playback(
                 self.revision,
@@ -438,6 +477,9 @@ impl<'window> NativeView<'window> {
             match self.timing.displayed() {
                 Timing::Progress => {
                     value.progress = self.last_progress.clone();
+                    if let Some(progress) = &mut value.progress {
+                        progress.fraction = self.progress.fraction(now);
+                    }
                     value.activity = None;
                 }
                 Timing::Activity(activity) => {
@@ -466,6 +508,10 @@ impl<'window> NativeView<'window> {
                 },
                 status_opacity: self.status.opacity() as f32,
                 timing_opacity: self.timing.opacity() as f32,
+                persistent_progress: self
+                    .departure
+                    .as_ref()
+                    .map_or(self.persistent_progress, |departure| departure.now_playing),
                 lyrics: Some(&lyric_frame),
             },
         );
@@ -498,6 +544,7 @@ impl<'window> NativeView<'window> {
             || self.fields.active()
             || self.status.is_active()
             || self.timing.is_active()
+            || self.progress.active(now)
             || self.lyrics.is_active_at(now)
     }
 
@@ -549,4 +596,14 @@ fn same_artwork(a: &Presentation, b: &Presentation) -> bool {
 fn displayed_fields_changed(a: &Presentation, b: &Presentation) -> bool {
     metadata(a) != metadata(b)
         || matches!((a,b), (Presentation::NowPlaying(a), Presentation::NowPlaying(b)) if a.tracked_output != b.tracked_output || a.tracked_zone != b.tracked_zone)
+}
+
+fn unfractioned_progress(
+    value: &roonscape_renderer::NowPlayingPresentation,
+) -> roonscape_renderer::PresentationProgress {
+    roonscape_renderer::PresentationProgress {
+        fraction: 0.0,
+        elapsed: value.elapsed_time().unwrap_or_default(),
+        remaining: String::new(),
+    }
 }

@@ -1173,6 +1173,7 @@ pub(crate) fn content_key(presentation: &Presentation) -> Presentation {
         value.artwork_revision = None;
         value.progress = None;
         value.playback_position_seconds = None;
+        value.timing_grace_active = false;
         value.status = roonscape_renderer::PresentationStatus {
             label: "PLAYING",
             symbol: PresentationStatusSymbol::Playing,
