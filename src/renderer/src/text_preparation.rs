@@ -6,7 +6,9 @@ use gtk::{cairo, glib::Unichar, pango};
 use pango::prelude::*;
 use roonscape_renderer::{MetadataTypography, TypographySelection};
 
-use crate::qt_window::{Color, Rect, Sprite, SpriteGeometry, SpriteKind, Texture, Uploader};
+use crate::qt_window::{
+    Color, Rect, Sprite, SpriteGeometry, SpriteKind, TextTile, Texture, Uploader,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Face {
@@ -40,6 +42,7 @@ impl From<MetadataTypography> for Face {
 pub(crate) struct PreparedText<'window> {
     texture: Texture<'window>,
     foreground: Option<Texture<'window>>,
+    tiles: Option<Arc<[TextTile<'window>]>>,
     pub bounds: Rect,
     pub width: f32,
     pub height: f32,
@@ -56,6 +59,7 @@ impl<'window> PreparedText<'window> {
             field: None,
             texture: Some(self.texture.clone()),
             foreground: self.foreground.clone(),
+            tiles: self.tiles.clone(),
             geometry: SpriteGeometry {
                 bounds: Rect::new(
                     x + self.bounds.x,
@@ -322,57 +326,99 @@ impl<'window> TextPreparation<'window> {
         let scale = self.scale * fitting_scale;
         let width = (f64::from(right - left) * scale).ceil().max(1.0) as u32;
         let height = (f64::from(bottom - top) * scale).ceil().max(1.0) as u32;
-        let paint = |foreground: f64| -> Result<Vec<u8>, String> {
-            let surface =
-                cairo::ImageSurface::create(cairo::Format::ARgb32, width as i32, height as i32)
-                    .map_err(|e| e.to_string())?;
-            surface.set_device_scale(scale, scale);
-            let context = cairo::Context::new(&surface).map_err(|e| e.to_string())?;
-            context.translate(-f64::from(left), -f64::from(top));
-            context.set_source_rgba(foreground, foreground, foreground, 1.0);
-            draw(&context);
-            drop(context);
-            let stride = surface.stride() as usize;
-            let data = surface.take_data().map_err(|e| e.to_string())?;
-            let mut result = Vec::with_capacity(width as usize * height as usize * 4);
-            for row in data.chunks_exact(stride).take(height as usize) {
-                for pixel in row[..width as usize * 4].as_chunks::<4>().0 {
-                    let argb = u32::from_ne_bytes(*pixel);
-                    result.extend_from_slice(&[
-                        (argb >> 16) as u8,
-                        (argb >> 8) as u8,
-                        argb as u8,
-                        (argb >> 24) as u8,
-                    ]);
+        let paint =
+            |foreground: f64, x: u32, y: u32, width: u32, height: u32| -> Result<Vec<u8>, String> {
+                let surface =
+                    cairo::ImageSurface::create(cairo::Format::ARgb32, width as i32, height as i32)
+                        .map_err(|e| e.to_string())?;
+                surface.set_device_scale(scale, scale);
+                let context = cairo::Context::new(&surface).map_err(|e| e.to_string())?;
+                context.translate(
+                    -f64::from(left) - f64::from(x) / scale,
+                    -f64::from(top) - f64::from(y) / scale,
+                );
+                context.set_source_rgba(foreground, foreground, foreground, 1.0);
+                draw(&context);
+                drop(context);
+                let stride = surface.stride() as usize;
+                let data = surface.take_data().map_err(|e| e.to_string())?;
+                let mut result = Vec::with_capacity(width as usize * height as usize * 4);
+                for row in data.chunks_exact(stride).take(height as usize) {
+                    for pixel in row[..width as usize * 4].as_chunks::<4>().0 {
+                        let argb = u32::from_ne_bytes(*pixel);
+                        result.extend_from_slice(&[
+                            (argb >> 16) as u8,
+                            (argb >> 8) as u8,
+                            argb as u8,
+                            (argb >> 24) as u8,
+                        ]);
+                    }
                 }
+                Ok(result)
+            };
+        // Bound both Cairo surfaces and native uploads. The cap controls working
+        // memory only; every shaped pixel and the complete logical geometry stay
+        // intact. One neighboring pixel on each side preserves linear filtering.
+        let limit = self.uploader.maximum_texture_size().min(4096);
+        let step = limit.saturating_sub(2).max(1);
+        let tiled = width > limit || height > limit;
+        let mut tiles = Vec::new();
+        let step_x = if tiled { step } else { width };
+        let step_y = if tiled { step } else { height };
+        for y in (0..height).step_by(step_y as usize) {
+            for x in (0..width).step_by(step_x as usize) {
+                let end_x = (x + step_x).min(width);
+                let end_y = (y + step_y).min(height);
+                let raster_x = x.saturating_sub(1);
+                let raster_y = y.saturating_sub(1);
+                let tile_width = (end_x + 1).min(width) - raster_x;
+                let tile_height = (end_y + 1).min(height) - raster_y;
+                let white = paint(1.0, raster_x, raster_y, tile_width, tile_height)?;
+                let (white_pixels, _) = white.as_chunks::<4>();
+                let monochrome = white_pixels
+                    .iter()
+                    .all(|p| p[0] == p[3] && p[1] == p[3] && p[2] == p[3]);
+                let (texture, foreground) = if monochrome {
+                    let mask: Vec<_> = white_pixels.iter().map(|p| p[3]).collect();
+                    (self.uploader.mask(tile_width, tile_height, &mask)?, None)
+                } else {
+                    // Separate color-font pixels from tintable text without changing
+                    // glyph shapes. This also preserves mixed text/emoji in one cue.
+                    let black = paint(0.0, raster_x, raster_y, tile_width, tile_height)?;
+                    let delta: Vec<_> = white
+                        .iter()
+                        .zip(&black)
+                        .map(|(w, b)| w.saturating_sub(*b))
+                        .collect();
+                    (
+                        self.uploader.rgba(tile_width, tile_height, &black)?,
+                        Some(self.uploader.rgba(tile_width, tile_height, &delta)?),
+                    )
+                };
+                tiles.push(TextTile {
+                    texture,
+                    foreground,
+                    bounds: Rect::new(
+                        x as f32 / width as f32,
+                        y as f32 / height as f32,
+                        (end_x - x) as f32 / width as f32,
+                        (end_y - y) as f32 / height as f32,
+                    ),
+                    uv: Rect::new(
+                        (x - raster_x) as f32 / tile_width as f32,
+                        (y - raster_y) as f32 / tile_height as f32,
+                        (end_x - x) as f32 / tile_width as f32,
+                        (end_y - y) as f32 / tile_height as f32,
+                    ),
+                });
             }
-            Ok(result)
-        };
-        let white = paint(1.0)?;
-        let (white_pixels, _) = white.as_chunks::<4>();
-        let monochrome = white_pixels
-            .iter()
-            .all(|p| p[0] == p[3] && p[1] == p[3] && p[2] == p[3]);
-        let (texture, foreground) = if monochrome {
-            let mask: Vec<_> = white_pixels.iter().map(|p| p[3]).collect();
-            (self.uploader.mask(width, height, &mask)?, None)
-        } else {
-            // Separate color-font pixels from tintable text without changing
-            // glyph shapes. This also preserves mixed text/emoji in one cue.
-            let black = paint(0.0)?;
-            let delta: Vec<_> = white
-                .iter()
-                .zip(&black)
-                .map(|(w, b)| w.saturating_sub(*b))
-                .collect();
-            (
-                self.uploader.rgba(width, height, &black)?,
-                Some(self.uploader.rgba(width, height, &delta)?),
-            )
-        };
+        }
+        let texture = tiles[0].texture.clone();
+        let foreground = tiles[0].foreground.clone();
         let prepared = PreparedText {
             texture,
             foreground,
+            tiles: tiled.then(|| tiles.into()),
             bounds: Rect::new(
                 left as f32 * fitting_scale as f32,
                 top as f32 * fitting_scale as f32,

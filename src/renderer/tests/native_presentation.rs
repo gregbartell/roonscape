@@ -359,88 +359,97 @@ fn composition_preserves_clipped_title_at_motion_boundary(
     preparation: &mut PresentationPreparation<'_>,
     repository: &Path,
 ) {
-    let viewport = Viewport::new(1280, 720);
-    let mut presentation = fixture("lyrics-reel-capacity");
-    let Presentation::NowPlaying(value) = &mut presentation else {
-        panic!("Now Playing")
-    };
-    value.title = Some(format!(
-        "{} alpha beta gamma delta epsilon",
-        "W".repeat(200)
-    ));
-    value.artist = None;
-    value.album = None;
-    let prepared = preparation
-        .prepare(&presentation, viewport, repository, true)
-        .unwrap();
-    let PreparedContent::NowPlaying(content) = &prepared.content else {
-        panic!("Now Playing")
-    };
-    let Presentation::NowPlaying(value) = &presentation else {
-        unreachable!()
-    };
-    let layout =
-        roonscape_renderer::NowPlayingLayout::for_composition_progress(value, viewport, 0.0);
-    let first_word = &content.metadata.movement[0].ordinary.words[0];
-    let first_texture = first_word
-        .text
-        .sprite(
-            0.0,
-            0.0,
-            qt_window::Color::default(),
-            qt_window::Rect::viewport(viewport),
-        )
-        .texture
-        .unwrap()
-        .identity();
-    assert!(
-        first_word.text.bounds.width > layout.information.musical_metadata_width_px as f32,
-        "the native ordinary endpoint clips the overlong first token"
-    );
-    let mut motion = lyric_motion::LyricMotion::new(1, None);
-    motion.update(1, value.lyrics.as_deref(), ms(0), true);
-    let mut frame = motion.frame_at(ms(0));
-    frame.composition_progress = 0.12001;
-    frame.cues.clear();
-    let mut scene = Scene::default();
-    scene::foreground(
-        &mut scene,
-        &prepared,
-        &scene::Foreground {
-            presentation: &presentation,
-            palette: prepared.palette,
-            now: ms(0),
-            animated: true,
-            opacity: 1.0,
-            status: value.status,
-            status_opacity: 1.0,
-            timing_opacity: 1.0,
-            persistent_progress: false,
-            lyrics: Some(&frame),
-        },
-    );
-    let moving = &scene
-        .sprites
-        .iter()
-        .find(|sprite| {
-            sprite.texture.as_ref().map(|texture| texture.identity()) == Some(first_texture)
-        })
-        .expect("the first Title word remains visible")
-        .geometry;
-    assert!(
-        (moving.bounds.height - first_word.text.bounds.height).abs() < 1.0,
-        "movement must retain native clipped font size: {} -> {}",
-        first_word.text.bounds.height,
-        moving.bounds.height
-    );
-    assert!(
-        (moving.clip.x + moving.clip.width
-            - (layout.information.left_viewport_x_px + layout.information.musical_metadata_width_px)
-                as f32)
-            .abs()
-            < 1.0,
-        "movement must retain native horizontal clipping"
-    );
+    for viewport in [
+        Viewport::new(1280, 720),
+        Viewport::new(1600, 900),
+        Viewport::new(1600, 1200),
+        Viewport::new(1920, 1200),
+        Viewport::new(2560, 1080),
+        Viewport::new(3840, 2160),
+        Viewport::new(3840, 2400),
+    ] {
+        let mut presentation = fixture("lyrics-reel-capacity");
+        let Presentation::NowPlaying(value) = &mut presentation else {
+            panic!("Now Playing")
+        };
+        value.title = Some(format!(
+            "{} alpha beta gamma delta epsilon",
+            "W".repeat(200)
+        ));
+        value.artist = None;
+        value.album = None;
+        let prepared = preparation
+            .prepare(&presentation, viewport, repository, true)
+            .unwrap();
+        let PreparedContent::NowPlaying(content) = &prepared.content else {
+            panic!("Now Playing")
+        };
+        let Presentation::NowPlaying(value) = &presentation else {
+            unreachable!()
+        };
+        let layout =
+            roonscape_renderer::NowPlayingLayout::for_composition_progress(value, viewport, 0.0);
+        let first_word = &content.metadata.movement[0].ordinary.words[0];
+        let first_texture = first_word
+            .text
+            .sprite(
+                0.0,
+                0.0,
+                qt_window::Color::default(),
+                qt_window::Rect::viewport(viewport),
+            )
+            .texture
+            .unwrap()
+            .identity();
+        assert!(
+            first_word.text.bounds.width > layout.information.musical_metadata_width_px as f32,
+            "the native ordinary endpoint clips the overlong first token"
+        );
+        let mut motion = lyric_motion::LyricMotion::new(1, None);
+        motion.update(1, value.lyrics.as_deref(), ms(0), true);
+        let mut frame = motion.frame_at(ms(0));
+        frame.composition_progress = 0.12001;
+        frame.cues.clear();
+        let mut scene = Scene::default();
+        scene::foreground(
+            &mut scene,
+            &prepared,
+            &scene::Foreground {
+                presentation: &presentation,
+                palette: prepared.palette,
+                now: ms(0),
+                animated: true,
+                opacity: 1.0,
+                status: value.status,
+                status_opacity: 1.0,
+                timing_opacity: 1.0,
+                persistent_progress: false,
+                lyrics: Some(&frame),
+            },
+        );
+        let moving = &scene
+            .sprites
+            .iter()
+            .find(|sprite| {
+                sprite.texture.as_ref().map(|texture| texture.identity()) == Some(first_texture)
+            })
+            .expect("the first Title word remains visible")
+            .geometry;
+        assert!(
+            (moving.bounds.height - first_word.text.bounds.height).abs() < 1.0,
+            "movement must retain native clipped font size: {} -> {}",
+            first_word.text.bounds.height,
+            moving.bounds.height
+        );
+        assert!(
+            (moving.clip.x + moving.clip.width
+                - (layout.information.left_viewport_x_px
+                    + layout.information.musical_metadata_width_px) as f32)
+                .abs()
+                < 1.0,
+            "movement must retain native horizontal clipping"
+        );
+    }
 }
 
 fn composition_reel_translation_and_clipping(
@@ -1955,6 +1964,74 @@ fn continuous_progress(preparation: &mut PresentationPreparation<'_>, repository
     );
 }
 
+fn oversized_metadata_preserves_native_geometry(
+    preparation: &mut PresentationPreparation<'_>,
+    repository: &Path,
+) {
+    let viewport = Viewport::new(3840, 2160);
+    for role in ["title", "artist", "album"] {
+        let mut presentation = fixture("playing");
+        let Presentation::NowPlaying(value) = &mut presentation else {
+            unreachable!()
+        };
+        let text = Some(format!(
+            "{} alpha beta gamma delta epsilon",
+            "W".repeat(200)
+        ));
+        match role {
+            "title" => {
+                value.title = text;
+                value.artist = None;
+                value.album = None;
+            }
+            "artist" => {
+                value.artist = text;
+                value.album = None;
+            }
+            _ => value.album = text,
+        }
+        let prepared = preparation
+            .prepare(&presentation, viewport, repository, true)
+            .unwrap();
+        let PreparedContent::NowPlaying(content) = &prepared.content else {
+            unreachable!()
+        };
+        let mut found_tiled = false;
+        for text in &content.metadata.ordinary {
+            let sprite = text.text.sprite(
+                0.0,
+                0.0,
+                qt_window::Color::default(),
+                qt_window::Rect::viewport(viewport),
+            );
+            if let Some(tiles) = &sprite.tiles {
+                found_tiled = true;
+                assert!(tiles.len() > 1);
+                assert_eq!(tiles[0].bounds.x, 0.0);
+                let last = tiles.last().unwrap();
+                assert!((last.bounds.x + last.bounds.width - 1.0).abs() < 0.00001);
+                for tile in tiles.iter() {
+                    let width = tile.bounds.width * text.text.bounds.width / tile.uv.width;
+                    let height = tile.bounds.height * text.text.bounds.height / tile.uv.height;
+                    assert!(width <= 4096.01 && height <= 4096.01);
+                }
+            }
+        }
+        assert!(
+            found_tiled,
+            "oversized {role} exercises bounded native uploads"
+        );
+        // A later ordinary snapshot must still prepare with complete metadata.
+        let next = preparation
+            .prepare(&fixture("playing"), viewport, repository, true)
+            .unwrap();
+        let PreparedContent::NowPlaying(content) = &next.content else {
+            unreachable!()
+        };
+        assert_eq!(content.metadata.ordinary.len(), 3);
+    }
+}
+
 fn main() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -1983,6 +2060,7 @@ fn main() {
     word_motion_meets_native_endpoints(&mut preparation, repository);
     composition_keeps_shared_metadata_visible(&mut preparation, repository);
     composition_preserves_clipped_title_at_motion_boundary(&mut preparation, repository);
+    oversized_metadata_preserves_native_geometry(&mut preparation, repository);
     partially_retained_words_follow_native_ellipsis(&mut preparation, repository);
     wrapping_words_do_not_collide_during_composition(&mut preparation, repository);
     cue_preparation_reuses_metadata_words(&mut preparation, repository);

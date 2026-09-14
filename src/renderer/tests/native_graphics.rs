@@ -7,6 +7,10 @@ mod content_evidence;
 #[path = "../src/qt_window.rs"]
 mod qt_window;
 
+#[allow(dead_code)]
+#[path = "../src/text_preparation.rs"]
+mod text_preparation;
+
 use qt_window::{
     Color, Graphic, GraphicGeometry, Rect, Scene, Sprite, SpriteGeometry, SpriteKind, Window,
     WindowEvents,
@@ -19,6 +23,7 @@ enum ExpectedPixels {
     Exact(Vec<u8>),
     SaveReference,
     SavedReference,
+    SavedReferenceWithin(u8),
 }
 
 impl From<Vec<u8>> for ExpectedPixels {
@@ -78,14 +83,22 @@ impl WindowEvents for GradientCheck<'_> {
         };
         let expected = match &case.expected {
             ExpectedPixels::Exact(pixels) => Some(pixels),
-            ExpectedPixels::SavedReference => {
+            ExpectedPixels::SavedReference | ExpectedPixels::SavedReferenceWithin(_) => {
                 Some(self.reference.as_ref().expect("missing reference frame"))
             }
             ExpectedPixels::SaveReference => None,
         };
         if let Some(expected) = expected {
             assert_eq!(actual.len(), expected.len());
-            if let Some(index) = actual.iter().zip(expected).position(|(a, b)| a != b) {
+            let tolerance = match case.expected {
+                ExpectedPixels::SavedReferenceWithin(value) => value,
+                _ => 0,
+            };
+            if let Some(index) = actual
+                .iter()
+                .zip(expected)
+                .position(|(a, b)| a.abs_diff(*b) > tolerance)
+            {
                 panic!(
                     "GPU compositing mismatch at ({}, {}), channel {}: actual {}, expected {}",
                     index / 4 % case.viewport.width_px as usize,
@@ -96,7 +109,7 @@ impl WindowEvents for GradientCheck<'_> {
                 );
             }
             println!(
-                "native graphics match every reference pixel at {}×{}",
+                "native graphics match reference pixels at {}×{}",
                 case.viewport.width_px, case.viewport.height_px
             );
         } else {
@@ -565,6 +578,143 @@ fn main() {
             });
         }
     }
+    // Tiled text must sample the same pixels as one texture, including both
+    // axes, fractional scaling, filtering gutters, clipping and edge fades.
+    for colored in [false, true] {
+        let pixels: Vec<u8> = (0..16 * 16)
+            .flat_map(|i| {
+                let a = ((i * 37) % 256) as u8;
+                if colored {
+                    [a / 2, a / 3, a / 4, a]
+                } else {
+                    [a, a, a, a]
+                }
+            })
+            .collect();
+        let upload = |pixels: &[u8], width, height| {
+            if colored {
+                uploader.rgba(width, height, pixels).unwrap()
+            } else {
+                uploader
+                    .mask(
+                        width,
+                        height,
+                        &pixels
+                            .as_chunks::<4>()
+                            .0
+                            .iter()
+                            .map(|p| p[3])
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap()
+            }
+        };
+        let texture = upload(&pixels, 16, 16);
+        let foreground = colored.then(|| uploader.rgba(16, 16, &pixels).unwrap());
+        let mut tiles = Vec::new();
+        for y in [0, 8] {
+            for x in [0, 8] {
+                let left = if x == 0 { 0 } else { 7 };
+                let top = if y == 0 { 0 } else { 7 };
+                let mut region = Vec::new();
+                for row in top..top + 9 {
+                    region.extend_from_slice(
+                        &pixels[(row * 16 + left) * 4..(row * 16 + left + 9) * 4],
+                    );
+                }
+                tiles.push(qt_window::TextTile {
+                    texture: upload(&region, 9, 9),
+                    foreground: colored.then(|| uploader.rgba(9, 9, &region).unwrap()),
+                    bounds: Rect::new(x as f32 / 16.0, y as f32 / 16.0, 0.5, 0.5),
+                    uv: Rect::new(
+                        (x - left) as f32 / 9.0,
+                        (y - top) as f32 / 9.0,
+                        8.0 / 9.0,
+                        8.0 / 9.0,
+                    ),
+                });
+            }
+        }
+        for tiled in [false, true] {
+            cases.push_back(GradientCase {
+                scene: Scene {
+                    graphics: vec![],
+                    sprites: vec![Sprite {
+                        texture: Some(texture.clone()),
+                        foreground: foreground.clone(),
+                        tiles: tiled.then(|| tiles.clone().into()),
+                        geometry: SpriteGeometry {
+                            bounds: Rect::new(40.25, 50.5, 512.5, 400.25),
+                            uv: Rect::new(0.0, 0.0, 1.0, 1.0),
+                            clip: Rect::new(60.0, 70.0, 470.0, 340.0),
+                            fade_top: 25.0,
+                            fade_bottom: 25.0,
+                            color: Color::new(rgb(160, 200, 240), 0.7),
+                            kind: if colored {
+                                SpriteKind::TextWithForeground
+                            } else {
+                                SpriteKind::AlphaMask
+                            },
+                            ..SpriteGeometry::default()
+                        },
+                        ..Sprite::default()
+                    }],
+                },
+                viewport,
+                expected: if tiled {
+                    ExpectedPixels::SavedReferenceWithin(1)
+                } else {
+                    ExpectedPixels::SaveReference
+                },
+            });
+        }
+    }
+    // Compare the actual tiled Pango raster with its separately shaped word
+    // drawings. Translation puts internal tile boundaries inside the viewport.
+    use gtk::pango::prelude::*;
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    roonscape_renderer::register_packaged_fallback_fonts(repository).unwrap();
+    let families = pangocairo::FontMap::new()
+        .list_families()
+        .into_iter()
+        .map(|family| family.name().to_string())
+        .collect();
+    let typography = roonscape_renderer::select_capture_typography(
+        &families,
+        roonscape_renderer::NowPlayingTitleFace::Fallback,
+    )
+    .unwrap();
+    let text = text_preparation::TextPreparation::new(typography, uploader, 1.0);
+    let layout = text.layout(
+        &"Wide words with round glyphs ".repeat(12),
+        text_preparation::Face::Title,
+        64,
+        0,
+    );
+    let raster = text.rasterize(&layout, 1.0).unwrap();
+    let clip = Rect::new(40.0, 20.0, 1100.0, 120.0);
+    let tint = Color::new(rgb(180, 220, 240), 0.8);
+    let whole = raster.sprite(-3500.0, 30.0, tint, clip);
+    assert!(whole.tiles.is_some());
+    let words = text
+        .words(&layout, false)
+        .unwrap()
+        .iter()
+        .map(|word| word.text.sprite(-3500.0, 30.0, tint, clip))
+        .collect();
+    for (sprites, expected) in [
+        (words, ExpectedPixels::SaveReference),
+        (vec![whole], ExpectedPixels::SavedReferenceWithin(1)),
+    ] {
+        cases.push_back(GradientCase {
+            scene: Scene {
+                graphics: vec![],
+                sprites,
+            },
+            expected,
+            viewport,
+        });
+    }
     let mut check = GradientCheck {
         cases,
         submitted: false,
@@ -574,7 +724,7 @@ fn main() {
     window.timer(15000, 99);
     window.run(&mut check).unwrap();
     assert_eq!(
-        check.passed, 35,
+        check.passed, 41,
         "The native window did not display every test scene"
     );
 }

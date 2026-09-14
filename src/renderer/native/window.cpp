@@ -67,6 +67,7 @@ class UploadWorker {
     std::vector<Allocation> retired;
     size_t retiredBytes = 0;
     bool stopping = false;
+    GLint textureLimit = 0;
     static constexpr size_t poolLimit = 128 * 1024 * 1024;
 public:
     explicit UploadWorker(QOpenGLContext *share) : surface(new QOffscreenSurface) {
@@ -81,6 +82,7 @@ public:
             context.setFormat(share->format());
             context.setShareContext(share);
             const bool valid = context.create() && context.makeCurrent(surface.get());
+            if (valid) context.extraFunctions()->glGetIntegerv(GL_MAX_TEXTURE_SIZE, &textureLimit);
             ready.set_value(valid);
             if (!valid) return;
             auto *gl = context.extraFunctions();
@@ -109,6 +111,7 @@ public:
         changed.notify_one();
         thread.join();
     }
+    uint32_t maximumTextureSize() const { return uint32_t(textureLimit); }
     void enqueue(std::function<void(Gl *)> request) {
         { std::lock_guard lock(mutex); requests.push_back(std::move(request)); }
         changed.notify_one();
@@ -656,6 +659,7 @@ uint64_t rs_window_scene(RsWindow *window,const RsGraphic *graphics,size_t graph
     }
     return window->nextSerial;
 }
+uint32_t rs_texture_maximum_size(RsWindow *window) { return window->worker->maximumTextureSize(); }
 RsUpload *rs_texture_upload_start(RsWindow *window,uint32_t width,uint32_t height,uint32_t format,const void *pixels) {
     try {
         textureFormat(format);

@@ -67,6 +67,7 @@ int64_t roonscape_frame_time_micros();
 // Formats: 0 RGBA8, 1 BGRA8, 2 R8, 3 RGBA32I, 4 RGB16I, 5 RGB8.
 // RGB8 rows are padded to four bytes; all other formats are tightly packed.
 // Pixel storage must remain alive until upload_finish, including cancellation.
+uint32_t rs_texture_maximum_size(RsWindow *);
 RsUpload *rs_texture_upload_start(RsWindow *, uint32_t, uint32_t, uint32_t, const void *);
 RsTexture *rs_texture_upload_finish(RsUpload *);
 RsTexture *rs_texture_upload(RsWindow *, uint32_t, uint32_t, uint32_t, const void *);

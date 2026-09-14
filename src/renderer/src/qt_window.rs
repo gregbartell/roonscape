@@ -227,6 +227,17 @@ pub(crate) struct Sprite<'window> {
     pub texture: Option<Texture<'window>>,
     pub foreground: Option<Texture<'window>>,
     pub geometry: SpriteGeometry,
+    pub tiles: Option<Arc<[TextTile<'window>]>>,
+}
+
+/// Tile bounds are fractions of the complete text raster. UVs exclude the
+/// neighboring pixel gutter retained for linear filtering at tile boundaries.
+#[derive(Clone)]
+pub(crate) struct TextTile<'window> {
+    pub texture: Texture<'window>,
+    pub foreground: Option<Texture<'window>>,
+    pub bounds: Rect,
+    pub uv: Rect,
 }
 
 #[derive(Clone, Default)]
@@ -279,6 +290,7 @@ unsafe extern "C" {
     fn rs_window_timer(window: *mut NativeWindow, milliseconds: u32, event: i32);
     #[cfg(test)]
     fn rs_window_resize(window: *mut NativeWindow, width: u32, height: u32);
+    fn rs_texture_maximum_size(window: *mut NativeWindow) -> u32;
     fn rs_window_scene(
         window: *mut NativeWindow,
         graphics: *const RawGraphic,
@@ -596,15 +608,47 @@ fn submit_scene(native: NonNull<NativeWindow>, scene: &Scene<'_>, direct: bool) 
             geometry: g.geometry,
         })
         .collect();
-    let sprites: Vec<_> = scene
-        .sprites
-        .iter()
-        .map(|s| RawSprite {
-            texture: pointer(&s.texture),
-            foreground: pointer(&s.foreground),
-            geometry: s.geometry,
-        })
-        .collect();
+    let mut sprites = Vec::with_capacity(scene.sprites.len());
+    for sprite in &scene.sprites {
+        if let Some(tiles) = &sprite.tiles {
+            for tile in tiles.iter() {
+                let mut geometry = sprite.geometry;
+                let bounds = geometry.bounds;
+                geometry.bounds = Rect::new(
+                    bounds.x + tile.bounds.x * bounds.width,
+                    bounds.y + tile.bounds.y * bounds.height,
+                    tile.bounds.width * bounds.width,
+                    tile.bounds.height * bounds.height,
+                );
+                geometry.uv = tile.uv;
+                geometry.kind = if tile.foreground.is_some() {
+                    SpriteKind::TextWithForeground
+                } else {
+                    SpriteKind::AlphaMask
+                };
+                // Text has no rotation. Keep the original clip and fade origins
+                // so tiling cannot reveal hidden glyphs or restart a lyric fade.
+                if geometry.bounds.x >= geometry.clip.x + geometry.clip.width
+                    || geometry.bounds.x + geometry.bounds.width <= geometry.clip.x
+                    || geometry.bounds.y >= geometry.clip.y + geometry.clip.height
+                    || geometry.bounds.y + geometry.bounds.height <= geometry.clip.y
+                {
+                    continue;
+                }
+                sprites.push(RawSprite {
+                    texture: tile.texture.native.0.as_ptr(),
+                    foreground: pointer(&tile.foreground),
+                    geometry,
+                });
+            }
+        } else {
+            sprites.push(RawSprite {
+                texture: pointer(&sprite.texture),
+                foreground: pointer(&sprite.foreground),
+                geometry: sprite.geometry,
+            });
+        }
+    }
     unsafe {
         rs_window_scene(
             native.as_ptr(),
@@ -686,6 +730,10 @@ impl Drop for PendingTexture<'_, '_> {
 }
 
 impl<'window> Uploader<'window> {
+    pub fn maximum_texture_size(&self) -> u32 {
+        unsafe { rs_texture_maximum_size(self.native.as_ptr()) }
+    }
+
     fn texture(&self, pointer: *mut NativeTexture) -> Result<Texture<'window>, String> {
         let pointer = NonNull::new(pointer).ok_or("Cannot prepare a Renderer texture")?;
         let identity = NEXT_TEXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
