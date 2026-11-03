@@ -336,8 +336,8 @@ impl<'window> TextPreparation<'window> {
             let data = surface.take_data().map_err(|e| e.to_string())?;
             let mut result = Vec::with_capacity(width as usize * height as usize * 4);
             for row in data.chunks_exact(stride).take(height as usize) {
-                for pixel in row[..width as usize * 4].chunks_exact(4) {
-                    let argb = u32::from_ne_bytes(pixel.try_into().unwrap());
+                for pixel in row[..width as usize * 4].as_chunks::<4>().0 {
+                    let argb = u32::from_ne_bytes(*pixel);
                     result.extend_from_slice(&[
                         (argb >> 16) as u8,
                         (argb >> 8) as u8,
@@ -349,11 +349,12 @@ impl<'window> TextPreparation<'window> {
             Ok(result)
         };
         let white = paint(1.0)?;
-        let monochrome = white
-            .chunks_exact(4)
+        let (white_pixels, _) = white.as_chunks::<4>();
+        let monochrome = white_pixels
+            .iter()
             .all(|p| p[0] == p[3] && p[1] == p[3] && p[2] == p[3]);
         let (texture, foreground) = if monochrome {
-            let mask: Vec<_> = white.chunks_exact(4).map(|p| p[3]).collect();
+            let mask: Vec<_> = white_pixels.iter().map(|p| p[3]).collect();
             (self.uploader.mask(width, height, &mask)?, None)
         } else {
             // Separate color-font pixels from tintable text without changing

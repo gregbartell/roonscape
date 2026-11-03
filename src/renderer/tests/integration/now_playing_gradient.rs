@@ -218,7 +218,7 @@ fn light_gradient_stays_within_one_lsb_of_its_palette_field_bounds() {
     let palette = gradient_palette(rgb(198, 210, 232), rgb(238, 224, 201), rgb(210, 198, 226));
     let gradient = NowPlayingGradient::new(palette, viewport);
 
-    for pixel in gradient.rgba8().chunks_exact(4) {
+    for pixel in gradient.rgba8().as_chunks::<4>().0 {
         assert!((197..=239).contains(&pixel[0]));
         assert!((197..=225).contains(&pixel[1]));
         assert!((200..=233).contains(&pixel[2]));

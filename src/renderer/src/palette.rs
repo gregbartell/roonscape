@@ -411,7 +411,7 @@ fn sample_integer_strip(
             let mut sums = [0_u32; 3];
             for dy in 0..factor {
                 let at = (y * factor + dy) * source_stride + x * factor * 3;
-                for pixel in bytes[at..at + factor * 3].chunks_exact(3) {
+                for pixel in bytes[at..at + factor * 3].as_chunks::<3>().0 {
                     sums[0] += u32::from(pixel[0]);
                     sums[1] += u32::from(pixel[1]);
                     sums[2] += u32::from(pixel[2]);

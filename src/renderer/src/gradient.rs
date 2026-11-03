@@ -193,7 +193,7 @@ fn fill_row_chunk(
     for (local_y, row) in rows.chunks_exact_mut(row_stride).enumerate() {
         let y = first_y + local_y;
         let mut position = geometry.origin + y as i64 * geometry.step_y;
-        for (x, pixel) in row.chunks_exact_mut(4).enumerate() {
+        for (x, pixel) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let color = color_lut[fixed_position_index(position)];
             let noise_index = ((y & (BLUE_NOISE_SIDE as usize - 1)) * BLUE_NOISE_SIDE as usize)
                 + (x & (BLUE_NOISE_SIDE as usize - 1));

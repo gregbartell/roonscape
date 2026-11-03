@@ -364,6 +364,10 @@ test("real host font inspection leaves an uncached Fontconfig environment unchan
 
 test("real package managers preserve lockfiles and never run application lifecycle scripts", (context) => {
   const fixture = environment(context);
+  cpSync(
+    path.join(sourceRoot, "rust-toolchain.toml"),
+    path.join(fixture.root, "rust-toolchain.toml"),
+  );
   for (const name of ["cargo", "rustc"]) {
     rmSync(path.join(fixture.root, "bin", name));
     symlinkSync(findExecutable(name), path.join(fixture.root, "bin", name));

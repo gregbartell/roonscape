@@ -496,8 +496,8 @@ fn main() {
     let mut rgba_images = Vec::new();
     for index in 0..3 {
         let mut pixels = source.clone();
-        for row in pixels.chunks_exact_mut(12) {
-            for pixel in row[..9].chunks_exact_mut(3) {
+        for row in pixels.as_chunks_mut::<12>().0 {
+            for pixel in row[..9].as_chunks_mut::<3>().0 {
                 pixel.rotate_left(index);
             }
         }
@@ -519,8 +519,10 @@ fn main() {
             .unwrap();
         opaque_images.push(uploader.image(&decoded).unwrap());
         let rgba: Vec<_> = pixels
-            .chunks_exact(12)
-            .flat_map(|row| row[..9].chunks_exact(3))
+            .as_chunks::<12>()
+            .0
+            .iter()
+            .flat_map(|row| row[..9].as_chunks::<3>().0)
             .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], 255])
             .collect();
         rgba_images.push(uploader.rgba(3, 2, &rgba).unwrap());
